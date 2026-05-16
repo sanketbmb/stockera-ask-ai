@@ -18,6 +18,7 @@ import { Route as ReferralRouteImport } from './routes/referral'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PostQueryRouteImport } from './routes/post-query'
+import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FaqRouteImport } from './routes/faq'
@@ -75,6 +76,11 @@ const PricingRoute = PricingRouteImport.update({
 const PostQueryRoute = PostQueryRouteImport.update({
   id: '/post-query',
   path: '/post-query',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortfolioRoute = PortfolioRouteImport.update({
+  id: '/portfolio',
+  path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MyQueriesRoute = MyQueriesRouteImport.update({
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
+  '/portfolio': typeof PortfolioRoute
   '/post-query': typeof PostQueryRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
+  '/portfolio': typeof PortfolioRoute
   '/post-query': typeof PostQueryRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
+  '/portfolio': typeof PortfolioRoute
   '/post-query': typeof PostQueryRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -226,6 +235,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/login'
     | '/my-queries'
+    | '/portfolio'
     | '/post-query'
     | '/pricing'
     | '/privacy'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/login'
     | '/my-queries'
+    | '/portfolio'
     | '/post-query'
     | '/pricing'
     | '/privacy'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/login'
     | '/my-queries'
+    | '/portfolio'
     | '/post-query'
     | '/pricing'
     | '/privacy'
@@ -299,6 +311,7 @@ export interface RootRouteChildren {
   FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
+  PortfolioRoute: typeof PortfolioRoute
   PostQueryRoute: typeof PostQueryRoute
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -380,6 +393,13 @@ declare module '@tanstack/react-router' {
       path: '/post-query'
       fullPath: '/post-query'
       preLoaderRoute: typeof PostQueryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolio': {
+      id: '/portfolio'
+      path: '/portfolio'
+      fullPath: '/portfolio'
+      preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/my-queries': {
@@ -483,6 +503,7 @@ const rootRouteChildren: RootRouteChildren = {
   FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
+  PortfolioRoute: PortfolioRoute,
   PostQueryRoute: PostQueryRoute,
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,

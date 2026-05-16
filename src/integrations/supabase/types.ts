@@ -300,6 +300,54 @@ export type Database = {
         }
         Relationships: []
       }
+      user_portfolio: {
+        Row: {
+          added_from_query_id: string | null
+          buy_price: number
+          created_at: string
+          id: string
+          quantity: number
+          stock_name: string
+          stock_symbol: string
+          stop_loss: number | null
+          stop_loss_hit_notified: boolean
+          target: number | null
+          target_hit_notified: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          added_from_query_id?: string | null
+          buy_price: number
+          created_at?: string
+          id?: string
+          quantity?: number
+          stock_name: string
+          stock_symbol: string
+          stop_loss?: number | null
+          stop_loss_hit_notified?: boolean
+          target?: number | null
+          target_hit_notified?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          added_from_query_id?: string | null
+          buy_price?: number
+          created_at?: string
+          id?: string
+          quantity?: number
+          stock_name?: string
+          stock_symbol?: string
+          stop_loss?: number | null
+          stop_loss_hit_notified?: boolean
+          target?: number | null
+          target_hit_notified?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
