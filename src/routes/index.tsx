@@ -38,7 +38,6 @@ function Index() {
         <ReferralBanner />
       </main>
       <PromoToast />
-      </main>
       <SiteFooter />
     </div>
   );
