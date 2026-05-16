@@ -349,3 +349,19 @@ function Field({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function DetectionChip({ text, currentType, onApply }: { text: string; currentType: string; onApply: (label: string) => void }) {
+  const detected = useQueryTypeDetection(text);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  if (!detected || dismissed === detected) return null;
+  const alreadyMatches = QUERY_TYPES.find((q) => q.id === currentType)?.label === detected;
+  if (alreadyMatches) return null;
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-foreground animate-fade-in">
+      <Lightbulb className="h-3.5 w-3.5 text-accent" />
+      <span>Looks like you're asking about <strong>{detected}</strong> — apply this type?</span>
+      <button type="button" onClick={() => onApply(detected)} className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground hover:opacity-90">Apply</button>
+      <button type="button" onClick={() => setDismissed(detected)} aria-label="Dismiss" className="rounded-full p-1 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+    </div>
+  );
+}
