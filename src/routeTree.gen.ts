@@ -10,12 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
 import { Route as ReferralRouteImport } from './routes/referral'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PostQueryRouteImport } from './routes/post-query'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
@@ -31,6 +36,11 @@ const WalletRoute = WalletRouteImport.update({
   path: '/wallet',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
@@ -41,9 +51,24 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SebiComplianceRoute = SebiComplianceRouteImport.update({
+  id: '/sebi-compliance',
+  path: '/sebi-compliance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReferralRoute = ReferralRouteImport.update({
   id: '/referral',
   path: '/referral',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PostQueryRoute = PostQueryRouteImport.update({
@@ -59,6 +84,11 @@ const MyQueriesRoute = MyQueriesRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -111,12 +141,17 @@ const AdminUploadAnswerQueryIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -129,12 +164,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -148,12 +188,17 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -168,12 +213,17 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/faq'
     | '/login'
     | '/my-queries'
     | '/post-query'
+    | '/pricing'
+    | '/privacy'
     | '/referral'
+    | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
@@ -186,12 +236,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard'
+    | '/faq'
     | '/login'
     | '/my-queries'
     | '/post-query'
+    | '/pricing'
+    | '/privacy'
     | '/referral'
+    | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
@@ -204,12 +259,17 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/faq'
     | '/login'
     | '/my-queries'
     | '/post-query'
+    | '/pricing'
+    | '/privacy'
     | '/referral'
+    | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/terms'
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
@@ -223,12 +283,17 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
   PostQueryRoute: typeof PostQueryRoute
+  PricingRoute: typeof PricingRoute
+  PrivacyRoute: typeof PrivacyRoute
   ReferralRoute: typeof ReferralRoute
+  SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  TermsRoute: typeof TermsRoute
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
@@ -248,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WalletRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
@@ -262,11 +334,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sebi-compliance': {
+      id: '/sebi-compliance'
+      path: '/sebi-compliance'
+      fullPath: '/sebi-compliance'
+      preLoaderRoute: typeof SebiComplianceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/referral': {
       id: '/referral'
       path: '/referral'
       fullPath: '/referral'
       preLoaderRoute: typeof ReferralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/post-query': {
@@ -288,6 +381,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -359,12 +459,17 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
   PostQueryRoute: PostQueryRoute,
+  PricingRoute: PricingRoute,
+  PrivacyRoute: PrivacyRoute,
   ReferralRoute: ReferralRoute,
+  SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  TermsRoute: TermsRoute,
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminDashboardRoute: AdminDashboardRoute,
