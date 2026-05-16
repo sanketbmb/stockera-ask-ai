@@ -108,7 +108,7 @@ export const getMarketSnapshot = createServerFn({ method: "GET" }).handler(
         .from("market_cache")
         .upsert({
           id: CACHE_ID,
-          data: fresh as unknown as Record<string, unknown>,
+          data: JSON.parse(JSON.stringify(fresh)),
           expires_at: expiresAt,
           updated_at: new Date().toISOString(),
         });
