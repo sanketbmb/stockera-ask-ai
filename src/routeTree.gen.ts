@@ -23,6 +23,7 @@ import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvestorCharterRouteImport } from './routes/investor-charter'
+import { Route as GrievanceRedressalRouteImport } from './routes/grievance-redressal'
 import { Route as FeeScheduleRouteImport } from './routes/fee-schedule'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
@@ -106,6 +107,11 @@ const InvestorCharterRoute = InvestorCharterRouteImport.update({
   path: '/investor-charter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GrievanceRedressalRoute = GrievanceRedressalRouteImport.update({
+  id: '/grievance-redressal',
+  path: '/grievance-redressal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FeeScheduleRoute = FeeScheduleRouteImport.update({
   id: '/fee-schedule',
   path: '/fee-schedule',
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -231,6 +239,7 @@ export interface FileRoutesById {
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -261,6 +270,7 @@ export interface FileRouteTypes {
     | '/dev-checklist'
     | '/faq'
     | '/fee-schedule'
+    | '/grievance-redressal'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/dev-checklist'
     | '/faq'
     | '/fee-schedule'
+    | '/grievance-redressal'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -317,6 +328,7 @@ export interface FileRouteTypes {
     | '/dev-checklist'
     | '/faq'
     | '/fee-schedule'
+    | '/grievance-redressal'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -346,6 +358,7 @@ export interface RootRouteChildren {
   DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
   FeeScheduleRoute: typeof FeeScheduleRoute
+  GrievanceRedressalRoute: typeof GrievanceRedressalRoute
   InvestorCharterRoute: typeof InvestorCharterRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
@@ -469,6 +482,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InvestorCharterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/grievance-redressal': {
+      id: '/grievance-redressal'
+      path: '/grievance-redressal'
+      fullPath: '/grievance-redressal'
+      preLoaderRoute: typeof GrievanceRedressalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/fee-schedule': {
       id: '/fee-schedule'
       path: '/fee-schedule'
@@ -562,6 +582,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
   FeeScheduleRoute: FeeScheduleRoute,
+  GrievanceRedressalRoute: GrievanceRedressalRoute,
   InvestorCharterRoute: InvestorCharterRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
