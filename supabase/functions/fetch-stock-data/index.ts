@@ -126,12 +126,20 @@ If you don't know, return your best honest estimate based on your training data.
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 400,
+            responseMimeType: "application/json",
+          },
         }),
       },
     );
     const data = await res.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!raw) {
+      console.warn("Gemini returned empty body:", JSON.stringify(data).slice(0, 400));
+      return null;
+    }
     const cleanJson = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
 
