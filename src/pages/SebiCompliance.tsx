@@ -1,5 +1,5 @@
 import { ExternalLink, ShieldCheck, FileText, AlertTriangle } from "lucide-react";
-import { SebiDisclaimer } from "@/components/common/SebiDisclaimer";
+import { SebiDisclaimer } from "@/components/common/SEBIDisclaimer";
 
 export default function SebiCompliance() {
   return (

@@ -112,6 +112,27 @@ export type Database = {
           },
         ]
       }
+      market_cache: {
+        Row: {
+          data: Json
+          expires_at: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          data: Json
+          expires_at: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          data?: Json
+          expires_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

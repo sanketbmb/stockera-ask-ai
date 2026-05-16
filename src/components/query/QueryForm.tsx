@@ -14,7 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowLeft, ArrowRight, ChevronRight, Loader2, Sparkles, Wallet } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, Loader2, Sparkles, Wallet, Lightbulb, X } from "lucide-react";
+import { StockAutocomplete } from "@/components/common/StockAutocomplete";
+import { useQueryTypeDetection } from "@/hooks/useQueryTypeDetection";
+import type { NseStock } from "@/data/nseStocks";
 
 const QUERY_TYPES = [
   { id: "sell_or_hold", emoji: "🤔", label: "Sell or Hold?" },
@@ -181,15 +184,14 @@ export function QueryForm() {
 
       {step === 0 && (
         <div className="space-y-5">
-          <div className="grid sm:grid-cols-[1fr_180px] gap-3">
-            <div>
-              <Label htmlFor="stock">Stock name *</Label>
-              <Input id="stock" autoFocus placeholder="e.g. IDFC First Bank" value={stockName} onChange={(e) => setStockName(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="symbol">NSE Symbol</Label>
-              <Input id="symbol" placeholder="IDFCFIRSTB" value={stockSymbol} onChange={(e) => setStockSymbol(e.target.value.toUpperCase())} />
-            </div>
+          <div>
+            <Label>Stock *</Label>
+            <StockAutocomplete
+              autoFocus
+              value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
+              onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
+              onClear={() => { setStockName(""); setStockSymbol(""); }}
+            />
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
@@ -247,6 +249,10 @@ export function QueryForm() {
             <Textarea id="qtext" maxLength={500} rows={6} value={queryText} onChange={(e) => setQueryText(e.target.value)}
               placeholder="e.g. I bought IDFC First Bank at ₹85 in Jan 2024. It's now at ₹67. I have ₹50,000 more to invest. Should I average down, hold as is, or exit with a loss?" />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
+            <DetectionChip text={queryText} currentType={queryType} onApply={(label) => {
+              const match = QUERY_TYPES.find((q) => q.label === label);
+              if (match) setQueryType(match.id);
+            }} />
           </div>
           <div>
             <Label>Choose analyst (optional)</Label>
@@ -340,6 +346,22 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+function DetectionChip({ text, currentType, onApply }: { text: string; currentType: string; onApply: (label: string) => void }) {
+  const detected = useQueryTypeDetection(text);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  if (!detected || dismissed === detected) return null;
+  const alreadyMatches = QUERY_TYPES.find((q) => q.id === currentType)?.label === detected;
+  if (alreadyMatches) return null;
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-foreground animate-fade-in">
+      <Lightbulb className="h-3.5 w-3.5 text-accent" />
+      <span>Looks like you're asking about <strong>{detected}</strong> — apply this type?</span>
+      <button type="button" onClick={() => onApply(detected)} className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground hover:opacity-90">Apply</button>
+      <button type="button" onClick={() => setDismissed(detected)} aria-label="Dismiss" className="rounded-full p-1 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
     </div>
   );
 }
