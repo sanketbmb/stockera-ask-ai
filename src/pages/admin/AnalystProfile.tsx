@@ -168,6 +168,12 @@ export default function AnalystProfile() {
               </Button>
             </div>
           </Card>
+
+          {user && (
+            <div className="mt-6">
+              <ComplaintsDataCard analystId={user.id} />
+            </div>
+          )}
         </>
       )}
     </AdminShell>
