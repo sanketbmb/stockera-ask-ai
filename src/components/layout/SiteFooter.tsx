@@ -1,5 +1,6 @@
 import { Mail, MessageCircle, Twitter, Instagram, Linkedin } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
+import { FIRM } from "@/lib/firm-details";
 
 const cols = [
   {
@@ -12,12 +13,20 @@ const cols = [
     ],
   },
   {
+    title: "SEBI Compliance",
+    links: [
+      { label: "Investor Charter", href: "/investor-charter" },
+      { label: "Risk Disclosure", href: "/risk-disclosure" },
+      { label: "Fee Schedule", href: "/fee-schedule" },
+      { label: "Grievance Redressal", href: "/grievance-redressal" },
+    ],
+  },
+  {
     title: "Legal",
     links: [
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Terms of Service", href: "/terms" },
-      { label: "SEBI Compliance", href: "/sebi-compliance" },
-      { label: "Grievance Redressal", href: "/sebi-compliance#grievance" },
+      { label: "SEBI Overview", href: "/sebi-compliance" },
     ],
   },
 ];
