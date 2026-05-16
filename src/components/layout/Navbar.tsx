@@ -53,6 +53,8 @@ export function Navbar() {
           </Button>
 
           {user ? (
+            <>
+            <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-full ring-2 ring-transparent transition hover:ring-accent/30">
