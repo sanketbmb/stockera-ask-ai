@@ -1,0 +1,71 @@
+import { MessageSquare, Zap, Video, ArrowRight } from "lucide-react";
+import { Reveal } from "./motion-helpers";
+
+const steps = [
+  {
+    n: 1,
+    icon: MessageSquare,
+    color: "text-accent",
+    bg: "bg-accent/10",
+    title: "Post Your Query",
+    body: "Tell us your stock, your buy price, and what you're confused about. Takes 60 seconds.",
+  },
+  {
+    n: 2,
+    icon: Zap,
+    color: "text-gold",
+    bg: "bg-gold/10",
+    title: "Get AI Report Instantly",
+    body: "Our Gemini-powered AI analyzes your stock using real NSE/BSE data and gives you a detailed verdict in 30 seconds.",
+  },
+  {
+    n: 3,
+    icon: Video,
+    color: "text-primary",
+    bg: "bg-primary/10",
+    title: "Expert Video Answer",
+    body: "A SEBI-registered RA or RIA records a personalized video answer — in Hindi or English — within 2 hours.",
+  },
+];
+
+export function HowItWorks() {
+  return (
+    <section id="how-it-works" className="bg-background py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <Reveal className="text-center">
+          <h2 className="font-display text-3xl text-foreground sm:text-4xl">
+            How Ask The Expert Works <span className="text-gold">in 3 Simple Steps</span>
+          </h2>
+          <p className="mt-3 text-muted-foreground">From confusion to clarity — in minutes, not days.</p>
+        </Reveal>
+
+        <div className="relative mt-14 grid gap-8 md:grid-cols-3 md:gap-6">
+          <div className="absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-border to-transparent md:block" />
+          {steps.map((s, i) => (
+            <Reveal key={s.n} delay={i * 0.1}>
+              <div className="relative flex flex-col items-center text-center md:items-start md:text-left">
+                <div className={`relative z-10 flex h-24 w-24 items-center justify-center rounded-2xl ${s.bg} shadow-card`}>
+                  <s.icon className={`h-9 w-9 ${s.color}`} />
+                  <span className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-foreground font-mono text-xs font-bold text-background">
+                    {s.n}
+                  </span>
+                </div>
+                <h3 className="mt-5 font-display text-xl text-foreground">{s.title}</h3>
+                <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+
+        <Reveal className="mt-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            And if you're still unsure —{" "}
+            <a href="#experts" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+              book a 1:1 live session with your expert <ArrowRight className="h-3.5 w-3.5" />
+            </a>
+          </p>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
