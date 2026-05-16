@@ -69,7 +69,7 @@ export function OnboardingTour() {
         arrowColor: "#ffffff",
         zIndex: 10000,
         showProgress: true,
-        showSkipButton: true,
+        buttons: ["back", "skip", "primary"],
       }}
       styles={{
         tooltip: { borderRadius: 16, padding: 20, fontFamily: "DM Sans, sans-serif" },
