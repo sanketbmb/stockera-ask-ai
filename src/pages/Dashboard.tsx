@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
@@ -10,6 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { AnimatedCounter } from "@/components/common/AnimatedCounter";
+import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
+import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
 
 function greeting() {
   const h = new Date().getHours();
