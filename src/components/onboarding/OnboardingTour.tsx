@@ -50,7 +50,7 @@ export function OnboardingTour() {
     refresh();
   };
 
-  const handleCallback = (data: EventData) => {
+  const handleEvent = (data: EventData) => {
     const done: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
     if (done.includes(data.status)) finish();
   };
@@ -61,15 +61,15 @@ export function OnboardingTour() {
       steps={STEPS}
       run={run}
       continuous
-      showProgress
-      showSkipButton
-      callback={handleCallback}
+      onEvent={handleEvent}
       options={{
         primaryColor: "hsl(176 58% 41%)",
         textColor: "hsl(220 56% 14%)",
         backgroundColor: "#ffffff",
         arrowColor: "#ffffff",
         zIndex: 10000,
+        showProgress: true,
+        showSkipButton: true,
       }}
       styles={{
         tooltip: { borderRadius: 16, padding: 20, fontFamily: "DM Sans, sans-serif" },
