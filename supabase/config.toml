@@ -2,3 +2,6 @@ project_id = "pwicwmnutyahscbreqvg"
 
 [functions.gemini-analysis]
 verify_jwt = true
+
+[functions.fetch-stock-data]
+verify_jwt = true
