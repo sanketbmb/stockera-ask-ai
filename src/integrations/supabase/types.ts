@@ -112,6 +112,66 @@ export type Database = {
           },
         ]
       }
+      grievances: {
+        Row: {
+          against_analyst_id: string | null
+          category: string
+          complainant_email: string
+          complainant_name: string
+          complainant_phone: string | null
+          created_at: string
+          description: string
+          escalated_to_scores: boolean
+          id: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          sla_due_at: string
+          status: string
+          subject: string
+          ticket_number: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          against_analyst_id?: string | null
+          category: string
+          complainant_email: string
+          complainant_name: string
+          complainant_phone?: string | null
+          created_at?: string
+          description: string
+          escalated_to_scores?: boolean
+          id?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          sla_due_at?: string
+          status?: string
+          subject: string
+          ticket_number?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          against_analyst_id?: string | null
+          category?: string
+          complainant_email?: string
+          complainant_name?: string
+          complainant_phone?: string | null
+          created_at?: string
+          description?: string
+          escalated_to_scores?: boolean
+          id?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          sla_due_at?: string
+          status?: string
+          subject?: string
+          ticket_number?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       market_cache: {
         Row: {
           data: Json
@@ -409,7 +469,17 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      analyst_complaints_summary: {
+        Row: {
+          analyst_id: string | null
+          pending_last_30d: number | null
+          resolved_all_time: number | null
+          resolved_last_30d: number | null
+          total_all_time: number | null
+          total_last_30d: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_demo_credits: { Args: { _amount: number }; Returns: Json }
