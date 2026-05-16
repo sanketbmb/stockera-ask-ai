@@ -1,11 +1,15 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { QueryForm } from "@/components/query/QueryForm";
 import { QueryContextPanel } from "@/components/query/QueryContextPanel";
+import { MarketTicker } from "@/components/common/MarketTicker";
+import { SEBIDisclaimerBanner } from "@/components/common/SEBIDisclaimer";
 
 export default function PostQueryPage() {
   return (
     <div className="min-h-screen bg-mesh flex flex-col">
+      <MarketTicker />
       <Navbar />
+      <SEBIDisclaimerBanner />
       <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <header className="mb-6">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">Ask The Expert</p>
