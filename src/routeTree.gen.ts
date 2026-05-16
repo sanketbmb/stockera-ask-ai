@@ -9,38 +9,234 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as ReferralRouteImport } from './routes/referral'
+import { Route as PostQueryRouteImport } from './routes/post-query'
+import { Route as MyQueriesRouteImport } from './routes/my-queries'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminSuperRouteImport } from './routes/admin.super'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
+import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 
+const WalletRoute = WalletRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReferralRoute = ReferralRouteImport.update({
+  id: '/referral',
+  path: '/referral',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PostQueryRoute = PostQueryRouteImport.update({
+  id: '/post-query',
+  path: '/post-query',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MyQueriesRoute = MyQueriesRouteImport.update({
+  id: '/my-queries',
+  path: '/my-queries',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSuperRoute = AdminSuperRouteImport.update({
+  id: '/admin/super',
+  path: '/admin/super',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDashboardRoute = AdminDashboardRouteImport.update({
+  id: '/admin/dashboard',
+  path: '/admin/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminApplyRoute = AdminApplyRouteImport.update({
+  id: '/admin/apply',
+  path: '/admin/apply',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/my-queries': typeof MyQueriesRoute
+  '/post-query': typeof PostQueryRoute
+  '/referral': typeof ReferralRoute
+  '/signup': typeof SignupRoute
+  '/wallet': typeof WalletRoute
+  '/admin/apply': typeof AdminApplyRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/super': typeof AdminSuperRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/my-queries': typeof MyQueriesRoute
+  '/post-query': typeof PostQueryRoute
+  '/referral': typeof ReferralRoute
+  '/signup': typeof SignupRoute
+  '/wallet': typeof WalletRoute
+  '/admin/apply': typeof AdminApplyRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/super': typeof AdminSuperRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/my-queries': typeof MyQueriesRoute
+  '/post-query': typeof PostQueryRoute
+  '/referral': typeof ReferralRoute
+  '/signup': typeof SignupRoute
+  '/wallet': typeof WalletRoute
+  '/admin/apply': typeof AdminApplyRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/super': typeof AdminSuperRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/my-queries'
+    | '/post-query'
+    | '/referral'
+    | '/signup'
+    | '/wallet'
+    | '/admin/apply'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/super'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/my-queries'
+    | '/post-query'
+    | '/referral'
+    | '/signup'
+    | '/wallet'
+    | '/admin/apply'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/super'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/my-queries'
+    | '/post-query'
+    | '/referral'
+    | '/signup'
+    | '/wallet'
+    | '/admin/apply'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/super'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DashboardRoute: typeof DashboardRoute
+  LoginRoute: typeof LoginRoute
+  MyQueriesRoute: typeof MyQueriesRoute
+  PostQueryRoute: typeof PostQueryRoute
+  ReferralRoute: typeof ReferralRoute
+  SignupRoute: typeof SignupRoute
+  WalletRoute: typeof WalletRoute
+  AdminApplyRoute: typeof AdminApplyRoute
+  AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminLoginRoute: typeof AdminLoginRoute
+  AdminSuperRoute: typeof AdminSuperRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wallet': {
+      id: '/wallet'
+      path: '/wallet'
+      fullPath: '/wallet'
+      preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/referral': {
+      id: '/referral'
+      path: '/referral'
+      fullPath: '/referral'
+      preLoaderRoute: typeof ReferralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/post-query': {
+      id: '/post-query'
+      path: '/post-query'
+      fullPath: '/post-query'
+      preLoaderRoute: typeof PostQueryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/my-queries': {
+      id: '/my-queries'
+      path: '/my-queries'
+      fullPath: '/my-queries'
+      preLoaderRoute: typeof MyQueriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +244,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/super': {
+      id: '/admin/super'
+      path: '/admin/super'
+      fullPath: '/admin/super'
+      preLoaderRoute: typeof AdminSuperRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/dashboard': {
+      id: '/admin/dashboard'
+      path: '/admin/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AdminDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/apply': {
+      id: '/admin/apply'
+      path: '/admin/apply'
+      fullPath: '/admin/apply'
+      preLoaderRoute: typeof AdminApplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DashboardRoute: DashboardRoute,
+  LoginRoute: LoginRoute,
+  MyQueriesRoute: MyQueriesRoute,
+  PostQueryRoute: PostQueryRoute,
+  ReferralRoute: ReferralRoute,
+  SignupRoute: SignupRoute,
+  WalletRoute: WalletRoute,
+  AdminApplyRoute: AdminApplyRoute,
+  AdminDashboardRoute: AdminDashboardRoute,
+  AdminLoginRoute: AdminLoginRoute,
+  AdminSuperRoute: AdminSuperRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
