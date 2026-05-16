@@ -128,7 +128,7 @@ function AnalystManagementTab() {
   });
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, boolean> }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: { is_approved?: boolean; is_available?: boolean } }) => {
       const { error } = await supabase.from("analyst_profiles").update(patch).eq("id", id);
       if (error) throw error;
     },
