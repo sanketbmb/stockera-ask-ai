@@ -19,6 +19,7 @@ export interface ProfileRow {
   avatar_url: string | null;
   wallet_balance: number | null;
   referral_code: string | null;
+  onboarding_completed: boolean | null;
 }
 
 interface AuthContextValue {
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [{ data: profileData }, { data: roleData }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id, full_name, phone, avatar_url, wallet_balance, referral_code")
+        .select("id, full_name, phone, avatar_url, wallet_balance, referral_code, onboarding_completed")
         .eq("id", userId)
         .maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", userId),

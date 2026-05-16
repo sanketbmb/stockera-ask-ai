@@ -15,8 +15,9 @@ const badges = [
 
 export function HeroSection() {
   return (
-    <section className="relative overflow-hidden bg-mesh">
-      <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
+    <section className="relative overflow-hidden bg-mesh bg-noise">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-grid opacity-60" />
+      <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
         <Reveal>
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
@@ -26,7 +27,7 @@ export function HeroSection() {
             <h1 className="mt-5 font-display text-4xl leading-[1.1] text-foreground sm:text-5xl lg:text-[52px]">
               Your Stock in Loss?
               <br />
-              <span className="text-gradient">Ask The Expert.</span>
+              <span className="text-shimmer">Ask The Expert.</span>
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">

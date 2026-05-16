@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
@@ -10,6 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { AnimatedCounter } from "@/components/common/AnimatedCounter";
+import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
+import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
 
 function greeting() {
   const h = new Date().getHours();
@@ -65,30 +69,47 @@ export default function DashboardPage() {
     },
   });
 
+  const qc = useQueryClient();
+  // Seed a demo query on first dashboard visit (idempotent)
+  useEffect(() => {
+    if (!user || !profile) return;
+    const completed = (profile as unknown as { onboarding_completed?: boolean }).onboarding_completed;
+    if (completed) return;
+    seedDemoQueryIfEmpty(user.id).then((seeded) => {
+      if (seeded) {
+        qc.invalidateQueries({ queryKey: ["dashboard-stats", user.id] });
+        qc.invalidateQueries({ queryKey: ["dashboard-recent", user.id] });
+      }
+    });
+  }, [user, profile, qc]);
+
   return (
     <AppShell>
-      <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-6 md:p-8 mb-6">
+      <OnboardingTour />
+      <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card bg-noise p-6 md:p-8 mb-6">
         <p className="font-mono text-xs uppercase tracking-widest text-accent">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
         <h1 className="font-display text-3xl md:text-4xl mt-1">{greeting()}, {firstName} 👋</h1>
         <p className="text-muted-foreground mt-2 text-sm">Your stock queries, AI reports and expert answers — all in one place.</p>
       </div>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} />
-        <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} />
-        <StatCard label="Wallet Balance" value={`₹${profile?.wallet_balance ?? 0}`} icon={<Wallet className="h-4 w-4" />} highlight />
-        <StatCard label="Referrals" value={stats?.refs} icon={<Gift className="h-4 w-4" />} loading={statsLoading} />
+      <section data-tour="dashboard-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+        <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
+        <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} animate />
+        <div data-tour="wallet" className="contents">
+          <StatCard label="Wallet Balance" value={profile?.wallet_balance ?? 0} prefix="₹" icon={<Wallet className="h-4 w-4" />} highlight animate />
+        </div>
+        <StatCard label="Referrals" value={stats?.refs} icon={<Gift className="h-4 w-4" />} loading={statsLoading} animate />
       </section>
 
       <section className="grid lg:grid-cols-3 gap-3 mb-8">
-        <Button asChild className="h-14 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95">
+        <Button asChild data-tour="post-query" className="h-14 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95">
           <Link to="/post-query"><Plus className="h-4 w-4 mr-2" /> Post a new query</Link>
         </Button>
         <Button asChild variant="outline" className="h-14"><Link to="/wallet"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
         <Button asChild variant="outline" className="h-14"><Link to="/referral"><Gift className="h-4 w-4 mr-2" /> Refer a friend</Link></Button>
       </section>
 
-      <Card className="p-0 overflow-hidden">
+      <Card data-tour="recent-queries" className="glass-card p-0 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="font-display text-xl">Recent Queries</h2>
           <Button asChild variant="ghost" size="sm"><Link to="/my-queries">View all <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link></Button>
@@ -137,14 +158,23 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, icon, highlight, loading }: { label: string; value?: number | string; icon: React.ReactNode; highlight?: boolean; loading?: boolean }) {
+function StatCard({ label, value, icon, highlight, loading, animate, prefix }: { label: string; value?: number | string; icon: React.ReactNode; highlight?: boolean; loading?: boolean; animate?: boolean; prefix?: string }) {
+  const isNumeric = typeof value === "number";
   return (
-    <Card className={`p-4 ${highlight ? "bg-gradient-to-br from-primary/10 to-accent/5 border-primary/30" : ""}`}>
+    <Card className={`glass-card p-4 ${highlight ? "bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30" : ""}`}>
       <div className="flex items-center justify-between text-muted-foreground text-xs">
         <span className="uppercase tracking-wider">{label}</span>
         {icon}
       </div>
-      {loading ? <Skeleton className="h-8 w-20 mt-2" /> : <p className="font-display text-3xl mt-1">{value ?? 0}</p>}
+      {loading ? (
+        <Skeleton className="h-8 w-20 mt-2" />
+      ) : animate && isNumeric ? (
+        <p className="font-display text-3xl mt-1">
+          <AnimatedCounter end={value as number} prefix={prefix} />
+        </p>
+      ) : (
+        <p className="font-display text-3xl mt-1">{prefix}{value ?? 0}</p>
+      )}
     </Card>
   );
 }
