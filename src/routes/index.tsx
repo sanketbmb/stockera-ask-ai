@@ -37,6 +37,8 @@ function Index() {
         <Testimonials />
         <ReferralBanner />
       </main>
+      <PromoToast />
+      </main>
       <SiteFooter />
     </div>
   );
