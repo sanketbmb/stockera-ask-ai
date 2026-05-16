@@ -74,7 +74,7 @@ export function OnboardingTour() {
       styles={{
         tooltip: { borderRadius: 16, padding: 20, fontFamily: "DM Sans, sans-serif" },
         tooltipTitle: { fontFamily: "DM Serif Display, serif", fontSize: 20 },
-        buttonNext: { borderRadius: 999, padding: "8px 18px", fontWeight: 600 },
+        buttonPrimary: { borderRadius: 999, padding: "8px 18px", fontWeight: 600 },
         buttonBack: { color: "hsl(220 12% 52%)" },
         buttonSkip: { color: "hsl(220 12% 52%)" },
       }}
