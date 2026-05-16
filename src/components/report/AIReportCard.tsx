@@ -219,6 +219,15 @@ export function AIReportCard({ report, meta }: { report: AIReport; meta: ReportM
 
       {/* ACTIONS */}
       <div className="grid sm:grid-cols-2 gap-3 print:hidden">
+        <AddToPortfolioButton
+          queryId={meta.id}
+          stockName={meta.stockName}
+          stockSymbol={meta.stockSymbol}
+          buyPrice={meta.buyPrice}
+          currentPrice={meta.currentPrice}
+          target1={report.target1}
+          stopLoss={report.stopLoss}
+        />
         <Button variant="outline" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> Download PDF</Button>
         <Button variant="outline" onClick={handleShare}><Share2 className="h-4 w-4 mr-2" /> Share Report</Button>
         <Button className="bg-gradient-to-r from-primary to-accent text-primary-foreground"><Video className="h-4 w-4 mr-2" /> Book Video Answer →</Button>
