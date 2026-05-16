@@ -104,9 +104,9 @@ async function fetchFromTwelveData(symbol: string, apiKey: string): Promise<Stoc
   }
 }
 
-async function fetchFromGeminiEstimate(symbol: string, geminiKey: string): Promise<StockData | null> {
+async function fetchFromLovableAI(symbol: string, apiKey: string): Promise<StockData | null> {
   const { clean, exchange } = normalizeSymbol(symbol);
-  const prompt = `Return ONLY a raw JSON object (no markdown) with the most recent publicly known market data for the Indian listed stock ${clean} on ${exchange}.
+  const prompt = `Return ONLY a raw JSON object (no markdown, no commentary) with the most recent publicly known market data for the Indian listed stock ${clean} on ${exchange}.
 {
   "price": number_in_INR,
   "change": number,
@@ -116,32 +116,34 @@ async function fetchFromGeminiEstimate(symbol: string, geminiKey: string): Promi
   "peRatio": number_or_null,
   "marketCap": number_in_INR
 }
-If you don't know, return your best honest estimate based on your training data. Numbers only, no strings, no currency symbols.`;
+Return your best honest estimate based on your training data. Numbers only, no strings, no currency symbols.`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 400,
-            responseMimeType: "application/json",
-          },
-        }),
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    );
-    const data = await res.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (!raw) {
-      console.warn("Gemini returned empty body:", JSON.stringify(data).slice(0, 400));
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn("Lovable AI fallback HTTP", res.status, (await res.text()).slice(0, 200));
       return null;
     }
-    const cleanJson = raw.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleanJson);
+    const data = await res.json();
+    const raw = data?.choices?.[0]?.message?.content ?? "";
+    if (!raw) {
+      console.warn("Lovable AI returned empty content");
+      return null;
+    }
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
 
     const marketCap = typeof parsed.marketCap === "number" ? parsed.marketCap : null;
     return {
@@ -159,10 +161,10 @@ If you don't know, return your best honest estimate based on your training data.
       ohlc30d: [],
       source: "gemini_estimate",
       fetchedAt: new Date().toISOString(),
-      warning: "Live data provider unavailable. Prices are AI-estimated and may be outdated.",
+      warning: "Live data provider unavailable for this symbol. Prices are AI-estimated and may be outdated by hours or days.",
     };
   } catch (err) {
-    console.error("Gemini fallback failed:", (err as Error).message);
+    console.error("Lovable AI fallback failed:", (err as Error).message);
     return null;
   }
 }
