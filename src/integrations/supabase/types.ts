@@ -174,6 +174,7 @@ export type Database = {
           full_name: string | null
           id: string
           is_verified: boolean | null
+          onboarding_completed: boolean
           phone: string | null
           referral_code: string | null
           referred_by: string | null
@@ -189,6 +190,7 @@ export type Database = {
           full_name?: string | null
           id: string
           is_verified?: boolean | null
+          onboarding_completed?: boolean
           phone?: string | null
           referral_code?: string | null
           referred_by?: string | null
@@ -204,6 +206,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           is_verified?: boolean | null
+          onboarding_completed?: boolean
           phone?: string | null
           referral_code?: string | null
           referred_by?: string | null
