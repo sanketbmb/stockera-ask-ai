@@ -7,18 +7,17 @@ const cols = [
     links: [
       { label: "How it Works", href: "/#how-it-works" },
       { label: "Experts", href: "/#experts" },
-      { label: "Pricing", href: "/#pricing" },
-      { label: "FAQ", href: "/#faq" },
-      { label: "Blog", href: "/#blog" },
+      { label: "Pricing", href: "/pricing" },
+      { label: "FAQ", href: "/faq" },
     ],
   },
   {
     title: "Legal",
     links: [
-      { label: "Privacy Policy", href: "/legal/privacy" },
-      { label: "Terms of Service", href: "/legal/terms" },
-      { label: "SEBI Compliance", href: "/legal/sebi" },
-      { label: "Grievance Redressal", href: "/legal/grievance" },
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms of Service", href: "/terms" },
+      { label: "SEBI Compliance", href: "/sebi-compliance" },
+      { label: "Grievance Redressal", href: "/sebi-compliance#grievance" },
     ],
   },
 ];
