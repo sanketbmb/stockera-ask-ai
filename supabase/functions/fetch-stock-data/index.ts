@@ -182,15 +182,15 @@ serve(async (req) => {
     }
 
     const tdKey = Deno.env.get("TWELVE_DATA_API_KEY");
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
     let data: StockData | null = null;
     if (tdKey) {
       data = await fetchFromTwelveData(symbol, tdKey);
     }
-    if (!data && geminiKey) {
-      console.log("Falling back to Gemini estimate for", symbol);
-      data = await fetchFromGeminiEstimate(symbol, geminiKey);
+    if (!data && lovableKey) {
+      console.log("Falling back to Lovable AI estimate for", symbol);
+      data = await fetchFromLovableAI(symbol, lovableKey);
     }
 
     if (!data) {
