@@ -103,6 +103,7 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
           {children}
         </main>
       </div>
+      <MobileBottomNav />
     </div>
   );
 }
