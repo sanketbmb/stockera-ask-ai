@@ -102,3 +102,14 @@
 .shadow-glow-teal { box-shadow: var(--shadow-glow-teal); }
 .shadow-glow-gold { box-shadow: var(--shadow-glow-gold); }
 .bg-mesh { background: var(--gradient-mesh); }
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee { animation: marquee 40s linear infinite; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
