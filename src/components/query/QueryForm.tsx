@@ -249,6 +249,10 @@ export function QueryForm() {
             <Textarea id="qtext" maxLength={500} rows={6} value={queryText} onChange={(e) => setQueryText(e.target.value)}
               placeholder="e.g. I bought IDFC First Bank at ₹85 in Jan 2024. It's now at ₹67. I have ₹50,000 more to invest. Should I average down, hold as is, or exit with a loss?" />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
+            <DetectionChip text={queryText} currentType={queryType} onApply={(label) => {
+              const match = QUERY_TYPES.find((q) => q.label === label);
+              if (match) setQueryType(match.id);
+            }} />
           </div>
           <div>
             <Label>Choose analyst (optional)</Label>
