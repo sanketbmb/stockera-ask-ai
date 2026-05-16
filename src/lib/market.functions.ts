@@ -82,37 +82,48 @@ Use realistic recent values for top NSE stocks.`;
   }
 }
 
+async function readCache(): Promise<{ data: MarketSnapshot; expiresAt: string } | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("market_cache")
+      .select("data, expires_at")
+      .eq("id", CACHE_ID)
+      .maybeSingle();
+    if (!data) return null;
+    return { data: data.data as unknown as MarketSnapshot, expiresAt: data.expires_at };
+  } catch {
+    return null;
+  }
+}
+
+async function writeCache(snap: MarketSnapshot, expiresAt: string): Promise<void> {
+  try {
+    await supabaseAdmin.from("market_cache").upsert({
+      id: CACHE_ID,
+      data: JSON.parse(JSON.stringify(snap)),
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
 export const getMarketSnapshot = createServerFn({ method: "GET" }).handler(
   async (): Promise<MarketResult> => {
     try {
-      const { data: cached } = await supabaseAdmin
-        .from("market_cache")
-        .select("data, expires_at")
-        .eq("id", CACHE_ID)
-        .maybeSingle();
-
-      if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
-        return { data: cached.data as unknown as MarketSnapshot, cached: true, error: null };
+      const cached = await readCache();
+      if (cached && new Date(cached.expiresAt).getTime() > Date.now()) {
+        return { data: cached.data, cached: true, error: null };
       }
 
       const fresh = await fetchFromGemini();
       if (!fresh) {
-        if (cached?.data) {
-          return { data: cached.data as unknown as MarketSnapshot, cached: true, error: null };
-        }
+        if (cached?.data) return { data: cached.data, cached: true, error: null };
         return { data: FALLBACK, cached: false, error: "Using fallback data" };
       }
 
-      const expiresAt = new Date(Date.now() + TTL_MS).toISOString();
-      await supabaseAdmin
-        .from("market_cache")
-        .upsert({
-          id: CACHE_ID,
-          data: JSON.parse(JSON.stringify(fresh)),
-          expires_at: expiresAt,
-          updated_at: new Date().toISOString(),
-        });
-
+      await writeCache(fresh, new Date(Date.now() + TTL_MS).toISOString());
       return { data: fresh, cached: false, error: null };
     } catch (err) {
       console.error("getMarketSnapshot error:", err);
