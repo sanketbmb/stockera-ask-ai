@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldCheck, AlertTriangle, Loader2, Camera } from "lucide-react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { ComplaintsDataCard } from "@/components/sebi/ComplaintsDataCard";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -167,6 +168,12 @@ export default function AnalystProfile() {
               </Button>
             </div>
           </Card>
+
+          {user && (
+            <div className="mt-6">
+              <ComplaintsDataCard analystId={user.id} />
+            </div>
+          )}
         </>
       )}
     </AdminShell>

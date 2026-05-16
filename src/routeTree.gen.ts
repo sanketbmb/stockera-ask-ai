@@ -14,6 +14,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
+import { Route as RiskDisclosureRouteImport } from './routes/risk-disclosure'
 import { Route as ReferralRouteImport } from './routes/referral'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -21,6 +22,9 @@ import { Route as PostQueryRouteImport } from './routes/post-query'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as InvestorCharterRouteImport } from './routes/investor-charter'
+import { Route as GrievanceRedressalRouteImport } from './routes/grievance-redressal'
+import { Route as FeeScheduleRouteImport } from './routes/fee-schedule'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -58,6 +62,11 @@ const SebiComplianceRoute = SebiComplianceRouteImport.update({
   path: '/sebi-compliance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RiskDisclosureRoute = RiskDisclosureRouteImport.update({
+  id: '/risk-disclosure',
+  path: '/risk-disclosure',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReferralRoute = ReferralRouteImport.update({
   id: '/referral',
   path: '/referral',
@@ -91,6 +100,21 @@ const MyQueriesRoute = MyQueriesRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvestorCharterRoute = InvestorCharterRouteImport.update({
+  id: '/investor-charter',
+  path: '/investor-charter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GrievanceRedressalRoute = GrievanceRedressalRouteImport.update({
+  id: '/grievance-redressal',
+  path: '/grievance-redressal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeeScheduleRoute = FeeScheduleRouteImport.update({
+  id: '/fee-schedule',
+  path: '/fee-schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqRoute = FaqRouteImport.update({
@@ -155,6 +179,9 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -162,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -180,6 +208,9 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -187,6 +218,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -206,6 +238,9 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
+  '/grievance-redressal': typeof GrievanceRedressalRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -213,6 +248,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -233,6 +269,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
+    | '/grievance-redressal'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -240,6 +279,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -258,6 +298,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
+    | '/grievance-redressal'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -265,6 +308,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -283,6 +327,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
+    | '/grievance-redressal'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -290,6 +337,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -309,6 +357,9 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
+  FeeScheduleRoute: typeof FeeScheduleRoute
+  GrievanceRedressalRoute: typeof GrievanceRedressalRoute
+  InvestorCharterRoute: typeof InvestorCharterRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
   PortfolioRoute: typeof PortfolioRoute
@@ -316,6 +367,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   ReferralRoute: typeof ReferralRoute
+  RiskDisclosureRoute: typeof RiskDisclosureRoute
   SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
@@ -367,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SebiComplianceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/risk-disclosure': {
+      id: '/risk-disclosure'
+      path: '/risk-disclosure'
+      fullPath: '/risk-disclosure'
+      preLoaderRoute: typeof RiskDisclosureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/referral': {
       id: '/referral'
       path: '/referral'
@@ -414,6 +473,27 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/investor-charter': {
+      id: '/investor-charter'
+      path: '/investor-charter'
+      fullPath: '/investor-charter'
+      preLoaderRoute: typeof InvestorCharterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/grievance-redressal': {
+      id: '/grievance-redressal'
+      path: '/grievance-redressal'
+      fullPath: '/grievance-redressal'
+      preLoaderRoute: typeof GrievanceRedressalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fee-schedule': {
+      id: '/fee-schedule'
+      path: '/fee-schedule'
+      fullPath: '/fee-schedule'
+      preLoaderRoute: typeof FeeScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -501,6 +581,9 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
+  FeeScheduleRoute: FeeScheduleRoute,
+  GrievanceRedressalRoute: GrievanceRedressalRoute,
+  InvestorCharterRoute: InvestorCharterRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
   PortfolioRoute: PortfolioRoute,
@@ -508,6 +591,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   ReferralRoute: ReferralRoute,
+  RiskDisclosureRoute: RiskDisclosureRoute,
   SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,

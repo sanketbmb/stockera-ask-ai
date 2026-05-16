@@ -1,0 +1,1 @@
+ALTER VIEW public.analyst_complaints_summary SET (security_invoker = true);
