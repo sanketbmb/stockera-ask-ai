@@ -14,6 +14,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
+import { Route as RiskDisclosureRouteImport } from './routes/risk-disclosure'
 import { Route as ReferralRouteImport } from './routes/referral'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -57,6 +58,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SebiComplianceRoute = SebiComplianceRouteImport.update({
   id: '/sebi-compliance',
   path: '/sebi-compliance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RiskDisclosureRoute = RiskDisclosureRouteImport.update({
+  id: '/risk-disclosure',
+  path: '/risk-disclosure',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReferralRoute = ReferralRouteImport.update({
@@ -169,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
@@ -250,6 +259,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -276,6 +286,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
@@ -329,6 +341,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   ReferralRoute: typeof ReferralRoute
+  RiskDisclosureRoute: typeof RiskDisclosureRoute
   SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
@@ -378,6 +391,13 @@ declare module '@tanstack/react-router' {
       path: '/sebi-compliance'
       fullPath: '/sebi-compliance'
       preLoaderRoute: typeof SebiComplianceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/risk-disclosure': {
+      id: '/risk-disclosure'
+      path: '/risk-disclosure'
+      fullPath: '/risk-disclosure'
+      preLoaderRoute: typeof RiskDisclosureRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/referral': {
@@ -529,6 +549,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   ReferralRoute: ReferralRoute,
+  RiskDisclosureRoute: RiskDisclosureRoute,
   SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
