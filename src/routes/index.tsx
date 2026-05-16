@@ -9,6 +9,7 @@ import { PopularQuestions } from "@/components/landing/PopularQuestions";
 import { AIReportPreview } from "@/components/landing/AIReportPreview";
 import { Testimonials } from "@/components/landing/Testimonials";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
+import { PromoToast } from "@/components/landing/PromoToast";
 
 export const Route = createFileRoute("/")({
   head: () => ({
