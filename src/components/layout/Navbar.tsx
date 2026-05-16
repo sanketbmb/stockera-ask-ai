@@ -38,7 +38,7 @@ export function Navbar() {
           {navLinks.map((l) => (
             <a
               key={l.label}
-              href={l.hash ? `/#${l.hash}` : "/"}
+              href={l.href}
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
             >
               {l.label}
@@ -90,7 +90,7 @@ export function Navbar() {
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <div className="mt-6 flex flex-col gap-5">
               {navLinks.map((l) => (
-                <a key={l.label} href={l.hash ? `/#${l.hash}` : "/"} onClick={() => setOpen(false)}
+                <a key={l.label} href={l.href} onClick={() => setOpen(false)}
                   className="text-base font-medium text-foreground">{l.label}</a>
               ))}
               <div className={cn("mt-4 flex flex-col gap-2 border-t border-border pt-5")}>
