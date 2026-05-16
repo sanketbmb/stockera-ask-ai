@@ -12,6 +12,7 @@ import appCss from "../styles.css?url";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { Logo } from "@/components/common/Logo";
+import { CustomCursor } from "@/components/common/CustomCursor";
 
 function NotFoundComponent() {
   return (
@@ -165,6 +166,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <CustomCursor />
         <Outlet />
         <Toaster position="top-right" richColors />
       </AuthProvider>
