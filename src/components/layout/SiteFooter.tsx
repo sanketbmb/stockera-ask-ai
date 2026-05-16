@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { Mail, MessageCircle, Twitter, Instagram, Linkedin } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 
