@@ -23,6 +23,7 @@ import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvestorCharterRouteImport } from './routes/investor-charter'
+import { Route as FeeScheduleRouteImport } from './routes/fee-schedule'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -105,6 +106,11 @@ const InvestorCharterRoute = InvestorCharterRouteImport.update({
   path: '/investor-charter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FeeScheduleRoute = FeeScheduleRouteImport.update({
+  id: '/fee-schedule',
+  path: '/fee-schedule',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/fee-schedule': typeof FeeScheduleRoute
   '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/fee-schedule'
     | '/investor-charter'
     | '/login'
     | '/my-queries'
@@ -333,6 +345,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
+  FeeScheduleRoute: typeof FeeScheduleRoute
   InvestorCharterRoute: typeof InvestorCharterRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
@@ -456,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InvestorCharterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fee-schedule': {
+      id: '/fee-schedule'
+      path: '/fee-schedule'
+      fullPath: '/fee-schedule'
+      preLoaderRoute: typeof FeeScheduleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/faq': {
       id: '/faq'
       path: '/faq'
@@ -541,6 +561,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
+  FeeScheduleRoute: FeeScheduleRoute,
   InvestorCharterRoute: InvestorCharterRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
