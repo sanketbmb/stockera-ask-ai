@@ -21,6 +21,7 @@ import { Route as PostQueryRouteImport } from './routes/post-query'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as InvestorCharterRouteImport } from './routes/investor-charter'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -93,6 +94,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvestorCharterRoute = InvestorCharterRouteImport.update({
+  id: '/investor-charter',
+  path: '/investor-charter',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
+  '/investor-charter': typeof InvestorCharterRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
   '/portfolio': typeof PortfolioRoute
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
+    | '/investor-charter'
     | '/login'
     | '/my-queries'
     | '/portfolio'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
+  InvestorCharterRoute: typeof InvestorCharterRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
   PortfolioRoute: typeof PortfolioRoute
@@ -416,6 +429,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/investor-charter': {
+      id: '/investor-charter'
+      path: '/investor-charter'
+      fullPath: '/investor-charter'
+      preLoaderRoute: typeof InvestorCharterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/faq': {
       id: '/faq'
       path: '/faq'
@@ -501,6 +521,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
+  InvestorCharterRoute: InvestorCharterRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
   PortfolioRoute: PortfolioRoute,
@@ -524,3 +545,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
