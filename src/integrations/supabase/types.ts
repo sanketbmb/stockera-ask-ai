@@ -307,6 +307,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      deduct_wallet_balance: {
+        Args: {
+          _amount: number
+          _description: string
+          _query_id?: string
+          _user_id: string
+        }
+        Returns: Json
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
