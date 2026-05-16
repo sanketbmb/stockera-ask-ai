@@ -54,8 +54,8 @@ export function SiteFooter() {
           <div>
             <h4 className="font-display text-lg">Contact</h4>
             <ul className="mt-4 space-y-3 text-sm text-white/70">
-              <li className="flex items-center gap-2"><Mail className="h-4 w-4" /> support@stockera.in</li>
-              <li className="flex items-center gap-2"><MessageCircle className="h-4 w-4" /> WhatsApp: +91 90000 00000</li>
+              <li className="flex items-center gap-2"><Mail className="h-4 w-4" /><span>support@stockera.in</span></li>
+              <li className="flex items-center gap-2"><MessageCircle className="h-4 w-4" /><span>WhatsApp: +91 90000 00000</span></li>
             </ul>
             <div className="mt-5 flex items-center gap-3">
               {[Twitter, Instagram, Linkedin].map((Icon, i) => (
