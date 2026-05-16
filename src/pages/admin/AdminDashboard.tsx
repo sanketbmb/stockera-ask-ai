@@ -151,8 +151,8 @@ export default function AdminDashboard() {
       return {
         pending: pending ?? 0,
         answered: answered ?? 0,
-        rating: ap.data?.rating ?? 5,
-        sessions: ap.data?.total_sessions ?? 0,
+        rating: apRes.data?.rating ?? 5,
+        sessions: apRes.data?.total_sessions ?? 0,
       };
     },
     enabled: !!user,
