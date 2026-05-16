@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { NotificationBell } from "@/components/common/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,8 @@ export function Navbar() {
           </Button>
 
           {user ? (
+            <>
+            <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-full ring-2 ring-transparent transition hover:ring-accent/30">
@@ -74,6 +77,7 @@ export function Navbar() {
                 <DropdownMenuItem onClick={() => signOut()}><LogOut className="mr-2 h-4 w-4" /> Sign out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </>
           ) : (
             <>
               <Button asChild variant="ghost" size="sm"><Link to="/login">Login</Link></Button>

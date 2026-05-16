@@ -113,3 +113,16 @@
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@media print {
+  nav, aside, header, footer.no-print, .no-print { display: none !important; }
+  .ai-report-card, article { box-shadow: none !important; border: 1px solid #ddd !important; }
+  body { background: white !important; }
+  .page-break { page-break-after: always; }
+}
+@page { margin: 16mm; }
+
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+@media (max-width: 767px) {
+  body.has-mobile-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}

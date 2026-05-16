@@ -21,6 +21,7 @@ import { Route as PostQueryRouteImport } from './routes/post-query'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FaqRouteImport } from './routes/faq'
+import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
@@ -91,6 +92,11 @@ const FaqRoute = FaqRouteImport.update({
   path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevChecklistRoute = DevChecklistRouteImport.update({
+  id: '/dev-checklist',
+  path: '/dev-checklist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -141,6 +147,7 @@ const AdminUploadAnswerQueryIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/my-queries': typeof MyQueriesRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/dev-checklist'
     | '/faq'
     | '/login'
     | '/my-queries'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard'
+    | '/dev-checklist'
     | '/faq'
     | '/login'
     | '/my-queries'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/dev-checklist'
     | '/faq'
     | '/login'
     | '/my-queries'
@@ -283,6 +295,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
   MyQueriesRoute: typeof MyQueriesRoute
@@ -390,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dev-checklist': {
+      id: '/dev-checklist'
+      path: '/dev-checklist'
+      fullPath: '/dev-checklist'
+      preLoaderRoute: typeof DevChecklistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -459,6 +479,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
   MyQueriesRoute: MyQueriesRoute,
