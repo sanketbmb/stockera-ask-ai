@@ -308,6 +308,10 @@ export type Database = {
     }
     Functions: {
       add_demo_credits: { Args: { _amount: number }; Returns: Json }
+      admin_adjust_wallet: {
+        Args: { _amount: number; _reason: string; _target_user_id: string }
+        Returns: Json
+      }
       deduct_wallet_balance: {
         Args: {
           _amount: number
