@@ -17,11 +17,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
-  { label: "Home", to: "/" as const, hash: "" },
-  { label: "How It Works", to: "/" as const, hash: "how-it-works" },
-  { label: "Experts", to: "/" as const, hash: "experts" },
-  { label: "Pricing", to: "/" as const, hash: "pricing" },
-  { label: "FAQ", to: "/" as const, hash: "faq" },
+  { label: "Home", href: "/" },
+  { label: "How It Works", href: "/#how-it-works" },
+  { label: "Experts", href: "/#experts" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "FAQ", href: "/faq" },
 ];
 
 export function Navbar() {
