@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, BadgeCheck, Brain, CheckCircle2, Download, Lightbulb, MessageCircle, Quote, Share2, Sparkles, TrendingUp, Video } from "lucide-react";
+import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
 
 export interface AIReport {
   verdict: string;
