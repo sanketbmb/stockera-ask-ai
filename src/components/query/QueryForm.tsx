@@ -138,7 +138,14 @@ export function QueryForm() {
           analystSebi: chosenAnalyst?.sebi_reg_number ?? null,
         },
       });
-      if (aiErr || !ai?.report) throw aiErr ?? new Error("AI analysis failed");
+      if (aiErr || !ai?.report) {
+        const detail = (ai as { error?: string; details?: string } | null)?.details
+          ?? (ai as { error?: string } | null)?.error
+          ?? aiErr?.message
+          ?? "AI analysis failed";
+        console.error("gemini-analysis response:", ai, aiErr);
+        throw new Error(detail);
+      }
 
       await supabase.from("queries").update({ ai_report: ai.report, status: "ai_answered" }).eq("id", queryId);
 
