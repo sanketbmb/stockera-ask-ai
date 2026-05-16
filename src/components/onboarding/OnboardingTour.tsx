@@ -64,14 +64,14 @@ export function OnboardingTour() {
       showProgress
       showSkipButton
       callback={handleCallback}
+      options={{
+        primaryColor: "hsl(176 58% 41%)",
+        textColor: "hsl(220 56% 14%)",
+        backgroundColor: "#ffffff",
+        arrowColor: "#ffffff",
+        zIndex: 10000,
+      }}
       styles={{
-        options: {
-          primaryColor: "hsl(176 58% 41%)",
-          textColor: "hsl(220 56% 14%)",
-          backgroundColor: "#ffffff",
-          arrowColor: "#ffffff",
-          zIndex: 10000,
-        },
         tooltip: { borderRadius: 16, padding: 20, fontFamily: "DM Sans, sans-serif" },
         tooltipTitle: { fontFamily: "DM Serif Display, serif", fontSize: 20 },
         buttonNext: { borderRadius: 999, padding: "8px 18px", fontWeight: 600 },
