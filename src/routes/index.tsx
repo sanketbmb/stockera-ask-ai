@@ -27,6 +27,7 @@ export const Route = createFileRoute("/")({
 function Index() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <MarketTicker />
       <Navbar />
       <main className="flex-1">
         <HeroSection />
