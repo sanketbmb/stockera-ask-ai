@@ -14,7 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowLeft, ArrowRight, ChevronRight, Loader2, Sparkles, Wallet } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, Loader2, Sparkles, Wallet, Lightbulb, X } from "lucide-react";
+import { StockAutocomplete } from "@/components/common/StockAutocomplete";
+import { useQueryTypeDetection } from "@/hooks/useQueryTypeDetection";
+import type { NseStock } from "@/data/nseStocks";
 
 const QUERY_TYPES = [
   { id: "sell_or_hold", emoji: "🤔", label: "Sell or Hold?" },
