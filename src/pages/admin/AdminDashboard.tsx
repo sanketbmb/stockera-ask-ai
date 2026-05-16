@@ -131,7 +131,7 @@ export default function AdminDashboard() {
     queryFn: async () => {
       if (!user) return null;
       const today = startOfDay(new Date()).toISOString();
-      const [{ count: pending }, { count: answered }, { data: ap }] = await Promise.all([
+      const [{ count: pending }, { count: answered }, apRes] = await Promise.all([
         supabase
           .from("queries")
           .select("id", { count: "exact", head: true })
