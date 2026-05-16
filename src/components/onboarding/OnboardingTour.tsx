@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Joyride, { type CallBackProps, type Step, STATUS } from "react-joyride";
+import { Joyride, type EventData, type Step, STATUS } from "react-joyride";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -8,7 +8,6 @@ const STEPS: Step[] = [
     target: '[data-tour="dashboard-stats"]',
     title: "Your command centre",
     content: "Queries, AI reports, wallet balance and referrals — all at a glance.",
-    disableBeacon: true,
     placement: "bottom",
   },
   {
@@ -39,7 +38,6 @@ export function OnboardingTour() {
     if (!profile) return;
     const completed = (profile as unknown as { onboarding_completed?: boolean }).onboarding_completed;
     if (completed === false) {
-      // small delay so target anchors mount
       const t = setTimeout(() => setRun(true), 600);
       return () => clearTimeout(t);
     }
@@ -48,11 +46,11 @@ export function OnboardingTour() {
   const finish = async () => {
     setRun(false);
     if (!user) return;
-    await supabase.from("profiles").update({ onboarding_completed: true }).eq("id", user.id);
+    await supabase.from("profiles").update({ onboarding_completed: true } as never).eq("id", user.id);
     refresh();
   };
 
-  const handleCallback = (data: CallBackProps) => {
+  const handleCallback = (data: EventData) => {
     const done: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
     if (done.includes(data.status)) finish();
   };
@@ -65,7 +63,6 @@ export function OnboardingTour() {
       continuous
       showProgress
       showSkipButton
-      disableScrolling={false}
       callback={handleCallback}
       styles={{
         options: {

@@ -33,7 +33,7 @@ export async function seedDemoQueryIfEmpty(userId: string): Promise<boolean> {
     query_text:
       "👋 Sample demo query — Bought RELIANCE at ₹1,250, now at ₹1,280. Should I hold, add or book profit?",
     status: "ai_answered",
-    ai_report: DEMO_REPORT as unknown as object,
+    ai_report: DEMO_REPORT as never,
     buy_price: 1250,
     current_price: 1280,
   });
