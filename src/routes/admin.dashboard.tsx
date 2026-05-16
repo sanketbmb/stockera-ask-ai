@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAnalyst } from "@/components/auth/RequireAuth";
-import { makePlaceholder } from "./post-query";
+import { makePlaceholder } from "@/components/common/Placeholder";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({ meta: [{ title: "Expert Dashboard — Stockera" }] }),
