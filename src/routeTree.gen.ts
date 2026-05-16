@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReferralRouteImport } from './routes/referral'
 import { Route as PostQueryRouteImport } from './routes/post-query'
 import { Route as MyQueriesRouteImport } from './routes/my-queries'
@@ -31,6 +32,11 @@ const WalletRoute = WalletRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReferralRoute = ReferralRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
   '/referral': typeof ReferralRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
   '/referral': typeof ReferralRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/my-queries': typeof MyQueriesRoute
   '/post-query': typeof PostQueryRoute
   '/referral': typeof ReferralRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/my-queries'
     | '/post-query'
     | '/referral'
+    | '/settings'
     | '/signup'
     | '/wallet'
     | '/admin/apply'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/my-queries'
     | '/post-query'
     | '/referral'
+    | '/settings'
     | '/signup'
     | '/wallet'
     | '/admin/apply'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/my-queries'
     | '/post-query'
     | '/referral'
+    | '/settings'
     | '/signup'
     | '/wallet'
     | '/admin/apply'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   MyQueriesRoute: typeof MyQueriesRoute
   PostQueryRoute: typeof PostQueryRoute
   ReferralRoute: typeof ReferralRoute
+  SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
@@ -213,6 +226,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/referral': {
@@ -302,6 +322,7 @@ const rootRouteChildren: RootRouteChildren = {
   MyQueriesRoute: MyQueriesRoute,
   PostQueryRoute: PostQueryRoute,
   ReferralRoute: ReferralRoute,
+  SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,

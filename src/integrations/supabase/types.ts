@@ -307,6 +307,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_demo_credits: { Args: { _amount: number }; Returns: Json }
       deduct_wallet_balance: {
         Args: {
           _amount: number
