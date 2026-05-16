@@ -75,11 +75,11 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {item.ai_report && (
+        {item.ai_report ? (
           <Button asChild size="sm" variant="outline">
             <Link to="/report/$queryId" params={{ queryId: item.id }}>View AI Report <ChevronRight className="h-3.5 w-3.5 ml-1" /></Link>
           </Button>
-        )}
+        ) : null}
         {videoAnswer && (
           <Button size="sm" onClick={() => setVideoOpen(true)} className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
             <Play className="h-3.5 w-3.5 mr-1.5" /> Watch Expert Answer
