@@ -158,14 +158,23 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, icon, highlight, loading }: { label: string; value?: number | string; icon: React.ReactNode; highlight?: boolean; loading?: boolean }) {
+function StatCard({ label, value, icon, highlight, loading, animate, prefix }: { label: string; value?: number | string; icon: React.ReactNode; highlight?: boolean; loading?: boolean; animate?: boolean; prefix?: string }) {
+  const isNumeric = typeof value === "number";
   return (
-    <Card className={`p-4 ${highlight ? "bg-gradient-to-br from-primary/10 to-accent/5 border-primary/30" : ""}`}>
+    <Card className={`glass-card p-4 ${highlight ? "bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30" : ""}`}>
       <div className="flex items-center justify-between text-muted-foreground text-xs">
         <span className="uppercase tracking-wider">{label}</span>
         {icon}
       </div>
-      {loading ? <Skeleton className="h-8 w-20 mt-2" /> : <p className="font-display text-3xl mt-1">{value ?? 0}</p>}
+      {loading ? (
+        <Skeleton className="h-8 w-20 mt-2" />
+      ) : animate && isNumeric ? (
+        <p className="font-display text-3xl mt-1">
+          <AnimatedCounter end={value as number} prefix={prefix} />
+        </p>
+      ) : (
+        <p className="font-display text-3xl mt-1">{prefix}{value ?? 0}</p>
+      )}
     </Card>
   );
 }
