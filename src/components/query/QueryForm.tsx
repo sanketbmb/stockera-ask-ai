@@ -184,15 +184,14 @@ export function QueryForm() {
 
       {step === 0 && (
         <div className="space-y-5">
-          <div className="grid sm:grid-cols-[1fr_180px] gap-3">
-            <div>
-              <Label htmlFor="stock">Stock name *</Label>
-              <Input id="stock" autoFocus placeholder="e.g. IDFC First Bank" value={stockName} onChange={(e) => setStockName(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="symbol">NSE Symbol</Label>
-              <Input id="symbol" placeholder="IDFCFIRSTB" value={stockSymbol} onChange={(e) => setStockSymbol(e.target.value.toUpperCase())} />
-            </div>
+          <div>
+            <Label>Stock *</Label>
+            <StockAutocomplete
+              autoFocus
+              value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
+              onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
+              onClear={() => { setStockName(""); setStockSymbol(""); }}
+            />
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
