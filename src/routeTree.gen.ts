@@ -17,6 +17,7 @@ import { Route as MyQueriesRouteImport } from './routes/my-queries'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
@@ -62,6 +63,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportQueryIdRoute = ReportQueryIdRouteImport.update({
+  id: '/report/$queryId',
+  path: '/report/$queryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminSuperRoute = AdminSuperRouteImport.update({
   id: '/admin/super',
   path: '/admin/super',
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/super': typeof AdminSuperRoute
+  '/report/$queryId': typeof ReportQueryIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/super': typeof AdminSuperRoute
+  '/report/$queryId': typeof ReportQueryIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/super': typeof AdminSuperRoute
+  '/report/$queryId': typeof ReportQueryIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/admin/super'
+    | '/report/$queryId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/admin/super'
+    | '/report/$queryId'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/admin/super'
+    | '/report/$queryId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminSuperRoute: typeof AdminSuperRoute
+  ReportQueryIdRoute: typeof ReportQueryIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report/$queryId': {
+      id: '/report/$queryId'
+      path: '/report/$queryId'
+      fullPath: '/report/$queryId'
+      preLoaderRoute: typeof ReportQueryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/super': {
       id: '/admin/super'
       path: '/admin/super'
@@ -288,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminSuperRoute: AdminSuperRoute,
+  ReportQueryIdRoute: ReportQueryIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { makePlaceholder } from "./post-query";
+import { makePlaceholder } from "@/components/common/Placeholder";
 
 export const Route = createFileRoute("/my-queries")({
   head: () => ({ meta: [{ title: "My Queries — Stockera" }] }),
