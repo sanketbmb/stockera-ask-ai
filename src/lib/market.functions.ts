@@ -92,13 +92,13 @@ export const getMarketSnapshot = createServerFn({ method: "GET" }).handler(
         .maybeSingle();
 
       if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
-        return { data: cached.data as MarketSnapshot, cached: true, error: null };
+        return { data: cached.data as unknown as MarketSnapshot, cached: true, error: null };
       }
 
       const fresh = await fetchFromGemini();
       if (!fresh) {
         if (cached?.data) {
-          return { data: cached.data as MarketSnapshot, cached: true, error: null };
+          return { data: cached.data as unknown as MarketSnapshot, cached: true, error: null };
         }
         return { data: FALLBACK, cached: false, error: "Using fallback data" };
       }
@@ -108,7 +108,7 @@ export const getMarketSnapshot = createServerFn({ method: "GET" }).handler(
         .from("market_cache")
         .upsert({
           id: CACHE_ID,
-          data: fresh,
+          data: fresh as unknown as Record<string, unknown>,
           expires_at: expiresAt,
           updated_at: new Date().toISOString(),
         });
