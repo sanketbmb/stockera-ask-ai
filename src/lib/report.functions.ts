@@ -50,7 +50,10 @@ export const generateAiReport = createServerFn({ method: "POST" })
     try {
       payload = responseText ? JSON.parse(responseText) : null;
     } catch {
-      payload = { message: responseText || response.statusText, code: "NON_JSON_EDGE_RESPONSE" };
+      const fallbackMsg = responseText
+        ? `Edge function returned non-JSON: ${responseText.slice(0, 200)}`
+        : `Edge function failed with HTTP ${response.status}: ${response.statusText}`;
+      payload = { message: fallbackMsg, code: "NON_JSON_EDGE_RESPONSE" };
     }
 
     if (!response.ok || !payload?.ok) {
@@ -59,10 +62,13 @@ export const generateAiReport = createServerFn({ method: "POST" })
         payload?.details ??
         (typeof payload?.error === "string" ? payload.error : undefined) ??
         `Report service returned HTTP ${response.status}`;
-      const stage = payload?.stage ? ` [stage: ${payload.stage}]` : "";
-      const code = payload?.code ? ` (${payload.code})` : "";
-      console.error("generateAiReport failure", { status: response.status, msg, stage, code, payload, responseText });
-      throw new Error(`${msg}${code}${stage}`);
+      const code = payload?.code ?? "";
+      const stage = payload?.stage ?? "";
+      const fullMsg = [msg, code ? `(${code})` : "", stage ? `[stage: ${stage}]` : ""].filter(Boolean).join(" ");
+      console.error("generateAiReport: throwing", fullMsg, { status: response.status, payload });
+      const err = new Error(fullMsg);
+      (err as Error & { cause?: unknown }).cause = { status: response.status, code, stage };
+      throw err;
     }
 
     return {
