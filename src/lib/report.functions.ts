@@ -10,6 +10,13 @@ export const generateAiReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => GenerateReportInput.parse(input))
   .handler(async ({ data, context }) => {
+    const { data: query, error: queryError } = await context.supabase
+      .from("queries")
+      .select("id")
+      .eq("id", data.queryId)
+      .single();
+    if (queryError || !query) throw new Error("Query not found for this user");
+
     const { data: payload, error } = await context.supabase.functions.invoke("generate-ai-report", {
       body: { query_id: data.queryId },
     });
