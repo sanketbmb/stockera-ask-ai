@@ -67,7 +67,7 @@ function extractFields(text: string): { stock?: string; buyPrice?: number; holdi
 
 export function QueryForm() {
   const navigate = useNavigate();
-  const { user, profile, refresh } = useAuth();
+  const { user, session, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
 
@@ -159,13 +159,27 @@ export function QueryForm() {
         payload: { intent, has_stock: !!stockSymbol },
       });
 
-      // Call new compliant edge function
+      const { data: { session: activeSession } } = await supabase.auth.getSession();
+      const accessToken = activeSession?.access_token ?? session?.access_token;
+      if (!accessToken) throw new Error("Session expired. Please sign in again and retry.");
+
+      // Call compliant edge function with an explicit bearer token so JWT-protected functions never miss auth.
       const { data: ai, error: aiErr } = await supabase.functions.invoke("generate-ai-report", {
+        headers: { Authorization: `Bearer ${accessToken}` },
         body: { query_id: queryId },
       });
       if (aiErr || !ai?.ok) {
-        const detail = (ai as { details?: string; error?: string } | null)?.details
+        let detail = (ai as { details?: string; error?: string } | null)?.details
           ?? (ai as { error?: string } | null)?.error ?? aiErr?.message ?? "Generation failed";
+        const response = (aiErr as { context?: Response } | null)?.context;
+        if (response) {
+          try {
+            const body = await response.clone().json() as { details?: string; error?: string; message?: string };
+            detail = body.details ?? body.error ?? body.message ?? detail;
+          } catch {
+            // Keep the best available message.
+          }
+        }
         throw new Error(detail);
       }
       await refresh();
