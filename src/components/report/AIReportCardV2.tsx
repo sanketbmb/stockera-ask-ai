@@ -250,9 +250,9 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         <Card className="p-5">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3">Analysis Confidence</p>
           <div className="grid sm:grid-cols-3 gap-4">
-            <ConfBar label="Data Coverage" value={report.confidence_breakdown.data_coverage} />
-            <ConfBar label="Recency" value={report.confidence_breakdown.recency} />
-            <ConfBar label="Specificity" value={report.confidence_breakdown.specificity} />
+            <ConfBar label="Data Coverage" value={coverPct} />
+            <ConfBar label="Recency" value={recencyPct} />
+            <ConfBar label="Specificity" value={specPct} />
           </div>
         </Card>
 
