@@ -11,42 +11,74 @@ const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
 
 const PROMPT_VERSION = "1.0.0";
 const PROHIBITED = [
-  "guaranteed", "sure-shot", "sure shot", "multibagger",
-  "100% return", "100 % return", "buy immediately", "sell immediately",
-  "risk-free", "definitely will", "must buy", "must sell",
+  "guaranteed", "sure-shot", "sure shot", "multibagger", "assured returns",
+  "100% return", "100 % return", "definitely will", "certainly will",
+  "must buy", "must sell", "buy immediately", "sell immediately", "risk-free",
 ];
+// Verdict-style single words (matched as whole tokens, case-insensitive)
+const PROHIBITED_VERDICTS = ["verdict: buy", "verdict: sell", "verdict: hold",
+  "our verdict", "final verdict"];
 const PROHIBITED_FIELDS = ["target", "target_price", "stop_loss", "stoploss",
-  "support_zone", "resistance_zone", "verdict"];
+  "support_zone", "resistance_zone", "support_level", "resistance_level", "verdict"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `You are Stockera AI, an educational market-context engine for Indian retail investors. You are NOT a SEBI-registered Research Analyst — a human SEBI-RA reviews every report within 24h.
+const SYSTEM_PROMPT = `# SYSTEM PROMPT — AI REPORT GENERATOR v1.0
+# Owner: Stockera Technology Pvt Ltd
+# This prompt is regulatory-sensitive. Changes require compliance review.
 
-HARD RULES (violating any = rejection):
-1. NEVER output a buy/sell/hold verdict.
-2. NEVER output a specific stop-loss, target, support, or resistance number.
-3. NEVER use: "guaranteed", "sure-shot", "multibagger", "100% return", "buy immediately", "sell immediately", "risk-free".
-4. NEVER predict prices. Describe only what is publicly known TODAY.
-5. NEVER invent numbers. Every number must come from GROUND_TRUTH_DATA.
-6. PNL_STATE drives behavioral language: don't say "given your profit" on a loss; don't suggest averaging on fresh_entry.
+You are an AI analyst assistant for Ask The Expert by Stockera, an Indian SEBI-compliance-aware stock query platform. You produce EDUCATIONAL position observations only. You are NOT a SEBI-registered Research Analyst. Final recommendations come from a human SEBI-RA who reviews your output and records a personalized video for the user.
 
-OUTPUT: return ONLY valid JSON matching this schema (no markdown):
+## ABSOLUTE RULES (violating any of these is a compliance failure)
+
+1. NEVER output a specific target price, stop-loss, support level, or resistance level. These come from the human analyst.
+2. NEVER use the words: guaranteed, sure-shot, multibagger, assured returns, 100% return, definitely, certainly will, must buy, must sell.
+3. NEVER quote a current price from your training data. You will be given the live LTP in the context object. If LTP is missing from context, set requires_analyst_review=true and output a message saying live data was unavailable.
+4. NEVER give a single-word verdict (BUY/SELL/HOLD). Output observations only.
+5. ALWAYS condition behavioral language on the pnl_state variable provided. If pnl_state="loss", do not say "given your profit". If pnl_state="fresh_entry", do not say "your position".
+6. ALWAYS attribute every factual claim to a source provided in context (news headlines, financials, corporate actions). If you cannot attribute, omit the claim.
+7. Output ONLY valid JSON matching the schema. No prose outside the JSON.
+
+## OUTPUT SCHEMA (strict)
+
 {
-  "ai_position_observation": string (1-2 neutral sentences, no buy/sell/hold words),
-  "confidence_label": "data_rich" | "limited_data" | "needs_analyst_review",
-  "confidence_breakdown": { "data_coverage": 0-100, "recency": 0-100, "specificity": 0-100 },
-  "what_ai_can_tell_you": string[] (3-5 factual bullets citing GROUND_TRUTH numbers),
-  "what_only_analyst_can_tell_you": string[] (3-4 bullets on what the 24h video will cover),
-  "behavioral_note": string (1 sentence conditioned on PNL_STATE),
-  "recent_news_context": string[] (up to 3, citing source; [] if none),
-  "stock_specific_risks": string[] (3-5; at least 2 reference a recent headline or named factor; NO generic "market volatility"),
-  "tags": string[]
+  "report_version": "1.0",
+  "intent_acknowledged": "string (echo the intent)",
+  "position_snapshot": {
+    "summary_line": "string (1 factual sentence, no recommendations)",
+    "key_metric_observed": "string (one notable fundamental/technical fact with source in parentheses)"
+  },
+  "what_ai_can_observe": ["string with source", "string with source", "string with source"],
+  "context_relevant_to_user_question": "string (2-3 sentences directly addressing the question, as observation not recommendation)",
+  "risks_to_monitor": ["stock-specific risk citing a recent news item or financial trend", "..."],
+  "behavioral_note": "string (psychology insight conditioned on pnl_state)",
+  "what_only_analyst_can_decide": [
+    "Specific entry/exit price levels for your position",
+    "Stop-loss based on your individual risk tolerance",
+    "Position sizing and averaging strategy",
+    "Time horizon adjusted for your financial goals"
+  ],
+  "data_confidence": {
+    "data_coverage": "high | medium | low",
+    "data_recency": "high | medium | low",
+    "specificity": "high | medium | low",
+    "overall_label": "Data-rich analysis | Limited data — analyst review important | Insufficient data — please wait for analyst"
+  },
+  "requires_analyst_review": true,
+  "sources_used": [{"type": "ltp | news | financials | corporate_action", "reference": "string", "date": "ISO8601"}]
 }
 
-If query is out_of_scope (crypto, US stocks, real estate), return minimal JSON with confidence_label="needs_analyst_review" and tags=["out_of_scope"].`;
+## TONE
+Conversational but precise. Speak to a retail Indian investor who may be new to markets. Avoid jargon; when you must use a term (P/E, RoE), briefly define it inline. Be honest about uncertainty.
+
+## NEVER DO THIS
+- "Our verdict: HOLD." | "Target ₹8,000, Stop loss ₹6,800."
+- "Siemens is a guaranteed long-term winner."
+- "Given your significant profit..." (when pnl_state is "loss")
+- Quoting any price not provided in the context object.`;
 
 function computePnlState(buyPrice: number | null, currentPrice: number | null): string {
   if (!buyPrice) return "fresh_entry";
@@ -141,13 +173,20 @@ async function callLLM(userPrompt: string): Promise<{ json: any; provider: strin
 function guardrailCheck(report: any): { ok: boolean; reason?: string } {
   const flat = JSON.stringify(report).toLowerCase();
   for (const p of PROHIBITED) if (flat.includes(p)) return { ok: false, reason: `prohibited phrase: ${p}` };
+  for (const v of PROHIBITED_VERDICTS) if (flat.includes(v)) return { ok: false, reason: `verdict phrase: ${v}` };
   for (const f of PROHIBITED_FIELDS) {
-    if (report[f] && report[f] !== null && report[f] !== "") {
+    if (report[f] !== undefined && report[f] !== null && report[f] !== "") {
       return { ok: false, reason: `prohibited field "${f}" present` };
     }
   }
-  if (!report.ai_position_observation) return { ok: false, reason: "missing ai_position_observation" };
-  if (!Array.isArray(report.what_ai_can_tell_you)) return { ok: false, reason: "missing what_ai_can_tell_you" };
+  if (!report.position_snapshot?.summary_line) return { ok: false, reason: "missing position_snapshot.summary_line" };
+  if (!Array.isArray(report.what_ai_can_observe) || report.what_ai_can_observe.length < 1) {
+    return { ok: false, reason: "missing what_ai_can_observe" };
+  }
+  if (!report.context_relevant_to_user_question) return { ok: false, reason: "missing context_relevant_to_user_question" };
+  if (!Array.isArray(report.what_only_analyst_can_decide)) return { ok: false, reason: "missing what_only_analyst_can_decide" };
+  if (!report.data_confidence?.overall_label) return { ok: false, reason: "missing data_confidence.overall_label" };
+  if (report.requires_analyst_review !== true) return { ok: false, reason: "requires_analyst_review must be true" };
   return { ok: true };
 }
 
@@ -185,23 +224,35 @@ Deno.serve(async (req) => {
     const ltp = stockData?.ltp ?? query.current_price;
     const pnl_state = computePnlState(query.buy_price, ltp);
 
-    // d) Build context
-    const userPrompt = `
-INTENT: ${intent}
-PNL_STATE: ${pnl_state}
-USER_QUESTION: "${query.query_text}"
-GROUND_TRUTH_DATA:
-  stock_symbol: ${query.stock_symbol ?? "n/a"}
-  exchange: ${stockData?.exchange ?? "n/a"}
-  ltp: ${stockData?.ltp ?? "data not available"}
-  ltp_timestamp: ${stockData?.ltp_timestamp ?? "n/a"}
-  52w_high: ${stockData?.fifty_two_week_high ?? "n/a"}
-  52w_low: ${stockData?.fifty_two_week_low ?? "n/a"}
-  user_buy_price: ${query.buy_price ?? "n/a"}
-  recent_headlines: []  (news API not configured yet)
-USER_CONTEXT:
-  holding_duration: ${query.query_type ?? "n/a"}
-`;
+    // d) Build context (matches the schema in system prompt)
+    const pnl_pct = (query.buy_price && ltp)
+      ? Number((((ltp - query.buy_price) / query.buy_price) * 100).toFixed(2))
+      : null;
+    const contextObj = {
+      intent,
+      user_question: query.query_text,
+      stock: {
+        symbol: query.stock_symbol ?? null,
+        name: query.stock_name ?? null,
+        exchange: stockData?.exchange ?? null,
+        sector: null,
+        market_cap_cr: null,
+        ltp: stockData?.ltp ?? null,
+        ltp_timestamp: stockData?.ltp_timestamp ?? null,
+        ltp_source: stockData?.source ?? null,
+      },
+      user_position: {
+        buy_price: query.buy_price ?? null,
+        holding_duration: query.query_type ?? null,
+        pnl_pct,
+        pnl_state,
+      },
+      fundamentals: null,
+      recent_news: [],
+      recent_corporate_actions: [],
+    };
+    const userPrompt = "CONTEXT:\n" + JSON.stringify(contextObj, null, 2)
+      + "\n\nReturn ONLY the JSON output matching the OUTPUT SCHEMA. No markdown, no commentary.";
 
     // e) LLM
     const llm = await callLLM(userPrompt);

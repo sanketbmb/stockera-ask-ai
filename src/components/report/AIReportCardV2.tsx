@@ -11,17 +11,35 @@ import {
 import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
 import { useAuth } from "@/contexts/AuthContext";
 
+// v1.0 schema (canonical) — older keys kept optional for backward compat
 export interface AIReportV2 {
-  ai_position_observation: string;
-  confidence_label: "data_rich" | "limited_data" | "needs_analyst_review";
-  confidence_breakdown: { data_coverage: number; recency: number; specificity: number };
-  what_ai_can_tell_you: string[];
-  what_only_analyst_can_tell_you: string[];
-  behavioral_note: string;
-  recent_news_context: string[];
-  stock_specific_risks: string[];
+  // v1.0 fields
+  report_version?: string;
+  intent_acknowledged?: string;
+  position_snapshot?: { summary_line?: string; key_metric_observed?: string };
+  what_ai_can_observe?: string[];
+  context_relevant_to_user_question?: string;
+  risks_to_monitor?: string[];
+  what_only_analyst_can_decide?: string[];
+  data_confidence?: {
+    data_coverage?: "high" | "medium" | "low";
+    data_recency?: "high" | "medium" | "low";
+    specificity?: "high" | "medium" | "low";
+    overall_label?: string;
+  };
+  requires_analyst_review?: boolean;
+  sources_used?: Array<{ type: string; reference: string; date?: string }>;
+  // legacy fields (fallback)
+  ai_position_observation?: string;
+  confidence_label?: "data_rich" | "limited_data" | "needs_analyst_review";
+  confidence_breakdown?: { data_coverage: number; recency: number; specificity: number };
+  what_ai_can_tell_you?: string[];
+  what_only_analyst_can_tell_you?: string[];
+  recent_news_context?: string[];
+  stock_specific_risks?: string[];
+  behavioral_note?: string;
   tags?: string[];
-  // meta injected by edge fn
+  // meta
   stock_symbol?: string | null;
   stock_name?: string;
   ltp_value?: number | null;
@@ -33,6 +51,8 @@ export interface AIReportV2 {
   report_id?: string;
   generated_at?: string;
 }
+
+const QUAL_TO_PCT: Record<string, number> = { high: 90, medium: 60, low: 30 };
 
 export interface ReportMetaV2 {
   id: string;
@@ -92,11 +112,31 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
   const deadline = useMemo(() => new Date(new Date(meta.createdAt).getTime() + 24 * 3_600_000), [meta.createdAt]);
   const { hours, mins, secs, done } = useCountdown(deadline);
 
+  // ---- Normalize v1.0 schema with legacy fallback ----
+  const observation =
+    report.position_snapshot?.summary_line
+    ?? report.ai_position_observation
+    ?? "";
+  const contextLine = report.context_relevant_to_user_question ?? "";
+  const aiBullets = report.what_ai_can_observe ?? report.what_ai_can_tell_you ?? [];
+  const analystBullets = report.what_only_analyst_can_decide ?? report.what_only_analyst_can_tell_you ?? [];
+  const riskBullets = report.risks_to_monitor ?? report.stock_specific_risks ?? [];
+  const newsBullets = (report.recent_news_context ?? []) as string[];
+  const dc = report.data_confidence;
+  const coverPct = report.confidence_breakdown?.data_coverage ?? QUAL_TO_PCT[dc?.data_coverage ?? "medium"];
+  const recencyPct = report.confidence_breakdown?.recency ?? QUAL_TO_PCT[dc?.data_recency ?? "medium"];
+  const specPct = report.confidence_breakdown?.specificity ?? QUAL_TO_PCT[dc?.specificity ?? "medium"];
+  const confLabelKey: "data_rich" | "limited_data" | "needs_analyst_review" =
+    report.confidence_label
+    ?? (dc?.overall_label?.startsWith("Data-rich") ? "data_rich"
+      : dc?.overall_label?.startsWith("Insufficient") ? "needs_analyst_review"
+      : "limited_data");
+
   const confLabel = {
     data_rich: { text: "Confidence: Data-rich", color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
     limited_data: { text: "Confidence: Limited data", color: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30" },
     needs_analyst_review: { text: "Confidence: Needs analyst review", color: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30" },
-  }[report.confidence_label];
+  }[confLabelKey];
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -162,7 +202,13 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
             <SnapStat label="Held" value={timeHeld(meta.createdAt)} />
             <SnapStat label="Intent" value={report.intent?.replace(/_/g, " ") ?? "—"} />
           </div>
-          <p className="text-base md:text-lg leading-relaxed text-foreground/90">{report.ai_position_observation}</p>
+          <p className="text-base md:text-lg leading-relaxed text-foreground/90">{observation}</p>
+          {report.position_snapshot?.key_metric_observed && (
+            <p className="mt-2 text-sm text-muted-foreground italic">{report.position_snapshot.key_metric_observed}</p>
+          )}
+          {contextLine && (
+            <p className="mt-3 text-sm text-foreground/85 border-l-2 border-primary/40 pl-3">{contextLine}</p>
+          )}
         </section>
 
         {/* ===== ANALYST VIDEO COUNTDOWN ===== */}
@@ -204,9 +250,9 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         <Card className="p-5">
           <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3">Analysis Confidence</p>
           <div className="grid sm:grid-cols-3 gap-4">
-            <ConfBar label="Data Coverage" value={report.confidence_breakdown.data_coverage} />
-            <ConfBar label="Recency" value={report.confidence_breakdown.recency} />
-            <ConfBar label="Specificity" value={report.confidence_breakdown.specificity} />
+            <ConfBar label="Data Coverage" value={coverPct} />
+            <ConfBar label="Recency" value={recencyPct} />
+            <ConfBar label="Specificity" value={specPct} />
           </div>
         </Card>
 
@@ -216,7 +262,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
             <h3 className="font-display text-lg flex items-center gap-2"><Info className="h-5 w-5 text-blue-500" /> What the AI can tell you</h3>
             <p className="text-[11px] text-muted-foreground mt-1">Factual observations from live data — no predictions.</p>
             <ul className="mt-3 space-y-2">
-              {report.what_ai_can_tell_you.map((p, i) => (
+              {aiBullets.map((p, i) => (
                 <li key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-1">•</span><span>{p}</span></li>
               ))}
             </ul>
@@ -225,7 +271,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
             <h3 className="font-display text-lg flex items-center gap-2"><Video className="h-5 w-5 text-primary" /> What only your analyst can tell you</h3>
             <p className="text-[11px] text-muted-foreground mt-1">Personal recommendations arriving in your 24h video.</p>
             <ul className="mt-3 space-y-2">
-              {report.what_only_analyst_can_tell_you.map((p, i) => (
+              {analystBullets.map((p, i) => (
                 <li key={i} className="flex gap-2 text-sm"><span className="text-primary mt-1">→</span><span>{p}</span></li>
               ))}
             </ul>
@@ -245,11 +291,11 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         </div>
 
         {/* ===== RECENT NEWS ===== */}
-        {report.recent_news_context.length > 0 && (
+        {newsBullets.length > 0 && (
           <Card className="p-5">
             <h3 className="font-display text-lg flex items-center gap-2"><Newspaper className="h-5 w-5 text-accent" /> Recent News Context</h3>
             <ul className="mt-3 space-y-2">
-              {report.recent_news_context.map((n, i) => <li key={i} className="text-sm text-foreground/85">• {n}</li>)}
+              {newsBullets.map((n, i) => <li key={i} className="text-sm text-foreground/85">• {n}</li>)}
             </ul>
           </Card>
         )}
@@ -258,7 +304,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         <Card className="p-5">
           <h3 className="font-display text-lg flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" /> Stock-Specific Risks</h3>
           <ul className="mt-3 space-y-2">
-            {report.stock_specific_risks.map((r, i) => (
+            {riskBullets.map((r, i) => (
               <li key={i} className="flex gap-2 text-sm"><AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" /><span>{r}</span></li>
             ))}
           </ul>
