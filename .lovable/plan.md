@@ -1,63 +1,52 @@
-## Plan to fix the report-generation failure
+## What went wrong
 
-### What I found
-- The current Edge Function already has a broad `try/catch`, but it returns `{ ok: false, error, details }`, while the frontend/server wrapper can still collapse failures into a generic message.
-- There are no recent `generate-ai-report` invocation logs visible, which suggests the failure may be happening before or during the server-function-to-edge-function call, or the deployed function is not logging enough.
-- `queries` rows are getting `ai_report` JSON, but `ai_reports` table is empty, and the Edge Function currently only logs `ai_reports insert err` without failing. That hides a likely database insert/schema/RLS issue.
+- The deployed Edge Function path is working for the existing Siemens query: it generated rows in `ai_reports` and updated `queries.ai_report`.
+- The visible problem is likely not “API key not triggering” anymore. The latest evidence shows Lovable Gateway successfully generated the Siemens report.
+- Two real gaps remain:
+  - The form only shows a small button spinner during submit, so users do not get a clear full “Generating report” state.
+  - Old report data and legacy UI still expose regulatory-risk fields like verdicts, targets, stop loss, support/resistance in several places.
+- The Edge Function currently embeds a shortened `SYSTEM_PROMPT` string even though the full versioned `system-prompt.md` exists. That means parts of the pasted compliance prompt are not actually being used by the LLM.
+- The Edge Function health check cannot be called without auth because `verify_jwt=true`; this makes debugging harder from the dashboard/tools.
 
-### Changes I will make
+## Implementation plan
 
-1. **Make `generate-ai-report` fully debuggable**
-   - Add a reusable response helper so every response includes:
-     - `Access-Control-Allow-Origin: *`
-     - `Access-Control-Allow-Methods: GET, POST, OPTIONS`
-     - `Access-Control-Allow-Headers: Content-Type, Authorization, apikey, x-client-info`
-     - `Content-Type: application/json`
-   - Handle `OPTIONS` at the very top.
-   - Add a `GET` health-check endpoint returning:
-     - environment key presence checks
-     - `ai_reports` table existence
-     - `audit_events` table existence
+1. **Make report submission visibly generate**
+   - Update `QueryForm` so submit immediately switches to a clear generation state.
+   - Show a disabled full-width button/status panel with stages like “Creating query”, “Generating AI context”, “Preparing report”.
+   - Keep the current toast, but add console logging of the real error object for debugging.
+   - If report generation fails after the query is created, still navigate to the report page with a pending/error status instead of leaving the user stuck on the form.
 
-2. **Add step-by-step logs in the Edge Function**
-   - Log each major phase:
-     - function invoked
-     - env vars checked
-     - query fetched
-     - stock/LTP resolved
-     - LLM call started
-     - LLM response received
-     - guardrail/schema validation
-     - `ai_reports` insert
-     - `queries` update
-     - audit log
-     - response returned
-   - Include safe debug context like `query_id`, `stock_symbol`, `intent`, `provider`, `response_length`, and Supabase error codes/messages.
+2. **Use the real versioned system prompt**
+   - Replace the shortened inline prompt in `generate-ai-report/index.ts` with the full content from `system-prompt.md`.
+   - Bump `PROMPT_VERSION` to match the file version.
+   - Add missing strict prompt rules already present in `system-prompt.md`: source attribution, no factual claims without context, exact schema, and `requires_analyst_review=true`.
 
-3. **Return structured errors instead of “Unknown”**
-   - Replace the catch response with the requested shape:
-     - `error: true`
-     - `ok: false`
-     - `code`
-     - `message`
-     - `hint`
-     - `stage`
-   - Log `REPORT_GEN_ERROR` with message, stack, timestamp, and failing stage.
+3. **Strengthen Edge Function error/debug output**
+   - Keep the existing step logs and structured errors.
+   - Add `stage`, `query_id`, `provider`, and safe config flags into all failure responses.
+   - Make the `GET` health check usable by either documenting it requires auth, or if acceptable, set `verify_jwt=false` and enforce auth only for POST inside the function. I recommend the latter for easier health checks while keeping report generation protected.
 
-4. **Stop hiding the likely DB insert failure**
-   - Change the `ai_reports` insert from “log and continue” to a real failure if Supabase returns an insert error.
-   - This will tell us exactly if the empty `ai_reports` table is the root cause.
+4. **Remove live regulatory hazards from the app UI**
+   - Remove or neutralize legacy `AIReportCard` usage/path if it is unused.
+   - Update landing/query preview components so they no longer display “verdict”, “target”, “support”, “stop loss”, or “AI-powered target / stop-loss” language.
+   - Change demo/social proof copy to educational context + analyst follow-up language.
+   - Keep portfolio user-defined target/stop-loss tracking separate, but avoid saying AI sets them.
 
-5. **Improve frontend/server error display**
-   - Update `src/lib/report.functions.ts` to parse the Edge Function response body consistently and throw the real `message`, `details`, or `code`.
-   - Update `QueryForm.tsx` toast/error logging so the user sees the actual failure reason, not `Unknown`.
+5. **Sanitize existing old reports at display time**
+   - On the report route/component, detect legacy report shape (`verdict`, `target1`, `stopLoss`, `supportZone`, `resistanceZone`).
+   - If legacy shape is detected, show a “beta/testing report retired” safe message or convert to the new educational-only view without displaying restricted fields.
+   - This avoids old rows continuing to leak prohibited outputs.
 
-6. **Timeout/deployment config**
-   - Add the function timeout setting to `supabase/config.toml` if supported by this project’s Supabase config format.
-   - Keep `verify_jwt = true` for security.
+6. **Validate the full flow**
+   - Deploy `generate-ai-report` after edits.
+   - Trigger report generation from the preview form.
+   - Check network/server/Edge Function logs.
+   - Confirm a new `ai_reports` row is created, `queries.status` becomes `ai_answered`, and the report page shows only the new compliance-safe schema.
 
-7. **Redeploy and verify**
-   - Redeploy `generate-ai-report`.
-   - Call the new `GET` health check.
-   - Trigger/report-test against a recent query if auth is available.
-   - Check Edge Function logs for the exact failing `STEP` and fix the root cause from that result.
+## Technical notes
+
+- `ai_reports` and `audit_events` already exist, and recent rows confirm inserts are happening.
+- `LOVABLE_API_KEY` exists and has successfully generated at least one Siemens report.
+- Direct `GEMINI_API_KEY` previously hit quota/rate limit, so Lovable Gateway fallback should remain enabled.
+- I will not change database schema unless a fresh failure shows a schema mismatch.
+- I will not answer business/legal questions like SEBI-RA partnership status; those are decisions for your team, but the app should treat analyst recommendations as unavailable until that partnership is legally ready.

@@ -134,11 +134,15 @@ export function QueryForm() {
     }
   };
 
+  const [genStage, setGenStage] = useState<"idle" | "creating" | "generating" | "redirecting">("idle");
+
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
 
     setSubmitting(true);
+    setGenStage("creating");
+    let createdQueryId: string | null = null;
     try {
       const { data: inserted, error: qErr } = await supabase
         .from("queries").insert({
@@ -155,22 +159,35 @@ export function QueryForm() {
       if (qErr || !inserted) throw qErr ?? new Error("Failed to create query");
 
       const queryId = inserted.id as string;
+      createdQueryId = queryId;
 
-      // Audit: query submitted
-      await supabase.from("audit_events").insert({
+      // Audit: query submitted (non-fatal)
+      supabase.from("audit_events").insert({
         event_type: "query_submitted", actor_id: user.id,
         resource_type: "query", resource_id: queryId,
         payload: { intent, has_stock: !!stockSymbol },
-      });
+      }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      await runGenerateAiReport({ data: { queryId } });
+      setGenStage("generating");
+      try {
+        await runGenerateAiReport({ data: { queryId } });
+        toast.success("AI context report ready · Analyst video within 24h");
+      } catch (genErr) {
+        console.error("[generateAiReport] failed", genErr);
+        toast.error(`Report generation failed: ${genErr instanceof Error ? genErr.message : "Unknown"}. Opening report — it will refresh once ready.`);
+      }
       await refresh();
-      toast.success("AI context report ready · Analyst video within 24h");
+      setGenStage("redirecting");
       navigate({ to: "/report/$queryId", params: { queryId } });
     } catch (e) {
-      toast.error(`Report generation failed: ${e instanceof Error ? e.message : "Unknown"}`);
-    } finally {
-      setSubmitting(false);
+      console.error("[handleSubmit] failed", e);
+      if (createdQueryId) {
+        navigate({ to: "/report/$queryId", params: { queryId: createdQueryId } });
+      } else {
+        toast.error(`Could not create query: ${e instanceof Error ? e.message : "Unknown"}`);
+        setGenStage("idle");
+        setSubmitting(false);
+      }
     }
   };
 
@@ -384,6 +401,25 @@ export function QueryForm() {
               I understand the AI report is educational context only — not SEBI investment advice. Personalized recommendations come from a SEBI-Registered Research Analyst within 24 hours.
             </span>
           </label>
+        </div>
+      )}
+
+      {submitting && (
+        <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold">
+                {genStage === "creating" && "Submitting your query…"}
+                {genStage === "generating" && "Generating your AI context report…"}
+                {genStage === "redirecting" && "Opening your report…"}
+                {genStage === "idle" && "Working…"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                This usually takes 10–30 seconds. The page will open automatically.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
