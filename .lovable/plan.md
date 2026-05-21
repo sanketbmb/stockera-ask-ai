@@ -1,52 +1,46 @@
-## What went wrong
+# Fix "Report generation failed: Unknown"
 
-- The deployed Edge Function path is working for the existing Siemens query: it generated rows in `ai_reports` and updated `queries.ai_report`.
-- The visible problem is likely not “API key not triggering” anymore. The latest evidence shows Lovable Gateway successfully generated the Siemens report.
-- Two real gaps remain:
-  - The form only shows a small button spinner during submit, so users do not get a clear full “Generating report” state.
-  - Old report data and legacy UI still expose regulatory-risk fields like verdicts, targets, stop loss, support/resistance in several places.
-- The Edge Function currently embeds a shortened `SYSTEM_PROMPT` string even though the full versioned `system-prompt.md` exists. That means parts of the pasted compliance prompt are not actually being used by the LLM.
-- The Edge Function health check cannot be called without auth because `verify_jwt=true`; this makes debugging harder from the dashboard/tools.
+Root cause: `GEMINI_API_KEY` likely not set as a Supabase Edge Function secret, and several layers are masking the real error so the UI just says "Unknown". This plan applies 5 targeted code fixes + a setup reminder on the admin page.
 
-## Implementation plan
+## FIX 1 — Migration hint (root cause documentation)
+**File:** `supabase/migrations/<timestamp>_add_gemini_api_key_hint.sql` (new)
+Comment-only migration telling future devs to set `GEMINI_API_KEY` in Supabase Dashboard → Project Settings → Edge Functions → Secrets. No schema changes.
 
-1. **Make report submission visibly generate**
-   - Update `QueryForm` so submit immediately switches to a clear generation state.
-   - Show a disabled full-width button/status panel with stages like “Creating query”, “Generating AI context”, “Preparing report”.
-   - Keep the current toast, but add console logging of the real error object for debugging.
-   - If report generation fails after the query is created, still navigate to the report page with a pending/error status instead of leaving the user stuck on the form.
+## FIX 2 — Edge function `callLLM` + `fetchStockData`
+**File:** `supabase/functions/generate-ai-report/index.ts`
+- Replace `callLLM` entirely:
+  - Drop `responseMimeType: "application/json"` from Gemini direct call (it conflicts with the full SYSTEM_PROMPT and often produces empty `parts[]`).
+  - Move SYSTEM_PROMPT into proper `systemInstruction.parts[]`.
+  - Throw real errors on HTTP failure / empty `parts[0].text` instead of silent fallthrough.
+  - Strip ```json fences before `JSON.parse`.
+  - Lovable fallback unchanged in behavior but now also strips fences and surfaces real errors.
+- In `fetchStockData` Gemini block: remove `responseMimeType: "application/json"`, set `temperature: 0.1`, wrap `JSON.parse(text)` in try/catch returning `null`.
+- Redeploy the function.
 
-2. **Use the real versioned system prompt**
-   - Replace the shortened inline prompt in `generate-ai-report/index.ts` with the full content from `system-prompt.md`.
-   - Bump `PROMPT_VERSION` to match the file version.
-   - Add missing strict prompt rules already present in `system-prompt.md`: source attribution, no factual claims without context, exact schema, and `requires_analyst_review=true`.
+## FIX 3 — Auth middleware uses `getUser()` not `getClaims()`
+**File:** `src/integrations/supabase/auth-middleware.ts` (lines 63–78)
+Swap `supabase.auth.getClaims(token)` for `supabase.auth.getUser(token)`, log failures, return `userId: userData.user.id`, `claims: userData.user`. `getClaims` is unreliable on edge and silently rejecting valid tokens — masking auth failures as "Unknown".
 
-3. **Strengthen Edge Function error/debug output**
-   - Keep the existing step logs and structured errors.
-   - Add `stage`, `query_id`, `provider`, and safe config flags into all failure responses.
-   - Make the `GET` health check usable by either documenting it requires auth, or if acceptable, set `verify_jwt=false` and enforce auth only for POST inside the function. I recommend the latter for easier health checks while keeping report generation protected.
+## FIX 4 — Surface real server-fn errors over the wire
+**File:** `src/lib/report.functions.ts`
+- Replace the `throw new Error(...)` block at the end of the handler with one that builds a full message, logs it, attaches `cause = { status, code, stage }`, and throws.
+- Replace the non-JSON `catch` fallback with a richer message that includes the first 200 chars of the raw response or HTTP status text.
 
-4. **Remove live regulatory hazards from the app UI**
-   - Remove or neutralize legacy `AIReportCard` usage/path if it is unused.
-   - Update landing/query preview components so they no longer display “verdict”, “target”, “support”, “stop loss”, or “AI-powered target / stop-loss” language.
-   - Change demo/social proof copy to educational context + analyst follow-up language.
-   - Keep portfolio user-defined target/stop-loss tracking separate, but avoid saying AI sets them.
+## FIX 5 — Robust error extraction in QueryForm
+**File:** `src/components/query/QueryForm.tsx` (line 177)
+Replace `genErr instanceof Error ? genErr.message : "Unknown"` with an `extractMsg` helper that walks plain objects (`.message`, `.data.message`, falls back to JSON snippet). Log the raw object. TanStack Start serializes server errors as plain objects — `instanceof Error` is always false across the boundary, which is why every failure currently says "Unknown".
 
-5. **Sanitize existing old reports at display time**
-   - On the report route/component, detect legacy report shape (`verdict`, `target1`, `stopLoss`, `supportZone`, `resistanceZone`).
-   - If legacy shape is detected, show a “beta/testing report retired” safe message or convert to the new educational-only view without displaying restricted fields.
-   - This avoids old rows continuing to leak prohibited outputs.
+## Admin observability (new)
+**File:** `src/pages/admin/SuperAdmin.tsx`
+- Add an amber warning banner at the top of the page:
+  > ⚠️ REQUIRED SETUP: Go to Supabase Dashboard → Project Settings → Edge Functions → Secrets and add `GEMINI_API_KEY`. Without this, AI reports cannot generate.
+- Add a **"Test AI Report Engine"** button next to it. Clicking calls the edge function's `GET /generate-ai-report` health endpoint (already implemented) via `fetch` with the publishable apikey + user bearer token, and renders the JSON response inline — highlighting `gemini_key_set: true/false`, `lovable_key_set`, and `tables_check`.
 
-6. **Validate the full flow**
-   - Deploy `generate-ai-report` after edits.
-   - Trigger report generation from the preview form.
-   - Check network/server/Edge Function logs.
-   - Confirm a new `ai_reports` row is created, `queries.status` becomes `ai_answered`, and the report page shows only the new compliance-safe schema.
+## Verification
+1. Deploy the edge function.
+2. Hit "Test AI Report Engine" on `/admin/super` — confirm `gemini_key_set: true` (after user sets the secret) or see exactly which env var is missing.
+3. Submit a real query from `/post-query`. If it still fails, the toast will now show the actual stage + code + message (e.g. `Gemini API HTTP 403: API key not valid (REPORT_GEN_FAILED) [stage: llm]`) instead of "Unknown".
 
-## Technical notes
-
-- `ai_reports` and `audit_events` already exist, and recent rows confirm inserts are happening.
-- `LOVABLE_API_KEY` exists and has successfully generated at least one Siemens report.
-- Direct `GEMINI_API_KEY` previously hit quota/rate limit, so Lovable Gateway fallback should remain enabled.
-- I will not change database schema unless a fresh failure shows a schema mismatch.
-- I will not answer business/legal questions like SEBI-RA partnership status; those are decisions for your team, but the app should treat analyst recommendations as unavailable until that partnership is legally ready.
+## Notes (not changing)
+- `supabase/config.toml`, `report.$queryId.tsx`, system prompt content — untouched.
+- The existing `GEMINI_API_KEY` secret IS listed in the project secrets, but the edge function may have a stale deployment or the key may be invalid/quota-zero. The health-check button will tell us which.
