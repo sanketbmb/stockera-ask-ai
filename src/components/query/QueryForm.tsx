@@ -173,8 +173,24 @@ export function QueryForm() {
         await runGenerateAiReport({ data: { queryId } });
         toast.success("AI context report ready · Analyst video within 24h");
       } catch (genErr) {
-        console.error("[generateAiReport] failed", genErr);
-        toast.error(`Report generation failed: ${genErr instanceof Error ? genErr.message : "Unknown"}. Opening report — it will refresh once ready.`);
+        // TanStack Start serializes server errors as plain objects, not Error instances
+        const extractMsg = (e: unknown): string => {
+          if (e instanceof Error) return e.message;
+          if (e && typeof e === "object") {
+            const obj = e as Record<string, unknown>;
+            return (
+              (typeof obj.message === "string" && obj.message) ||
+              (typeof obj.data === "object" && obj.data && typeof (obj.data as Record<string, unknown>).message === "string"
+                ? ((obj.data as Record<string, unknown>).message as string)
+                : "") ||
+              JSON.stringify(e).slice(0, 150)
+            );
+          }
+          return String(e) || "Unknown error";
+        };
+        const errMsg = extractMsg(genErr);
+        console.error("[generateAiReport] raw error object:", genErr);
+        toast.error(`Report generation failed: ${errMsg}. Opening report — it will refresh once ready.`);
       }
       await refresh();
       setGenStage("redirecting");
