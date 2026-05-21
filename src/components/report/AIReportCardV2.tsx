@@ -202,7 +202,13 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
             <SnapStat label="Held" value={timeHeld(meta.createdAt)} />
             <SnapStat label="Intent" value={report.intent?.replace(/_/g, " ") ?? "—"} />
           </div>
-          <p className="text-base md:text-lg leading-relaxed text-foreground/90">{report.ai_position_observation}</p>
+          <p className="text-base md:text-lg leading-relaxed text-foreground/90">{observation}</p>
+          {report.position_snapshot?.key_metric_observed && (
+            <p className="mt-2 text-sm text-muted-foreground italic">{report.position_snapshot.key_metric_observed}</p>
+          )}
+          {contextLine && (
+            <p className="mt-3 text-sm text-foreground/85 border-l-2 border-primary/40 pl-3">{contextLine}</p>
+          )}
         </section>
 
         {/* ===== ANALYST VIDEO COUNTDOWN ===== */}
