@@ -80,6 +80,7 @@ export function QueryForm() {
   const [stockName, setStockName] = useState("");
   const [stockSymbol, setStockSymbol] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
+  const [currentPrice, setCurrentPrice] = useState("");
   const [holding, setHolding] = useState("");
   const [horizon, setHorizon] = useState("");
   const [language, setLanguage] = useState("English");
