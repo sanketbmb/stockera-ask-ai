@@ -112,11 +112,31 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
   const deadline = useMemo(() => new Date(new Date(meta.createdAt).getTime() + 24 * 3_600_000), [meta.createdAt]);
   const { hours, mins, secs, done } = useCountdown(deadline);
 
+  // ---- Normalize v1.0 schema with legacy fallback ----
+  const observation =
+    report.position_snapshot?.summary_line
+    ?? report.ai_position_observation
+    ?? "";
+  const contextLine = report.context_relevant_to_user_question ?? "";
+  const aiBullets = report.what_ai_can_observe ?? report.what_ai_can_tell_you ?? [];
+  const analystBullets = report.what_only_analyst_can_decide ?? report.what_only_analyst_can_tell_you ?? [];
+  const riskBullets = report.risks_to_monitor ?? report.stock_specific_risks ?? [];
+  const newsBullets = (report.recent_news_context ?? []) as string[];
+  const dc = report.data_confidence;
+  const coverPct = report.confidence_breakdown?.data_coverage ?? QUAL_TO_PCT[dc?.data_coverage ?? "medium"];
+  const recencyPct = report.confidence_breakdown?.recency ?? QUAL_TO_PCT[dc?.data_recency ?? "medium"];
+  const specPct = report.confidence_breakdown?.specificity ?? QUAL_TO_PCT[dc?.specificity ?? "medium"];
+  const confLabelKey: "data_rich" | "limited_data" | "needs_analyst_review" =
+    report.confidence_label
+    ?? (dc?.overall_label?.startsWith("Data-rich") ? "data_rich"
+      : dc?.overall_label?.startsWith("Insufficient") ? "needs_analyst_review"
+      : "limited_data");
+
   const confLabel = {
     data_rich: { text: "Confidence: Data-rich", color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
     limited_data: { text: "Confidence: Limited data", color: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30" },
     needs_analyst_review: { text: "Confidence: Needs analyst review", color: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30" },
-  }[report.confidence_label];
+  }[confLabelKey];
 
   const handleShare = async () => {
     const url = window.location.href;
