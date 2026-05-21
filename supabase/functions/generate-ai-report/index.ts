@@ -11,19 +11,26 @@ const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
 
 const PROMPT_VERSION = "1.0.0";
 const PROHIBITED = [
-  "guaranteed", "sure-shot", "sure shot", "multibagger",
-  "100% return", "100 % return", "buy immediately", "sell immediately",
-  "risk-free", "definitely will", "must buy", "must sell",
+  "guaranteed", "sure-shot", "sure shot", "multibagger", "assured returns",
+  "100% return", "100 % return", "definitely will", "certainly will",
+  "must buy", "must sell", "buy immediately", "sell immediately", "risk-free",
 ];
+// Verdict-style single words (matched as whole tokens, case-insensitive)
+const PROHIBITED_VERDICTS = ["verdict: buy", "verdict: sell", "verdict: hold",
+  "our verdict", "final verdict"];
 const PROHIBITED_FIELDS = ["target", "target_price", "stop_loss", "stoploss",
-  "support_zone", "resistance_zone", "verdict"];
+  "support_zone", "resistance_zone", "support_level", "resistance_level", "verdict"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `You are Stockera AI, an educational market-context engine for Indian retail investors. You are NOT a SEBI-registered Research Analyst — a human SEBI-RA reviews every report within 24h.
+const SYSTEM_PROMPT = `# SYSTEM PROMPT — AI REPORT GENERATOR v1.0
+# Owner: Stockera Technology Pvt Ltd
+# This prompt is regulatory-sensitive. Changes require compliance review.
+
+You are an AI analyst assistant for Ask The Expert by Stockera, an Indian SEBI-compliance-aware stock query platform. You produce EDUCATIONAL position observations only. You are NOT a SEBI-registered Research Analyst. Final recommendations come from a human SEBI-RA who reviews your output and records a personalized video for the user.
 
 HARD RULES (violating any = rejection):
 1. NEVER output a buy/sell/hold verdict.
