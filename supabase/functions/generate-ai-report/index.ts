@@ -173,13 +173,20 @@ async function callLLM(userPrompt: string): Promise<{ json: any; provider: strin
 function guardrailCheck(report: any): { ok: boolean; reason?: string } {
   const flat = JSON.stringify(report).toLowerCase();
   for (const p of PROHIBITED) if (flat.includes(p)) return { ok: false, reason: `prohibited phrase: ${p}` };
+  for (const v of PROHIBITED_VERDICTS) if (flat.includes(v)) return { ok: false, reason: `verdict phrase: ${v}` };
   for (const f of PROHIBITED_FIELDS) {
-    if (report[f] && report[f] !== null && report[f] !== "") {
+    if (report[f] !== undefined && report[f] !== null && report[f] !== "") {
       return { ok: false, reason: `prohibited field "${f}" present` };
     }
   }
-  if (!report.ai_position_observation) return { ok: false, reason: "missing ai_position_observation" };
-  if (!Array.isArray(report.what_ai_can_tell_you)) return { ok: false, reason: "missing what_ai_can_tell_you" };
+  if (!report.position_snapshot?.summary_line) return { ok: false, reason: "missing position_snapshot.summary_line" };
+  if (!Array.isArray(report.what_ai_can_observe) || report.what_ai_can_observe.length < 1) {
+    return { ok: false, reason: "missing what_ai_can_observe" };
+  }
+  if (!report.context_relevant_to_user_question) return { ok: false, reason: "missing context_relevant_to_user_question" };
+  if (!Array.isArray(report.what_only_analyst_can_decide)) return { ok: false, reason: "missing what_only_analyst_can_decide" };
+  if (!report.data_confidence?.overall_label) return { ok: false, reason: "missing data_confidence.overall_label" };
+  if (report.requires_analyst_review !== true) return { ok: false, reason: "requires_analyst_review must be true" };
   return { ok: true };
 }
 
