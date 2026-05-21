@@ -15,31 +15,41 @@ export const generateAiReport = createServerFn({ method: "POST" })
       .select("id")
       .eq("id", data.queryId)
       .single();
-    if (queryError || !query) throw new Error("Query not found for this user");
+    if (queryError || !query) {
+      throw new Error(`Query not found for this user: ${queryError?.message ?? data.queryId}`);
+    }
 
     const { data: payload, error } = await context.supabase.functions.invoke("generate-ai-report", {
       body: { query_id: data.queryId },
     });
 
-    const response = (error as { context?: Response } | null)?.context;
-    if (error || !payload?.ok) {
-      let detail = (payload as { details?: string; error?: string; message?: string } | null)?.details
-        ?? (payload as { error?: string; message?: string } | null)?.error
-        ?? error?.message
-        ?? "Generation failed";
-      if (response) {
-        try {
-          const body = await response.clone().json() as { details?: string; error?: string; message?: string };
-          detail = body.details ?? body.error ?? body.message ?? detail;
-        } catch {
-          // Keep the best available message.
-        }
-      }
-      throw new Error(detail);
+    // Try to read structured error body from the FunctionsHttpError response
+    let bodyDetail: { message?: string; details?: string; code?: string; stage?: string; error?: string } | null = null;
+    const fnRes = (error as { context?: Response } | null)?.context;
+    if (fnRes) {
+      try { bodyDetail = await fnRes.clone().json(); } catch { /* ignore */ }
+    }
+    if (!bodyDetail && payload && typeof payload === "object") {
+      bodyDetail = payload as typeof bodyDetail;
+    }
+
+    if (error || !(payload as { ok?: boolean } | null)?.ok) {
+      const msg =
+        bodyDetail?.message ??
+        bodyDetail?.details ??
+        bodyDetail?.error ??
+        error?.message ??
+        "Report generation failed";
+      const stage = bodyDetail?.stage ? ` [stage: ${bodyDetail.stage}]` : "";
+      const code = bodyDetail?.code ? ` (${bodyDetail.code})` : "";
+      console.error("generateAiReport failure", { msg, stage, code, bodyDetail, error });
+      throw new Error(`${msg}${code}${stage}`);
     }
 
     return {
       ok: true,
-      ai_report_id: typeof payload.ai_report_id === "string" ? payload.ai_report_id : null,
+      ai_report_id: typeof (payload as { ai_report_id?: unknown }).ai_report_id === "string"
+        ? (payload as { ai_report_id: string }).ai_report_id
+        : null,
     };
   });
