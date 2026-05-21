@@ -34,6 +34,5 @@ export const generateAiReport = createServerFn({ method: "POST" })
     return {
       ok: true,
       ai_report_id: typeof payload.ai_report_id === "string" ? payload.ai_report_id : null,
-      report: payload.report && typeof payload.report === "object" ? payload.report as Record<string, unknown> : null,
     };
   });
