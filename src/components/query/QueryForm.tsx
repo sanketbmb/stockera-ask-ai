@@ -142,7 +142,7 @@ export function QueryForm() {
           stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
           stock_symbol: stockSymbol || null,
           buy_price: buyPrice ? Number(buyPrice) : null,
-          current_price: null,
+          current_price: currentPrice ? Number(currentPrice) : null,
           query_text: queryText,
           query_type: intent,
           assigned_analyst_id: analystId,
