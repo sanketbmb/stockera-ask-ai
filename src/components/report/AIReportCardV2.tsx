@@ -262,7 +262,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
             <h3 className="font-display text-lg flex items-center gap-2"><Info className="h-5 w-5 text-blue-500" /> What the AI can tell you</h3>
             <p className="text-[11px] text-muted-foreground mt-1">Factual observations from live data — no predictions.</p>
             <ul className="mt-3 space-y-2">
-              {report.what_ai_can_tell_you.map((p, i) => (
+              {aiBullets.map((p, i) => (
                 <li key={i} className="flex gap-2 text-sm"><span className="text-blue-500 mt-1">•</span><span>{p}</span></li>
               ))}
             </ul>
