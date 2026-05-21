@@ -309,21 +309,92 @@ function UsersTab() {
   );
 }
 
+function AiEngineHealthCheck() {
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ai-report`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+      });
+      const txt = await res.text();
+      try { setResult(JSON.parse(txt)); }
+      catch { setResult({ raw: txt, http_status: res.status }); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const env = (result?.env_check ?? {}) as Record<string, boolean>;
+  const tables = (result?.tables_check ?? {}) as Record<string, boolean>;
+
+  return (
+    <Card className="p-4 border-amber-500/50 bg-amber-500/5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-[260px]">
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">⚠️ REQUIRED SETUP</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Go to <strong>Supabase Dashboard → Project Settings → Edge Functions → Secrets</strong> and add <code className="font-mono bg-muted px-1 rounded">GEMINI_API_KEY</code> from <a className="underline" href="https://aistudio.google.com" target="_blank" rel="noreferrer">aistudio.google.com</a>. Without this, AI reports cannot generate.
+          </p>
+        </div>
+        <Button onClick={run} disabled={loading} size="sm">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Test AI Report Engine
+        </Button>
+      </div>
+      {error && <p className="text-xs text-destructive mt-3">{error}</p>}
+      {result && (
+        <div className="mt-3 space-y-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {Object.entries(env).map(([k, v]) => (
+              <Badge key={k} variant={v ? "default" : "destructive"} className="justify-start font-mono">
+                {v ? "✓" : "✗"} {k}
+              </Badge>
+            ))}
+            {Object.entries(tables).map(([k, v]) => (
+              <Badge key={k} variant={v ? "default" : "destructive"} className="justify-start font-mono">
+                {v ? "✓" : "✗"} {k}
+              </Badge>
+            ))}
+          </div>
+          <pre className="text-[10px] bg-muted p-2 rounded overflow-x-auto max-h-40">{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function SuperAdmin() {
   return (
     <AdminShell title="Super Admin Console">
-      <Tabs defaultValue="stats" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="stats">Platform Stats</TabsTrigger>
-          <TabsTrigger value="queries">All Queries</TabsTrigger>
-          <TabsTrigger value="analysts">Analysts</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-        </TabsList>
-        <TabsContent value="stats"><PlatformStats /></TabsContent>
-        <TabsContent value="queries"><AllQueriesTab /></TabsContent>
-        <TabsContent value="analysts"><AnalystManagementTab /></TabsContent>
-        <TabsContent value="users"><UsersTab /></TabsContent>
-      </Tabs>
+      <div className="space-y-4">
+        <AiEngineHealthCheck />
+        <Tabs defaultValue="stats" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="stats">Platform Stats</TabsTrigger>
+            <TabsTrigger value="queries">All Queries</TabsTrigger>
+            <TabsTrigger value="analysts">Analysts</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
+          </TabsList>
+          <TabsContent value="stats"><PlatformStats /></TabsContent>
+          <TabsContent value="queries"><AllQueriesTab /></TabsContent>
+          <TabsContent value="analysts"><AnalystManagementTab /></TabsContent>
+          <TabsContent value="users"><UsersTab /></TabsContent>
+        </Tabs>
+      </div>
     </AdminShell>
   );
 }
