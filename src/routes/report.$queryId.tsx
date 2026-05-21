@@ -5,28 +5,20 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
 import { Progress } from "@/components/ui/progress";
-import { AIReportCard, type AIReport, type ReportMeta } from "@/components/report/AIReportCard";
+import { AIReportCardV2, type AIReportV2, type ReportMetaV2 } from "@/components/report/AIReportCardV2";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 const LOADING_STEPS = [
-  "Connecting to market data…",
-  "Analyzing fundamentals…",
-  "Running technical scan…",
-  "Generating report…",
-];
-
-const FUN_FACTS = [
-  "73% of retail investors hold losing stocks too long due to loss aversion.",
-  "Indian retail equity participation has doubled since 2020 to over 14 crore demat accounts.",
-  "Discipline beats timing — SIPs have outperformed lump-sum 68% of the time over 10y periods.",
+  "Connecting to live market data…",
+  "Classifying your question…",
+  "Fetching fundamentals & headlines…",
+  "Running compliance guardrails…",
 ];
 
 function LoadingScreen() {
   const [progress, setProgress] = useState(8);
   const [stepIdx, setStepIdx] = useState(0);
-  const [fact] = useState(() => FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)]);
-
   useEffect(() => {
     const id = setInterval(() => {
       setProgress((p) => Math.min(p + 3, 92));
@@ -34,7 +26,6 @@ function LoadingScreen() {
     }, 900);
     return () => clearInterval(id);
   }, []);
-
   return (
     <div className="min-h-screen bg-mesh flex flex-col items-center justify-center gap-6 px-6 text-center">
       <div className="animate-pulse"><Logo size="lg" linkTo={null} /></div>
@@ -42,7 +33,7 @@ function LoadingScreen() {
         <Progress value={progress} className="h-2" />
         <p className="mt-3 text-sm text-muted-foreground font-mono">{LOADING_STEPS[stepIdx]}</p>
       </div>
-      <p className="text-xs text-muted-foreground max-w-md italic">💡 {fact}</p>
+      <p className="text-xs text-muted-foreground italic max-w-md">Compliance-first AI · No hallucinated targets · SEBI analyst video arriving within 24h</p>
     </div>
   );
 }
@@ -54,11 +45,20 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id")
         .eq("id", queryId)
         .single();
       if (error) throw error;
-      return data;
+      let analyst: { display_name: string; sebi_reg_number: string; avatar_url: string | null } | null = null;
+      if (data.assigned_analyst_id) {
+        const { data: a } = await supabase
+          .from("analyst_profiles")
+          .select("display_name, sebi_reg_number, avatar_url")
+          .eq("id", data.assigned_analyst_id)
+          .maybeSingle();
+        analyst = a;
+      }
+      return { ...data, analyst };
     },
     refetchInterval: (q) => (q.state.data?.ai_report ? false : 1500),
   });
@@ -77,20 +77,23 @@ function ReportContent() {
     );
   }
 
-  const meta: ReportMeta = {
+  const meta: ReportMetaV2 = {
     id: data.id as string,
     createdAt: data.created_at as string,
     stockName: data.stock_name as string,
     stockSymbol: (data.stock_symbol as string | null) ?? null,
     buyPrice: data.buy_price as number | null,
     currentPrice: data.current_price as number | null,
+    analystName: data.analyst?.display_name ?? null,
+    analystSebi: data.analyst?.sebi_reg_number ?? null,
+    analystAvatar: data.analyst?.avatar_url ?? null,
   };
 
   return (
     <div className="min-h-screen bg-mesh">
       <Navbar />
       <main className="px-4 sm:px-6 lg:px-8 py-8 print:py-0">
-        <AIReportCard report={data.ai_report as unknown as AIReport} meta={meta} />
+        <AIReportCardV2 report={data.ai_report as unknown as AIReportV2} meta={meta} />
       </main>
     </div>
   );

@@ -14,6 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_reports: {
+        Row: {
+          analyst_assigned_id: string | null
+          created_at: string
+          generated_at: string
+          id: string
+          intent: string
+          llm_cost_usd: number | null
+          llm_input_tokens: number | null
+          llm_model: string
+          llm_output_tokens: number | null
+          llm_provider: string
+          ltp_source: string | null
+          ltp_timestamp: string | null
+          ltp_value: number | null
+          pnl_state: string | null
+          prompt_version: string
+          query_id: string
+          raw_llm_response: Json | null
+          rendered_sections: Json | null
+          requires_analyst_review: boolean
+          stock_exchange: string | null
+          stock_symbol: string | null
+          user_id: string
+        }
+        Insert: {
+          analyst_assigned_id?: string | null
+          created_at?: string
+          generated_at?: string
+          id?: string
+          intent: string
+          llm_cost_usd?: number | null
+          llm_input_tokens?: number | null
+          llm_model: string
+          llm_output_tokens?: number | null
+          llm_provider: string
+          ltp_source?: string | null
+          ltp_timestamp?: string | null
+          ltp_value?: number | null
+          pnl_state?: string | null
+          prompt_version: string
+          query_id: string
+          raw_llm_response?: Json | null
+          rendered_sections?: Json | null
+          requires_analyst_review?: boolean
+          stock_exchange?: string | null
+          stock_symbol?: string | null
+          user_id: string
+        }
+        Update: {
+          analyst_assigned_id?: string | null
+          created_at?: string
+          generated_at?: string
+          id?: string
+          intent?: string
+          llm_cost_usd?: number | null
+          llm_input_tokens?: number | null
+          llm_model?: string
+          llm_output_tokens?: number | null
+          llm_provider?: string
+          ltp_source?: string | null
+          ltp_timestamp?: string | null
+          ltp_value?: number | null
+          pnl_state?: string | null
+          prompt_version?: string
+          query_id?: string
+          raw_llm_response?: Json | null
+          rendered_sections?: Json | null
+          requires_analyst_review?: boolean
+          stock_exchange?: string | null
+          stock_symbol?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_reports_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "queries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analyst_profiles: {
         Row: {
           avatar_url: string | null
@@ -111,6 +194,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      audit_events: {
+        Row: {
+          actor_id: string | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          occurred_at: string
+          payload: Json | null
+          resource_id: string | null
+          resource_type: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          occurred_at?: string
+          payload?: Json | null
+          resource_id?: string | null
+          resource_type?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          occurred_at?: string
+          payload?: Json | null
+          resource_id?: string | null
+          resource_type?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
       }
       grievances: {
         Row: {
@@ -293,6 +412,8 @@ export type Database = {
           created_at: string | null
           current_price: number | null
           id: string
+          intent: string | null
+          pnl_state: string | null
           query_text: string
           query_type: string | null
           status: Database["public"]["Enums"]["query_status"] | null
@@ -308,6 +429,8 @@ export type Database = {
           created_at?: string | null
           current_price?: number | null
           id?: string
+          intent?: string | null
+          pnl_state?: string | null
           query_text: string
           query_type?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
@@ -323,6 +446,8 @@ export type Database = {
           created_at?: string | null
           current_price?: number | null
           id?: string
+          intent?: string | null
+          pnl_state?: string | null
           query_text?: string
           query_type?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
