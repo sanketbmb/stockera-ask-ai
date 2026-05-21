@@ -272,6 +272,7 @@ Deno.serve(async (req) => {
     if (!LOVABLE_API_KEY && !GEMINI_API_KEY) throw new Error("Missing LOVABLE_API_KEY and GEMINI_API_KEY — at least one is required");
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    const authUserId = getJwtSubject(req);
 
     stage = "fetch_query";
     console.log("STEP 3: Fetching query from DB", { query_id });
@@ -279,6 +280,7 @@ Deno.serve(async (req) => {
       .from("queries").select("*").eq("id", query_id).single();
     if (qErr) throw new Error(`DB fetch_query: ${qErr.code ?? ""} ${qErr.message}`);
     if (!query) throw new Error("Query not found: " + query_id);
+    if (authUserId && query.user_id !== authUserId) throw new Error("Unauthorized query owner mismatch");
     console.log("STEP 4: Query fetched", { stock: query.stock_symbol, intent_text: query.query_text?.slice(0, 60) });
 
     const intent = classifyIntent(query.query_text);
