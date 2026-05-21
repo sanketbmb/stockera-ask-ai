@@ -11,17 +11,35 @@ import {
 import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
 import { useAuth } from "@/contexts/AuthContext";
 
+// v1.0 schema (canonical) — older keys kept optional for backward compat
 export interface AIReportV2 {
-  ai_position_observation: string;
-  confidence_label: "data_rich" | "limited_data" | "needs_analyst_review";
-  confidence_breakdown: { data_coverage: number; recency: number; specificity: number };
-  what_ai_can_tell_you: string[];
-  what_only_analyst_can_tell_you: string[];
-  behavioral_note: string;
-  recent_news_context: string[];
-  stock_specific_risks: string[];
+  // v1.0 fields
+  report_version?: string;
+  intent_acknowledged?: string;
+  position_snapshot?: { summary_line?: string; key_metric_observed?: string };
+  what_ai_can_observe?: string[];
+  context_relevant_to_user_question?: string;
+  risks_to_monitor?: string[];
+  what_only_analyst_can_decide?: string[];
+  data_confidence?: {
+    data_coverage?: "high" | "medium" | "low";
+    data_recency?: "high" | "medium" | "low";
+    specificity?: "high" | "medium" | "low";
+    overall_label?: string;
+  };
+  requires_analyst_review?: boolean;
+  sources_used?: Array<{ type: string; reference: string; date?: string }>;
+  // legacy fields (fallback)
+  ai_position_observation?: string;
+  confidence_label?: "data_rich" | "limited_data" | "needs_analyst_review";
+  confidence_breakdown?: { data_coverage: number; recency: number; specificity: number };
+  what_ai_can_tell_you?: string[];
+  what_only_analyst_can_tell_you?: string[];
+  recent_news_context?: string[];
+  stock_specific_risks?: string[];
+  behavioral_note?: string;
   tags?: string[];
-  // meta injected by edge fn
+  // meta
   stock_symbol?: string | null;
   stock_name?: string;
   ltp_value?: number | null;
@@ -33,6 +51,8 @@ export interface AIReportV2 {
   report_id?: string;
   generated_at?: string;
 }
+
+const QUAL_TO_PCT: Record<string, number> = { high: 90, medium: 60, low: 30 };
 
 export interface ReportMetaV2 {
   id: string;
