@@ -1,75 +1,59 @@
-# Major Query → Report Pipeline Refactor
 
-This is a large, multi-system change. I'll execute it in 5 sequenced phases so each can be verified before the next. Roughly 30–40 file changes, 2 new tables, 1 rewritten edge function, 1 new edge function.
+## Root cause found
 
-## Phase 1 — Database (Supabase migration)
+The last security migration revoked `EXECUTE` on `public.has_role(uuid, app_role)` from `authenticated` and `anon`. But the `profiles` table has an RLS policy `profiles_admin_read` that calls `has_role(auth.uid(), 'admin')` — Postgres evaluates **every** policy on a table, so authenticated users now get **403 "permission denied for function has_role"** when reading their **own** profile.
 
-New tables (RLS enabled, owner-scoped + admin policies + service-role bypass):
+Network log confirms this:
+```
+GET /rest/v1/profiles?...id=eq.<me>  → 403
+{"code":"42501","message":"permission denied for function has_role"}
+```
 
-- **`ai_reports`** — full columns as specified (intent, ltp_value/timestamp/source, pnl_state, prompt_version, llm_provider/model/tokens/cost, raw_llm_response, rendered_sections, requires_analyst_review, analyst_assigned_id, generated_at).
-- **`audit_events`** — append-only (INSERT-only policy, no UPDATE/DELETE), with event_type, actor_id, resource_type/id, payload jsonb, ip, user_agent, occurred_at.
+That's why on `/referral` the link shows "Generating…" and the sidebar shows `₹0 wallet` even though the DB row exists with `wallet_balance=100` and `referral_code=STKE3D5D1`. The same failure cascades to `analyst_profiles`, `queries`, `notifications`, `user_roles` — anywhere a policy calls `has_role(...)`. This also breaks "Post a Query" (analyst list 403, AI report invoke will 403 on RLS reads).
 
-Add `intent` and `pnl_state` columns to `queries` for fast filtering.
+## Fix plan
 
-## Phase 2 — Wizard Refactor (`/post-query`)
+### 1. Restore RLS-safe function grants (migration)
+Grant `EXECUTE` back to `authenticated` (and `anon` where policies are evaluated for anon traffic) on the helper functions used inside RLS policies. These are `SECURITY DEFINER` with locked `search_path`, so they are safe to expose — they only return a boolean / role for the calling user.
 
-Restructure `QueryForm.tsx` into 3 steps:
+- `GRANT EXECUTE ON FUNCTION public.has_role(uuid, app_role) TO authenticated, anon;`
+- `GRANT EXECUTE ON FUNCTION public.get_user_role(uuid) TO authenticated;`
+- Keep `deduct_wallet_balance`, `admin_adjust_wallet` restricted to `service_role` only (they are called from edge functions / server, never from the browser).
+- `add_demo_credits` stays callable by `authenticated` (self-gated).
 
-1. **Question** — large textarea + 6 example chips + 8 question-type chips. Live intent classifier (regex first, LLM fallback) extracts stock/buy_price/holding from natural language.
-2. **Context** — fields dynamically rendered by intent:
-   - `stuck_position` / `should_average` → stock + buy price + holding duration
-   - `buy_decision` → stock + horizon (no buy price)
-   - `educational` / `sector_view` → optional related stock
-   - Always: language + analyst preference
-   - Auto-detected fields show "✓ Auto-detected — edit if wrong" pill
-3. **Review** — clearer pricing copy ("AI report: free · Analyst video: included within 24h").
+### 2. Verify referral payout flow
+- `handle_new_user` trigger already creates the profile (with auto `referral_code`), `user_roles`, and ₹100 signup bonus. Confirmed working for current user.
+- Add referral handling: when `raw_user_meta_data->>'referral_code'` is set on signup, look up the referrer profile, insert a `referrals` row (`status='credited'`, `payout=50`), and credit ₹50 to the **referrer's** wallet via `wallet_transactions`. The referee already gets ₹100 via the existing signup bonus — per the UI copy ("you both get ₹50") I'll align the model to **₹50 to referrer + ₹50 bonus to referee on top of the ₹100 welcome**, so both sides see a referral credit. Confirm this matches your intended model (see Question below).
 
-Other fixes:
-- Replace red dots with neutral `Info` icons (lucide-react).
-- Real NSE+BSE autocomplete via `/public/data/nse-bse-symbols.json` + Fuse.js (seed file with top ~500 symbols; cron to follow).
+### 3. Post-Query AI report flow
+Once profile reads work again, `generate-ai-report` edge function will be reachable. Will verify end-to-end via browser test after deploy.
 
-## Phase 3 — AI Report Page (`/report/$queryId`)
+### 4. Step 2 alignment polish (`QueryForm.tsx`)
+The Buy Price / Holding row is uneven because:
+- "Buy Price *" label has an inline `<Info>` tooltip icon → taller label
+- "Holding duration *" label is plain text → shorter label
+- The two inputs therefore start at different Y offsets.
 
-Rewrite `AIReportCard.tsx`. **Remove:** VERDICT word, stop loss, targets, support/resistance, "Powered by Gemini" footer, fixed 85% confidence.
+Fix: make the grid `items-end`, give both labels a fixed `h-5` line-height row, and align the `<Info>` icon inside the label without changing label height. Also match input heights (`h-10`) between `<Input>` and `<SelectTrigger>`.
 
-**Add:**
-- **Live Price Card** (LTP from Twelve Data, IST timestamp, exchange badge, source attribution).
-- **Position Snapshot Card** (replaces verdict — stock, entry, LTP, P&L%, time held, gray-teal "Awaiting Analyst Review" badge).
-- **Analyst Video Countdown** (HH:MM:SS to 24h from submission, analyst name/photo/SEBI reg, 3 "what your analyst will cover" bullets).
-- **"What the AI can tell you"** — factual observations only.
-- **"What only your analyst can tell you"** — personalized targets/SL/sizing teaser.
-- **3-segment Confidence Bar** — Data Coverage / Recency / Specificity.
-- **"Why we can't give you a target" tooltip.**
-- **Follow-up chat box** at bottom.
-- **Sticky compliance footer** — RA reg, BASL, grievance email, SCORES URL, Report ID, generated/market-data timestamps.
-- **PDF watermark** — user email + report ID + timestamp on every page (via CSS print + html2canvas already used).
+### 5. QA pass before handoff
+After the migration is approved & deployed:
+- Browser-test signup with referral code → confirm both wallets credited
+- Browser-test "Post a Query" end-to-end → confirm AI report renders on `/report/:id`
+- Smoke-test main nav: Dashboard, My Queries, Wallet, Refer & Earn, Settings, Pricing
+- Check console + network for 4xx/5xx
+- Report a clean bug list (with fixes) before you demo
 
-## Phase 4 — Edge Function `generate-ai-report`
+## Question for you
 
-New function replacing `gemini-analysis`. Steps a–i exactly as spec:
+Your referral model — please confirm one of:
+- **(A) ₹50 referrer + ₹50 referee** (in addition to the ₹100 welcome bonus). Matches the "you both get ₹50" copy on the banner.
+- **(B) ₹50 referrer only** (referee just gets the standard ₹100 welcome). Matches the "/refer" page copy ("Earn ₹50 for every friend").
 
-1. Fetch query → 2. Classify intent (Gemini Flash) → 3. Fetch LTP + financials + news (Twelve Data + Lovable AI grounded search for headlines, since no Perplexity key) → 4. Assemble structured context → 5. LLM call with strict JSON schema (Gemini 2.5 Pro grounded; Claude Opus if `ANTHROPIC_API_KEY` set later) → 6. **Guardrail check** (reject prohibited phrases + reject any non-null target/stop_loss field) → 7. Save to `ai_reports` → 8. Enqueue analyst review → 9. Return JSON.
+I'll default to **(A)** unless you say otherwise, since that's what the landing banner promises users.
 
-System prompt saved as `supabase/functions/generate-ai-report/system-prompt.md` v1.0 (paste user-provided text — though I don't see it in the request, I'll author a compliant default and note it for the user to refine).
+## Technical notes
 
-`pnl_state` is computed server-side (`fresh_entry` | `loss` | `small_gain` | `significant_gain`) and passed as a hard variable into the prompt.
-
-## Phase 5 — Polish + CI
-
-- Repurpose the bold verdict card design for a future `/analyst-video/$queryId` page (stub route, attributed to human RA).
-- GitHub Actions workflow `prompt-tests.yml` with 50-query test suite asserting: no prohibited phrases, no numeric targets, intent accuracy >90%, JSON schema valid.
-- Audit event firing on: query_submitted, ai_report_generated, analyst_assigned, video_uploaded, video_viewed, followup_sent, pdf_downloaded.
-
-## Open Questions / Assumptions
-
-1. **LLM SYSTEM PROMPT v1.0 block** referenced in PART 4 was not pasted in your message — I'll author a compliant default and you can refine.
-2. **News API** — no Perplexity/NewsAPI key in your secrets. I'll use Gemini with Google Search grounding for headlines as a stand-in; swap later when you add a key.
-3. **ANTHROPIC_API_KEY** — not in secrets; will leave Claude path behind an `if` and default to Gemini.
-4. **NSE/BSE symbols JSON** — I'll seed `/public/data/nse-bse-symbols.json` with the top ~500 most-traded symbols. Daily cron pulling full list can come in a follow-up (would need an upstream source — NSE blocks scraping without headers).
-5. **Analyst assignment** — there's no analyst auto-assignment logic today. I'll mark `requires_analyst_review=true` and `analyst_assigned_id=null`; an admin assigns from the dashboard. The countdown card will show "Analyst being assigned…" until then.
-
-## Risk
-
-This is a ~3–4 hour change. The biggest risk is the edge function rewrite breaking the existing report flow mid-way. I'll keep `gemini-analysis` intact until `generate-ai-report` is verified working, then switch `QueryForm.tsx` over in the last step.
-
-**Reply "go" to proceed**, or tell me which open question to resolve first (especially #1 — the system prompt text).
+- Migration is a pure `GRANT` change — no schema mutation, no data backfill.
+- Referral credit will be wired into `handle_new_user` (single trigger, atomic with profile creation) so there's no race condition between signup and credit.
+- No edge-function changes needed for the RLS fix; the existing `generate-ai-report` will start working as soon as profile reads succeed.
