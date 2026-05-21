@@ -304,7 +304,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         <Card className="p-5">
           <h3 className="font-display text-lg flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" /> Stock-Specific Risks</h3>
           <ul className="mt-3 space-y-2">
-            {report.stock_specific_risks.map((r, i) => (
+            {riskBullets.map((r, i) => (
               <li key={i} className="flex gap-2 text-sm"><AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" /><span>{r}</span></li>
             ))}
           </ul>
