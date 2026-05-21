@@ -359,6 +359,7 @@ export function QueryForm() {
               <Field label="Type" value={QUERY_TYPES.find((q) => q.id === intent)?.label ?? "—"} />
               {stockName && <Field label="Stock" value={`${stockName}${stockSymbol ? ` (${stockSymbol})` : ""}`} />}
               {buyPrice && <Field label="Buy Price" value={`₹${buyPrice}`} />}
+              {currentPrice && <Field label="Current Price" value={`₹${currentPrice}`} />}
               {holding && <Field label="Holding" value={holding} />}
               {horizon && <Field label="Horizon" value={horizon} />}
               <Field label="Language" value={language} />
