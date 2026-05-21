@@ -225,37 +225,102 @@ async function callLLM(userPrompt: string) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\n" + userPrompt }] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 8192 },
+            contents: [{ parts: [{ text: `Return ONLY raw JSON. Realistic current NSE price in INR for ${symbol}. Format: {"price": 1234.56}` }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
+          }),
+        },
+      );
+      const j = await r.json();
+      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        let parsed: { price?: number } | null = null;
+        try {
+          const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+          parsed = JSON.parse(clean);
+        } catch {
+          parsed = null;
+        }
+        if (parsed?.price) {
+          return {
+            ltp: Number(parsed.price),
+            ltp_timestamp: new Date().toISOString(),
+            source: "Gemini estimate",
+            exchange: "NSE",
+          };
+        }
+      }
+    } catch (e) { console.error("gemini ltp fallback err", e); }
+  }
+  return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange: "NSE" };
+}
+
+async function callLLM(userPrompt: string) {
+  if (GEMINI_API_KEY) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
           }),
         }
       );
       const j = await r.json();
       const finishReason = j?.candidates?.[0]?.finishReason;
-      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-      console.log("STEP 5a: Gemini direct", { ok: r.ok, finishReason, len: text?.length ?? 0 });
-      if (r.ok && text) return { json: JSON.parse(text), provider: "gemini-direct", model: "gemini-2.0-flash" };
-      console.error("Gemini direct failed:", r.status, JSON.stringify(j).slice(0, 500));
-    } catch (e) { console.error("gemini direct err", e); }
+      const rawText = j?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      console.log("STEP 5a: Gemini direct", {
+        httpStatus: r.status,
+        ok: r.ok,
+        finishReason,
+        len: rawText.length,
+        errorCode: j?.error?.code,
+        errorMsg: j?.error?.message,
+      });
+      if (!r.ok) {
+        console.error("Gemini HTTP error:", r.status, JSON.stringify(j).slice(0, 400));
+        throw new Error(`Gemini API HTTP ${r.status}: ${j?.error?.message ?? "unknown"}`);
+      }
+      if (!rawText) {
+        console.error("Gemini returned empty text. finishReason:", finishReason, "full response:", JSON.stringify(j).slice(0, 600));
+        throw new Error(`Gemini returned no content (finishReason: ${finishReason ?? "none"})`);
+      }
+      const clean = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+      const parsed = JSON.parse(clean);
+      return { json: parsed, provider: "gemini-direct", model: "gemini-2.0-flash" };
+    } catch (e) {
+      console.error("gemini direct err:", (e as Error).message);
+      throw new Error(`Gemini call failed: ${(e as Error).message}`);
+    }
   }
   if (LOVABLE_API_KEY) {
-    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_API_KEY}` },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-      }),
-    });
-    const j = await r.json().catch(() => null);
-    const content = j?.choices?.[0]?.message?.content;
-    console.log("STEP 5b: Lovable Gemini fallback", { ok: r.ok, len: content?.length ?? 0 });
-    if (r.ok && content) return { json: JSON.parse(content), provider: "lovable-gemini-fallback", model: "google/gemini-2.5-pro" };
-    throw new Error(`Lovable Gemini fallback failed (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
+    try {
+      const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_API_KEY}` },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro",
+          messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userPrompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      const content = j?.choices?.[0]?.message?.content;
+      console.log("STEP 5b: Lovable Gemini fallback", { ok: r.ok, len: content?.length ?? 0 });
+      if (r.ok && content) {
+        const clean = content.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+        return { json: JSON.parse(clean), provider: "lovable-gemini-fallback", model: "google/gemini-2.5-pro" };
+      }
+      throw new Error(`Lovable Gemini fallback failed (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
+    } catch (e) {
+      throw new Error(`Lovable fallback failed: ${(e as Error).message}`);
+    }
   }
-  throw new Error("No LLM provider available (missing LOVABLE_API_KEY and GEMINI_API_KEY)");
+  throw new Error("No LLM provider configured. Set GEMINI_API_KEY in Supabase Dashboard → Project Settings → Edge Functions → Secrets.");
 }
 
 function guardrailCheck(report) {
