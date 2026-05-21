@@ -10,27 +10,30 @@ export const generateAiReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => GenerateReportInput.parse(input))
   .handler(async ({ data, context }) => {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-      throw new Error("Report service is not configured");
-    }
-
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-ai-report`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${context.claims.session_id ? "" : ""}`,
-      },
-      body: JSON.stringify({ query_id: data.queryId }),
+    const { data: payload, error } = await context.supabase.functions.invoke("generate-ai-report", {
+      body: { query_id: data.queryId },
     });
 
-    const payload = await response.json().catch(() => null) as { ok?: boolean; details?: string; error?: string; message?: string; report?: unknown; ai_report_id?: string } | null;
-    if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.details ?? payload?.error ?? payload?.message ?? `Report generation failed (${response.status})`);
+    const response = (error as { context?: Response } | null)?.context;
+    if (error || !payload?.ok) {
+      let detail = (payload as { details?: string; error?: string; message?: string } | null)?.details
+        ?? (payload as { error?: string; message?: string } | null)?.error
+        ?? error?.message
+        ?? "Generation failed";
+      if (response) {
+        try {
+          const body = await response.clone().json() as { details?: string; error?: string; message?: string };
+          detail = body.details ?? body.error ?? body.message ?? detail;
+        } catch {
+          // Keep the best available message.
+        }
+      }
+      throw new Error(detail);
     }
 
-    return payload;
+    return {
+      ok: true,
+      ai_report_id: typeof payload.ai_report_id === "string" ? payload.ai_report_id : null,
+      report: payload.report && typeof payload.report === "object" ? payload.report as Record<string, unknown> : null,
+    };
   });
