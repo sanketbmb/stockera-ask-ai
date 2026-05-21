@@ -291,11 +291,11 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
         </div>
 
         {/* ===== RECENT NEWS ===== */}
-        {report.recent_news_context.length > 0 && (
+        {newsBullets.length > 0 && (
           <Card className="p-5">
             <h3 className="font-display text-lg flex items-center gap-2"><Newspaper className="h-5 w-5 text-accent" /> Recent News Context</h3>
             <ul className="mt-3 space-y-2">
-              {report.recent_news_context.map((n, i) => <li key={i} className="text-sm text-foreground/85">• {n}</li>)}
+              {newsBullets.map((n, i) => <li key={i} className="text-sm text-foreground/85">• {n}</li>)}
             </ul>
           </Card>
         )}
