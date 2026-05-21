@@ -1,44 +1,63 @@
-# Fix: AI Report Generation Failing + Restore Current Price Input
+## Plan to fix the report-generation failure
 
-## Root cause
+### What I found
+- The current Edge Function already has a broad `try/catch`, but it returns `{ ok: false, error, details }`, while the frontend/server wrapper can still collapse failures into a generic message.
+- There are no recent `generate-ai-report` invocation logs visible, which suggests the failure may be happening before or during the server-function-to-edge-function call, or the deployed function is not logging enough.
+- `queries` rows are getting `ai_report` JSON, but `ai_reports` table is empty, and the Edge Function currently only logs `ai_reports insert err` without failing. That hides a likely database insert/schema/RLS issue.
 
-Two distinct issues, both real:
+### Changes I will make
 
-1. **Edge function was not deployed.** The `generate-ai-report` function had zero invocation logs even though the UI was calling it — meaning the latest version had never been pushed to the Supabase runtime. I just re-deployed it as part of diagnosis, and it is now live.
-2. **"Current price" field was removed from Step 2.** The form no longer asks for it, so `queries.current_price` is always `null`. The edge function then has to rely on Twelve Data alone for LTP — and for many NSE symbols (especially `IDFCFIRSTB`), Twelve Data returns empty, leaving `ltp = null` and `pnl_state = "n/a"`. The LLM gets a context object with no price + no P&L, which produces a low-quality / sometimes guardrail-rejected report.
+1. **Make `generate-ai-report` fully debuggable**
+   - Add a reusable response helper so every response includes:
+     - `Access-Control-Allow-Origin: *`
+     - `Access-Control-Allow-Methods: GET, POST, OPTIONS`
+     - `Access-Control-Allow-Headers: Content-Type, Authorization, apikey, x-client-info`
+     - `Content-Type: application/json`
+   - Handle `OPTIONS` at the very top.
+   - Add a `GET` health-check endpoint returning:
+     - environment key presence checks
+     - `ai_reports` table existence
+     - `audit_events` table existence
 
-So the "Report generation failed: Unknown" toast you saw was caused by #1 (call returning a 5xx with no `details` field). #2 is what's making future reports unreliable even after #1 is fixed.
+2. **Add step-by-step logs in the Edge Function**
+   - Log each major phase:
+     - function invoked
+     - env vars checked
+     - query fetched
+     - stock/LTP resolved
+     - LLM call started
+     - LLM response received
+     - guardrail/schema validation
+     - `ai_reports` insert
+     - `queries` update
+     - audit log
+     - response returned
+   - Include safe debug context like `query_id`, `stock_symbol`, `intent`, `provider`, `response_length`, and Supabase error codes/messages.
 
-## What I'll change
+3. **Return structured errors instead of “Unknown”**
+   - Replace the catch response with the requested shape:
+     - `error: true`
+     - `ok: false`
+     - `code`
+     - `message`
+     - `hint`
+     - `stage`
+   - Log `REPORT_GEN_ERROR` with message, stack, timestamp, and failing stage.
 
-### 1. Restore the "Current Price" input on Step 2 (UI)
-In `src/components/query/QueryForm.tsx`:
-- Add a `currentPrice` state.
-- In Step 2, render it next to **Buy Price** when intent is `stuck_position` or `should_average` (the two cases where P&L matters). Same `₹` prefix, same `h-10` height, in the same `grid sm:grid-cols-2` so alignment stays pixel-perfect.
-- Pass `current_price: currentPrice ? Number(currentPrice) : null` into the `queries` insert in `handleSubmit`.
-- Show it on the Step 3 Review summary.
-- Keep it optional — if the user fills it, we trust it as the LTP; if blank, we fall back to Twelve Data, then Gemini estimate.
+4. **Stop hiding the likely DB insert failure**
+   - Change the `ai_reports` insert from “log and continue” to a real failure if Supabase returns an insert error.
+   - This will tell us exactly if the empty `ai_reports` table is the root cause.
 
-### 2. Harden the edge function (`supabase/functions/generate-ai-report/index.ts`)
-- **LTP fallback chain:** user-supplied `current_price` → Twelve Data → Gemini estimate (one tiny call asking for a realistic current INR price). Today there's no Gemini fallback, so missing Twelve Data data = no LTP.
-- **Better error envelope:** always return JSON with a human-readable `details` so the UI never shows "Unknown" again. Add a `stage` field (`fetch_query`, `fetch_ltp`, `llm`, `guardrail`, `save`) so we can pinpoint failures.
-- **Increase Gemini `maxOutputTokens` to 8192** (currently 2500) and log `finishReason` to catch token-cutoff truncation that produces invalid JSON.
-- **Relax guardrail when LTP missing:** if `ltp = null`, allow the report to still save with `data_confidence.overall_label = "Insufficient data — please wait for analyst"` instead of throwing.
+5. **Improve frontend/server error display**
+   - Update `src/lib/report.functions.ts` to parse the Edge Function response body consistently and throw the real `message`, `details`, or `code`.
+   - Update `QueryForm.tsx` toast/error logging so the user sees the actual failure reason, not `Unknown`.
 
-### 3. Re-deploy
-Deploy `generate-ai-report` after the edits so the runtime picks them up. (I already deployed the current version during diagnosis; the new version needs another deploy.)
+6. **Timeout/deployment config**
+   - Add the function timeout setting to `supabase/config.toml` if supported by this project’s Supabase config format.
+   - Keep `verify_jwt = true` for security.
 
-## What I will NOT change
-
-- The compliance system prompt (no verdicts / no targets / no stop-loss) stays exactly as you specified.
-- Referral, wallet, auth — untouched.
-- Step 2 buy-price/holding alignment I fixed earlier — preserved.
-
-## Verification before handing back
-
-1. Deploy function → tail logs.
-2. Submit a fresh IDFC First Bank query (buy ₹85, current ₹68.30, "Sell or Hold") from the preview.
-3. Confirm: query row created → edge function 200 → `ai_reports` row written → navigation to `/report/:id` → report renders with `pnl_state = "loss"` and a meaningful behavioral note.
-4. Submit one more with **blank** current price to confirm the Twelve Data + Gemini fallback chain works and no "Unknown" toast appears.
-
-Ready to implement on approval.
+7. **Redeploy and verify**
+   - Redeploy `generate-ai-report`.
+   - Call the new `GET` health check.
+   - Trigger/report-test against a recent query if auth is available.
+   - Check Edge Function logs for the exact failing `STEP` and fix the root cause from that result.
