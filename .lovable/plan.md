@@ -1,59 +1,75 @@
-# Onboarding Flow + Premium UI Polish
+# Major Query → Report Pipeline Refactor
 
-Two large workstreams. I'll ship them in order so each is verifiable.
+This is a large, multi-system change. I'll execute it in 5 sequenced phases so each can be verified before the next. Roughly 30–40 file changes, 2 new tables, 1 rewritten edge function, 1 new edge function.
 
-## Part 1 — First-time user onboarding
+## Phase 1 — Database (Supabase migration)
 
-**Schema change** (migration, requires approval)
-- Add `profiles.onboarding_completed boolean default false`
+New tables (RLS enabled, owner-scoped + admin policies + service-role bypass):
 
-**Library**: `react-joyride` (mature, React 19 compatible, skippable out of the box)
+- **`ai_reports`** — full columns as specified (intent, ltp_value/timestamp/source, pnl_state, prompt_version, llm_provider/model/tokens/cost, raw_llm_response, rendered_sections, requires_analyst_review, analyst_assigned_id, generated_at).
+- **`audit_events`** — append-only (INSERT-only policy, no UPDATE/DELETE), with event_type, actor_id, resource_type/id, payload jsonb, ip, user_agent, occurred_at.
 
-**Tour steps** (4)
-1. Dashboard stats cards — "Your queries, AI reports & wallet at a glance"
-2. "Post a Query" CTA — "Ask any stock question, get instant AI report"
-3. Wallet card — "₹100 free credits = 2 free AI reports"
-4. Recent queries / AI report link — "Tap any query to read the full AI report"
+Add `intent` and `pnl_state` columns to `queries` for fast filtering.
 
-**Behavior**
-- Triggers on Dashboard mount when `profile.onboarding_completed === false`
-- Skippable (Skip button) + Finish button — both set `onboarding_completed = true`
-- Brand-styled (teal accent, DM Serif Display headers, rounded popover)
-- Stored per-user in DB (not localStorage) so it follows them across devices
+## Phase 2 — Wizard Refactor (`/post-query`)
 
-**Demo query seed**
-- On first Dashboard visit (when `onboarding_completed = false` AND user has 0 queries), insert one sample query:
-  - Stock: RELIANCE, query_type: buy_sell, status: ai_answered
-  - Pre-filled `ai_report` JSON (verdict, summary, key points, SEBI disclaimer)
-- Idempotent: only inserts if the user has zero queries
+Restructure `QueryForm.tsx` into 3 steps:
 
-## Part 2 — Premium UI polish
+1. **Question** — large textarea + 6 example chips + 8 question-type chips. Live intent classifier (regex first, LLM fallback) extracts stock/buy_price/holding from natural language.
+2. **Context** — fields dynamically rendered by intent:
+   - `stuck_position` / `should_average` → stock + buy price + holding duration
+   - `buy_decision` → stock + horizon (no buy price)
+   - `educational` / `sector_view` → optional related stock
+   - Always: language + analyst preference
+   - Auto-detected fields show "✓ Auto-detected — edit if wrong" pill
+3. **Review** — clearer pricing copy ("AI report: free · Analyst video: included within 24h").
 
-Done as a batch, semantic tokens only (added to `src/styles.css`).
+Other fixes:
+- Replace red dots with neutral `Info` icons (lucide-react).
+- Real NSE+BSE autocomplete via `/public/data/nse-bse-symbols.json` + Fuse.js (seed file with top ~500 symbols; cron to follow).
 
-| # | Item | Approach |
-|---|------|----------|
-| 1 | Animated counters | `react-countup` on Dashboard StatCards + LiveStatsBar numbers |
-| 2 | Particle/grid hero bg | Pure CSS animated grid overlay (no tsparticles dep — lighter, SSR-safe) |
-| 3 | Glassmorphism dashboard cards | New `.glass-card` token: `backdrop-blur-xl bg-card/60 border-white/10` |
-| 4 | Page transitions | Wrap `<Outlet />` in `__root.tsx` with framer-motion `AnimatePresence` (fade + 8px y) |
-| 5 | Branded focus rings | Override `--ring` to teal + add `--shadow-focus-glow` token; apply via global CSS on `:focus-visible` |
-| 6 | Custom cursor | `CustomCursor` component, desktop-only (`md:` + pointer-fine media query), scales on `[data-cursor="link"]` and native interactive els |
-| 7 | Gradient shimmer H1 | `.text-shimmer` utility: animated `background-position` on gradient-clip text |
-| 8 | Scroll-triggered counters | `react-countup` + `react-intersection-observer` on LiveStatsBar |
-| 9 | Noise texture overlay | Inline SVG turbulence as `--noise-bg`, applied via `.bg-noise` utility on gradient surfaces |
-| 10 | Branded skeletons | Upgrade `PageSkeleton` + add `StockeraSkeleton` with logo mark + shimmer; replace generic `<Skeleton>` usage in key pages (Dashboard, MyQueries, Report) |
+## Phase 3 — AI Report Page (`/report/$queryId`)
 
-## Technical section
+Rewrite `AIReportCard.tsx`. **Remove:** VERDICT word, stop loss, targets, support/resistance, "Powered by Gemini" footer, fixed 85% confidence.
 
-**New deps**: `react-joyride`, `react-countup`, `react-intersection-observer`
-**New files**:
-- `src/components/onboarding/OnboardingTour.tsx`
-- `src/lib/seedDemoQuery.ts`
-- `src/components/common/CustomCursor.tsx`
-- `src/components/common/AnimatedCounter.tsx`
-- `src/components/common/StockeraSkeleton.tsx`
+**Add:**
+- **Live Price Card** (LTP from Twelve Data, IST timestamp, exchange badge, source attribution).
+- **Position Snapshot Card** (replaces verdict — stock, entry, LTP, P&L%, time held, gray-teal "Awaiting Analyst Review" badge).
+- **Analyst Video Countdown** (HH:MM:SS to 24h from submission, analyst name/photo/SEBI reg, 3 "what your analyst will cover" bullets).
+- **"What the AI can tell you"** — factual observations only.
+- **"What only your analyst can tell you"** — personalized targets/SL/sizing teaser.
+- **3-segment Confidence Bar** — Data Coverage / Recency / Specificity.
+- **"Why we can't give you a target" tooltip.**
+- **Follow-up chat box** at bottom.
+- **Sticky compliance footer** — RA reg, BASL, grievance email, SCORES URL, Report ID, generated/market-data timestamps.
+- **PDF watermark** — user email + report ID + timestamp on every page (via CSS print + html2canvas already used).
 
-**Modified files**: `src/styles.css` (tokens + utilities), `src/routes/__root.tsx` (AnimatePresence + CustomCursor mount), `src/pages/Dashboard.tsx` (tour anchors, counters, glass, seed), `src/components/landing/HeroSection.tsx` (grid bg, shimmer H1), `src/components/landing/LiveStatsBar.tsx` (scroll counters), `src/contexts/AuthContext.tsx` (expose `onboarding_completed` in ProfileRow).
+## Phase 4 — Edge Function `generate-ai-report`
 
-**Migration** runs first (separate approval), then code lands.
+New function replacing `gemini-analysis`. Steps a–i exactly as spec:
+
+1. Fetch query → 2. Classify intent (Gemini Flash) → 3. Fetch LTP + financials + news (Twelve Data + Lovable AI grounded search for headlines, since no Perplexity key) → 4. Assemble structured context → 5. LLM call with strict JSON schema (Gemini 2.5 Pro grounded; Claude Opus if `ANTHROPIC_API_KEY` set later) → 6. **Guardrail check** (reject prohibited phrases + reject any non-null target/stop_loss field) → 7. Save to `ai_reports` → 8. Enqueue analyst review → 9. Return JSON.
+
+System prompt saved as `supabase/functions/generate-ai-report/system-prompt.md` v1.0 (paste user-provided text — though I don't see it in the request, I'll author a compliant default and note it for the user to refine).
+
+`pnl_state` is computed server-side (`fresh_entry` | `loss` | `small_gain` | `significant_gain`) and passed as a hard variable into the prompt.
+
+## Phase 5 — Polish + CI
+
+- Repurpose the bold verdict card design for a future `/analyst-video/$queryId` page (stub route, attributed to human RA).
+- GitHub Actions workflow `prompt-tests.yml` with 50-query test suite asserting: no prohibited phrases, no numeric targets, intent accuracy >90%, JSON schema valid.
+- Audit event firing on: query_submitted, ai_report_generated, analyst_assigned, video_uploaded, video_viewed, followup_sent, pdf_downloaded.
+
+## Open Questions / Assumptions
+
+1. **LLM SYSTEM PROMPT v1.0 block** referenced in PART 4 was not pasted in your message — I'll author a compliant default and you can refine.
+2. **News API** — no Perplexity/NewsAPI key in your secrets. I'll use Gemini with Google Search grounding for headlines as a stand-in; swap later when you add a key.
+3. **ANTHROPIC_API_KEY** — not in secrets; will leave Claude path behind an `if` and default to Gemini.
+4. **NSE/BSE symbols JSON** — I'll seed `/public/data/nse-bse-symbols.json` with the top ~500 most-traded symbols. Daily cron pulling full list can come in a follow-up (would need an upstream source — NSE blocks scraping without headers).
+5. **Analyst assignment** — there's no analyst auto-assignment logic today. I'll mark `requires_analyst_review=true` and `analyst_assigned_id=null`; an admin assigns from the dashboard. The countdown card will show "Analyst being assigned…" until then.
+
+## Risk
+
+This is a ~3–4 hour change. The biggest risk is the edge function rewrite breaking the existing report flow mid-way. I'll keep `gemini-analysis` intact until `generate-ai-report` is verified working, then switch `QueryForm.tsx` over in the last step.
+
+**Reply "go" to proceed**, or tell me which open question to resolve first (especially #1 — the system prompt text).
