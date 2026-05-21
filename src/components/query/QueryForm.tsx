@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,177 +9,186 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowLeft, ArrowRight, ChevronRight, Loader2, Sparkles, Wallet, Lightbulb, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
-import { useQueryTypeDetection } from "@/hooks/useQueryTypeDetection";
 import type { NseStock } from "@/data/nseStocks";
 
-const QUERY_TYPES = [
-  { id: "sell_or_hold", emoji: "🤔", label: "Sell or Hold?" },
-  { id: "should_average", emoji: "📉", label: "Should I Average?" },
-  { id: "stop_loss", emoji: "🛑", label: "Set Stop Loss" },
-  { id: "target", emoji: "🎯", label: "Set Target" },
-  { id: "long_term", emoji: "📅", label: "Long Term View" },
-  { id: "fresh_entry", emoji: "🆕", label: "Fresh Entry" },
+type Intent = "buy_decision" | "stuck_position" | "should_average" | "educational" | "sector_view" | "other";
+
+const QUESTION_EXAMPLES = [
+  "Should I buy HDFC Bank at current levels?",
+  "I'm stuck in IDFC First Bank at a loss, what should I do?",
+  "Best stocks in renewable energy sector?",
+  "Explain P/E ratio to me",
+  "Should I average down on Zomato?",
+  "Long-term view on TCS for 5 years?",
+];
+
+const QUERY_TYPES: { id: Intent; label: string; emoji: string }[] = [
+  { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
+  { id: "should_average", emoji: "📉", label: "Should I Average" },
+  { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
+  { id: "educational", emoji: "📚", label: "Educational" },
+  { id: "sector_view", emoji: "🏭", label: "Sector View" },
   { id: "other", emoji: "❓", label: "Other" },
 ];
 
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
+const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
 const LANG_OPTIONS = ["English", "Hindi", "Other"];
 
-const REPORT_COST = 49;
+function classifyIntent(text: string): Intent {
+  const t = text.toLowerCase();
+  if (/\b(average|averaging|buy more|double down)\b/.test(t)) return "should_average";
+  if (/\b(should i buy|fresh entry|entry point|invest in)\b/.test(t) && !/\b(stuck|loss|holding)\b/.test(t)) return "buy_decision";
+  if (/\b(sell|exit|stuck|loss|hold|book profit)\b/.test(t)) return "stuck_position";
+  if (/\b(explain|what is|how does|teach)\b/.test(t)) return "educational";
+  if (/\b(sector|industry|best stocks in)\b/.test(t)) return "sector_view";
+  return "other";
+}
 
-const stepSchema = [
-  z.object({
-    stock_name: z.string().trim().min(2, "Stock name required").max(80),
-    buy_price: z.number().nullable(),
-    current_price: z.number().nullable(),
-    holding: z.string().min(1),
-  }),
-  z.object({
-    query_type: z.string().min(1, "Pick a category"),
-    query_text: z.string().trim().min(20, "Add at least 20 chars").max(500),
-    language: z.string().min(1),
-  }),
-];
+function extractFields(text: string): { stock?: string; buyPrice?: number; holding?: string } {
+  const out: { stock?: string; buyPrice?: number; holding?: string } = {};
+  const priceMatch = text.match(/(?:at|@|bought|entry)\s*(?:₹|rs\.?|inr)?\s*(\d{2,6}(?:\.\d{1,2})?)/i);
+  if (priceMatch) out.buyPrice = parseFloat(priceMatch[1]);
+  if (/\byear/i.test(text)) out.holding = "1+ year";
+  else if (/\bmonth/i.test(text)) out.holding = "1-3 months";
+  else if (/\bweek/i.test(text)) out.holding = "1-4 weeks";
+  // Stock name extraction — simple capitalized-words heuristic
+  const stockMatch = text.match(/\b(?:bought|in|stuck in|own|holding)\s+([A-Z][A-Za-z&\s]{2,30}?)(?:\s+at|\s+for|,|\.|$)/);
+  if (stockMatch) out.stock = stockMatch[1].trim();
+  return out;
+}
 
 export function QueryForm() {
   const navigate = useNavigate();
   const { user, profile, refresh } = useAuth();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
 
+  // Step 1
+  const [queryText, setQueryText] = useState("");
+  const [intent, setIntent] = useState<Intent>("other");
+  const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; holding?: string }>({});
+
+  // Step 2
   const [stockName, setStockName] = useState("");
   const [stockSymbol, setStockSymbol] = useState("");
-  const [buyPrice, setBuyPrice] = useState<string>("");
-  const [currentPrice, setCurrentPrice] = useState<string>("");
+  const [buyPrice, setBuyPrice] = useState("");
   const [holding, setHolding] = useState("");
-  const [queryType, setQueryType] = useState("");
-  const [queryText, setQueryText] = useState("");
-  const [analystId, setAnalystId] = useState<string | null>(null);
+  const [horizon, setHorizon] = useState("");
   const [language, setLanguage] = useState("English");
+  const [analystId, setAnalystId] = useState<string | null>(null);
+
+  // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
+
+  // Live intent + field detection on Step 1
+  useEffect(() => {
+    if (queryText.length < 10) return;
+    const detected = classifyIntent(queryText);
+    if (detected !== "other") setIntent(detected);
+    const ex = extractFields(queryText);
+    setAutoDetected(ex);
+    if (ex.stock && !stockName) setStockName(ex.stock);
+    if (ex.buyPrice && !buyPrice) setBuyPrice(String(ex.buyPrice));
+    if (ex.holding && !holding) setHolding(ex.holding);
+  }, [queryText]); // eslint-disable-line
 
   const { data: analysts = [] } = useQuery({
     queryKey: ["available-analysts"],
     queryFn: async () => {
       const { data } = await supabase
         .from("analyst_profiles")
-        .select("id, display_name, sebi_reg_number, avatar_url, specializations, rating")
-        .eq("is_approved", true)
-        .eq("is_available", true)
-        .limit(6);
+        .select("id, display_name, sebi_reg_number, avatar_url, rating")
+        .eq("is_approved", true).eq("is_available", true).limit(6);
       return data ?? [];
     },
   });
 
-  const pnl = useMemo(() => {
-    const bp = parseFloat(buyPrice);
-    const cp = parseFloat(currentPrice);
-    if (!bp || !cp) return null;
-    return ((cp - bp) / bp) * 100;
-  }, [buyPrice, currentPrice]);
-
   const balance = profile?.wallet_balance ?? 0;
-  const isFirstFree = balance >= 100; // signup bonus intact
-  const effectiveCost = isFirstFree ? 0 : REPORT_COST;
-  const canAfford = balance >= effectiveCost;
+  const showStockFields = ["stuck_position", "should_average", "buy_decision"].includes(intent);
+  const showBuyPrice = ["stuck_position", "should_average"].includes(intent);
 
   const goNext = () => {
-    const data = step === 0
-      ? { stock_name: stockName, buy_price: buyPrice ? Number(buyPrice) : null, current_price: currentPrice ? Number(currentPrice) : null, holding }
-      : { query_type: queryType, query_text: queryText, language };
-    const result = stepSchema[step].safeParse(data);
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message ?? "Please complete this step");
+    if (step === 0) {
+      if (queryText.trim().length < 15) { toast.error("Add at least 15 characters describing your question"); return; }
+      setStep(1);
       return;
     }
-    setStep((s) => s + 1);
+    if (step === 1) {
+      if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
+      if (showBuyPrice && !buyPrice) { toast.error("Please enter your buy price"); return; }
+      setStep(2);
+      return;
+    }
   };
 
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
-    if (!canAfford) { toast.error(`Add ₹${effectiveCost - balance} to your wallet to continue`); return; }
 
     setSubmitting(true);
     try {
       const { data: inserted, error: qErr } = await supabase
-        .from("queries")
-        .insert({
+        .from("queries").insert({
           user_id: user.id,
-          stock_name: stockName,
+          stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
           stock_symbol: stockSymbol || null,
           buy_price: buyPrice ? Number(buyPrice) : null,
-          current_price: currentPrice ? Number(currentPrice) : null,
+          current_price: null,
           query_text: queryText,
-          query_type: queryType,
+          query_type: intent,
           assigned_analyst_id: analystId,
           status: "pending",
-        })
-        .select("id")
-        .single();
+        }).select("id").single();
       if (qErr || !inserted) throw qErr ?? new Error("Failed to create query");
 
       const queryId = inserted.id as string;
 
-      const chosenAnalyst = analysts.find((a) => a.id === analystId);
-      const { data: ai, error: aiErr } = await supabase.functions.invoke("gemini-analysis", {
-        body: {
-          stockName, stockSymbol, buyPrice: buyPrice ? Number(buyPrice) : null,
-          currentPrice: currentPrice ? Number(currentPrice) : null,
-          queryText, queryType,
-          analystName: chosenAnalyst?.display_name ?? null,
-          analystSebi: chosenAnalyst?.sebi_reg_number ?? null,
-        },
+      // Audit: query submitted
+      await supabase.from("audit_events").insert({
+        event_type: "query_submitted", actor_id: user.id,
+        resource_type: "query", resource_id: queryId,
+        payload: { intent, has_stock: !!stockSymbol },
       });
-      if (aiErr || !ai?.report) {
-        const detail = (ai as { error?: string; details?: string } | null)?.details
-          ?? (ai as { error?: string } | null)?.error
-          ?? aiErr?.message
-          ?? "AI analysis failed";
-        console.error("gemini-analysis response:", ai, aiErr);
+
+      // Call new compliant edge function
+      const { data: ai, error: aiErr } = await supabase.functions.invoke("generate-ai-report", {
+        body: { query_id: queryId },
+      });
+      if (aiErr || !ai?.ok) {
+        const detail = (ai as { details?: string; error?: string } | null)?.details
+          ?? (ai as { error?: string } | null)?.error ?? aiErr?.message ?? "Generation failed";
         throw new Error(detail);
       }
-
-      await supabase.from("queries").update({ ai_report: ai.report, status: "ai_answered" }).eq("id", queryId);
-
-      if (effectiveCost > 0) {
-        await supabase.rpc("deduct_wallet_balance", {
-          _user_id: user.id,
-          _amount: effectiveCost,
-          _description: `AI Report — ${stockName}`,
-          _query_id: queryId,
-        });
-        await refresh();
-      }
-
-      toast.success("AI report ready. Expert video review queued (≤24h).");
+      await refresh();
+      toast.success("AI context report ready · Analyst video within 24h");
       navigate({ to: "/report/$queryId", params: { queryId } });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Something went wrong";
-      toast.error(`Report generation failed: ${msg}`);
+      toast.error(`Report generation failed: ${e instanceof Error ? e.message : "Unknown"}`);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
+    <TooltipProvider>
     <Card className="border border-border bg-card/80 backdrop-blur p-6 md:p-8">
       <div className="flex items-center justify-between mb-2">
         <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Step {step + 1} of 3</p>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Wallet className="h-3.5 w-3.5" />
-          Wallet: <span className="font-semibold text-foreground">₹{balance}</span>
+          <Wallet className="h-3.5 w-3.5" /> Wallet: <span className="font-semibold text-foreground">₹{balance}</span>
         </div>
       </div>
       <Progress value={((step + 1) / 3) * 100} className="h-1.5 mb-6" />
       <div className="grid grid-cols-3 text-[11px] uppercase tracking-wider mb-6">
-        {["Stock", "Query", "Review"].map((t, i) => (
+        {["Question", "Context", "Review"].map((t, i) => (
           <div key={t} className={`flex items-center gap-2 ${i === step ? "text-primary" : i < step ? "text-foreground" : "text-muted-foreground"}`}>
             <span className={`h-6 w-6 rounded-full border flex items-center justify-center text-[11px] ${i <= step ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{i + 1}</span>
             <span>{t}</span>
@@ -189,102 +197,132 @@ export function QueryForm() {
         ))}
       </div>
 
+      {/* ===== STEP 0: QUESTION ===== */}
       {step === 0 && (
         <div className="space-y-5">
           <div>
-            <Label>Stock *</Label>
-            <StockAutocomplete
-              autoFocus
-              value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
-              onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
-              onClear={() => { setStockName(""); setStockSymbol(""); }}
-            />
+            <Label htmlFor="qtext" className="text-base">What's your question? *</Label>
+            <Textarea id="qtext" autoFocus rows={5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
+              placeholder="e.g. I bought Siemens at 3668 a year back, should I sell now?"
+              className="mt-2 text-base" />
+            <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="buy">Buy Price</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                <Input id="buy" className="pl-7" type="number" inputMode="decimal" placeholder="85.00" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-1">Leave blank if fresh entry</p>
-            </div>
-            <div>
-              <Label htmlFor="cmp">Current Market Price</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                <Input id="cmp" className="pl-7" type="number" inputMode="decimal" placeholder="67.40" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} />
-              </div>
-              {pnl !== null && (
-                <Badge className={`mt-2 ${pnl >= 0 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-red-500/15 text-red-700 dark:text-red-300"}`}>
-                  {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}% {pnl >= 0 ? "profit" : "loss"}
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div>
-            <Label>Holding duration *</Label>
-            <Select value={holding} onValueChange={setHolding}>
-              <SelectTrigger><SelectValue placeholder="Select duration" /></SelectTrigger>
-              <SelectContent>
-                {HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
 
-      {step === 1 && (
-        <div className="space-y-5">
           <div>
-            <Label>What kind of question? *</Label>
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {QUESTION_EXAMPLES.map((q) => (
+                <button key={q} type="button" onClick={() => setQueryText(q)}
+                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs">{q}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Question type</Label>
+            <div className="mt-2 flex flex-wrap gap-2">
               {QUERY_TYPES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setQueryType(t.id)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-sm transition ${queryType === t.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-background hover:border-primary/40"}`}
-                >
+                <button key={t.id} type="button" onClick={() => setIntent(t.id)}
+                  className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
                   <span className="mr-1.5">{t.emoji}</span>{t.label}
                 </button>
               ))}
             </div>
           </div>
-          <div>
-            <Label htmlFor="qtext">Describe your situation *</Label>
-            <Textarea id="qtext" maxLength={500} rows={6} value={queryText} onChange={(e) => setQueryText(e.target.value)}
-              placeholder="e.g. I bought IDFC First Bank at ₹85 in Jan 2024. It's now at ₹67. I have ₹50,000 more to invest. Should I average down, hold as is, or exit with a loss?" />
-            <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
-            <DetectionChip text={queryText} currentType={queryType} onApply={(label: string) => {
-              const match = QUERY_TYPES.find((q) => q.label === label);
-              if (match) setQueryType(match.id);
-            }} />
-          </div>
+        </div>
+      )}
+
+      {/* ===== STEP 1: CONTEXT (dynamic by intent) ===== */}
+      {step === 1 && (
+        <div className="space-y-5">
+          {Object.keys(autoDetected).length > 0 && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <span>Auto-detected from your question — edit if wrong</span>
+            </div>
+          )}
+
+          {showStockFields && (
+            <div>
+              <Label>Stock *</Label>
+              <StockAutocomplete
+                value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
+                onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
+                onClear={() => { setStockName(""); setStockSymbol(""); }}
+              />
+            </div>
+          )}
+
+          {showBuyPrice && (
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="buy" className="flex items-center gap-1">
+                  Buy Price *
+                  <Tooltip>
+                    <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
+                    <TooltipContent className="text-xs max-w-[200px]">Your average entry price for this position.</TooltipContent>
+                  </Tooltip>
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                  <Input id="buy" className="pl-7" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <Label>Holding duration *</Label>
+                <Select value={holding} onValueChange={setHolding}>
+                  <SelectTrigger><SelectValue placeholder="Select duration" /></SelectTrigger>
+                  <SelectContent>{HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {intent === "buy_decision" && (
+            <div>
+              <Label>Investment horizon *</Label>
+              <Select value={horizon} onValueChange={setHorizon}>
+                <SelectTrigger><SelectValue placeholder="How long do you plan to hold?" /></SelectTrigger>
+                <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {(intent === "educational" || intent === "sector_view") && (
+            <div>
+              <Label className="flex items-center gap-1">
+                Related stock (optional)
+                <Tooltip>
+                  <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
+                  <TooltipContent className="text-xs max-w-[220px]">Optional — pick a stock to anchor the educational context.</TooltipContent>
+                </Tooltip>
+              </Label>
+              <StockAutocomplete
+                value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
+                onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
+                onClear={() => { setStockName(""); setStockSymbol(""); }}
+              />
+            </div>
+          )}
+
           <div>
             <Label>Choose analyst (optional)</Label>
             <div className="grid sm:grid-cols-2 gap-2 mt-1">
-              <button
-                type="button"
-                onClick={() => setAnalystId(null)}
-                className={`text-left rounded-xl border p-3 transition ${analystId === null ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-              >
-                <p className="text-sm font-semibold">Let us assign automatically</p>
-                <p className="text-xs text-muted-foreground">Best-fit SEBI analyst within 24h</p>
+              <button type="button" onClick={() => setAnalystId(null)}
+                className={`text-left rounded-xl border p-3 transition ${analystId === null ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
+                <p className="text-sm font-semibold">Auto-assign best fit</p>
+                <p className="text-xs text-muted-foreground">SEBI analyst within 24h</p>
               </button>
               {analysts.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setAnalystId(a.id)}
-                  className={`text-left rounded-xl border p-3 transition ${analystId === a.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-                >
+                <button key={a.id} type="button" onClick={() => setAnalystId(a.id)}
+                  className={`text-left rounded-xl border p-3 transition ${analystId === a.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
                   <p className="text-sm font-semibold">{a.display_name}</p>
                   <p className="text-[11px] text-muted-foreground">SEBI {a.sebi_reg_number} · ⭐ {Number(a.rating ?? 5).toFixed(1)}</p>
                 </button>
               ))}
             </div>
           </div>
+
           <div>
             <Label>Language preference</Label>
             <Select value={language} onValueChange={setLanguage}>
@@ -295,37 +333,40 @@ export function QueryForm() {
         </div>
       )}
 
+      {/* ===== STEP 2: REVIEW ===== */}
       {step === 2 && (
         <div className="space-y-5">
           <div className="rounded-xl border border-border bg-background/60 p-5 space-y-3">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Field label="Stock" value={`${stockName}${stockSymbol ? ` (${stockSymbol})` : ""}`} />
-              <Field label="Holding" value={holding} />
-              <Field label="Buy Price" value={buyPrice ? `₹${buyPrice}` : "—"} />
-              <Field label="Current Price" value={currentPrice ? `₹${currentPrice}` : "—"} />
-              <Field label="Question type" value={QUERY_TYPES.find((q) => q.id === queryType)?.label ?? "—"} />
-              <Field label="Language" value={language} />
-            </div>
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Your question</p>
               <p className="text-sm mt-1 whitespace-pre-wrap">{queryText}</p>
             </div>
+            <div className="grid grid-cols-2 gap-3 text-sm border-t border-border pt-3">
+              <Field label="Type" value={QUERY_TYPES.find((q) => q.id === intent)?.label ?? "—"} />
+              {stockName && <Field label="Stock" value={`${stockName}${stockSymbol ? ` (${stockSymbol})` : ""}`} />}
+              {buyPrice && <Field label="Buy Price" value={`₹${buyPrice}`} />}
+              {holding && <Field label="Holding" value={holding} />}
+              {horizon && <Field label="Horizon" value={horizon} />}
+              <Field label="Language" value={language} />
+            </div>
           </div>
 
-          <div className={`rounded-xl p-4 border ${canAfford ? "border-primary/30 bg-primary/5" : "border-red-500/40 bg-red-500/5"}`}>
-            {isFirstFree ? (
-              <p className="text-sm"><span className="font-semibold text-primary">AI Report: FREE</span> · Using your signup bonus (₹100 wallet)</p>
-            ) : canAfford ? (
-              <p className="text-sm">AI Report: <span className="font-semibold">₹{REPORT_COST}</span> will be deducted from wallet (balance ₹{balance})</p>
-            ) : (
-              <p className="text-sm text-red-600 dark:text-red-400">Insufficient credits. Add ₹{REPORT_COST - balance} to continue.</p>
-            )}
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              <span><strong>AI Context Report:</strong> included free</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              <span><strong>SEBI Analyst Video:</strong> included within 24h of submission</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground pt-1">Both are part of the same deliverable — not separate purchases.</p>
           </div>
 
           <label className="flex items-start gap-3 cursor-pointer">
             <Checkbox checked={agreeDisclaimer} onCheckedChange={(c) => setAgreeDisclaimer(c === true)} className="mt-1" />
             <span className="text-xs text-muted-foreground leading-relaxed">
-              I understand this AI-generated report is educational content only and not SEBI-registered investment advice. I will consult a SEBI-registered Research Analyst before acting on any recommendation.
+              I understand the AI report is educational context only — not SEBI investment advice. Personalized recommendations come from a SEBI-Registered Research Analyst within 24 hours.
             </span>
           </label>
         </div>
@@ -338,13 +379,14 @@ export function QueryForm() {
         {step < 2 ? (
           <Button onClick={goNext}>Continue <ArrowRight className="h-4 w-4 ml-1" /></Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={submitting || !agreeDisclaimer || !canAfford}
+          <Button onClick={handleSubmit} disabled={submitting || !agreeDisclaimer}
             className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95 px-6">
-            {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…</> : <><Sparkles className="h-4 w-4 mr-2" /> Get AI Report Now</>}
+            {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…</> : <><Sparkles className="h-4 w-4 mr-2" /> Generate Report</>}
           </Button>
         )}
       </div>
     </Card>
+    </TooltipProvider>
   );
 }
 
@@ -353,22 +395,6 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
-    </div>
-  );
-}
-
-function DetectionChip({ text, currentType, onApply }: { text: string; currentType: string; onApply: (label: string) => void }) {
-  const detected = useQueryTypeDetection(text);
-  const [dismissed, setDismissed] = useState<string | null>(null);
-  if (!detected || dismissed === detected) return null;
-  const alreadyMatches = QUERY_TYPES.find((q) => q.id === currentType)?.label === detected;
-  if (alreadyMatches) return null;
-  return (
-    <div className="mt-2 flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-foreground animate-fade-in">
-      <Lightbulb className="h-3.5 w-3.5 text-accent" />
-      <span>Looks like you're asking about <strong>{detected}</strong> — apply this type?</span>
-      <button type="button" onClick={() => onApply(detected)} className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground hover:opacity-90">Apply</button>
-      <button type="button" onClick={() => setDismissed(detected)} aria-label="Dismiss" className="rounded-full p-1 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
     </div>
   );
 }
