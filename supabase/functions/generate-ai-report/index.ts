@@ -194,14 +194,20 @@ async function fetchStockData(symbol: string) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: `Return ONLY raw JSON. Realistic current NSE price in INR for ${symbol}. Format: {"price": 1234.56}` }] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 200 },
+            generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
           }),
         },
       );
       const j = await r.json();
       const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
-        const parsed = JSON.parse(text);
+        let parsed: { price?: number } | null = null;
+        try {
+          const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+          parsed = JSON.parse(clean);
+        } catch {
+          parsed = null;
+        }
         if (parsed?.price) {
           return {
             ltp: Number(parsed.price),
