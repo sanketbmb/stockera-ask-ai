@@ -224,23 +224,35 @@ Deno.serve(async (req) => {
     const ltp = stockData?.ltp ?? query.current_price;
     const pnl_state = computePnlState(query.buy_price, ltp);
 
-    // d) Build context
-    const userPrompt = `
-INTENT: ${intent}
-PNL_STATE: ${pnl_state}
-USER_QUESTION: "${query.query_text}"
-GROUND_TRUTH_DATA:
-  stock_symbol: ${query.stock_symbol ?? "n/a"}
-  exchange: ${stockData?.exchange ?? "n/a"}
-  ltp: ${stockData?.ltp ?? "data not available"}
-  ltp_timestamp: ${stockData?.ltp_timestamp ?? "n/a"}
-  52w_high: ${stockData?.fifty_two_week_high ?? "n/a"}
-  52w_low: ${stockData?.fifty_two_week_low ?? "n/a"}
-  user_buy_price: ${query.buy_price ?? "n/a"}
-  recent_headlines: []  (news API not configured yet)
-USER_CONTEXT:
-  holding_duration: ${query.query_type ?? "n/a"}
-`;
+    // d) Build context (matches the schema in system prompt)
+    const pnl_pct = (query.buy_price && ltp)
+      ? Number((((ltp - query.buy_price) / query.buy_price) * 100).toFixed(2))
+      : null;
+    const contextObj = {
+      intent,
+      user_question: query.query_text,
+      stock: {
+        symbol: query.stock_symbol ?? null,
+        name: query.stock_name ?? null,
+        exchange: stockData?.exchange ?? null,
+        sector: null,
+        market_cap_cr: null,
+        ltp: stockData?.ltp ?? null,
+        ltp_timestamp: stockData?.ltp_timestamp ?? null,
+        ltp_source: stockData?.source ?? null,
+      },
+      user_position: {
+        buy_price: query.buy_price ?? null,
+        holding_duration: query.query_type ?? null,
+        pnl_pct,
+        pnl_state,
+      },
+      fundamentals: null,
+      recent_news: [],
+      recent_corporate_actions: [],
+    };
+    const userPrompt = "CONTEXT:\n" + JSON.stringify(contextObj, null, 2)
+      + "\n\nReturn ONLY the JSON output matching the OUTPUT SCHEMA. No markdown, no commentary.";
 
     // e) LLM
     const llm = await callLLM(userPrompt);
