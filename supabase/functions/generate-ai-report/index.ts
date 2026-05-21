@@ -119,6 +119,35 @@ async function fetchStockData(symbol: string): Promise<any> {
       }
     }
   } catch (e) { console.error("twelvedata error", e); }
+  // Gemini-estimated LTP fallback
+  if (GEMINI_API_KEY) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `Return ONLY raw JSON, no markdown. Realistic current NSE price in INR for ${symbol}. Format: {"price": 1234.56}` }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 200 },
+          }),
+        },
+      );
+      const j = await r.json();
+      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const parsed = JSON.parse(text);
+        if (parsed?.price) {
+          return {
+            ltp: Number(parsed.price),
+            ltp_timestamp: new Date().toISOString(),
+            source: "Gemini estimate",
+            exchange: "NSE",
+          };
+        }
+      }
+    } catch (e) { console.error("gemini ltp fallback err", e); }
+  }
   return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange: "NSE" };
 }
 
@@ -158,13 +187,15 @@ async function callLLM(userPrompt: string): Promise<{ json: any; provider: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\n" + userPrompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 2500 },
+          generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 8192 },
         }),
       }
     );
     const j = await r.json();
-    const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Gemini empty response: " + JSON.stringify(j).slice(0, 300));
+    const finishReason = j?.candidates?.[0]?.finishReason;
+    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+    console.log("Gemini direct finishReason:", finishReason, "textLen:", text?.length ?? 0);
+    if (!text) throw new Error("Gemini empty response (finishReason=" + finishReason + "): " + JSON.stringify(j).slice(0, 300));
     return { json: JSON.parse(text), provider: "gemini-direct", model: "gemini-2.0-flash" };
   }
   throw new Error("No LLM provider available");
