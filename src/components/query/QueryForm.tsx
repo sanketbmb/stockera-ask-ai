@@ -128,6 +128,7 @@ export function QueryForm() {
     if (step === 1) {
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
       if (showBuyPrice && !buyPrice) { toast.error("Please enter your buy price"); return; }
+      if (showStockFields && !currentPrice) { toast.error("Please enter the current stock price"); return; }
       setStep(2);
       return;
     }
@@ -249,41 +250,45 @@ export function QueryForm() {
             </div>
           )}
 
-          {showBuyPrice && (
+          {showStockFields && (
             <div className="grid sm:grid-cols-2 gap-3 items-start">
-              <div className="space-y-1.5">
-                <Label htmlFor="buy" className="flex items-center gap-1 h-5 leading-5">
-                  <span>Buy Price *</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                    <TooltipContent className="text-xs max-w-[200px]">Your average entry price for this position.</TooltipContent>
-                  </Tooltip>
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                  <Input id="buy" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+              {showBuyPrice && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="buy" className="flex items-center gap-1 h-5 leading-5">
+                    <span>Buy Price *</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
+                      <TooltipContent className="text-xs max-w-[200px]">Your average entry price for this position.</TooltipContent>
+                    </Tooltip>
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                    <Input id="buy" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="current" className="flex items-center gap-1 h-5 leading-5">
-                  <span>Current Price</span>
+                  <span>Current Price *</span>
                   <Tooltip>
                     <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                    <TooltipContent className="text-xs max-w-[220px]">Optional. If blank we'll fetch the live NSE price automatically.</TooltipContent>
+                    <TooltipContent className="text-xs max-w-[220px]">Enter the stock price you see right now so the AI report uses your latest context.</TooltipContent>
                   </Tooltip>
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                  <Input id="current" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="auto-fetch" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} />
+                  <Input id="current" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3589" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} />
                 </div>
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="holding" className="flex items-center h-5 leading-5">Holding duration *</Label>
-                <Select value={holding} onValueChange={setHolding}>
-                  <SelectTrigger id="holding" className="h-10"><SelectValue placeholder="Select duration" /></SelectTrigger>
-                  <SelectContent>{HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+              {showBuyPrice && (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="holding" className="flex items-center h-5 leading-5">Holding duration *</Label>
+                  <Select value={holding} onValueChange={setHolding}>
+                    <SelectTrigger id="holding" className="h-10"><SelectValue placeholder="Select duration" /></SelectTrigger>
+                    <SelectContent>{HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           )}
 
