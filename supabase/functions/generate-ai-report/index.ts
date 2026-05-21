@@ -187,13 +187,15 @@ async function callLLM(userPrompt: string): Promise<{ json: any; provider: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\n" + userPrompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 2500 },
+          generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 8192 },
         }),
       }
     );
     const j = await r.json();
-    const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Gemini empty response: " + JSON.stringify(j).slice(0, 300));
+    const finishReason = j?.candidates?.[0]?.finishReason;
+    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+    console.log("Gemini direct finishReason:", finishReason, "textLen:", text?.length ?? 0);
+    if (!text) throw new Error("Gemini empty response (finishReason=" + finishReason + "): " + JSON.stringify(j).slice(0, 300));
     return { json: JSON.parse(text), provider: "gemini-direct", model: "gemini-2.0-flash" };
   }
   throw new Error("No LLM provider available");
