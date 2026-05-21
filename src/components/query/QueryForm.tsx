@@ -254,10 +254,10 @@ export function QueryForm() {
           )}
 
           {showBuyPrice && (
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="buy" className="flex items-center gap-1">
-                  Buy Price *
+            <div className="grid sm:grid-cols-2 gap-3 items-start">
+              <div className="space-y-1.5">
+                <Label htmlFor="buy" className="flex items-center gap-1 h-5 leading-5">
+                  <span>Buy Price *</span>
                   <Tooltip>
                     <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
                     <TooltipContent className="text-xs max-w-[200px]">Your average entry price for this position.</TooltipContent>
@@ -265,13 +265,13 @@ export function QueryForm() {
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                  <Input id="buy" className="pl-7" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                  <Input id="buy" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
                 </div>
               </div>
-              <div>
-                <Label>Holding duration *</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="holding" className="flex items-center h-5 leading-5">Holding duration *</Label>
                 <Select value={holding} onValueChange={setHolding}>
-                  <SelectTrigger><SelectValue placeholder="Select duration" /></SelectTrigger>
+                  <SelectTrigger id="holding" className="h-10"><SelectValue placeholder="Select duration" /></SelectTrigger>
                   <SelectContent>{HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
