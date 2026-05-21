@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useServerFn } from "@tanstack/react-start";
+import { generateAiReport } from "@/lib/report.functions";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -67,6 +69,7 @@ function extractFields(text: string): { stock?: string; buyPrice?: number; holdi
 
 export function QueryForm() {
   const navigate = useNavigate();
+  const runGenerateAiReport = useServerFn(generateAiReport);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -159,15 +162,7 @@ export function QueryForm() {
         payload: { intent, has_stock: !!stockSymbol },
       });
 
-      // Call new compliant edge function
-      const { data: ai, error: aiErr } = await supabase.functions.invoke("generate-ai-report", {
-        body: { query_id: queryId },
-      });
-      if (aiErr || !ai?.ok) {
-        const detail = (ai as { details?: string; error?: string } | null)?.details
-          ?? (ai as { error?: string } | null)?.error ?? aiErr?.message ?? "Generation failed";
-        throw new Error(detail);
-      }
+      await runGenerateAiReport({ data: { queryId } });
       await refresh();
       toast.success("AI context report ready · Analyst video within 24h");
       navigate({ to: "/report/$queryId", params: { queryId } });
