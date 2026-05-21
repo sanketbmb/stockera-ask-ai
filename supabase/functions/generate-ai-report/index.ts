@@ -50,6 +50,19 @@ function errorResponse(stage: string, err: unknown, code = "UNKNOWN", status = 5
   }, status);
 }
 
+function getJwtSubject(req: Request) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const payload = token?.split(".")[1];
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, "=");
+    return JSON.parse(atob(padded))?.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const SYSTEM_PROMPT = `# SYSTEM PROMPT — AI REPORT GENERATOR v1.0
 # Owner: Stockera Technology Pvt Ltd
 
@@ -153,52 +166,43 @@ async function fetchStockData(symbol: string) {
 }
 
 async function callLLM(userPrompt: string) {
-  if (LOVABLE_API_KEY) {
-    try {
-      const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-        }),
-      });
-      if (r.ok) {
-        const j = await r.json();
-        const content = j.choices?.[0]?.message?.content;
-        console.log("STEP 5a: Lovable AI OK", { len: content?.length ?? 0 });
-        return { json: JSON.parse(content), provider: "lovable", model: "google/gemini-2.5-pro" };
-      }
-      const errText = await r.text();
-      console.error("Lovable AI failed:", r.status, errText.slice(0, 300));
-    } catch (e) { console.error("lovable err", e); }
-  }
   if (GEMINI_API_KEY) {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\n" + userPrompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 8192 },
-        }),
-      }
-    );
-    const j = await r.json();
-    const finishReason = j?.candidates?.[0]?.finishReason;
-    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-    console.log("STEP 5b: Gemini direct", { finishReason, len: text?.length ?? 0 });
-    if (!text) throw new Error("Gemini empty response (finishReason=" + finishReason + "): " + JSON.stringify(j).slice(0, 300));
-    return { json: JSON.parse(text), provider: "gemini-direct", model: "gemini-2.0-flash" };
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\n" + userPrompt }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.3, maxOutputTokens: 8192 },
+          }),
+        }
+      );
+      const j = await r.json();
+      const finishReason = j?.candidates?.[0]?.finishReason;
+      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+      console.log("STEP 5a: Gemini direct", { ok: r.ok, finishReason, len: text?.length ?? 0 });
+      if (r.ok && text) return { json: JSON.parse(text), provider: "gemini-direct", model: "gemini-2.0-flash" };
+      console.error("Gemini direct failed:", r.status, JSON.stringify(j).slice(0, 500));
+    } catch (e) { console.error("gemini direct err", e); }
+  }
+  if (LOVABLE_API_KEY) {
+    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_API_KEY}` },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-pro",
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userPrompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      }),
+    });
+    const j = await r.json().catch(() => null);
+    const content = j?.choices?.[0]?.message?.content;
+    console.log("STEP 5b: Lovable Gemini fallback", { ok: r.ok, len: content?.length ?? 0 });
+    if (r.ok && content) return { json: JSON.parse(content), provider: "lovable-gemini-fallback", model: "google/gemini-2.5-pro" };
+    throw new Error(`Lovable Gemini fallback failed (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
   }
   throw new Error("No LLM provider available (missing LOVABLE_API_KEY and GEMINI_API_KEY)");
 }
