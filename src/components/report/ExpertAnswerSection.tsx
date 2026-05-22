@@ -139,6 +139,7 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-600" />
                 <div><span className="font-medium">Risk Note:</span> {textAns.risk_note}</div>
               </div>
+            )}
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
