@@ -249,17 +249,19 @@ async function callLLM(userPrompt: string) {
         errorCode: j?.error?.code,
         errorMsg: j?.error?.message,
       });
-      if (!r.ok) {
+      if (r.status === 429) {
+        console.warn("Gemini 429 quota hit — falling through to Lovable fallback");
+      } else if (!r.ok) {
         console.error("Gemini HTTP error:", r.status, JSON.stringify(j).slice(0, 400));
         throw new Error(`Gemini API HTTP ${r.status}: ${j?.error?.message ?? "unknown"}`);
+      } else {
+        if (!rawText) {
+          throw new Error(`Gemini returned no content (finishReason: ${finishReason ?? "none"})`);
+        }
+        const clean = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+        const parsed = JSON.parse(clean);
+        return { json: parsed, provider: "gemini-direct", model: "gemini-2.0-flash" };
       }
-      if (!rawText) {
-        console.error("Gemini returned empty text. finishReason:", finishReason, "full response:", JSON.stringify(j).slice(0, 600));
-        throw new Error(`Gemini returned no content (finishReason: ${finishReason ?? "none"})`);
-      }
-      const clean = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-      const parsed = JSON.parse(clean);
-      return { json: parsed, provider: "gemini-direct", model: "gemini-2.0-flash" };
     } catch (e) {
       console.error("gemini direct err:", (e as Error).message);
       throw new Error(`Gemini call failed: ${(e as Error).message}`);
