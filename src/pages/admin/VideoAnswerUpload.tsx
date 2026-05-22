@@ -17,8 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const MAX_SIZE = 100 * 1024 * 1024;
-const MAX_DURATION = 5 * 60;
+const MAX_SIZE = 200 * 1024 * 1024;
+const MAX_DURATION = 10 * 60;
 
 async function captureThumbnail(file: File): Promise<Blob | null> {
   return new Promise((resolve) => {
@@ -103,7 +103,7 @@ export default function VideoAnswerUpload() {
   const handleFileSelect = async (f: File | null) => {
     if (!f) return;
     if (f.size > MAX_SIZE) {
-      toast.error("File too large — max 100MB");
+      toast.error("File too large — max 200MB");
       return;
     }
     if (!/video\/(mp4|quicktime|webm|x-matroska)/.test(f.type) && !/\.(mp4|mov|webm)$/i.test(f.name)) {
@@ -112,7 +112,7 @@ export default function VideoAnswerUpload() {
     }
     const dur = await getDuration(f);
     if (dur > MAX_DURATION) {
-      toast.error("Video must be under 5 minutes");
+      toast.error("Video must be under 10 minutes");
       return;
     }
     setFile(f);
@@ -190,11 +190,24 @@ export default function VideoAnswerUpload() {
         .update({ is_published: true })
         .eq("id", uploaded.id);
       if (aErr) throw aErr;
-      const { error: qErr } = await supabase
-        .from("queries")
-        .update({ status: "expert_answered" })
-        .eq("id", queryId);
-      if (qErr) throw qErr;
+      const { data: q } = await supabase.from("queries").select("status").eq("id", queryId).single();
+      if (q && q.status !== "expert_answered") {
+        const { error: qErr } = await supabase
+          .from("queries")
+          .update({ status: "expert_answered" })
+          .eq("id", queryId);
+        if (qErr) throw qErr;
+      }
+      // Audit
+      if (user) {
+        await supabase.from("audit_events").insert({
+          event_type: "answer_published",
+          actor_id: user.id,
+          resource_type: "answer",
+          resource_id: uploaded.id,
+          payload: { answer_type: "video", query_id: queryId } as never,
+        });
+      }
     },
     onSuccess: () => {
       toast.success("Answer published to user");
@@ -249,7 +262,7 @@ export default function VideoAnswerUpload() {
                 >
                   <Upload className="h-8 w-8 text-muted-foreground mb-2" />
                   <p className="font-medium">{file ? file.name : "Drag &amp; drop or click to choose"}</p>
-                  <p className="text-xs text-muted-foreground mt-1">MP4 / MOV / WEBM · max 100MB · max 5 min</p>
+                  <p className="text-xs text-muted-foreground mt-1">MP4 / MOV / WEBM · max 200MB · max 10 min</p>
                   <input
                     id="video-file"
                     type="file"
@@ -330,7 +343,7 @@ export default function VideoAnswerUpload() {
         <Card className="p-5 h-fit sticky top-6">
           <p className="font-display text-lg">Recording tips</p>
           <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
-            <li>• Keep it under 5 minutes</li>
+            <li>• Keep it under 10 minutes</li>
             <li>• Speak clearly, single take if possible</li>
             <li>• Give a clear verdict + reasoning</li>
             <li>• Mention price levels: SL, target</li>

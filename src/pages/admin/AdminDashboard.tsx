@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Video, PencilLine, ChevronDown, Star, Inbox as InboxIcon, Clock, TrendingUp, CheckCircle2 } from "lucide-react";
+import { Video, PencilLine, ChevronDown, Star, Inbox as InboxIcon, Clock, TrendingUp, CheckCircle2, ShieldAlert, ArrowRight } from "lucide-react";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { TextAnswerModal } from "@/components/admin/TextAnswerModal";
+import { AnalystAnswerPanel } from "@/components/admin/AnalystAnswerPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -65,8 +65,9 @@ function TimeChip({ created }: { created: string }) {
   );
 }
 
-function QueryQueueCard({ row, onText }: { row: QueueRow; onText: () => void }) {
+function QueryQueueCard({ row }: { row: QueueRow }) {
   const [open, setOpen] = useState(false);
+  const [answerOpen, setAnswerOpen] = useState(false);
   const verdict = row.ai_report?.verdict;
   return (
     <Card className="p-5 hover:shadow-card transition-shadow">
@@ -111,20 +112,50 @@ function QueryQueueCard({ row, onText }: { row: QueueRow; onText: () => void }) 
       <div className="mt-4 flex flex-wrap gap-2">
         <Button asChild size="sm" className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
           <Link to="/admin/upload-answer/$queryId" params={{ queryId: row.id }}>
-            <Video className="h-3.5 w-3.5 mr-1.5" /> Record &amp; Upload Video
+            <Video className="h-3.5 w-3.5 mr-1.5" /> Upload Video Answer
           </Link>
         </Button>
-        <Button size="sm" variant="outline" onClick={onText}>
-          <PencilLine className="h-3.5 w-3.5 mr-1.5" /> Send Text Answer
+        <Button size="sm" variant="outline" onClick={() => setAnswerOpen((v) => !v)}>
+          <PencilLine className="h-3.5 w-3.5 mr-1.5" /> {answerOpen ? "Hide answer panel" : "Answer this query"}
         </Button>
       </div>
+
+      {answerOpen && <AnalystAnswerPanel queryId={row.id} stockName={row.stock_name} />}
+    </Card>
+  );
+}
+
+function PendingApprovalLockout() {
+  return (
+    <Card className="p-8 max-w-2xl mx-auto border-amber-500/40 bg-amber-500/5 text-center">
+      <ShieldAlert className="h-12 w-12 text-amber-600 mx-auto mb-3" />
+      <h2 className="font-display text-2xl mb-2">⏳ Your application is under review</h2>
+      <p className="text-sm text-muted-foreground max-w-md mx-auto">
+        Our team will verify your SEBI credentials within 24–48 hours. You will receive an email and an in-app notification once approved.
+      </p>
+      <Button asChild className="mt-5">
+        <Link to="/admin/profile">Edit my profile <ArrowRight className="h-4 w-4 ml-1.5" /></Link>
+      </Button>
     </Card>
   );
 }
 
 export default function AdminDashboard() {
-  const { user, profile } = useAuth();
-  const [textTarget, setTextTarget] = useState<QueueRow | null>(null);
+  const { user, profile, isAdmin } = useAuth();
+
+  // Check approval status — admins bypass
+  const { data: analystProfile, isLoading: profileLoading } = useQuery({
+    queryKey: ["self_analyst_profile", user?.id],
+    enabled: !!user && !isAdmin,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("analyst_profiles")
+        .select("is_approved")
+        .eq("id", user!.id)
+        .maybeSingle();
+      return data;
+    },
+  });
 
   const { data: stats } = useQuery({
     queryKey: ["analyst_stats", user?.id],
@@ -132,49 +163,38 @@ export default function AdminDashboard() {
       if (!user) return null;
       const today = startOfDay(new Date()).toISOString();
       const [{ count: pending }, { count: answered }, apRes] = await Promise.all([
-        supabase
-          .from("queries")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_analyst_id", user.id)
-          .in("status", ["pending", "ai_answered"]),
-        supabase
-          .from("answers")
-          .select("id", { count: "exact", head: true })
-          .eq("expert_id", user.id)
-          .gte("created_at", today),
-        supabase
-          .from("analyst_profiles")
-          .select("rating, total_sessions")
-          .eq("id", user.id)
-          .maybeSingle(),
+        supabase.from("queries").select("id", { count: "exact", head: true })
+          .eq("assigned_analyst_id", user.id).in("status", ["pending", "ai_answered", "in_review"]),
+        supabase.from("answers").select("id", { count: "exact", head: true })
+          .eq("expert_id", user.id).gte("created_at", today),
+        supabase.from("analyst_profiles").select("rating, total_sessions").eq("id", user.id).maybeSingle(),
       ]);
-      return {
-        pending: pending ?? 0,
-        answered: answered ?? 0,
-        rating: apRes.data?.rating ?? 5,
-        sessions: apRes.data?.total_sessions ?? 0,
-      };
+      return { pending: pending ?? 0, answered: answered ?? 0, rating: apRes.data?.rating ?? 5, sessions: apRes.data?.total_sessions ?? 0 };
     },
-    enabled: !!user,
+    enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
   });
 
   const { data: queue, isLoading } = useQuery({
     queryKey: ["analyst_queue", user?.id],
     queryFn: async () => {
       if (!user) return [] as QueueRow[];
-      // assigned to me OR unassigned & pending — visible queue for analysts
       const { data, error } = await supabase
         .from("queries")
         .select("id, stock_name, stock_symbol, query_text, query_type, status, buy_price, current_price, ai_report, created_at, assigned_analyst_id")
         .or(`assigned_analyst_id.eq.${user.id},and(assigned_analyst_id.is.null,status.in.(pending,ai_answered))`)
-        .in("status", ["pending", "ai_answered"])
+        .in("status", ["pending", "ai_answered", "in_review"])
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
       return (data ?? []) as unknown as QueueRow[];
     },
-    enabled: !!user,
+    enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
   });
+
+  // Lockout if not approved
+  if (!isAdmin && !profileLoading && analystProfile && analystProfile.is_approved === false) {
+    return <AdminShell><PendingApprovalLockout /></AdminShell>;
+  }
 
   return (
     <AdminShell>
@@ -197,9 +217,7 @@ export default function AdminDashboard() {
         </div>
 
         {isLoading && (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}
-          </div>
+          <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
         )}
 
         {!isLoading && (!queue || queue.length === 0) && (
@@ -210,20 +228,8 @@ export default function AdminDashboard() {
           </Card>
         )}
 
-        {queue?.map((row) => (
-          <QueryQueueCard key={row.id} row={row} onText={() => setTextTarget(row)} />
-        ))}
+        {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
       </div>
-
-      {textTarget && (
-        <TextAnswerModal
-          open={!!textTarget}
-          onOpenChange={(v) => !v && setTextTarget(null)}
-          queryId={textTarget.id}
-          queryType={textTarget.query_type}
-          stockName={textTarget.stock_name}
-        />
-      )}
     </AdminShell>
   );
 }
