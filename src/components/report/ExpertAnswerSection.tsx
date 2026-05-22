@@ -140,6 +140,13 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
                 <div><span className="font-medium">Risk Note:</span> {textAns.risk_note}</div>
               </div>
             )}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">Want a 1:1 with this analyst?</p>
+            {data?.analystId && (
+              <Link to="/analyst/$analystId" params={{ analystId: data.analystId }} className="text-xs font-medium text-accent hover:underline inline-flex items-center gap-1">
+                View profile & book private session <ArrowRight className="h-3 w-3" />
+              </Link>
+            )}
           </div>
         </Card>
       )}
@@ -147,18 +154,7 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
       {videoAns?.video_url && (
         <Card className="p-6 border-l-4 border-l-primary" id="expert-video">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={analyst?.avatar_url ?? undefined} />
-                <AvatarFallback>{(analyst?.display_name ?? "A").slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium flex items-center gap-1.5"><Lock className="h-3 w-3" /> Personal video analysis by {analyst?.display_name ?? "your analyst"}</p>
-                <p className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> SEBI {analyst?.sebi_type ?? "RA"} · {analyst?.sebi_reg_number ?? "—"}
-                </p>
-              </div>
-            </div>
+            <AnalystBlock analyst={analyst} analystId={data?.analystId ?? null} videoLabel />
             <Badge variant="outline" className="text-[10px]">
               {videoAns.duration_seconds ? `${Math.floor(videoAns.duration_seconds / 60)}:${String(videoAns.duration_seconds % 60).padStart(2, "0")}` : "video"}
             </Badge>
