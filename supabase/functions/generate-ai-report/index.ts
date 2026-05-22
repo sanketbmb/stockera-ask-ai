@@ -17,8 +17,8 @@ const PROHIBITED = [
 ];
 const PROHIBITED_VERDICTS = ["verdict: buy", "verdict: sell", "verdict: hold",
   "our verdict", "final verdict"];
-const PROHIBITED_FIELDS = ["target", "target_price", "stop_loss", "stoploss",
-  "support_zone", "resistance_zone", "support_level", "resistance_level", "verdict"];
+const PROHIBITED_FIELDS = ["target_price", "stop_loss", "stoploss",
+  "support_zone", "resistance_zone", "support_level", "resistance_level"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
