@@ -17,11 +17,11 @@ export const bookAnalystVideoDemo = createServerFn({ method: "POST" })
     z.object({ queryId: z.string().uuid().optional().nullable() }).parse(input)
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { userId, supabase } = context;
     const fakeOrderId = `demo_order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const fakePaymentId = `demo_pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    const { data: payment, error: payErr } = await supabaseAdmin
+    const { data: payment, error: payErr } = await supabase
       .from("payments" as any)
       .insert({
         user_id: userId,
@@ -44,14 +44,14 @@ export const bookAnalystVideoDemo = createServerFn({ method: "POST" })
     }
 
     if (data.queryId) {
-      await supabaseAdmin
+      await supabase
         .from("queries")
         .update({ video_requested: true, video_payment_id: (payment as any).id } as any)
         .eq("id", data.queryId)
         .eq("user_id", userId);
     }
 
-    await supabaseAdmin.from("notifications").insert({
+    await supabase.from("notifications").insert({
       user_id: userId,
       title: "Analyst video booked",
       body: "Your SEBI-registered analyst will record your video answer within 24 hours.",
