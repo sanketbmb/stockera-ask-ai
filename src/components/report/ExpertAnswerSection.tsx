@@ -19,10 +19,12 @@ interface Props {
 const SEBI_DISCLAIMER =
   "This is the personal educational analysis of a SEBI-registered Research Analyst. It is not a SEBI-registered research report and does not constitute investment advice. Consult your financial advisor before acting.";
 
+type Analyst = { id: string; display_name: string; sebi_reg_number: string; sebi_type: string; avatar_url: string | null; years_experience: number; rating: number; specializations: string[] };
+
 export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["expert_answers", queryId],
-    queryFn: async () => {
+    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null }>; analyst: Analyst | null; analystId: string | null }> => {
       const { data: answers } = await supabase
         .from("answers")
         .select("*")
@@ -36,16 +38,16 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
         answers?.find((a) => a.answer_type === "video")?.expert_id ??
         null;
 
-      let analyst: { id: string; display_name: string; sebi_reg_number: string; sebi_type: string; avatar_url: string | null; years_experience: number; rating: number; specializations: string[] } | null = null;
+      let analyst: Analyst | null = null;
       if (analystId) {
         const { data: a } = await supabase
           .from("analyst_profiles")
           .select("id, display_name, sebi_reg_number, sebi_type, avatar_url, years_experience, rating, specializations")
           .eq("id", analystId)
           .maybeSingle();
-        analyst = a as typeof analyst;
+        analyst = (a as Analyst | null) ?? null;
       }
-      return { answers: answers ?? [], analyst, analystId };
+      return { answers: (answers ?? []) as never, analyst, analystId };
     },
     refetchInterval: 30000,
   });
