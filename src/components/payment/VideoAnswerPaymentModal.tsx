@@ -190,16 +190,12 @@ export function VideoAnswerPaymentModal({ open, onOpenChange, queryId, stockName
                   <motion.div whileTap={{ scale: 0.98 }} className="mt-5">
                     <Button
                       onClick={handlePay}
-                      disabled={stage === "creating" || stage === "checkout" || stage === "verifying"}
+                      disabled={stage === "processing"}
                       className="w-full h-12 text-base font-semibold bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 text-slate-950 hover:brightness-110 shadow-[0_8px_30px_-8px_rgba(16,185,129,0.7)]"
                     >
-                      {stage === "creating" || stage === "checkout" ? (
+                      {stage === "processing" ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening secure checkout…
-                        </>
-                      ) : stage === "verifying" ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying payment…
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing secure payment…
                         </>
                       ) : (
                         <>
