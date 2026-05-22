@@ -231,7 +231,7 @@ export function AIReportCard({ report, meta }: { report: AIReport; meta: ReportM
         />
         <Button variant="outline" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> Download PDF</Button>
         <Button variant="outline" onClick={handleShare}><Share2 className="h-4 w-4 mr-2" /> Share Report</Button>
-        <Button className="bg-gradient-to-r from-primary to-accent text-primary-foreground"><Video className="h-4 w-4 mr-2" /> Book Video Answer →</Button>
+        <BookAnalystVideoButton queryId={meta.id} stockName={meta.stockName} className="bg-gradient-to-r from-primary to-accent text-primary-foreground" />
         <Button variant="secondary"><MessageCircle className="h-4 w-4 mr-2" /> Ask Follow-up Question</Button>
       </div>
 
