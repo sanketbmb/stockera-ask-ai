@@ -304,8 +304,19 @@ function guardrailCheck(report) {
     }
   }
   if (!report.position_snapshot?.summary_line) return { ok: false, reason: "missing position_snapshot.summary_line" };
-  if (!Array.isArray(report.what_ai_can_observe) || report.what_ai_can_observe.length < 1) {
+  if (!Array.isArray(report.what_ai_can_observe)) {
     return { ok: false, reason: "missing what_ai_can_observe" };
+  }
+  if (report.what_ai_can_observe.length < 1) {
+    // Live news/fundamentals were unavailable — inject a transparent placeholder
+    // rather than failing the whole pipeline. The analyst review covers gaps.
+    report.what_ai_can_observe = [
+      "Live fundamentals and news headlines were not available at report time — observations are limited to the live price context provided.",
+    ];
+    if (report.data_confidence) {
+      report.data_confidence.data_coverage = "low";
+      report.data_confidence.overall_label = "Limited data — analyst review important";
+    }
   }
   if (!report.context_relevant_to_user_question) return { ok: false, reason: "missing context_relevant_to_user_question" };
   if (!Array.isArray(report.what_only_analyst_can_decide)) return { ok: false, reason: "missing what_only_analyst_can_decide" };
