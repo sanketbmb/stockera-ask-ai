@@ -562,6 +562,51 @@ export type Database = {
         }
         Relationships: []
       }
+      session_bookings: {
+        Row: {
+          amount_paise: number
+          analyst_id: string
+          created_at: string
+          id: string
+          meeting_link: string | null
+          notes: string | null
+          payment_id: string | null
+          scheduled_for: string
+          status: string
+          tier: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_paise: number
+          analyst_id: string
+          created_at?: string
+          id?: string
+          meeting_link?: string | null
+          notes?: string | null
+          payment_id?: string | null
+          scheduled_for: string
+          status?: string
+          tier: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_paise?: number
+          analyst_id?: string
+          created_at?: string
+          id?: string
+          meeting_link?: string | null
+          notes?: string | null
+          payment_id?: string | null
+          scheduled_for?: string
+          status?: string
+          tier?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_portfolio: {
         Row: {
           added_from_query_id: string | null
