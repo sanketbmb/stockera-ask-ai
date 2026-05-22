@@ -345,6 +345,57 @@ export type Database = {
         }
         Relationships: []
       }
+      payments: {
+        Row: {
+          amount_paise: number
+          created_at: string
+          currency: string
+          id: string
+          order_id: string
+          payment_id: string | null
+          provider: string
+          purpose: string
+          query_id: string | null
+          raw: Json | null
+          signature: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_paise: number
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id: string
+          payment_id?: string | null
+          provider?: string
+          purpose?: string
+          query_id?: string | null
+          raw?: Json | null
+          signature?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_paise?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id?: string
+          payment_id?: string | null
+          provider?: string
+          purpose?: string
+          query_id?: string | null
+          raw?: Json | null
+          signature?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -421,6 +472,8 @@ export type Database = {
           stock_symbol: string | null
           updated_at: string | null
           user_id: string
+          video_payment_id: string | null
+          video_requested: boolean
         }
         Insert: {
           ai_report?: Json | null
@@ -438,6 +491,8 @@ export type Database = {
           stock_symbol?: string | null
           updated_at?: string | null
           user_id: string
+          video_payment_id?: string | null
+          video_requested?: boolean
         }
         Update: {
           ai_report?: Json | null
@@ -455,8 +510,18 @@ export type Database = {
           stock_symbol?: string | null
           updated_at?: string | null
           user_id?: string
+          video_payment_id?: string | null
+          video_requested?: boolean
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "queries_video_payment_id_fkey"
+            columns: ["video_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       referrals: {
         Row: {
