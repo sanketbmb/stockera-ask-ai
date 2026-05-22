@@ -17,8 +17,8 @@ const PROHIBITED = [
 ];
 const PROHIBITED_VERDICTS = ["verdict: buy", "verdict: sell", "verdict: hold",
   "our verdict", "final verdict"];
-const PROHIBITED_FIELDS = ["target", "target_price", "stop_loss", "stoploss",
-  "support_zone", "resistance_zone", "support_level", "resistance_level", "verdict"];
+const PROHIBITED_FIELDS = ["target_price", "stop_loss", "stoploss",
+  "support_zone", "resistance_zone", "support_level", "resistance_level"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -222,43 +222,6 @@ async function fetchStockData(symbol: string) {
   return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange: "NSE" };
 }
 
-async function callLLM(userPrompt: string) {
-  if (GEMINI_API_KEY) {
-    try {
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `Return ONLY raw JSON. Realistic current NSE price in INR for ${symbol}. Format: {"price": 1234.56}` }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
-          }),
-        },
-      );
-      const j = await r.json();
-      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
-        let parsed: { price?: number } | null = null;
-        try {
-          const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-          parsed = JSON.parse(clean);
-        } catch {
-          parsed = null;
-        }
-        if (parsed?.price) {
-          return {
-            ltp: Number(parsed.price),
-            ltp_timestamp: new Date().toISOString(),
-            source: "Gemini estimate",
-            exchange: "NSE",
-          };
-        }
-      }
-    } catch (e) { console.error("gemini ltp fallback err", e); }
-  }
-  return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange: "NSE" };
-}
 
 async function callLLM(userPrompt: string) {
   if (GEMINI_API_KEY) {
@@ -451,7 +414,10 @@ Deno.serve(async (req) => {
     stage = "guardrail";
     console.log("STEP 7: Guardrail validation");
     const guard = guardrailCheck(llm.json);
-    if (!guard.ok) throw new Error(`Guardrail rejected: ${guard.reason}`);
+    if (!guard.ok) {
+      console.error("GUARDRAIL_FAILED", { reason: guard.reason, report_keys: Object.keys(llm.json) });
+      throw new Error(`Compliance guardrail rejected the AI output: ${guard.reason}. Query saved — analyst will answer manually.`);
+    }
 
     const renderedSections = {
       ...llm.json,
