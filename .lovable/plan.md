@@ -1,140 +1,72 @@
-# Forensic Diagnostic Report — `queries` insert + AI report generation
+# Diagnosis: the "brain" pipeline
 
-No code changes made (plan mode). Findings below.
+## How it works today (verified by reading the code)
 
----
+1. User submits the form in `src/components/query/QueryForm.tsx`.
+2. Frontend infers an `intent` (`buy_decision | stuck_position | should_average | educational | sector_view | other`) and inserts a row into `public.queries` with `query_type = intent`.
+3. After insert, frontend calls the server function `generateAiReport` (`src/lib/report.functions.ts`) which forwards the request (with the user's bearer token) to the Supabase edge function `generate-ai-report`.
+4. Edge function (`supabase/functions/generate-ai-report/index.ts`):
+   - Re-classifies intent from `query_text`.
+   - For buy/stuck/average intents with a stock symbol, fetches **LTP** from Twelve Data; if that fails, falls back to a Gemini price estimate; otherwise leaves LTP null.
+   - Builds a context object (intent, user position, LTP, pnl_state, empty news/fundamentals stubs) and calls **`gemini-2.5-flash`** directly with the versioned compliance prompt. If `GEMINI_API_KEY` is missing/429, falls back to Lovable AI Gateway (`google/gemini-2.5-pro`).
+   - Runs a guardrail check (blocks targets, stop-losses, "guaranteed", verdicts, etc.).
+   - Writes `ai_reports` row, updates `queries.status = 'ai_answered'`, fires `audit_events`.
+5. Client navigates to `/report/$queryId`.
 
-## 1. Schema of `public.queries`
+So **yes, it's hitting the real Gemini 2.5 Flash API with live LTP context — not a static template**. News/fundamentals are stubbed (empty arrays), which is by design for the current MVP.
 
-From the live DB schema:
+## The bug blocking everything right now
 
-| Column | Type | Nullable | Default |
-|---|---|---|---|
-| id | uuid | NO | gen_random_uuid() |
-| user_id | uuid | NO | — |
-| stock_name | text | NO | — |
-| stock_symbol | text | YES | — |
-| buy_price | numeric | YES | — |
-| current_price | numeric | YES | — |
-| query_text | text | NO | — |
-| query_type | text | YES | — |
-| assigned_analyst_id | uuid | YES | — |
-| status | query_status (enum) | YES | 'pending' |
-| ai_report | jsonb | YES | — |
-| intent | text | YES | — |
-| pnl_state | text | YES | — |
-| created_at | timestamptz | YES | now() |
-| updated_at | timestamptz | YES | now() |
+Console logs show **every** submit failing with:
 
-**Foreign keys:** none declared on `queries`.
-
----
-
-## 2. RLS policies on `queries`
-
-- `queries_own` — ALL — `auth.uid() = user_id`
-- `queries_own_insert` — INSERT — WITH CHECK `auth.uid() = user_id`
-- `queries_own_update` — UPDATE — `auth.uid() = user_id`
-- `queries_analyst_read` — SELECT — `auth.uid() = assigned_analyst_id`
-- `queries_analyst_update` — UPDATE — analyst or admin
-- `queries_admin_read_all` — SELECT — admin
-
-All correctly scoped. Nothing recursive, nothing that would hang.
-
----
-
-## 3. Triggers on `queries`
-
-**None.** `information_schema.triggers` returned 0 rows for `event_object_table='queries'`. The `notify_ai_report_ready` and `notify_expert_answer` functions exist but are NOT currently attached as triggers to `queries`.
-
-→ The "Thread killed by timeout manager" theory of "trigger calling edge function" does **not** apply — there is no trigger to blame.
-
-## 4. Functions created/modified in last 7 days
-
-**None.** Query returned 0 rows.
-
----
-
-## 5. Frontend insert — `src/components/query/QueryForm.tsx` lines 147–158
-
-```ts
-await supabase.from("queries").insert({
-  user_id: user.id,
-  stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
-  stock_symbol: stockSymbol || null,
-  buy_price: buyPrice ? Number(buyPrice) : null,
-  current_price: currentPrice ? Number(currentPrice) : null,
-  query_text: queryText,
-  query_type: intent,
-  assigned_analyst_id: analystId,
-  status: "pending",
-}).select("id").single();
+```
+code 23514 — new row for relation "queries" violates check constraint "queries_query_type_check"
 ```
 
-## 6. Frontend ↔ schema comparison
+Root cause — the DB CHECK constraint is out of date:
 
-| Frontend field | Schema | Match |
-|---|---|---|
-| user_id | uuid NOT NULL | ✅ |
-| stock_name | text NOT NULL (always non-empty via fallback) | ✅ |
-| stock_symbol | text NULL | ✅ |
-| buy_price | numeric NULL | ✅ |
-| current_price | numeric NULL | ✅ |
-| query_text | text NOT NULL | ✅ |
-| query_type | text NULL | ✅ |
-| assigned_analyst_id | uuid NULL | ✅ (assuming valid uuid or null) |
-| status | enum query_status | ✅ ('pending' is valid) |
+```text
+queries_query_type_check allows: sell_or_hold, average_down, stop_loss,
+                                  target, long_term, fresh_entry, other
+Frontend inserts intents:          buy_decision, stuck_position, should_average,
+                                  educational, sector_view, other
+```
 
-**No mismatches.** The insert payload is shape-correct.
+Only `other` overlaps — every real intent gets rejected at the DB layer, so the AI report never even starts. This is the actual reason reports aren't being generated, not the API key.
 
-Possible runtime gotcha: if `analystId` is an empty string `""` rather than `null`, the uuid cast would 400 — worth confirming in the QueryForm state init, but this would produce an instant 400, not a thread-timeout.
+## Plan
 
-## 7. Triggers calling edge functions / complex logic
+### 1. Migration — align the CHECK constraint with the code
 
-**None on `queries`.** The only complex trigger function in the DB is `handle_new_user` on `auth.users` (referral logic) — unrelated.
+Drop the old constraint and replace with one covering the intents the app actually uses (keep the legacy values too, in case any old rows exist):
 
-→ The "Thread killed by timeout manager" PostgREST errors are **not caused by triggers on `queries`**.
+```sql
+alter table public.queries drop constraint queries_query_type_check;
+alter table public.queries add constraint queries_query_type_check
+  check (query_type in (
+    -- current intent codes used by the app
+    'buy_decision','stuck_position','should_average',
+    'educational','sector_view','other',
+    -- legacy values preserved for historical rows
+    'sell_or_hold','average_down','stop_loss','target','long_term','fresh_entry'
+  ));
+```
 
----
+### 2. Verify end-to-end after the migration
 
-## Gemini model usage (your second question)
+- Submit a "Sell or Hold" query from `/post-query` in the preview.
+- Confirm insert succeeds (no 23514) and `generate-ai-report` returns `ok: true`.
+- Check `ai_reports` row gets created and `queries.status` flips to `ai_answered`.
+- Spot-check edge function logs to confirm `STEP 5a: Gemini direct ok:true` (proves the new GEMINI_API_KEY + `gemini-2.5-flash` are live).
 
-| Call site | Model |
-|---|---|
-| `callLLM` (report generation) — direct | `gemini-2.0-flash` |
-| `fetchStockData` (LTP fallback) — direct | `gemini-2.0-flash` |
-| `callLLM` Lovable fallback | `google/gemini-2.5-pro` via Lovable AI Gateway |
+### 3. No code changes needed elsewhere
 
-So direct Gemini = 2.0-flash everywhere; only the fallback bumps to 2.5-pro.
+- `generate-ai-report` already uses `gemini-2.5-flash` in both `callLLM` and `fetchStockData` (the LTP fallback).
+- `GEMINI_API_KEY` secret already updated in Supabase.
+- Edge function already deployed.
+- `report.functions.ts` and the frontend submit flow are correct.
 
----
+## Out of scope (worth flagging, not fixing now)
 
-## API key placement audit
-
-`GEMINI_API_KEY` is read **only** in `supabase/functions/generate-ai-report/index.ts` (lines 9, 217, 256 — `Deno.env.get("GEMINI_API_KEY")`). Supabase secrets already list `GEMINI_API_KEY` as set. No references in `.env`, `wrangler.jsonc`, GitHub workflows, or app code. **One place, already updated.**
-
----
-
-## Edge function runtime state
-
-`supabase--edge_function_logs` for `generate-ai-report` returned **"No logs found"** — meaning either (a) the function hasn't been invoked since the last deploy, or (b) it's not booting (syntax error / cold-start crash). This matters because if `generate-ai-report` 500s or never returns, the server function `generateAiReport` throws — but the **`queries` insert itself runs before that call** and is independent.
-
----
-
-## Root-cause hypothesis for the 400 / "Thread killed" symptom
-
-The `queries` insert is **not** the source of the timeout based on schema/RLS/trigger evidence. The most likely real cause of the user-visible failure chain is:
-
-1. `queries` insert succeeds (200).
-2. `generateAiReport` server fn calls the edge function.
-3. Edge function calls Gemini → if quota / network hangs past the worker limit, the request is killed → frontend shows "Report generation failed".
-4. The 400 on `/rest/v1/queries` you saw may be from a **different** call (e.g. the `audit_events` insert, or an analyst-profiles select with a bad filter), not the main query insert.
-
-## Recommended next diagnostic steps (require your approval to execute)
-
-1. Reproduce in the browser, capture the exact `/rest/v1/queries` 400 response body (it includes the Postgres error code/message — that pins it down in 1 read).
-2. Invoke the edge function health check: `GET https://pwicwmnutyahscbreqvg.supabase.co/functions/v1/generate-ai-report` — confirms boot + env check.
-3. Confirm `analystId` is `null` (not `""`) when no analyst is picked.
-4. Tail recent `audit_events` inserts to see if those are the 400s.
-
-Approve and I'll run them — or tell me to proceed straight to fixes.
+- News/fundamentals are not yet wired — the LLM gets `recent_news: []` and `fundamentals: null`. Reports will say "limited data" until a data source is added.
+- Twelve Data symbol format hard-codes `:NSE` — fine for NSE stocks, would need work for BSE-only.
