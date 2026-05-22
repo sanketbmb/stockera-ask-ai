@@ -74,15 +74,32 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
         </div>
       )}
 
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!textAnswer && !videoAnswer && (
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">⏳ Awaiting expert analysis</Badge>
+        )}
+        {textAnswer && (
+          <Badge variant="outline" className="text-[10px] bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30">📄 Expert analysis ready</Badge>
+        )}
+        {videoAnswer && (
+          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">🎥 Expert video ready</Badge>
+        )}
+      </div>
+
       <div className="mt-4 flex flex-wrap gap-2">
         {item.ai_report ? (
           <Button asChild size="sm" variant="outline">
             <Link to="/report/$queryId" params={{ queryId: item.id }}>View AI Report <ChevronRight className="h-3.5 w-3.5 ml-1" /></Link>
           </Button>
         ) : null}
+        {textAnswer && (
+          <Button asChild size="sm" variant="outline">
+            <a href={`/report/${item.id}#expert-analysis`}>Read Answer <ChevronRight className="h-3.5 w-3.5 ml-1" /></a>
+          </Button>
+        )}
         {videoAnswer && (
           <Button size="sm" onClick={() => setVideoOpen(true)} className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
-            <Play className="h-3.5 w-3.5 mr-1.5" /> Watch Expert Answer
+            <Play className="h-3.5 w-3.5 mr-1.5" /> Watch Video
           </Button>
         )}
       </div>
