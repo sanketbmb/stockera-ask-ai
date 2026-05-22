@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowRight, BadgeCheck, CheckCircle2, Loader2, Lock, ShieldCheck, Sparkles, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { createVideoOrder, verifyVideoPayment } from "@/lib/payments.functions";
-import { openRazorpayCheckout } from "@/lib/razorpay";
+import { bookAnalystVideoDemo } from "@/lib/payments.functions";
+
+type Stage = "idle" | "processing" | "success" | "error";
 
 type Stage = "idle" | "creating" | "checkout" | "verifying" | "success" | "error";
 
