@@ -188,7 +188,7 @@ async function fetchStockData(symbol: string) {
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -227,7 +227,7 @@ async function callLLM(userPrompt: string) {
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -260,7 +260,7 @@ async function callLLM(userPrompt: string) {
         }
         const clean = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
         const parsed = JSON.parse(clean);
-        return { json: parsed, provider: "gemini-direct", model: "gemini-2.0-flash" };
+        return { json: parsed, provider: "gemini-direct", model: "gemini-2.5-flash" };
       }
     } catch (e) {
       console.error("gemini direct err:", (e as Error).message);
