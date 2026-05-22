@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, ShieldCheck, MapPin, Hourglass, AlertTriangle, Lock } from "lucide-react";
+import { Clock, ShieldCheck, MapPin, Hourglass, AlertTriangle, Lock, ArrowRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { VERDICT_MAP } from "@/lib/verdict";
+import { ShareButton } from "@/components/common/ShareButton";
 
 interface Props {
   queryId: string;
@@ -21,18 +23,29 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
   const { data, isLoading } = useQuery({
     queryKey: ["expert_answers", queryId],
     queryFn: async () => {
-      const [{ data: answers }, analystRes] = await Promise.all([
-        supabase
-          .from("answers")
-          .select("*")
-          .eq("query_id", queryId)
-          .eq("is_published", true)
-          .order("created_at", { ascending: false }),
-        assignedAnalystId
-          ? supabase.from("analyst_profiles").select("id, display_name, sebi_reg_number, sebi_type, avatar_url").eq("id", assignedAnalystId).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ]);
-      return { answers: answers ?? [], analyst: analystRes.data };
+      const { data: answers } = await supabase
+        .from("answers")
+        .select("*")
+        .eq("query_id", queryId)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false });
+
+      const analystId =
+        assignedAnalystId ??
+        answers?.find((a) => a.answer_type === "text")?.expert_id ??
+        answers?.find((a) => a.answer_type === "video")?.expert_id ??
+        null;
+
+      let analyst: { id: string; display_name: string; sebi_reg_number: string; sebi_type: string; avatar_url: string | null; years_experience: number; rating: number; specializations: string[] } | null = null;
+      if (analystId) {
+        const { data: a } = await supabase
+          .from("analyst_profiles")
+          .select("id, display_name, sebi_reg_number, sebi_type, avatar_url, years_experience, rating, specializations")
+          .eq("id", analystId)
+          .maybeSingle();
+        analyst = a as typeof analyst;
+      }
+      return { answers: answers ?? [], analyst, analystId };
     },
     refetchInterval: 30000,
   });
