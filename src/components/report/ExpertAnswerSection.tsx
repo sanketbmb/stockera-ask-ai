@@ -104,19 +104,11 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
       {textAns && (
         <Card className="p-6 border-l-4 border-l-accent">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={analyst?.avatar_url ?? undefined} />
-                <AvatarFallback>{(analyst?.display_name ?? "A").slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{analyst?.display_name ?? "SEBI Analyst"}</p>
-                <p className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> SEBI {analyst?.sebi_type ?? "RA"} · {analyst?.sebi_reg_number ?? "—"}
-                </p>
-              </div>
+            <AnalystBlock analyst={analyst} analystId={data?.analystId ?? null} />
+            <div className="flex items-center gap-2">
+              <ShareButton queryId={queryId} stockName={undefined} compact />
+              <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(textAns.created_at!), { addSuffix: true })}</span>
             </div>
-            <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(textAns.created_at!), { addSuffix: true })}</span>
           </div>
 
           {textAns.verdict && (
