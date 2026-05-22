@@ -1,48 +1,80 @@
-## Root cause
+## 1. Fix missing analyst identity on expert answers
 
-`AnalystAnswerPanel` upserts answers with `onConflict: "query_id,expert_id,answer_type"`, but the `answers` table has no unique constraint matching those columns. Postgres rejects the request with "no unique or exclusion constraint matching the ON CONFLICT specification", so the analyst can never publish — which is why nothing reaches the user's `/my-queries` or `/report/$queryId`.
+**Problem:** `ExpertAnswerSection` resolves the analyst from `query.assigned_analyst_id`, which is often null, so the card shows the generic "SEBI Analyst" fallback.
 
-## Fix plan
+**Fix:** In `ExpertAnswerSection.tsx`, after loading answers, look up the analyst from the answer's `expert_id` if `assignedAnalystId` is null. Use `expert_id` of the published text answer (fallback to video answer). Render:
+- Avatar + display_name
+- SEBI type + reg number (mono, with shield icon)
+- Years of experience + rating + specializations chips
+- Wrap the avatar + name block in a `<Link to="/analyst/$analystId">` so clicking opens the public profile.
 
-### 1. Migration — add the missing unique constraint
+Do the same on `QueryHistoryCard` (link "Expert text answer" header to the analyst page).
 
-```sql
--- Deduplicate any accidental duplicates first (keep newest)
-DELETE FROM public.answers a
-USING public.answers b
-WHERE a.query_id = b.query_id
-  AND a.expert_id = b.expert_id
-  AND a.answer_type = b.answer_type
-  AND a.created_at < b.created_at;
+## 2. Public Analyst Profile + 1:1 booking page
 
-ALTER TABLE public.answers
-  ADD CONSTRAINT answers_query_expert_type_unique
-  UNIQUE (query_id, expert_id, answer_type);
-```
+New route: `src/routes/analyst.$analystId.tsx` → page `src/pages/AnalystPublicProfile.tsx`.
 
-This unblocks the existing upsert (no app code change needed for the publish flow itself).
+Sections (top to bottom):
+- **Hero**: gradient hero (primary → accent), large avatar with availability dot, name, SEBI badge (type + reg number, mono), specializations as pills, years experience, ⭐ rating · sessions count. Animated counters (framer-motion) for sessions and years.
+- **About**: bio, languages (flag chips).
+- **Two primary CTAs side-by-side**:
+  - "Ask a follow-up question" → routes to `/post-query?analyst={id}` (PostQuery picks up `analyst` search param and pre-assigns).
+  - "Book a 1:1 private session" → opens booking modal (see §3).
+- **Why book a 1:1** value-prop strip: 3 cards (Live screen-share chart walkthrough · Personalised portfolio review · Direct WhatsApp follow-up for 7 days). Subtle motion: stagger fade-up on scroll.
+- **Recent public answers** (last 3 published text answers by this analyst, masked to stock name + verdict + first 120 chars) → social proof.
+- **Trust strip**: SEBI compliance badge, grievance link, refund policy line.
+- Sticky bottom bar on mobile with both CTAs.
 
-### 2. Surface the verdict in `/my-queries` (QueryHistoryCard)
+Visual language: reuse existing tokens (`primary`, `accent`, `gold`, `bg-gradient-brand`, `shadow-card`). Add framer-motion `Reveal`/stagger from existing `motion-helpers`. No new color tokens.
 
-Currently the card shows the text body but not the verdict pill. Add:
-- A verdict badge (colored, using `VERDICT_MAP` from `src/lib/verdict.ts`) at the top of the "Expert text answer" block.
-- Render `key_level`, `time_horizon`, `risk_note` as small chips below the body when present.
+## 3. 1:1 booking modal + payment hookup
 
-So the user sees the analyst's call (BUY / HOLD / MONITOR / etc.) the moment they open `/my-queries`, not just inside `/report/$queryId`.
+New component `src/components/analyst/BookSessionModal.tsx`:
+- Step 1: pick session length (15min ₹499 · 30min ₹999 · 60min ₹1799 — tiers stored in `src/lib/session-tiers.ts`).
+- Step 2: pick slot (next 7 days × 3 time windows; static for now, persisted as a `session_bookings` row).
+- Step 3: Razorpay checkout via existing `src/lib/razorpay.ts` and `payments.functions.ts` pattern (reuse `BookAnalystVideoButton` flow as reference).
 
-### 3. Verify the user-side reflection path
+New table `session_bookings` (id, user_id, analyst_id, tier, amount_paise, scheduled_for timestamptz, status, payment_id, meeting_link nullable, created_at) with RLS: user sees their own, analyst sees bookings assigned to them, admin sees all. Migration in a single `supabase--migration` call; do NOT code until migration approved.
 
-`ExpertAnswerSection` on `/report/$queryId` already polls every 30s and renders verdict, body, key level, horizon, risk note. After fix #1 the row will actually exist, so this will light up automatically. No changes needed there.
+## 4. Share button on reports & answers + public report page
 
-The existing `notify_expert_answer` trigger already fires a notification when `is_published` flips to true → user gets a bell notification linking to `/my-queries`.
+- New route `src/routes/r.$queryId.tsx` (short `r` for shareable). Public, no `RequireAuth`. Fetches the query + first published text answer via a new server fn `getPublicReport` that returns only: stock_name, stock_symbol, verdict, first 200 chars of body (truncated with "…"), analyst display_name + SEBI number, created_at. Everything else is hidden behind a blur overlay with a sign-in CTA.
+- Add a `ShareButton` component (`src/components/common/ShareButton.tsx`) using Web Share API with clipboard fallback, URL = `${origin}/r/{queryId}`. Place it:
+  - On `ExpertAnswerSection` header (next to timestamp)
+  - On `AIReportCardV2` header
+  - On `QueryHistoryCard` action row
+- Public report page CTA card below the blurred answer:
+  - Headline: **"Don't gamble your portfolio. Get a SEBI-verified second opinion in 24h."**
+  - Sub: "AI report instantly + a real registered analyst's voice — for less than a single bad trade costs you."
+  - Buttons: "Sign up free (₹100 wallet credit)" → `/signup?ref={queryId}`, "Login" → `/login`.
+  - Tiny line: "Already 2,400+ traders saved from FOMO trades this month." (static social proof string for now)
 
-## Files
+## 5. Referral hook in the share flow
 
-- New migration: add unique constraint on `answers(query_id, expert_id, answer_type)` + dedupe.
-- `src/components/query/QueryHistoryCard.tsx` — add verdict badge + metadata chips inside the existing expert-answer block.
+- `ShareButton` appends `?ref={user.referral_code}` when a logged-in user shares.
+- Public report page reads `ref` from search params and:
+  - Stores it in localStorage as `pending_referral` (TTL 7 days).
+  - Shows a yellow ribbon: "🎁 Your friend invited you — sign up and you both get ₹50 instantly."
+- `Signup.tsx` already accepts a referral code via metadata; pre-fill it from `pending_referral` if URL `ref` is missing.
+- No new tables — uses existing `referrals` + `handle_new_user` trigger which already credits ₹50 each side.
 
-## Preservation
+## 6. SEO / share metadata
 
-No changes to: AI report code, edge functions, auth flow, `AnalystAnswerPanel.tsx` logic, `ExpertAnswerSection.tsx`, or any admin route.
+`src/routes/r.$queryId.tsx` head():
+- title: `"{stock_name} — Expert verdict: {VERDICT} | Stockera"`
+- description: first 140 chars of answer body
+- og:title / og:description mirrored
+- og:image: omit for now (no per-report image yet)
 
-Reply **apply** to proceed.
+## Out of scope (explicit)
+
+- Real calendar integration for slot booking (Google Calendar/Cal.com). Slots are static for v1.
+- Video conferencing link generation — meeting_link stays null until admin sets it manually post-payment.
+- Analyst-side dashboard to manage bookings (admin can view via Supabase for v1).
+
+## Technical notes
+
+- All new server functions follow `createServerFn` + `requireSupabaseAuth` (except `getPublicReport` which is unauthenticated).
+- Migration must run BEFORE writing booking code (Supabase types regeneration dependency).
+- Reuse `Reveal` from `src/components/landing/motion-helpers.tsx` for entrance animations; no new motion lib.
+- No design tokens added; everything via existing semantic classes.
