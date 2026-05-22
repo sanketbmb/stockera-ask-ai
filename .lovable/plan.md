@@ -1,72 +1,66 @@
-# Diagnosis: the "brain" pipeline
+## Goal
+Add a cool, stock-market-themed animated payment modal that takes the user to Razorpay Checkout to pay ₹100 for an analyst-recorded live selfie video answer. The modal becomes the single entry point everywhere a "Video Answer" CTA exists.
 
-## How it works today (verified by reading the code)
+## What gets built
 
-1. User submits the form in `src/components/query/QueryForm.tsx`.
-2. Frontend infers an `intent` (`buy_decision | stuck_position | should_average | educational | sector_view | other`) and inserts a row into `public.queries` with `query_type = intent`.
-3. After insert, frontend calls the server function `generateAiReport` (`src/lib/report.functions.ts`) which forwards the request (with the user's bearer token) to the Supabase edge function `generate-ai-report`.
-4. Edge function (`supabase/functions/generate-ai-report/index.ts`):
-   - Re-classifies intent from `query_text`.
-   - For buy/stuck/average intents with a stock symbol, fetches **LTP** from Twelve Data; if that fails, falls back to a Gemini price estimate; otherwise leaves LTP null.
-   - Builds a context object (intent, user position, LTP, pnl_state, empty news/fundamentals stubs) and calls **`gemini-2.5-flash`** directly with the versioned compliance prompt. If `GEMINI_API_KEY` is missing/429, falls back to Lovable AI Gateway (`google/gemini-2.5-pro`).
-   - Runs a guardrail check (blocks targets, stop-losses, "guaranteed", verdicts, etc.).
-   - Writes `ai_reports` row, updates `queries.status = 'ai_answered'`, fires `audit_events`.
-5. Client navigates to `/report/$queryId`.
+### 1. Animated `VideoAnswerPaymentModal` (frontend, reusable)
+File: `src/components/payment/VideoAnswerPaymentModal.tsx`
 
-So **yes, it's hitting the real Gemini 2.5 Flash API with live LTP context — not a static template**. News/fundamentals are stubbed (empty arrays), which is by design for the current MVP.
+Visual treatment (pure CSS + Framer Motion, no video file):
+- Dark gradient hero panel with animated candlestick chart background (SVG green/red candles that "tick" in)
+- Scrolling NSE-style ticker strip at the top
+- Center: stylized "analyst uncle" avatar (CSS illustration — chai cup, glasses, calm smile, slight breathing scale animation, hand-wave loop)
+- Speech bubble cycling through lines: "Namaste 🙏", "Let's review your position", "Live selfie answer in <24h"
+- Glowing ₹100 price chip with shimmer
+- Big gradient CTA: **"Pay ₹100 & Book Analyst Video"** with pulse + arrow micro-animation
+- Trust row: SEBI badge, Razorpay logo, lock icon, "Refund if unanswered in 24h"
+- Confetti + green tick on success state
 
-## The bug blocking everything right now
+### 2. Razorpay Checkout integration
+Frontend:
+- `src/lib/razorpay.ts` — loads the Razorpay JS SDK on demand (`https://checkout.razorpay.com/v1/checkout.js`)
+- Modal calls `createVideoOrder` server fn → opens Razorpay with returned `order_id` → on success calls `verifyVideoPayment`
 
-Console logs show **every** submit failing with:
+Server functions: `src/lib/payments.functions.ts`
+- `createVideoOrder({ queryId })` — uses `requireSupabaseAuth`, calls Razorpay Orders API with `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET`, returns `{ orderId, amount, keyId }`. Inserts a `payments` row with status `created`.
+- `verifyVideoPayment({ orderId, paymentId, signature, queryId })` — HMAC-SHA256 verify, mark `payments.status='paid'`, mark `queries.video_requested=true` + `video_payment_id`, insert `wallet_transactions` (record only, no balance change), notify analyst.
 
-```
-code 23514 — new row for relation "queries" violates check constraint "queries_query_type_check"
-```
+Server route (webhook): `src/routes/api/public/razorpay-webhook.ts`
+- Verifies `x-razorpay-signature` against `RAZORPAY_WEBHOOK_SECRET`
+- Handles `payment.captured` / `payment.failed` as the source of truth (idempotent on `payment_id`)
 
-Root cause — the DB CHECK constraint is out of date:
+### 3. Database changes (migration)
+- New table `public.payments` (provider, order_id unique, payment_id, amount_paise, currency, status, user_id, query_id, purpose='video_answer', signature, raw jsonb) with RLS: user sees their own, admin sees all, only service role writes.
+- Add columns to `public.queries`: `video_requested boolean default false`, `video_payment_id uuid references payments(id)`.
 
-```text
-queries_query_type_check allows: sell_or_hold, average_down, stop_loss,
-                                  target, long_term, fresh_entry, other
-Frontend inserts intents:          buy_decision, stuck_position, should_average,
-                                  educational, sector_view, other
-```
+### 4. Secrets to add
+- `RAZORPAY_KEY_ID` (public/publishable — also exposed as `VITE_RAZORPAY_KEY_ID`)
+- `RAZORPAY_KEY_SECRET` (server only)
+- `RAZORPAY_WEBHOOK_SECRET` (server only)
 
-Only `other` overlaps — every real intent gets rejected at the DB layer, so the AI report never even starts. This is the actual reason reports aren't being generated, not the API key.
+You'll be prompted to paste these after the plan is approved.
 
-## Plan
+### 5. Wiring (every "Video Answer" CTA)
+Replace the existing buttons with `<BookAnalystVideoButton queryId={...} />` that opens the modal:
+- `src/components/report/AIReportCard.tsx` — "Book Video Answer" button
+- `src/components/report/AIReportCardV2.tsx` — same
+- `src/pages/MyQueries.tsx` — "Request Video Answer" rows
+- `src/pages/Wallet.tsx` — "Video Answer ₹149" pack tile (price corrected to ₹100, opens modal generically)
+- `src/components/landing/AIReportPreview.tsx` — demo CTA opens a non-paying preview of the modal
 
-### 1. Migration — align the CHECK constraint with the code
+### 6. Post-payment flow
+- Toast + confetti, modal switches to "Booked!" state with ETA timer (24h)
+- Notification row inserted for the user; admin dashboard sees a new pending video request
+- Existing analyst upload flow (`/admin/upload-answer/$queryId`) already handles delivery — no change needed there
 
-Drop the old constraint and replace with one covering the intents the app actually uses (keep the legacy values too, in case any old rows exist):
+## Technical details
+- Razorpay base currency: INR, amount sent in paise (10000 = ₹100)
+- HMAC verification: `crypto.createHmac('sha256', secret).update(orderId + '|' + paymentId).digest('hex')` compared with `timingSafeEqual`
+- Modal uses `framer-motion` (already in project) for entrance/exit + candle stagger; ticker uses CSS keyframes
+- All colors via existing semantic tokens in `src/styles.css` — no hardcoded hex except brand-required Razorpay blue badge
+- Sandbox-compatible: pure HTTP + node `crypto`, no native deps
 
-```sql
-alter table public.queries drop constraint queries_query_type_check;
-alter table public.queries add constraint queries_query_type_check
-  check (query_type in (
-    -- current intent codes used by the app
-    'buy_decision','stuck_position','should_average',
-    'educational','sector_view','other',
-    -- legacy values preserved for historical rows
-    'sell_or_hold','average_down','stop_loss','target','long_term','fresh_entry'
-  ));
-```
-
-### 2. Verify end-to-end after the migration
-
-- Submit a "Sell or Hold" query from `/post-query` in the preview.
-- Confirm insert succeeds (no 23514) and `generate-ai-report` returns `ok: true`.
-- Check `ai_reports` row gets created and `queries.status` flips to `ai_answered`.
-- Spot-check edge function logs to confirm `STEP 5a: Gemini direct ok:true` (proves the new GEMINI_API_KEY + `gemini-2.5-flash` are live).
-
-### 3. No code changes needed elsewhere
-
-- `generate-ai-report` already uses `gemini-2.5-flash` in both `callLLM` and `fetchStockData` (the LTP fallback).
-- `GEMINI_API_KEY` secret already updated in Supabase.
-- Edge function already deployed.
-- `report.functions.ts` and the frontend submit flow are correct.
-
-## Out of scope (worth flagging, not fixing now)
-
-- News/fundamentals are not yet wired — the LLM gets `recent_news: []` and `fundamentals: null`. Reports will say "limited data" until a data source is added.
-- Twelve Data symbol format hard-codes `:NSE` — fine for NSE stocks, would need work for BSE-only.
+## Out of scope
+- Refund automation (manual via Razorpay dashboard for now)
+- Multiple price tiers (single ₹100 SKU)
+- Wallet-based payment alternative (kept separate; this flow is Razorpay-only as requested)
