@@ -74,9 +74,38 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
       </p>
 
       {textAnswer && (
-        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <p className="text-[11px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-mono">Expert text answer</p>
-          <p className="text-sm mt-1 whitespace-pre-wrap">{textAnswer.body}</p>
+        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-[11px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-mono">Expert text answer</p>
+            {textAnswer.verdict && (
+              <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${VERDICT_MAP[textAnswer.verdict]?.color ?? "bg-muted"}`}>
+                {VERDICT_MAP[textAnswer.verdict]?.label ?? textAnswer.verdict}
+              </span>
+            )}
+          </div>
+          <p className="text-sm whitespace-pre-wrap">{textAnswer.body}</p>
+          {(textAnswer.key_level || textAnswer.time_horizon || textAnswer.risk_note) && (
+            <div className="grid sm:grid-cols-3 gap-2 pt-1">
+              {textAnswer.key_level && (
+                <div className="rounded-md bg-background/60 px-2 py-1.5 text-[11px] flex items-start gap-1.5">
+                  <MapPin className="h-3 w-3 mt-0.5 text-accent shrink-0" />
+                  <div><span className="font-medium">Key:</span> {textAnswer.key_level}</div>
+                </div>
+              )}
+              {textAnswer.time_horizon && (
+                <div className="rounded-md bg-background/60 px-2 py-1.5 text-[11px] flex items-start gap-1.5">
+                  <Hourglass className="h-3 w-3 mt-0.5 text-accent shrink-0" />
+                  <div><span className="font-medium">Horizon:</span> {textAnswer.time_horizon}</div>
+                </div>
+              )}
+              {textAnswer.risk_note && (
+                <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2 py-1.5 text-[11px] flex items-start gap-1.5">
+                  <AlertTriangle className="h-3 w-3 mt-0.5 text-amber-600 shrink-0" />
+                  <div><span className="font-medium">Risk:</span> {textAnswer.risk_note}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
