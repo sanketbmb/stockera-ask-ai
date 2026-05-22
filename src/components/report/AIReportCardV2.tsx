@@ -9,6 +9,7 @@ import {
   Info, MessageCircle, Newspaper, Share2, TrendingUp, Video,
 } from "lucide-react";
 import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
+import { BookAnalystVideoButton } from "@/components/payment/BookAnalystVideoButton";
 import { useAuth } from "@/contexts/AuthContext";
 
 // v1.0 schema (canonical) — older keys kept optional for backward compat
@@ -241,6 +242,10 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
                     <li key={i} className="flex gap-2 text-xs"><BadgeCheck className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" /><span>{c}</span></li>
                   ))}
                 </ul>
+              </div>
+              <div className="mt-4">
+                <BookAnalystVideoButton queryId={meta.id} stockName={meta.stockName} className="w-full bg-gradient-to-r from-primary to-accent text-primary-foreground" />
+                <p className="text-[10px] text-center text-muted-foreground mt-1.5">One-time ₹100 · Refund if unanswered in 24h</p>
               </div>
             </div>
           </div>
