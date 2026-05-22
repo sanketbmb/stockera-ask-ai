@@ -243,6 +243,10 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
                   ))}
                 </ul>
               </div>
+              <div className="mt-4">
+                <BookAnalystVideoButton queryId={meta.id} stockName={meta.stockName} className="w-full bg-gradient-to-r from-primary to-accent text-primary-foreground" />
+                <p className="text-[10px] text-center text-muted-foreground mt-1.5">One-time ₹100 · Refund if unanswered in 24h</p>
+              </div>
             </div>
           </div>
         </section>
