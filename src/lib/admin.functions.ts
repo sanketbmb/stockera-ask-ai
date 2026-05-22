@@ -26,7 +26,7 @@ async function audit(payload: {
     actor_id: payload.actor_id,
     resource_type: payload.resource_type ?? null,
     resource_id: payload.resource_id ?? null,
-    payload: payload.payload,
+    payload: payload.payload as never,
   });
 }
 
