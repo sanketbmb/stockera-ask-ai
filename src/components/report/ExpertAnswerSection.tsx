@@ -177,3 +177,41 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
     </section>
   );
 }
+
+function AnalystBlock({ analyst, analystId, videoLabel }: { analyst: Analyst | null | undefined; analystId: string | null; videoLabel?: boolean }) {
+  const name = analyst?.display_name ?? "SEBI Analyst";
+  const initial = name.slice(0, 1);
+  const inner = (
+    <div className="flex items-center gap-3">
+      <Avatar className="h-10 w-10 ring-2 ring-accent/30">
+        <AvatarImage src={analyst?.avatar_url ?? undefined} />
+        <AvatarFallback>{initial}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-medium leading-tight">{name}</p>
+          <Badge variant="outline" className="text-[10px] gap-1">
+            <ShieldCheck className="h-3 w-3" />
+            {videoLabel ? "Video Analysis" : "SEBI Verified"}
+          </Badge>
+        </div>
+        {analyst?.sebi_reg_number ? (
+          <p className="text-[11px] text-muted-foreground font-mono">
+            SEBI {analyst.sebi_type} · {analyst.sebi_reg_number}
+            {analyst.years_experience ? ` · ${analyst.years_experience}y exp` : ""}
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <Lock className="h-3 w-3" /> Identity protected
+          </p>
+        )}
+      </div>
+    </div>
+  );
+  if (!analystId) return inner;
+  return (
+    <Link to="/analyst/$analystId" params={{ analystId }} className="hover:opacity-80 transition-opacity">
+      {inner}
+    </Link>
+  );
+}
