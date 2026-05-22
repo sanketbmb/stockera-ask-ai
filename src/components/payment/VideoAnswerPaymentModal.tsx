@@ -11,7 +11,7 @@ import { bookAnalystVideoDemo } from "@/lib/payments.functions";
 
 type Stage = "idle" | "processing" | "success" | "error";
 
-type Stage = "idle" | "creating" | "checkout" | "verifying" | "success" | "error";
+
 
 interface Props {
   open: boolean;
