@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowRight, BadgeCheck, CheckCircle2, Loader2, Lock, ShieldCheck, Sparkles, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { createVideoOrder, verifyVideoPayment } from "@/lib/payments.functions";
-import { openRazorpayCheckout } from "@/lib/razorpay";
+import { bookAnalystVideoDemo } from "@/lib/payments.functions";
 
-type Stage = "idle" | "creating" | "checkout" | "verifying" | "success" | "error";
+type Stage = "idle" | "processing" | "success" | "error";
+
+
 
 interface Props {
   open: boolean;
@@ -36,13 +37,12 @@ const TICKER = [
 ];
 
 export function VideoAnswerPaymentModal({ open, onOpenChange, queryId, stockName }: Props) {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [speechIdx, setSpeechIdx] = useState(0);
 
-  const createOrderFn = useServerFn(createVideoOrder);
-  const verifyFn = useServerFn(verifyVideoPayment);
+  const bookFn = useServerFn(bookAnalystVideoDemo);
 
   useEffect(() => {
     if (!open) return;
@@ -63,50 +63,16 @@ export function VideoAnswerPaymentModal({ open, onOpenChange, queryId, stockName
       return;
     }
     setError(null);
-    setStage("creating");
+    setStage("processing");
     try {
-      const order = await createOrderFn({ data: { queryId: queryId ?? null } });
-      setStage("checkout");
-      await openRazorpayCheckout({
-        key: order.keyId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "Stockera",
-        description: stockName ? `Analyst video for ${stockName}` : "Live selfie video answer",
-        order_id: order.orderId,
-        prefill: {
-          name: profile?.full_name ?? undefined,
-          email: user.email ?? undefined,
-          contact: profile?.phone ?? undefined,
-        },
-        theme: { color: "#7c3aed" },
-        modal: {
-          ondismiss: () => {
-            setStage("idle");
-          },
-        },
-        handler: async (resp) => {
-          setStage("verifying");
-          try {
-            await verifyFn({
-              data: {
-                orderId: resp.razorpay_order_id,
-                paymentId: resp.razorpay_payment_id,
-                signature: resp.razorpay_signature,
-                queryId: queryId ?? null,
-              },
-            });
-            setStage("success");
-            toast.success("Analyst video booked! ETA <24h");
-          } catch (e) {
-            setStage("error");
-            setError(e instanceof Error ? e.message : "Verification failed");
-          }
-        },
-      });
+      // Simulated processing delay for the demo flow
+      await new Promise((r) => setTimeout(r, 1800));
+      await bookFn({ data: { queryId: queryId ?? null } });
+      setStage("success");
+      toast.success("Analyst video booked! ETA <24h");
     } catch (e) {
       setStage("error");
-      setError(e instanceof Error ? e.message : "Payment could not be started");
+      setError(e instanceof Error ? e.message : "Could not complete booking");
     }
   };
 
@@ -224,16 +190,12 @@ export function VideoAnswerPaymentModal({ open, onOpenChange, queryId, stockName
                   <motion.div whileTap={{ scale: 0.98 }} className="mt-5">
                     <Button
                       onClick={handlePay}
-                      disabled={stage === "creating" || stage === "checkout" || stage === "verifying"}
+                      disabled={stage === "processing"}
                       className="w-full h-12 text-base font-semibold bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-600 text-slate-950 hover:brightness-110 shadow-[0_8px_30px_-8px_rgba(16,185,129,0.7)]"
                     >
-                      {stage === "creating" || stage === "checkout" ? (
+                      {stage === "processing" ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening secure checkout…
-                        </>
-                      ) : stage === "verifying" ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying payment…
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing secure payment…
                         </>
                       ) : (
                         <>
