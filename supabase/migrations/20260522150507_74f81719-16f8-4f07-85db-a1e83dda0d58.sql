@@ -1,0 +1,2 @@
+INSERT INTO public.user_roles (user_id, role) VALUES ('4e534d46-709e-4eaf-a6f1-07f24d7b1d3e', 'admin') ON CONFLICT (user_id, role) DO NOTHING;
+INSERT INTO public.audit_events (event_type, actor_id, resource_type, resource_id, payload) VALUES ('admin_bootstrapped', '4e534d46-709e-4eaf-a6f1-07f24d7b1d3e', 'user', '4e534d46-709e-4eaf-a6f1-07f24d7b1d3e', '{"method":"manual_grant","email":"rishabh@stockera.com"}'::jsonb);
