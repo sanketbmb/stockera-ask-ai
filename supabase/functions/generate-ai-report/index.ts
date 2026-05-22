@@ -414,7 +414,10 @@ Deno.serve(async (req) => {
     stage = "guardrail";
     console.log("STEP 7: Guardrail validation");
     const guard = guardrailCheck(llm.json);
-    if (!guard.ok) throw new Error(`Guardrail rejected: ${guard.reason}`);
+    if (!guard.ok) {
+      console.error("GUARDRAIL_FAILED", { reason: guard.reason, report_keys: Object.keys(llm.json) });
+      throw new Error(`Compliance guardrail rejected the AI output: ${guard.reason}. Query saved — analyst will answer manually.`);
+    }
 
     const renderedSections = {
       ...llm.json,
