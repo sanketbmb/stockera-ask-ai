@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, ShieldCheck, MapPin, Hourglass, AlertTriangle, Lock } from "lucide-react";
+import { Clock, ShieldCheck, MapPin, Hourglass, AlertTriangle, Lock, ArrowRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { VERDICT_MAP } from "@/lib/verdict";
+import { ShareButton } from "@/components/common/ShareButton";
 
 interface Props {
   queryId: string;
@@ -17,22 +19,35 @@ interface Props {
 const SEBI_DISCLAIMER =
   "This is the personal educational analysis of a SEBI-registered Research Analyst. It is not a SEBI-registered research report and does not constitute investment advice. Consult your financial advisor before acting.";
 
+type Analyst = { id: string; display_name: string; sebi_reg_number: string; sebi_type: string; avatar_url: string | null; years_experience: number; rating: number; specializations: string[] };
+
 export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["expert_answers", queryId],
-    queryFn: async () => {
-      const [{ data: answers }, analystRes] = await Promise.all([
-        supabase
-          .from("answers")
-          .select("*")
-          .eq("query_id", queryId)
-          .eq("is_published", true)
-          .order("created_at", { ascending: false }),
-        assignedAnalystId
-          ? supabase.from("analyst_profiles").select("id, display_name, sebi_reg_number, sebi_type, avatar_url").eq("id", assignedAnalystId).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ]);
-      return { answers: answers ?? [], analyst: analystRes.data };
+    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null }>; analyst: Analyst | null; analystId: string | null }> => {
+      const { data: answers } = await supabase
+        .from("answers")
+        .select("*")
+        .eq("query_id", queryId)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false });
+
+      const analystId =
+        assignedAnalystId ??
+        answers?.find((a) => a.answer_type === "text")?.expert_id ??
+        answers?.find((a) => a.answer_type === "video")?.expert_id ??
+        null;
+
+      let analyst: Analyst | null = null;
+      if (analystId) {
+        const { data: a } = await supabase
+          .from("analyst_profiles")
+          .select("id, display_name, sebi_reg_number, sebi_type, avatar_url, years_experience, rating, specializations")
+          .eq("id", analystId)
+          .maybeSingle();
+        analyst = (a as Analyst | null) ?? null;
+      }
+      return { answers: (answers ?? []) as never, analyst, analystId };
     },
     refetchInterval: 30000,
   });
@@ -89,19 +104,11 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
       {textAns && (
         <Card className="p-6 border-l-4 border-l-accent">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={analyst?.avatar_url ?? undefined} />
-                <AvatarFallback>{(analyst?.display_name ?? "A").slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{analyst?.display_name ?? "SEBI Analyst"}</p>
-                <p className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> SEBI {analyst?.sebi_type ?? "RA"} · {analyst?.sebi_reg_number ?? "—"}
-                </p>
-              </div>
+            <AnalystBlock analyst={analyst} analystId={data?.analystId ?? null} />
+            <div className="flex items-center gap-2">
+              <ShareButton queryId={queryId} stockName={undefined} compact />
+              <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(textAns.created_at!), { addSuffix: true })}</span>
             </div>
-            <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(textAns.created_at!), { addSuffix: true })}</span>
           </div>
 
           {textAns.verdict && (
@@ -134,24 +141,22 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
               </div>
             )}
           </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">Want a 1:1 with this analyst?</p>
+            {data?.analystId && (
+              <Link to="/analyst/$analystId" params={{ analystId: data.analystId }} className="text-xs font-medium text-accent hover:underline inline-flex items-center gap-1">
+                View profile & book private session <ArrowRight className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
         </Card>
       )}
 
       {videoAns?.video_url && (
         <Card className="p-6 border-l-4 border-l-primary" id="expert-video">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={analyst?.avatar_url ?? undefined} />
-                <AvatarFallback>{(analyst?.display_name ?? "A").slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium flex items-center gap-1.5"><Lock className="h-3 w-3" /> Personal video analysis by {analyst?.display_name ?? "your analyst"}</p>
-                <p className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" /> SEBI {analyst?.sebi_type ?? "RA"} · {analyst?.sebi_reg_number ?? "—"}
-                </p>
-              </div>
-            </div>
+            <AnalystBlock analyst={analyst} analystId={data?.analystId ?? null} videoLabel />
             <Badge variant="outline" className="text-[10px]">
               {videoAns.duration_seconds ? `${Math.floor(videoAns.duration_seconds / 60)}:${String(videoAns.duration_seconds % 60).padStart(2, "0")}` : "video"}
             </Badge>
