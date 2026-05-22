@@ -6,6 +6,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
 import { Progress } from "@/components/ui/progress";
 import { AIReportCardV2, type AIReportV2, type ReportMetaV2 } from "@/components/report/AIReportCardV2";
+import { ExpertAnswerSection } from "@/components/report/ExpertAnswerSection";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
@@ -115,6 +116,11 @@ function ReportContent() {
           </div>
         )}
         <AIReportCardV2 report={safeReport as unknown as AIReportV2} meta={meta} />
+        <ExpertAnswerSection
+          queryId={data.id as string}
+          assignedAnalystId={(data.assigned_analyst_id as string | null) ?? null}
+          queryCreatedAt={data.created_at as string}
+        />
       </main>
     </div>
   );

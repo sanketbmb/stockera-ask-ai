@@ -157,7 +157,11 @@ export type Database = {
           expert_id: string
           id: string
           is_published: boolean | null
+          key_level: string | null
           query_id: string
+          risk_note: string | null
+          time_horizon: string | null
+          verdict: string | null
           video_thumbnail: string | null
           video_url: string | null
         }
@@ -169,7 +173,11 @@ export type Database = {
           expert_id: string
           id?: string
           is_published?: boolean | null
+          key_level?: string | null
           query_id: string
+          risk_note?: string | null
+          time_horizon?: string | null
+          verdict?: string | null
           video_thumbnail?: string | null
           video_url?: string | null
         }
@@ -181,7 +189,11 @@ export type Database = {
           expert_id?: string
           id?: string
           is_published?: boolean | null
+          key_level?: string | null
           query_id?: string
+          risk_note?: string | null
+          time_horizon?: string | null
+          verdict?: string | null
           video_thumbnail?: string | null
           video_url?: string | null
         }
