@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
-import { Play, ChevronRight, Star } from "lucide-react";
+import { Play, ChevronRight, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
+import { VERDICT_MAP } from "@/lib/verdict";
 
 interface AnswerRow {
   id: string;
@@ -16,6 +17,11 @@ interface AnswerRow {
   duration_seconds: number | null;
   created_at: string;
   expert_id: string;
+  verdict?: string | null;
+  key_level?: string | null;
+  time_horizon?: string | null;
+  risk_note?: string | null;
+  is_published?: boolean | null;
 }
 
 export interface QueryHistoryItem {
