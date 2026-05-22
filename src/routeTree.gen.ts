@@ -30,6 +30,7 @@ import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
+import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminProfileRouteImport } from './routes/admin.profile'
@@ -143,6 +144,11 @@ const ReportQueryIdRoute = ReportQueryIdRouteImport.update({
   path: '/report/$queryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RQueryIdRoute = RQueryIdRouteImport.update({
+  id: '/r/$queryId',
+  path: '/r/$queryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
 }
@@ -237,6 +244,7 @@ export interface FileRoutesByTo {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
 }
@@ -268,6 +276,7 @@ export interface FileRoutesById {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
 }
@@ -300,6 +309,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/super'
     | '/analyst/$analystId'
+    | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
   fileRoutesByTo: FileRoutesByTo
@@ -330,6 +340,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/super'
     | '/analyst/$analystId'
+    | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
   id:
@@ -360,6 +371,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/super'
     | '/analyst/$analystId'
+    | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
   fileRoutesById: FileRoutesById
@@ -391,6 +403,7 @@ export interface RootRouteChildren {
   AdminProfileRoute: typeof AdminProfileRoute
   AdminSuperRoute: typeof AdminSuperRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
 }
@@ -544,6 +557,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/r/$queryId': {
+      id: '/r/$queryId'
+      path: '/r/$queryId'
+      fullPath: '/r/$queryId'
+      preLoaderRoute: typeof RQueryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -623,6 +643,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminProfileRoute: AdminProfileRoute,
   AdminSuperRoute: AdminSuperRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
 }

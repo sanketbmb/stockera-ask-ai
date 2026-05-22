@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { createFileRoute, Link, useParams, useSearch, useServerFn } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useSearch } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ShieldCheck, Lock, ArrowRight, Sparkles, Gift, Star, TrendingUp } from "lucide-react";
