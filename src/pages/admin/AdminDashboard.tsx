@@ -250,26 +250,46 @@ export default function AdminDashboard() {
         <StatCard label="Total sessions" value={stats?.sessions ?? "—"} Icon={TrendingUp} />
       </div>
 
-      <div id="queue" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl">Pending Queue</h2>
-          <Badge variant="outline" className="text-[11px]">{queue?.length ?? 0} open</Badge>
-        </div>
+      <Tabs defaultValue="pending" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="pending" className="gap-1.5">
+            <InboxIcon className="h-3.5 w-3.5" /> Pending Queue
+            <Badge variant="outline" className="ml-1 text-[10px]">{queue?.length ?? 0}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="answered" className="gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Answered
+            <Badge variant="outline" className="ml-1 text-[10px]">{answeredHistory?.length ?? 0}</Badge>
+          </TabsTrigger>
+        </TabsList>
 
-        {isLoading && (
-          <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
-        )}
+        <TabsContent value="pending" id="queue" className="space-y-3">
+          {isLoading && (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
+          )}
+          {!isLoading && (!queue || queue.length === 0) && (
+            <Card className="p-10 text-center">
+              <InboxIcon className="h-10 w-10 mx-auto text-muted-foreground" />
+              <p className="font-display text-xl mt-3">All caught up</p>
+              <p className="text-sm text-muted-foreground mt-1">New queries assigned to you will appear here.</p>
+            </Card>
+          )}
+          {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
+        </TabsContent>
 
-        {!isLoading && (!queue || queue.length === 0) && (
-          <Card className="p-10 text-center">
-            <InboxIcon className="h-10 w-10 mx-auto text-muted-foreground" />
-            <p className="font-display text-xl mt-3">All caught up</p>
-            <p className="text-sm text-muted-foreground mt-1">New queries assigned to you will appear here.</p>
-          </Card>
-        )}
-
-        {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
-      </div>
+        <TabsContent value="answered" className="space-y-3">
+          {answeredLoading && (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+          )}
+          {!answeredLoading && (!answeredHistory || answeredHistory.length === 0) && (
+            <Card className="p-10 text-center">
+              <CheckCircle2 className="h-10 w-10 mx-auto text-muted-foreground" />
+              <p className="font-display text-xl mt-3">No answers yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Once you publish answers, you'll see them here with the asker.</p>
+            </Card>
+          )}
+          {answeredHistory?.map((row) => <AnsweredHistoryCard key={row.id} row={row} />)}
+        </TabsContent>
+      </Tabs>
     </AdminShell>
   );
 }
