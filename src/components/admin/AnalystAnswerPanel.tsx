@@ -180,6 +180,10 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
         </div>
       </div>
 
+      <AnalystReportUploader queryId={queryId} existing={existing as never} onChange={setReport} />
+
+
+
       <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
         <Checkbox checked={agreed} onCheckedChange={(v) => setAgreed(!!v)} className="mt-0.5" />
         <span>
