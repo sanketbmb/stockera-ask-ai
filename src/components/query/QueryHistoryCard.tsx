@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 import { Play, ChevronRight, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
 import { VERDICT_MAP } from "@/lib/verdict";
+import { AnalystReportPill } from "@/components/report/AnalystReportPill";
 
 interface AnswerRow {
   id: string;
@@ -22,6 +23,11 @@ interface AnswerRow {
   time_horizon?: string | null;
   risk_note?: string | null;
   is_published?: boolean | null;
+  report_url?: string | null;
+  report_filename?: string | null;
+  report_mime?: string | null;
+  report_size_bytes?: number | null;
+  report_label?: string | null;
 }
 
 export interface QueryHistoryItem {
@@ -48,6 +54,7 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
   const [videoOpen, setVideoOpen] = useState(false);
   const videoAnswer = item.answers?.find((a) => a.answer_type === "video" && a.video_url);
   const textAnswer = item.answers?.find((a) => a.answer_type === "text" && a.body);
+  const reportAnswer = item.answers?.find((a) => a.report_url);
   const preview = item.query_text.length > 100 ? item.query_text.slice(0, 100) + "…" : item.query_text;
   const statusLabel = item.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -108,6 +115,21 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
           )}
         </div>
       )}
+
+      {reportAnswer?.report_url && (
+        <div className="mt-3">
+          <AnalystReportPill
+            reportUrl={reportAnswer.report_url}
+            filename={reportAnswer.report_filename}
+            mime={reportAnswer.report_mime}
+            sizeBytes={reportAnswer.report_size_bytes}
+            label={reportAnswer.report_label}
+            compact
+          />
+        </div>
+      )}
+
+
 
       <div className="mt-3 flex flex-wrap gap-2">
         {!textAnswer && !videoAnswer && (

@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { VERDICT_OPTIONS } from "@/lib/verdict";
 import { cn } from "@/lib/utils";
+import { AnalystReportUploader, type UploadedReport } from "@/components/admin/AnalystReportUploader";
 
 interface Props {
   queryId: string;
@@ -26,6 +27,7 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
   const [keyLevel, setKeyLevel] = useState("");
   const [horizon, setHorizon] = useState<string>("");
   const [riskNote, setRiskNote] = useState("");
+  const [report, setReport] = useState<UploadedReport | null>(null);
   const [agreed, setAgreed] = useState(false);
 
   const { data: existing } = useQuery({
@@ -50,6 +52,15 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
       setKeyLevel(existing.key_level ?? "");
       setHorizon(existing.time_horizon ?? "");
       setRiskNote(existing.risk_note ?? "");
+      const exAny = existing as unknown as { report_url?: string | null; report_filename?: string | null; report_mime?: string | null; report_size_bytes?: number | null };
+      if (exAny.report_url) {
+        setReport({
+          report_url: exAny.report_url,
+          report_filename: exAny.report_filename ?? "report",
+          report_mime: exAny.report_mime ?? "",
+          report_size_bytes: exAny.report_size_bytes ?? 0,
+        });
+      }
       if (existing.is_published) setAgreed(true);
     }
   }, [existing]);
@@ -70,6 +81,10 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
         key_level: keyLevel || null,
         time_horizon: horizon || null,
         risk_note: riskNote || null,
+        report_url: report?.report_url ?? null,
+        report_filename: report?.report_filename ?? null,
+        report_mime: report?.report_mime ?? null,
+        report_size_bytes: report?.report_size_bytes ?? null,
         is_published: publish,
       };
       const { error } = await supabase
@@ -164,6 +179,10 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
           <Input value={riskNote} onChange={(e) => setRiskNote(e.target.value.slice(0, 120))} placeholder="Short risk caveat" />
         </div>
       </div>
+
+      <AnalystReportUploader queryId={queryId} existing={existing as never} onChange={setReport} />
+
+
 
       <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
         <Checkbox checked={agreed} onCheckedChange={(v) => setAgreed(!!v)} className="mt-0.5" />

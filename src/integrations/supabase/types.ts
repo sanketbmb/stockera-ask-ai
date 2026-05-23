@@ -159,6 +159,11 @@ export type Database = {
           is_published: boolean | null
           key_level: string | null
           query_id: string
+          report_filename: string | null
+          report_label: string | null
+          report_mime: string | null
+          report_size_bytes: number | null
+          report_url: string | null
           risk_note: string | null
           time_horizon: string | null
           verdict: string | null
@@ -175,6 +180,11 @@ export type Database = {
           is_published?: boolean | null
           key_level?: string | null
           query_id: string
+          report_filename?: string | null
+          report_label?: string | null
+          report_mime?: string | null
+          report_size_bytes?: number | null
+          report_url?: string | null
           risk_note?: string | null
           time_horizon?: string | null
           verdict?: string | null
@@ -191,6 +201,11 @@ export type Database = {
           is_published?: boolean | null
           key_level?: string | null
           query_id?: string
+          report_filename?: string | null
+          report_label?: string | null
+          report_mime?: string | null
+          report_size_bytes?: number | null
+          report_url?: string | null
           risk_note?: string | null
           time_horizon?: string | null
           verdict?: string | null

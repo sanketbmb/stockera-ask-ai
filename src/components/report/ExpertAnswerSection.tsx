@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { ShareButton } from "@/components/common/ShareButton";
+import { AnalystReportPill } from "@/components/report/AnalystReportPill";
 
 interface Props {
   queryId: string;
@@ -24,7 +25,7 @@ type Analyst = { id: string; display_name: string; sebi_reg_number: string; sebi
 export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["expert_answers", queryId],
-    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null }>; analyst: Analyst | null; analystId: string | null }> => {
+    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null; report_url: string | null; report_filename: string | null; report_mime: string | null; report_size_bytes: number | null; report_label: string | null }>; analyst: Analyst | null; analystId: string | null }> => {
       const { data: answers } = await supabase
         .from("answers")
         .select("*")
@@ -142,6 +143,20 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
             )}
           </div>
 
+          {textAns.report_url && (
+            <div className="mt-4">
+              <AnalystReportPill
+                reportUrl={textAns.report_url}
+                filename={textAns.report_filename}
+                mime={textAns.report_mime}
+                sizeBytes={textAns.report_size_bytes}
+                label={textAns.report_label}
+              />
+            </div>
+          )}
+
+
+
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
             <p className="text-xs text-muted-foreground">Want a 1:1 with this analyst?</p>
             {data?.analystId && (
@@ -170,6 +185,17 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
           <p className="text-[11px] text-muted-foreground mt-2">
             {formatDistanceToNow(new Date(videoAns.created_at!), { addSuffix: true })}
           </p>
+          {videoAns.report_url && (
+            <div className="mt-3">
+              <AnalystReportPill
+                reportUrl={videoAns.report_url}
+                filename={videoAns.report_filename}
+                mime={videoAns.report_mime}
+                sizeBytes={videoAns.report_size_bytes}
+                label={videoAns.report_label}
+              />
+            </div>
+          )}
         </Card>
       )}
 
