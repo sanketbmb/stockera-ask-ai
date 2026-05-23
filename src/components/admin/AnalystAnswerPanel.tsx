@@ -81,6 +81,10 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
         key_level: keyLevel || null,
         time_horizon: horizon || null,
         risk_note: riskNote || null,
+        report_url: report?.report_url ?? null,
+        report_filename: report?.report_filename ?? null,
+        report_mime: report?.report_mime ?? null,
+        report_size_bytes: report?.report_size_bytes ?? null,
         is_published: publish,
       };
       const { error } = await supabase
