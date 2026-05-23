@@ -25,7 +25,7 @@ type Analyst = { id: string; display_name: string; sebi_reg_number: string; sebi
 export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["expert_answers", queryId],
-    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null }>; analyst: Analyst | null; analystId: string | null }> => {
+    queryFn: async (): Promise<{ answers: Array<Record<string, unknown> & { answer_type: string; expert_id: string; created_at: string | null; body: string | null; verdict: string | null; key_level: string | null; time_horizon: string | null; risk_note: string | null; video_url: string | null; video_thumbnail: string | null; duration_seconds: number | null; report_url: string | null; report_filename: string | null; report_mime: string | null; report_size_bytes: number | null; report_label: string | null }>; analyst: Analyst | null; analystId: string | null }> => {
       const { data: answers } = await supabase
         .from("answers")
         .select("*")
