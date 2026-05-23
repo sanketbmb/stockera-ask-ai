@@ -34,7 +34,7 @@ export default function MyQueriesPage() {
       const ids = queries.map((q) => q.id);
       const { data: answers } = await supabase
         .from("answers")
-        .select("id, query_id, answer_type, body, video_url, video_thumbnail, duration_seconds, created_at, expert_id, verdict, key_level, time_horizon, risk_note, is_published")
+        .select("id, query_id, answer_type, body, video_url, video_thumbnail, duration_seconds, created_at, expert_id, verdict, key_level, time_horizon, risk_note, is_published, report_url, report_filename, report_mime, report_size_bytes, report_label")
         .in("query_id", ids)
         .eq("is_published", true);
       const byQuery = new Map<string, typeof answers>();
