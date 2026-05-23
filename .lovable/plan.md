@@ -1,65 +1,82 @@
-# Plan — Admin/Analyst panel fixes
+## Goal
 
-## 1. Pending queue shows yesterday's answered queries
+Let analysts attach a downloadable "Analyst Report" (a free giveaway file — PDF, DOC, XLS, image) to any query they answer. Surface that report to the user everywhere their answer appears (My Queries cards, /report/$queryId AI section, Expert Analysis section) with a clear "Analyst Report (giveaway report)" label, plus view + download.
 
-**Cause.** Both the Analyst Dashboard queue and Super Admin "Pending" filter only look at `queries.status`. When an analyst publishes a video-only answer (or any path that skipped the status flip), `status` never moves off `pending`/`ai_answered`, so it stays in the pending queue forever.
+## 1. Database (migration)
 
-**Fix.**
-- In Analyst Dashboard query (`src/pages/admin/AdminDashboard.tsx`) and Super Admin list (`src/lib/admin.functions.ts → getAllQueriesForAdmin`), exclude any query that already has a published answer (`answers.is_published = true`) — single source of truth.
-- Also defensively flip `queries.status → 'expert_answered'` in every answer-publish path (text modal, panel, video upload already does it; audit all 3).
-- "Pending" stat in Super Admin uses the same "no published answer" join.
+Add report fields to `public.answers`:
+- `report_url text` — public URL in storage
+- `report_filename text` — original filename for the download UI
+- `report_mime text` — to pick the right icon (pdf/doc/xls/image)
+- `report_size_bytes integer`
+- `report_label text default 'Analyst Report'` — small label users see ("giveaway report")
 
-## 2. Analyst can't see what they answered
+Create a new public storage bucket `analyst-reports` (public read so users can download/preview by URL). Storage policies:
+- Public SELECT on objects in `analyst-reports`
+- INSERT/UPDATE/DELETE restricted to users with `analyst` or `admin` role (via `has_role`), folder = `${query_id}/...`
 
-**Fix.** Add an "Answered" tab on the Analyst Dashboard (`AdminDashboard.tsx`) next to "Pending Queue":
-- Query `answers` where `expert_id = me` joined to `queries` + asker's `profiles` (full_name, avatar_url).
-- Each row: stock + query text, verdict badge, body/video preview, asker's name + avatar (no email/PII), answered date.
-- Reuses existing `QueryQueueCard` styling.
+No changes to RLS on `answers` — existing policies already gate writes to the assigned analyst and reads to the query owner / published answers.
 
-## 3. Approve pending analyst SEBI profiles
+## 2. Analyst upload UI (admin side)
 
-The approval UI already exists in `SuperAdmin.tsx` under the **"Analysts"** tab (`PendingAnalystCard`), but it's easy to miss and there's no badge.
+### `TextAnswerModal.tsx` (Dashboard → "Answer this query")
+Add an optional **Analyst Report** section above the footer:
+- File input (accept `.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg`)
+- Max 15 MB, show filename + size + remove button after pick
+- On Publish: if a file is selected, upload to `analyst-reports/${queryId}/${uuid}-${filename}` using the browser supabase client, get the public URL, then include `report_url`, `report_filename`, `report_mime`, `report_size_bytes` in the `answers` insert.
 
-**Fix.**
-- Add a red badge on the "Analysts" tab showing pending count (mirrors what `pendingCount` already does for the sidebar).
-- Add a top-level "Pending Approvals" card on the Overview tab linking straight to the Analysts tab.
-- When an analyst profile isn't approved, the public profile page already 404s — keep that, but make the toast message clearer: "This analyst is awaiting SEBI verification."
-- Confirm `approveAnalyst` flips `is_approved=true` AND inserts `user_roles(analyst)` (it does) — no schema change needed.
+### `VideoAnswerUpload.tsx` (Upload Video flow)
+Same optional Analyst Report picker so video answers can also ship with a giveaway report.
 
-## 4. Manually assign queries from Super Admin
+### Super Admin "Pending Queries" / queue rows
+Add a small "Attach report" affordance on each pending row that opens the same TextAnswerModal pre-targeted at that query (the admin already has analyst privileges).
 
-`assignQueryToAnalyst` server fn + `getApprovedAvailableAnalysts` already exist. UI wiring is missing.
+## 3. User-facing report card (shared component)
 
-**Fix.** In Super Admin "Queries" tab row actions, add an "Assign" dropdown listing approved analysts (display_name + SEBI number). On select → call `assignQueryToAnalyst`, invalidate queries. Persists in DB (already does), so it survives reloads.
+New `src/components/report/AnalystReportPill.tsx`:
+- Small label row: `ANALYST REPORT · giveaway report`
+- File icon (pdf/doc/xls/img by mime), filename, size
+- Two buttons: **View** (opens `report_url` in new tab) and **Download** (anchor with `download={filename}`)
+- Renders nothing when `report_url` is missing
 
-## 5. Super Admin overview metrics blank
+Wire it into all three surfaces (also include the field in the supabase selects):
 
-`getAdminOverviewStats` returns `users / pendingApplications / queriesToday / pendingQueries`. The Overview tab renders them but they show 0 because the `pendingQueries` query filters `assigned_analyst_id IS NULL` — so once any analyst is assigned, "pending" drops to 0 even though work remains.
+1. **`QueryHistoryCard.tsx`** (`/my-queries`) — show the pill inside the existing expert-answer block; also show it under the AI-answered card when an answer with a report exists.
+2. **`ExpertAnswerSection.tsx`** (`/report/$queryId` Expert Analysis) — render the pill inside the text-answer Card, right under the verdict.
+3. **`/report/$queryId` top header** — render a compact version of the pill in the AI Report header strip (top-left under the report title) when the most recent published answer for the query has a report attached. This needs the report fields added to the `answers` select in `ExpertAnswerSection` and a small prop bubble-up or a parallel query on the report route.
 
-**Fix.** Change `pendingQueries` to: queries with no published answer (regardless of assignment). Add a 5th card "Unassigned" for the `assigned_analyst_id IS NULL` count. Now metrics actually move.
+In `MyQueries.tsx` extend the `answers` select to include the new `report_*` columns.
 
-Analyst Dashboard "Pending" already correctly scopes to `assigned_analyst_id = me` — leave as is.
+## 4. Download UX
 
-## 6. Rishabh can log into BOTH analyst + super-admin panels
+- Storage bucket is public → direct download via `<a href={report_url} download={report_filename}>`. No server function needed.
+- Mime-based icon + a "Giveaway · free" micro-badge so it's obvious there's no charge.
 
-**Cause.** `user_roles` allows multiple roles per user. The `bootstrap-admin` edge function (or a manual grant) gave `rishabh@stockera.com` the `admin` role in addition to `analyst`. `RequireAdmin` only checks `isAdmin`, so any user with the admin role passes — exactly as designed.
+## 5. Out of scope (to keep this tight)
+- No payments / paywall on the report (always free giveaway, per user).
+- No analytics on downloads (can add later).
+- No edit-after-publish for the attached file (analyst would delete + re-publish, same as current answers).
 
-**Fix (operational, not code).**
-- Remove the `admin` role row for Rishabh's user_id from `user_roles` (one-line SQL via migration helper, run once).
-- Keep `ADMIN_EMAIL` secret pointing at the real company-head email so future bootstraps don't re-grant Rishabh.
-- Document in code comment in `bootstrap-admin/index.ts` that ADMIN_EMAIL must be a non-analyst email.
+## Technical notes
+- `src/integrations/supabase/types.ts` regenerates automatically after the migration runs.
+- Uploads use the browser client (`supabase.storage.from('analyst-reports').upload(...)`) since the analyst is authenticated; RLS on the bucket gates writes.
+- All new UI uses existing semantic tokens; no new colors.
 
-I'll surface this in the implementation as a one-shot SQL run + a note for the user to update `ADMIN_EMAIL`.
+```text
+answers table
+  + report_url
+  + report_filename
+  + report_mime
+  + report_size_bytes
+  + report_label
 
----
+storage
+  + bucket: analyst-reports (public read, analyst/admin write)
 
-## Technical summary
-
-Files to touch:
-- `src/lib/admin.functions.ts` — fix `pendingQueries`; change `getAllQueriesForAdmin` to LEFT JOIN published answers and expose `has_published_answer`; keep existing assign fn.
-- `src/pages/admin/AdminDashboard.tsx` — exclude answered queries from queue; add "Answered" tab with asker name+avatar.
-- `src/pages/admin/SuperAdmin.tsx` — Overview "Unassigned" card + clearer Pending metric; Analysts-tab badge; Queries-tab Assign dropdown using existing fns.
-- `src/pages/AnalystPublicProfile.tsx` — friendlier "awaiting verification" message.
-- One DB cleanup: `DELETE FROM user_roles WHERE user_id = <rishabh> AND role = 'admin'` (via migration).
-
-No schema changes required — every needed column/policy already exists.
+UI
+  TextAnswerModal       → file picker + upload on publish
+  VideoAnswerUpload     → same picker
+  SuperAdmin queue row  → "Attach report" entry point
+  AnalystReportPill     → shared view/download card
+    used in: QueryHistoryCard, ExpertAnswerSection, report header
+```
