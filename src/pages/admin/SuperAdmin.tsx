@@ -99,12 +99,13 @@ function AiEngineHealthCheck() {
 function OverviewTab() {
   const fetchStats = useServerFn(getAdminOverviewStats);
   const { data, isLoading } = useQuery({ queryKey: ["admin_overview"], queryFn: () => fetchStats() });
-  if (isLoading) return <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[1,2,3,4].map(i=><Skeleton key={i} className="h-24" />)}</div>;
+  if (isLoading) return <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">{[1,2,3,4,5].map(i=><Skeleton key={i} className="h-24" />)}</div>;
   const cards = [
     { label: "Total Users", value: data?.users ?? 0, Icon: Users, color: "bg-blue-500/10 text-blue-600" },
     { label: "Pending Analyst Apps", value: data?.pendingApplications ?? 0, Icon: ShieldCheck, color: "bg-amber-500/10 text-amber-600" },
     { label: "Queries Today", value: data?.queriesToday ?? 0, Icon: FileText, color: "bg-violet-500/10 text-violet-600" },
     { label: "Pending Queries", value: data?.pendingQueries ?? 0, Icon: Inbox, color: "bg-red-500/10 text-red-600" },
+    { label: "Unassigned", value: (data as { unassignedQueries?: number } | undefined)?.unassignedQueries ?? 0, Icon: Inbox, color: "bg-orange-500/10 text-orange-600" },
   ];
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
