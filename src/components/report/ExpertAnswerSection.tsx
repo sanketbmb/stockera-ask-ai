@@ -143,6 +143,20 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
             )}
           </div>
 
+          {textAns.report_url && (
+            <div className="mt-4">
+              <AnalystReportPill
+                reportUrl={textAns.report_url}
+                filename={textAns.report_filename}
+                mime={textAns.report_mime}
+                sizeBytes={textAns.report_size_bytes}
+                label={textAns.report_label}
+              />
+            </div>
+          )}
+
+
+
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
             <p className="text-xs text-muted-foreground">Want a 1:1 with this analyst?</p>
             {data?.analystId && (
