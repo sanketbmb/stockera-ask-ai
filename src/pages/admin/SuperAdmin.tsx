@@ -108,7 +108,8 @@ function OverviewTab() {
     { label: "Unassigned", value: (data as { unassignedQueries?: number } | undefined)?.unassignedQueries ?? 0, Icon: Inbox, color: "bg-orange-500/10 text-orange-600" },
   ];
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+
       {cards.map(({ label, value, Icon, color }) => (
         <Card key={label} className="p-4">
           <div className="flex items-center justify-between">
