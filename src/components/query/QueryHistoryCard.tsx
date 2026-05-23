@@ -116,6 +116,21 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
         </div>
       )}
 
+      {reportAnswer?.report_url && (
+        <div className="mt-3">
+          <AnalystReportPill
+            reportUrl={reportAnswer.report_url}
+            filename={reportAnswer.report_filename}
+            mime={reportAnswer.report_mime}
+            sizeBytes={reportAnswer.report_size_bytes}
+            label={reportAnswer.report_label}
+            compact
+          />
+        </div>
+      )}
+
+
+
       <div className="mt-3 flex flex-wrap gap-2">
         {!textAnswer && !videoAnswer && (
           <Badge variant="outline" className="text-[10px] text-muted-foreground">⏳ Awaiting expert analysis</Badge>
