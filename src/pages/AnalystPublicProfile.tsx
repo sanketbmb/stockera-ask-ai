@@ -68,14 +68,26 @@ export default function AnalystPublicProfile() {
     );
   }
 
-  if (!analyst) {
+  if (!analyst || unapproved) {
     return (
       <div className="min-h-screen bg-mesh flex flex-col">
         <Navbar />
         <div className="flex-1 flex items-center justify-center text-center p-6">
-          <div>
-            <p className="font-display text-2xl">Analyst not found</p>
-            <p className="text-muted-foreground mt-2 text-sm">This profile may not be approved or doesn't exist.</p>
+          <div className="max-w-md">
+            {unapproved ? (
+              <>
+                <ShieldCheck className="h-10 w-10 mx-auto text-amber-500 mb-3" />
+                <p className="font-display text-2xl">Awaiting SEBI verification</p>
+                <p className="text-muted-foreground mt-2 text-sm">
+                  This analyst's profile is still being verified by our compliance team. It will go live as soon as approval is complete — usually within 24–48 hours.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-2xl">Analyst not found</p>
+                <p className="text-muted-foreground mt-2 text-sm">This profile doesn't exist or has been removed.</p>
+              </>
+            )}
             <Button asChild className="mt-4"><Link to="/">Back home</Link></Button>
           </div>
         </div>
