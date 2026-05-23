@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 import { Play, ChevronRight, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
 import { VERDICT_MAP } from "@/lib/verdict";
+import { AnalystReportPill } from "@/components/report/AnalystReportPill";
 
 interface AnswerRow {
   id: string;
