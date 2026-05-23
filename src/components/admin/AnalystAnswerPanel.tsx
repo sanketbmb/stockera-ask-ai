@@ -52,6 +52,15 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
       setKeyLevel(existing.key_level ?? "");
       setHorizon(existing.time_horizon ?? "");
       setRiskNote(existing.risk_note ?? "");
+      const exAny = existing as unknown as { report_url?: string | null; report_filename?: string | null; report_mime?: string | null; report_size_bytes?: number | null };
+      if (exAny.report_url) {
+        setReport({
+          report_url: exAny.report_url,
+          report_filename: exAny.report_filename ?? "report",
+          report_mime: exAny.report_mime ?? "",
+          report_size_bytes: exAny.report_size_bytes ?? 0,
+        });
+      }
       if (existing.is_published) setAgreed(true);
     }
   }, [existing]);
