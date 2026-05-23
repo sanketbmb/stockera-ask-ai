@@ -27,6 +27,7 @@ export function AnalystAnswerPanel({ queryId, stockName }: Props) {
   const [keyLevel, setKeyLevel] = useState("");
   const [horizon, setHorizon] = useState<string>("");
   const [riskNote, setRiskNote] = useState("");
+  const [report, setReport] = useState<UploadedReport | null>(null);
   const [agreed, setAgreed] = useState(false);
 
   const { data: existing } = useQuery({
