@@ -186,10 +186,50 @@ export default function AdminDashboard() {
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data ?? []) as unknown as QueueRow[];
+      const rows = (data ?? []) as unknown as QueueRow[];
+      if (rows.length === 0) return rows;
+      // Exclude queries that already have a published answer from any analyst
+      const { data: ans } = await supabase
+        .from("answers")
+        .select("query_id")
+        .in("query_id", rows.map((r) => r.id))
+        .eq("is_published", true);
+      const answeredSet = new Set((ans ?? []).map((a) => a.query_id));
+      return rows.filter((r) => !answeredSet.has(r.id));
     },
     enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
   });
+
+  // Past answers given by this analyst
+  const { data: answeredHistory, isLoading: answeredLoading } = useQuery({
+    queryKey: ["analyst_answered_history", user?.id],
+    enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
+    queryFn: async () => {
+      if (!user) return [];
+      const { data: ans, error } = await supabase
+        .from("answers")
+        .select("id, query_id, answer_type, body, verdict, video_url, created_at, queries(stock_name, stock_symbol, query_text, user_id)")
+        .eq("expert_id", user.id)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const rows = (ans ?? []) as unknown as Array<{
+        id: string; query_id: string; answer_type: string; body: string | null; verdict: string | null;
+        video_url: string | null; created_at: string;
+        queries: { stock_name: string; stock_symbol: string | null; query_text: string; user_id: string } | null;
+      }>;
+      const askerIds = Array.from(new Set(rows.map((r) => r.queries?.user_id).filter(Boolean) as string[]));
+      const profileMap = new Map<string, { full_name: string | null; avatar_url: string | null }>();
+      if (askerIds.length) {
+        const { data: profs } = await supabase
+          .from("profiles").select("id, full_name, avatar_url").in("id", askerIds);
+        (profs ?? []).forEach((p) => profileMap.set(p.id, { full_name: p.full_name, avatar_url: p.avatar_url }));
+      }
+      return rows.map((r) => ({ ...r, asker: r.queries ? profileMap.get(r.queries.user_id) ?? null : null }));
+    },
+  });
+
 
   // Lockout if not approved
   if (!isAdmin && !profileLoading && analystProfile && analystProfile.is_approved === false) {
