@@ -33,12 +33,12 @@ export default function AnalystPublicProfile() {
         .from("analyst_profiles")
         .select("*")
         .eq("id", analystId)
-        .eq("is_approved", true)
         .maybeSingle();
       if (error) throw error;
       return data;
     },
   });
+  const unapproved = !!analyst && analyst.is_approved === false;
 
   const { data: recentAnswers } = useQuery({
     queryKey: ["analyst-recent-answers", analystId],
