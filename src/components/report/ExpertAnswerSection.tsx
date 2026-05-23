@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { ShareButton } from "@/components/common/ShareButton";
+import { AnalystReportPill } from "@/components/report/AnalystReportPill";
 
 interface Props {
   queryId: string;
