@@ -54,6 +54,7 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
   const [videoOpen, setVideoOpen] = useState(false);
   const videoAnswer = item.answers?.find((a) => a.answer_type === "video" && a.video_url);
   const textAnswer = item.answers?.find((a) => a.answer_type === "text" && a.body);
+  const reportAnswer = item.answers?.find((a) => a.report_url);
   const preview = item.query_text.length > 100 ? item.query_text.slice(0, 100) + "…" : item.query_text;
   const statusLabel = item.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
