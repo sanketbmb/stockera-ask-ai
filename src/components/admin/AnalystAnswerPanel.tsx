@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { VERDICT_OPTIONS } from "@/lib/verdict";
 import { cn } from "@/lib/utils";
+import { AnalystReportUploader, type UploadedReport } from "@/components/admin/AnalystReportUploader";
 
 interface Props {
   queryId: string;
