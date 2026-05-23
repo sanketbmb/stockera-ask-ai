@@ -284,10 +284,11 @@ function AllQueriesTab() {
 
   const filtered = useMemo(() => {
     let rows = data ?? [];
-    if (filter === "pending") rows = rows.filter((r) => r.status === "pending");
-    else if (filter === "unassigned") rows = rows.filter((r) => !r.assigned_analyst_id);
-    else if (filter === "ai_answered") rows = rows.filter((r) => r.status === "ai_answered");
-    else if (filter === "expert_answered") rows = rows.filter((r) => r.status === "expert_answered");
+    const isAnswered = (r: typeof rows[number]) => r.has_text_answer || r.has_video_answer || r.status === "expert_answered";
+    if (filter === "pending") rows = rows.filter((r) => !isAnswered(r) && (r.status === "pending" || r.status === "ai_answered" || r.status === "in_review"));
+    else if (filter === "unassigned") rows = rows.filter((r) => !r.assigned_analyst_id && !isAnswered(r));
+    else if (filter === "ai_answered") rows = rows.filter((r) => r.status === "ai_answered" && !isAnswered(r));
+    else if (filter === "expert_answered") rows = rows.filter((r) => isAnswered(r));
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter((r) => (r.stock_name ?? "").toLowerCase().includes(q) || (r.user_name ?? "").toLowerCase().includes(q));
