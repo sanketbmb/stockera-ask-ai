@@ -185,6 +185,17 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
           <p className="text-[11px] text-muted-foreground mt-2">
             {formatDistanceToNow(new Date(videoAns.created_at!), { addSuffix: true })}
           </p>
+          {videoAns.report_url && (
+            <div className="mt-3">
+              <AnalystReportPill
+                reportUrl={videoAns.report_url}
+                filename={videoAns.report_filename}
+                mime={videoAns.report_mime}
+                sizeBytes={videoAns.report_size_bytes}
+                label={videoAns.report_label}
+              />
+            </div>
+          )}
         </Card>
       )}
 
