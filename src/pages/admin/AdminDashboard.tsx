@@ -7,7 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Video, PencilLine, ChevronDown, Star, Inbox as InboxIcon, Clock, TrendingUp, CheckCircle2, ShieldAlert, ArrowRight } from "lucide-react";
+import { VERDICT_MAP } from "@/lib/verdict";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AnalystAnswerPanel } from "@/components/admin/AnalystAnswerPanel";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,6 +128,60 @@ function QueryQueueCard({ row }: { row: QueueRow }) {
   );
 }
 
+interface AnsweredRow {
+  id: string;
+  query_id: string;
+  answer_type: string;
+  body: string | null;
+  verdict: string | null;
+  video_url: string | null;
+  created_at: string;
+  queries: { stock_name: string; stock_symbol: string | null; query_text: string; user_id: string } | null;
+  asker: { full_name: string | null; avatar_url: string | null } | null;
+}
+
+function AnsweredHistoryCard({ row }: { row: AnsweredRow }) {
+  const v = row.verdict ? VERDICT_MAP[row.verdict] : null;
+  const askerName = row.asker?.full_name ?? "Stockera user";
+  const initials = askerName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-start gap-2 justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-display text-lg text-accent">{row.queries?.stock_name ?? "—"}</span>
+          {row.queries?.stock_symbol && <Badge variant="outline" className="font-mono text-[10px]">{row.queries.stock_symbol}</Badge>}
+          {v && <span className={`text-[10px] px-2 py-0.5 rounded border ${v.color}`}>{v.label}</span>}
+          <Badge variant="secondary" className="text-[10px]">{row.answer_type === "video" ? "🎥 Video" : "📄 Text"}</Badge>
+        </div>
+        <span className="text-[11px] font-mono text-muted-foreground inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> {formatDistanceToNow(new Date(row.created_at), { addSuffix: true })}
+        </span>
+      </div>
+
+      {row.queries?.query_text && (
+        <p className="mt-3 text-xs text-muted-foreground line-clamp-2 italic">"{row.queries.query_text}"</p>
+      )}
+      {row.body && <p className="mt-2 text-sm text-foreground/85 whitespace-pre-wrap line-clamp-4">{row.body}</p>}
+
+      <div className="mt-3 flex items-center justify-between gap-3 pt-3 border-t border-border">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-7 w-7">
+            <AvatarImage src={row.asker?.avatar_url ?? undefined} />
+            <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
+          </Avatar>
+          <div className="text-xs">
+            <p className="text-muted-foreground">Answered to</p>
+            <p className="font-medium leading-tight">{askerName}</p>
+          </div>
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <Link to="/report/$queryId" params={{ queryId: row.query_id }}>View report <ArrowRight className="h-3 w-3 ml-1" /></Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function PendingApprovalLockout() {
   return (
     <Card className="p-8 max-w-2xl mx-auto border-amber-500/40 bg-amber-500/5 text-center">
@@ -186,10 +243,50 @@ export default function AdminDashboard() {
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data ?? []) as unknown as QueueRow[];
+      const rows = (data ?? []) as unknown as QueueRow[];
+      if (rows.length === 0) return rows;
+      // Exclude queries that already have a published answer from any analyst
+      const { data: ans } = await supabase
+        .from("answers")
+        .select("query_id")
+        .in("query_id", rows.map((r) => r.id))
+        .eq("is_published", true);
+      const answeredSet = new Set((ans ?? []).map((a) => a.query_id));
+      return rows.filter((r) => !answeredSet.has(r.id));
     },
     enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
   });
+
+  // Past answers given by this analyst
+  const { data: answeredHistory, isLoading: answeredLoading } = useQuery({
+    queryKey: ["analyst_answered_history", user?.id],
+    enabled: !!user && (isAdmin || analystProfile?.is_approved === true),
+    queryFn: async () => {
+      if (!user) return [];
+      const { data: ans, error } = await supabase
+        .from("answers")
+        .select("id, query_id, answer_type, body, verdict, video_url, created_at, queries(stock_name, stock_symbol, query_text, user_id)")
+        .eq("expert_id", user.id)
+        .eq("is_published", true)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const rows = (ans ?? []) as unknown as Array<{
+        id: string; query_id: string; answer_type: string; body: string | null; verdict: string | null;
+        video_url: string | null; created_at: string;
+        queries: { stock_name: string; stock_symbol: string | null; query_text: string; user_id: string } | null;
+      }>;
+      const askerIds = Array.from(new Set(rows.map((r) => r.queries?.user_id).filter(Boolean) as string[]));
+      const profileMap = new Map<string, { full_name: string | null; avatar_url: string | null }>();
+      if (askerIds.length) {
+        const { data: profs } = await supabase
+          .from("profiles").select("id, full_name, avatar_url").in("id", askerIds);
+        (profs ?? []).forEach((p) => profileMap.set(p.id, { full_name: p.full_name, avatar_url: p.avatar_url }));
+      }
+      return rows.map((r) => ({ ...r, asker: r.queries ? profileMap.get(r.queries.user_id) ?? null : null }));
+    },
+  });
+
 
   // Lockout if not approved
   if (!isAdmin && !profileLoading && analystProfile && analystProfile.is_approved === false) {
@@ -210,26 +307,46 @@ export default function AdminDashboard() {
         <StatCard label="Total sessions" value={stats?.sessions ?? "—"} Icon={TrendingUp} />
       </div>
 
-      <div id="queue" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl">Pending Queue</h2>
-          <Badge variant="outline" className="text-[11px]">{queue?.length ?? 0} open</Badge>
-        </div>
+      <Tabs defaultValue="pending" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="pending" className="gap-1.5">
+            <InboxIcon className="h-3.5 w-3.5" /> Pending Queue
+            <Badge variant="outline" className="ml-1 text-[10px]">{queue?.length ?? 0}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="answered" className="gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Answered
+            <Badge variant="outline" className="ml-1 text-[10px]">{answeredHistory?.length ?? 0}</Badge>
+          </TabsTrigger>
+        </TabsList>
 
-        {isLoading && (
-          <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
-        )}
+        <TabsContent value="pending" id="queue" className="space-y-3">
+          {isLoading && (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
+          )}
+          {!isLoading && (!queue || queue.length === 0) && (
+            <Card className="p-10 text-center">
+              <InboxIcon className="h-10 w-10 mx-auto text-muted-foreground" />
+              <p className="font-display text-xl mt-3">All caught up</p>
+              <p className="text-sm text-muted-foreground mt-1">New queries assigned to you will appear here.</p>
+            </Card>
+          )}
+          {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
+        </TabsContent>
 
-        {!isLoading && (!queue || queue.length === 0) && (
-          <Card className="p-10 text-center">
-            <InboxIcon className="h-10 w-10 mx-auto text-muted-foreground" />
-            <p className="font-display text-xl mt-3">All caught up</p>
-            <p className="text-sm text-muted-foreground mt-1">New queries assigned to you will appear here.</p>
-          </Card>
-        )}
-
-        {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
-      </div>
+        <TabsContent value="answered" className="space-y-3">
+          {answeredLoading && (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+          )}
+          {!answeredLoading && (!answeredHistory || answeredHistory.length === 0) && (
+            <Card className="p-10 text-center">
+              <CheckCircle2 className="h-10 w-10 mx-auto text-muted-foreground" />
+              <p className="font-display text-xl mt-3">No answers yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Once you publish answers, you'll see them here with the asker.</p>
+            </Card>
+          )}
+          {answeredHistory?.map((row) => <AnsweredHistoryCard key={row.id} row={row} />)}
+        </TabsContent>
+      </Tabs>
     </AdminShell>
   );
 }

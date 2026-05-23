@@ -1,80 +1,65 @@
-## 1. Fix missing analyst identity on expert answers
+# Plan — Admin/Analyst panel fixes
 
-**Problem:** `ExpertAnswerSection` resolves the analyst from `query.assigned_analyst_id`, which is often null, so the card shows the generic "SEBI Analyst" fallback.
+## 1. Pending queue shows yesterday's answered queries
 
-**Fix:** In `ExpertAnswerSection.tsx`, after loading answers, look up the analyst from the answer's `expert_id` if `assignedAnalystId` is null. Use `expert_id` of the published text answer (fallback to video answer). Render:
-- Avatar + display_name
-- SEBI type + reg number (mono, with shield icon)
-- Years of experience + rating + specializations chips
-- Wrap the avatar + name block in a `<Link to="/analyst/$analystId">` so clicking opens the public profile.
+**Cause.** Both the Analyst Dashboard queue and Super Admin "Pending" filter only look at `queries.status`. When an analyst publishes a video-only answer (or any path that skipped the status flip), `status` never moves off `pending`/`ai_answered`, so it stays in the pending queue forever.
 
-Do the same on `QueryHistoryCard` (link "Expert text answer" header to the analyst page).
+**Fix.**
+- In Analyst Dashboard query (`src/pages/admin/AdminDashboard.tsx`) and Super Admin list (`src/lib/admin.functions.ts → getAllQueriesForAdmin`), exclude any query that already has a published answer (`answers.is_published = true`) — single source of truth.
+- Also defensively flip `queries.status → 'expert_answered'` in every answer-publish path (text modal, panel, video upload already does it; audit all 3).
+- "Pending" stat in Super Admin uses the same "no published answer" join.
 
-## 2. Public Analyst Profile + 1:1 booking page
+## 2. Analyst can't see what they answered
 
-New route: `src/routes/analyst.$analystId.tsx` → page `src/pages/AnalystPublicProfile.tsx`.
+**Fix.** Add an "Answered" tab on the Analyst Dashboard (`AdminDashboard.tsx`) next to "Pending Queue":
+- Query `answers` where `expert_id = me` joined to `queries` + asker's `profiles` (full_name, avatar_url).
+- Each row: stock + query text, verdict badge, body/video preview, asker's name + avatar (no email/PII), answered date.
+- Reuses existing `QueryQueueCard` styling.
 
-Sections (top to bottom):
-- **Hero**: gradient hero (primary → accent), large avatar with availability dot, name, SEBI badge (type + reg number, mono), specializations as pills, years experience, ⭐ rating · sessions count. Animated counters (framer-motion) for sessions and years.
-- **About**: bio, languages (flag chips).
-- **Two primary CTAs side-by-side**:
-  - "Ask a follow-up question" → routes to `/post-query?analyst={id}` (PostQuery picks up `analyst` search param and pre-assigns).
-  - "Book a 1:1 private session" → opens booking modal (see §3).
-- **Why book a 1:1** value-prop strip: 3 cards (Live screen-share chart walkthrough · Personalised portfolio review · Direct WhatsApp follow-up for 7 days). Subtle motion: stagger fade-up on scroll.
-- **Recent public answers** (last 3 published text answers by this analyst, masked to stock name + verdict + first 120 chars) → social proof.
-- **Trust strip**: SEBI compliance badge, grievance link, refund policy line.
-- Sticky bottom bar on mobile with both CTAs.
+## 3. Approve pending analyst SEBI profiles
 
-Visual language: reuse existing tokens (`primary`, `accent`, `gold`, `bg-gradient-brand`, `shadow-card`). Add framer-motion `Reveal`/stagger from existing `motion-helpers`. No new color tokens.
+The approval UI already exists in `SuperAdmin.tsx` under the **"Analysts"** tab (`PendingAnalystCard`), but it's easy to miss and there's no badge.
 
-## 3. 1:1 booking modal + payment hookup
+**Fix.**
+- Add a red badge on the "Analysts" tab showing pending count (mirrors what `pendingCount` already does for the sidebar).
+- Add a top-level "Pending Approvals" card on the Overview tab linking straight to the Analysts tab.
+- When an analyst profile isn't approved, the public profile page already 404s — keep that, but make the toast message clearer: "This analyst is awaiting SEBI verification."
+- Confirm `approveAnalyst` flips `is_approved=true` AND inserts `user_roles(analyst)` (it does) — no schema change needed.
 
-New component `src/components/analyst/BookSessionModal.tsx`:
-- Step 1: pick session length (15min ₹499 · 30min ₹999 · 60min ₹1799 — tiers stored in `src/lib/session-tiers.ts`).
-- Step 2: pick slot (next 7 days × 3 time windows; static for now, persisted as a `session_bookings` row).
-- Step 3: Razorpay checkout via existing `src/lib/razorpay.ts` and `payments.functions.ts` pattern (reuse `BookAnalystVideoButton` flow as reference).
+## 4. Manually assign queries from Super Admin
 
-New table `session_bookings` (id, user_id, analyst_id, tier, amount_paise, scheduled_for timestamptz, status, payment_id, meeting_link nullable, created_at) with RLS: user sees their own, analyst sees bookings assigned to them, admin sees all. Migration in a single `supabase--migration` call; do NOT code until migration approved.
+`assignQueryToAnalyst` server fn + `getApprovedAvailableAnalysts` already exist. UI wiring is missing.
 
-## 4. Share button on reports & answers + public report page
+**Fix.** In Super Admin "Queries" tab row actions, add an "Assign" dropdown listing approved analysts (display_name + SEBI number). On select → call `assignQueryToAnalyst`, invalidate queries. Persists in DB (already does), so it survives reloads.
 
-- New route `src/routes/r.$queryId.tsx` (short `r` for shareable). Public, no `RequireAuth`. Fetches the query + first published text answer via a new server fn `getPublicReport` that returns only: stock_name, stock_symbol, verdict, first 200 chars of body (truncated with "…"), analyst display_name + SEBI number, created_at. Everything else is hidden behind a blur overlay with a sign-in CTA.
-- Add a `ShareButton` component (`src/components/common/ShareButton.tsx`) using Web Share API with clipboard fallback, URL = `${origin}/r/{queryId}`. Place it:
-  - On `ExpertAnswerSection` header (next to timestamp)
-  - On `AIReportCardV2` header
-  - On `QueryHistoryCard` action row
-- Public report page CTA card below the blurred answer:
-  - Headline: **"Don't gamble your portfolio. Get a SEBI-verified second opinion in 24h."**
-  - Sub: "AI report instantly + a real registered analyst's voice — for less than a single bad trade costs you."
-  - Buttons: "Sign up free (₹100 wallet credit)" → `/signup?ref={queryId}`, "Login" → `/login`.
-  - Tiny line: "Already 2,400+ traders saved from FOMO trades this month." (static social proof string for now)
+## 5. Super Admin overview metrics blank
 
-## 5. Referral hook in the share flow
+`getAdminOverviewStats` returns `users / pendingApplications / queriesToday / pendingQueries`. The Overview tab renders them but they show 0 because the `pendingQueries` query filters `assigned_analyst_id IS NULL` — so once any analyst is assigned, "pending" drops to 0 even though work remains.
 
-- `ShareButton` appends `?ref={user.referral_code}` when a logged-in user shares.
-- Public report page reads `ref` from search params and:
-  - Stores it in localStorage as `pending_referral` (TTL 7 days).
-  - Shows a yellow ribbon: "🎁 Your friend invited you — sign up and you both get ₹50 instantly."
-- `Signup.tsx` already accepts a referral code via metadata; pre-fill it from `pending_referral` if URL `ref` is missing.
-- No new tables — uses existing `referrals` + `handle_new_user` trigger which already credits ₹50 each side.
+**Fix.** Change `pendingQueries` to: queries with no published answer (regardless of assignment). Add a 5th card "Unassigned" for the `assigned_analyst_id IS NULL` count. Now metrics actually move.
 
-## 6. SEO / share metadata
+Analyst Dashboard "Pending" already correctly scopes to `assigned_analyst_id = me` — leave as is.
 
-`src/routes/r.$queryId.tsx` head():
-- title: `"{stock_name} — Expert verdict: {VERDICT} | Stockera"`
-- description: first 140 chars of answer body
-- og:title / og:description mirrored
-- og:image: omit for now (no per-report image yet)
+## 6. Rishabh can log into BOTH analyst + super-admin panels
 
-## Out of scope (explicit)
+**Cause.** `user_roles` allows multiple roles per user. The `bootstrap-admin` edge function (or a manual grant) gave `rishabh@stockera.com` the `admin` role in addition to `analyst`. `RequireAdmin` only checks `isAdmin`, so any user with the admin role passes — exactly as designed.
 
-- Real calendar integration for slot booking (Google Calendar/Cal.com). Slots are static for v1.
-- Video conferencing link generation — meeting_link stays null until admin sets it manually post-payment.
-- Analyst-side dashboard to manage bookings (admin can view via Supabase for v1).
+**Fix (operational, not code).**
+- Remove the `admin` role row for Rishabh's user_id from `user_roles` (one-line SQL via migration helper, run once).
+- Keep `ADMIN_EMAIL` secret pointing at the real company-head email so future bootstraps don't re-grant Rishabh.
+- Document in code comment in `bootstrap-admin/index.ts` that ADMIN_EMAIL must be a non-analyst email.
 
-## Technical notes
+I'll surface this in the implementation as a one-shot SQL run + a note for the user to update `ADMIN_EMAIL`.
 
-- All new server functions follow `createServerFn` + `requireSupabaseAuth` (except `getPublicReport` which is unauthenticated).
-- Migration must run BEFORE writing booking code (Supabase types regeneration dependency).
-- Reuse `Reveal` from `src/components/landing/motion-helpers.tsx` for entrance animations; no new motion lib.
-- No design tokens added; everything via existing semantic classes.
+---
+
+## Technical summary
+
+Files to touch:
+- `src/lib/admin.functions.ts` — fix `pendingQueries`; change `getAllQueriesForAdmin` to LEFT JOIN published answers and expose `has_published_answer`; keep existing assign fn.
+- `src/pages/admin/AdminDashboard.tsx` — exclude answered queries from queue; add "Answered" tab with asker name+avatar.
+- `src/pages/admin/SuperAdmin.tsx` — Overview "Unassigned" card + clearer Pending metric; Analysts-tab badge; Queries-tab Assign dropdown using existing fns.
+- `src/pages/AnalystPublicProfile.tsx` — friendlier "awaiting verification" message.
+- One DB cleanup: `DELETE FROM user_roles WHERE user_id = <rishabh> AND role = 'admin'` (via migration).
+
+No schema changes required — every needed column/policy already exists.

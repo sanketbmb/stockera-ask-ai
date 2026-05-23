@@ -99,15 +99,17 @@ function AiEngineHealthCheck() {
 function OverviewTab() {
   const fetchStats = useServerFn(getAdminOverviewStats);
   const { data, isLoading } = useQuery({ queryKey: ["admin_overview"], queryFn: () => fetchStats() });
-  if (isLoading) return <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[1,2,3,4].map(i=><Skeleton key={i} className="h-24" />)}</div>;
+  if (isLoading) return <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">{[1,2,3,4,5].map(i=><Skeleton key={i} className="h-24" />)}</div>;
   const cards = [
     { label: "Total Users", value: data?.users ?? 0, Icon: Users, color: "bg-blue-500/10 text-blue-600" },
     { label: "Pending Analyst Apps", value: data?.pendingApplications ?? 0, Icon: ShieldCheck, color: "bg-amber-500/10 text-amber-600" },
     { label: "Queries Today", value: data?.queriesToday ?? 0, Icon: FileText, color: "bg-violet-500/10 text-violet-600" },
     { label: "Pending Queries", value: data?.pendingQueries ?? 0, Icon: Inbox, color: "bg-red-500/10 text-red-600" },
+    { label: "Unassigned", value: (data as { unassignedQueries?: number } | undefined)?.unassignedQueries ?? 0, Icon: Inbox, color: "bg-orange-500/10 text-orange-600" },
   ];
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+
       {cards.map(({ label, value, Icon, color }) => (
         <Card key={label} className="p-4">
           <div className="flex items-center justify-between">
@@ -282,10 +284,11 @@ function AllQueriesTab() {
 
   const filtered = useMemo(() => {
     let rows = data ?? [];
-    if (filter === "pending") rows = rows.filter((r) => r.status === "pending");
-    else if (filter === "unassigned") rows = rows.filter((r) => !r.assigned_analyst_id);
-    else if (filter === "ai_answered") rows = rows.filter((r) => r.status === "ai_answered");
-    else if (filter === "expert_answered") rows = rows.filter((r) => r.status === "expert_answered");
+    const isAnswered = (r: typeof rows[number]) => r.has_text_answer || r.has_video_answer || r.status === "expert_answered";
+    if (filter === "pending") rows = rows.filter((r) => !isAnswered(r) && (r.status === "pending" || r.status === "ai_answered" || r.status === "in_review"));
+    else if (filter === "unassigned") rows = rows.filter((r) => !r.assigned_analyst_id && !isAnswered(r));
+    else if (filter === "ai_answered") rows = rows.filter((r) => r.status === "ai_answered" && !isAnswered(r));
+    else if (filter === "expert_answered") rows = rows.filter((r) => isAnswered(r));
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter((r) => (r.stock_name ?? "").toLowerCase().includes(q) || (r.user_name ?? "").toLowerCase().includes(q));

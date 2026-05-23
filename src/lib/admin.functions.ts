@@ -36,17 +36,35 @@ export const getAdminOverviewStats = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertAdmin(context.userId);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [users, pendingApps, todayQueries, pendingQ] = await Promise.all([
+    // Queries with a published expert answer are NOT pending — get those ids first.
+    const { data: answered } = await supabaseAdmin
+      .from("answers").select("query_id").eq("is_published", true);
+    const answeredIds = Array.from(new Set((answered ?? []).map((a) => a.query_id))).filter(Boolean) as string[];
+    const notAnsweredFilter = answeredIds.length
+      ? `(${answeredIds.map((id) => `"${id}"`).join(",")})`
+      : null;
+
+    const pendingBase = () => supabaseAdmin
+      .from("queries").select("id", { count: "exact", head: true })
+      .in("status", ["pending", "ai_answered", "in_review"]);
+    const unassignedBase = () => supabaseAdmin
+      .from("queries").select("id", { count: "exact", head: true })
+      .in("status", ["pending", "ai_answered", "in_review"])
+      .is("assigned_analyst_id", null);
+
+    const [users, pendingApps, todayQueries, pendingQ, unassignedQ] = await Promise.all([
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }),
       supabaseAdmin.from("analyst_profiles").select("id", { count: "exact", head: true }).eq("is_approved", false),
       supabaseAdmin.from("queries").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
-      supabaseAdmin.from("queries").select("id", { count: "exact", head: true }).in("status", ["pending", "ai_answered"]).is("assigned_analyst_id", null),
+      notAnsweredFilter ? pendingBase().not("id", "in", notAnsweredFilter) : pendingBase(),
+      notAnsweredFilter ? unassignedBase().not("id", "in", notAnsweredFilter) : unassignedBase(),
     ]);
     return {
       users: users.count ?? 0,
       pendingApplications: pendingApps.count ?? 0,
       queriesToday: todayQueries.count ?? 0,
       pendingQueries: pendingQ.count ?? 0,
+      unassignedQueries: unassignedQ.count ?? 0,
     };
   });
 
