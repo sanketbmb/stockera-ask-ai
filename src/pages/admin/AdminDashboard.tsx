@@ -128,6 +128,60 @@ function QueryQueueCard({ row }: { row: QueueRow }) {
   );
 }
 
+interface AnsweredRow {
+  id: string;
+  query_id: string;
+  answer_type: string;
+  body: string | null;
+  verdict: string | null;
+  video_url: string | null;
+  created_at: string;
+  queries: { stock_name: string; stock_symbol: string | null; query_text: string; user_id: string } | null;
+  asker: { full_name: string | null; avatar_url: string | null } | null;
+}
+
+function AnsweredHistoryCard({ row }: { row: AnsweredRow }) {
+  const v = row.verdict ? VERDICT_MAP[row.verdict] : null;
+  const askerName = row.asker?.full_name ?? "Stockera user";
+  const initials = askerName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-start gap-2 justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-display text-lg text-accent">{row.queries?.stock_name ?? "—"}</span>
+          {row.queries?.stock_symbol && <Badge variant="outline" className="font-mono text-[10px]">{row.queries.stock_symbol}</Badge>}
+          {v && <span className={`text-[10px] px-2 py-0.5 rounded border ${v.color}`}>{v.label}</span>}
+          <Badge variant="secondary" className="text-[10px]">{row.answer_type === "video" ? "🎥 Video" : "📄 Text"}</Badge>
+        </div>
+        <span className="text-[11px] font-mono text-muted-foreground inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> {formatDistanceToNow(new Date(row.created_at), { addSuffix: true })}
+        </span>
+      </div>
+
+      {row.queries?.query_text && (
+        <p className="mt-3 text-xs text-muted-foreground line-clamp-2 italic">"{row.queries.query_text}"</p>
+      )}
+      {row.body && <p className="mt-2 text-sm text-foreground/85 whitespace-pre-wrap line-clamp-4">{row.body}</p>}
+
+      <div className="mt-3 flex items-center justify-between gap-3 pt-3 border-t border-border">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-7 w-7">
+            <AvatarImage src={row.asker?.avatar_url ?? undefined} />
+            <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
+          </Avatar>
+          <div className="text-xs">
+            <p className="text-muted-foreground">Answered to</p>
+            <p className="font-medium leading-tight">{askerName}</p>
+          </div>
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <Link to="/report/$queryId" params={{ queryId: row.query_id }}>View report <ArrowRight className="h-3 w-3 ml-1" /></Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function PendingApprovalLockout() {
   return (
     <Card className="p-8 max-w-2xl mx-auto border-amber-500/40 bg-amber-500/5 text-center">
