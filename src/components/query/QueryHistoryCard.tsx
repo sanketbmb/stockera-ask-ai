@@ -23,6 +23,11 @@ interface AnswerRow {
   time_horizon?: string | null;
   risk_note?: string | null;
   is_published?: boolean | null;
+  report_url?: string | null;
+  report_filename?: string | null;
+  report_mime?: string | null;
+  report_size_bytes?: number | null;
+  report_label?: string | null;
 }
 
 export interface QueryHistoryItem {
