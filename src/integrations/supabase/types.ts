@@ -622,6 +622,45 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_master: {
+        Row: {
+          company_name: string | null
+          dhan_security_id: string
+          exchange: string
+          id: string
+          isin: string | null
+          lot_size: number | null
+          segment: string
+          symbol: string
+          tick_size: number | null
+          updated_at: string
+        }
+        Insert: {
+          company_name?: string | null
+          dhan_security_id: string
+          exchange: string
+          id?: string
+          isin?: string | null
+          lot_size?: number | null
+          segment: string
+          symbol: string
+          tick_size?: number | null
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string | null
+          dhan_security_id?: string
+          exchange?: string
+          id?: string
+          isin?: string | null
+          lot_size?: number | null
+          segment?: string
+          symbol?: string
+          tick_size?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_portfolio: {
         Row: {
           added_from_query_id: string | null
