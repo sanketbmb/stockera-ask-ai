@@ -15,5 +15,8 @@ verify_jwt = true
 [functions.dhan-fetch]
 verify_jwt = true
 
+[functions.get-price-data]
+verify_jwt = true
+
 [functions.seed-stock-master]
 verify_jwt = false

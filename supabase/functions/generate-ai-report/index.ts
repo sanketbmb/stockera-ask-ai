@@ -167,10 +167,57 @@ function classifyIntent(question: string): string {
   return "stuck_position";
 }
 
-async function fetchStockData(symbol: string) {
+async function fetchStockData(symbol: string, supabase: any) {
   if (!symbol) return null;
-  // Live price comes from dhan-fetch / finedge-fetch elsewhere; this path is Gemini-estimate only.
 
+  // Look up Dhan security id from stock_master (for live mode).
+  let securityId: string | null = null;
+  let exchange = "NSE";
+  try {
+    const { data: sm } = await supabase
+      .from("stock_master")
+      .select("dhan_security_id, exchange")
+      .eq("symbol", symbol)
+      .maybeSingle();
+    if (sm?.dhan_security_id) securityId = String(sm.dhan_security_id);
+    if (sm?.exchange) exchange = sm.exchange;
+  } catch (e) {
+    console.error("stock_master lookup failed", e);
+  }
+
+  // Decide mode by current IST market hours.
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5 * 60 + 30) * 60_000);
+  const day = ist.getUTCDay();
+  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const isMarketOpen = day >= 1 && day <= 5 && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+  const mode = isMarketOpen && securityId ? "live" : "eod";
+
+  try {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/get-price-data`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SERVICE_KEY,
+        authorization: `Bearer ${SERVICE_KEY}`,
+      },
+      body: JSON.stringify({ symbol, securityId, mode }),
+    });
+    const j = await r.json();
+    if (j?.success && typeof j.price === "number" && j.price > 0) {
+      return {
+        ltp: j.price,
+        ltp_timestamp: j.timestamp ?? new Date().toISOString(),
+        source: j.source ?? "get-price-data",
+        exchange,
+      };
+    }
+    console.error("get-price-data returned no price", j);
+  } catch (e) {
+    console.error("get-price-data fetch err", e);
+  }
+
+  // Last-resort Gemini estimate (kept for resilience).
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
@@ -187,26 +234,22 @@ async function fetchStockData(symbol: string) {
       const j = await r.json();
       const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
-        let parsed: { price?: number } | null = null;
-        try {
-          const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-          parsed = JSON.parse(clean);
-        } catch {
-          parsed = null;
-        }
+        const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+        const parsed = JSON.parse(clean);
         if (parsed?.price) {
           return {
             ltp: Number(parsed.price),
             ltp_timestamp: new Date().toISOString(),
             source: "Gemini estimate",
-            exchange: "NSE",
+            exchange,
           };
         }
       }
     } catch (e) { console.error("gemini ltp fallback err", e); }
   }
-  return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange: "NSE" };
+  return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange };
 }
+
 
 
 async function callLLM(userPrompt: string) {
@@ -371,7 +414,7 @@ Deno.serve(async (req) => {
 
     stage = "fetch_ltp";
     const stockData = ["buy_decision", "stuck_position", "should_average"].includes(intent) && query.stock_symbol
-      ? await fetchStockData(query.stock_symbol)
+      ? await fetchStockData(query.stock_symbol, supabase)
       : null;
     const ltp = stockData?.ltp ?? query.current_price ?? null;
     const pnl_state = computePnlState(query.buy_price, ltp);
