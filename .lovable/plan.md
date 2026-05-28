@@ -1,77 +1,66 @@
-# Plan: Unified `get-price-data` Edge Function
+# Plan: `marketaux-fetch` Edge Function
 
-Single source of price truth for the Brain. Routes between FinEdge (accurate EOD/historical settlement closes) and Dhan (live LTP during market hours), with automatic fallback.
+Thin Supabase Edge Function wrapper around the Marketaux news API, mirroring the existing `dhan-fetch` / `finedge-fetch` pattern so the Brain can later consume news the same way it consumes price data.
 
-## 1. New edge function: `supabase/functions/get-price-data/index.ts`
+## 1. New file: `supabase/functions/marketaux-fetch/index.ts`
 
-**Input:**
+**Runtime:** Deno (matches other functions in `supabase/functions/`).
+
+**Request shape (POST JSON):**
 ```ts
-{ symbol: string;          // FinEdge symbol, e.g. "RELIANCE"
-  securityId?: string;     // Dhan numeric ID, e.g. "2885" (required for live)
-  exchangeSegment?: "NSE_EQ" | "BSE_EQ";  // default NSE_EQ
-  mode: "live" | "eod" | "historical";
-  fromDate?: string;       // historical only (YYYY-MM-DD)
-  toDate?: string;         // historical only
+{
+  endpoint: "news/all" | "news/by-symbol",
+  symbols?: string,           // e.g. "RELIANCE.NSE,TCS.NSE"
+  params?: {
+    countries?: string;       // "in"
+    filter_entities?: boolean;
+    language?: string;        // "en"
+    limit?: number;           // 1..100
+    search?: string;
+    published_after?: string; // YYYY-MM-DD or ISO
+    // any other Marketaux passthrough param (kept permissive)
+  }
 }
 ```
 
-**Output (unified shape):**
-```ts
-{ success: true,
-  mode, symbol,
-  price: number | null,           // single price for live/eod
-  timestamp: string | null,       // ISO
-  candles?: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>,
-  source: "finedge" | "dhan" | "finedge-fallback" | "dhan-fallback",
-  marketStatus: "open" | "closed" | "pre" | "post" | "holiday",
-  fallbackUsed: boolean,
-  primaryError?: string }
+**Logic:**
+1. Handle `OPTIONS` preflight with standard CORS headers (`*` origin, `POST, OPTIONS`, `authorization, content-type, apikey, x-client-info`).
+2. Reject non-POST with 405.
+3. Read `MARKETAUX_API_TOKEN` from `Deno.env`. Missing → `500 { success:false, error:"MARKETAUX_API_TOKEN not configured" }`.
+4. Parse body, validate `endpoint` ∈ {`news/all`, `news/by-symbol`}. Invalid → 400.
+5. Build URL: `https://api.marketaux.com/v1/{endpoint}?api_token=...&...flat params`.
+   - Append `symbols` if provided.
+   - Flatten `params` into query string (skip undefined/null, coerce booleans/numbers to strings).
+6. `fetch` GET. Map upstream status:
+   - 200 → `{ success:true, endpoint, symbols, data }` (data = parsed JSON from Marketaux, includes `data[]` array + `meta`).
+   - 401 → `401 { success:false, code:"MARKETAUX_UNAUTHORIZED", error:"Invalid Marketaux token" }`.
+   - 429 → `429 { success:false, code:"MARKETAUX_RATE_LIMIT", error:"Rate limit exceeded" }`.
+   - other non-2xx → forward status + `{ success:false, code:"MARKETAUX_UPSTREAM_ERROR", status, error: <upstream text> }`.
+7. All responses include the same CORS headers + `Content-Type: application/json`.
+8. Wrap entire handler in try/catch → 500 with `{ success:false, error: e.message }`.
+
+## 2. Config: `supabase/config.toml`
+
+Append:
+```toml
+[functions.marketaux-fetch]
+verify_jwt = true
 ```
+(Consistent with `dhan-fetch`, `finedge-fetch`, `get-price-data`.)
 
-**Routing logic per mode:**
+## 3. Deploy + smoke test
 
-| mode | primary | fallback |
-|---|---|---|
-| `live` | `dhan-fetch` ltp | `finedge-fetch` quote (latest tick) |
-| `eod` | `finedge-fetch` daily-quotes (last row) | `dhan-fetch` historical (last candle) |
-| `historical` | `finedge-fetch` daily-quotes (range) | `dhan-fetch` historical (range) |
+After implementation:
+1. Deploy via `supabase--deploy_edge_functions` (`["marketaux-fetch"]`).
+2. Call via `supabase--curl_edge_functions`:
+   ```json
+   { "endpoint": "news/all", "params": { "countries": "in", "limit": 3 } }
+   ```
+3. Verify response contains `success: true` and `data.data[]` with 3 items, each exposing `title`, `description`/`snippet`, `published_at`, `source`, and `entities[].sentiment_score` (Marketaux returns sentiment per matched entity; top-level `sentiment` is also surfaced when `filter_entities` is on).
+4. Report the 3 headlines back to the user.
 
-Primary considered failed if: HTTP error, `success: false`, `DHAN_EMPTY_QUOTE`, or empty/null price field. Falls back transparently and sets `fallbackUsed: true` + records `primaryError`.
+## 4. Out of scope
 
-**Market hours helper (`isMarketOpen()`):**
-- IST timezone (UTC+5:30)
-- Mon–Fri, 09:15–15:30
-- NSE holiday list 2026 hardcoded (Republic Day, Holi, Good Friday, etc. — small constant array)
-- Returns `"open" | "closed" | "pre" | "post" | "holiday"`
-
-For `mode: "live"` when market is closed → still call Dhan ltp (returns last tick), but mark `marketStatus` accordingly so the Brain can decide whether to prefer EOD instead.
-
-**Implementation pattern:** Internal HTTP calls to existing `dhan-fetch` and `finedge-fetch` functions (forwarding auth header), so we reuse upstream wrappers and secrets — no duplication of API logic.
-
-**Config:** Add `[functions.get-price-data]` with `verify_jwt = true` to `supabase/config.toml`.
-
-## 2. Brain integration (`generate-ai-report/index.ts`)
-
-Replace the Gemini-estimate `fetchStockData()` (lines 170–209) with a real call to `get-price-data`:
-
-- During market hours → `mode: "live"` (Dhan LTP).
-- Outside market hours / weekends / holidays → `mode: "eod"` (FinEdge settlement close).
-- Return `{ ltp, ltp_timestamp, source, exchange }` in the same shape so downstream code (lines 376+) is unchanged.
-- Gemini fallback retained only if both Dhan + FinEdge fail.
-
-The Brain now always gets the most accurate price for the context: settlement close after-hours, live tick during trading.
-
-## 3. Out of scope
-
-- No frontend changes.
-- No changes to `dhan-fetch` or `finedge-fetch` internals.
-- Historical OHLCV bulk usage by other parts of the app (chart components etc.) is not migrated in this pass — they can adopt `get-price-data` incrementally.
-- NSE holiday calendar is hardcoded for 2026; a DB-backed calendar can come later.
-
-## 4. Verification
-
-After deploy, via `curl_edge_functions`:
-1. `{symbol:"RELIANCE", securityId:"2885", mode:"live"}` → returns Dhan LTP, `marketStatus` reflects current time.
-2. `{symbol:"RELIANCE", mode:"eod"}` → returns FinEdge close ≈ ₹1352 for 27 May 2026.
-3. `{symbol:"RELIANCE", securityId:"2885", mode:"eod"}` with FinEdge key temporarily wrong → falls back to Dhan historical, `fallbackUsed: true`.
-4. Re-run an AI report and confirm `ltp_source` in the saved report is `finedge` or `dhan` (not `Gemini estimate`).
+- No Brain (`generate-ai-report`) integration in this pass — only the wrapper + smoke test, matching the user's request.
+- No caching layer, no DB persistence of news items.
+- `MARKETAUX_API_TOKEN` secret already exists (visible in `fetch_secrets`); no `add_secret` call needed.
