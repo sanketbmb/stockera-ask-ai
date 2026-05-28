@@ -118,38 +118,37 @@ function parseDhanLtp(resp: Record<string, unknown>, segment: Segment, securityI
   return typeof ltp === "number" && ltp > 0 ? ltp : null;
 }
 
-/** Extract latest price from a finedge daily-quotes response (last row). */
+/** Extract latest price from a finedge daily-quotes response. */
 function parseFinedgeDailyQuotes(resp: Record<string, unknown>): { price: number | null; timestamp: string | null; candles: Candle[] } {
-  const data = resp?.data as Record<string, unknown> | undefined;
-  // FinEdge typically returns { data: [...] } or array directly
-  const rows: unknown =
-    (data as { data?: unknown })?.data ??
-    (data as { quotes?: unknown })?.quotes ??
-    data;
+  // finedge-fetch wraps upstream as { success, data: <upstream> }.
+  // Upstream shape: { data: { price: [{ close_price, high_price, low_price, open_price, quote_date, volume }, ...] } }
+  const wrapper = resp?.data as Record<string, unknown> | undefined;
+  const upstreamData = (wrapper?.data ?? wrapper) as Record<string, unknown> | undefined;
+  const rows = (upstreamData?.price ?? upstreamData?.quotes ?? upstreamData?.data) as unknown;
   if (!Array.isArray(rows) || rows.length === 0) {
     return { price: null, timestamp: null, candles: [] };
   }
   const candles: Candle[] = rows
     .map((r) => {
       const row = r as Record<string, unknown>;
-      const date = String(row.date ?? row.timestamp ?? row.t ?? "");
-      const close = Number(row.close ?? row.c ?? row.lastPrice ?? 0);
+      const date = String(row.quote_date ?? row.date ?? row.timestamp ?? row.t ?? "");
+      const close = Number(row.close_price ?? row.close ?? row.c ?? row.lastPrice ?? 0);
       return {
         date,
-        open: Number(row.open ?? row.o ?? 0),
-        high: Number(row.high ?? row.h ?? 0),
-        low: Number(row.low ?? row.l ?? 0),
+        open: Number(row.open_price ?? row.open ?? row.o ?? 0),
+        high: Number(row.high_price ?? row.high ?? row.h ?? 0),
+        low: Number(row.low_price ?? row.low ?? row.l ?? 0),
         close,
         volume: Number(row.volume ?? row.v ?? 0),
       };
     })
     .filter((c) => c.close > 0 && c.date);
   if (candles.length === 0) return { price: null, timestamp: null, candles: [] };
-  // Sort ascending by date and pick last
   candles.sort((a, b) => a.date.localeCompare(b.date));
   const last = candles[candles.length - 1];
   return { price: last.close, timestamp: last.date, candles };
 }
+
 
 /** Extract candles from a dhan-fetch historical response. */
 function parseDhanHistorical(resp: Record<string, unknown>): Candle[] {
