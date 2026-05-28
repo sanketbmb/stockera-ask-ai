@@ -1,66 +1,92 @@
-# Plan: `marketaux-fetch` Edge Function
+# Plan: `compute-technicals` Edge Function
 
-Thin Supabase Edge Function wrapper around the Marketaux news API, mirroring the existing `dhan-fetch` / `finedge-fetch` pattern so the Brain can later consume news the same way it consumes price data.
+First Brain module. Pure-JS indicator engine over FinEdge daily OHLCV.
 
-## 1. New file: `supabase/functions/marketaux-fetch/index.ts`
+## Files
 
-**Runtime:** Deno (matches other functions in `supabase/functions/`).
+1. **`supabase/functions/compute-technicals/index.ts`** (new) — handler + indicators
+2. **`supabase/config.toml`** — register `[functions.compute-technicals] verify_jwt = true`
 
-**Request shape (POST JSON):**
-```ts
-{
-  endpoint: "news/all" | "news/by-symbol",
-  symbols?: string,           // e.g. "RELIANCE.NSE,TCS.NSE"
-  params?: {
-    countries?: string;       // "in"
-    filter_entities?: boolean;
-    language?: string;        // "en"
-    limit?: number;           // 1..100
-    search?: string;
-    published_after?: string; // YYYY-MM-DD or ISO
-    // any other Marketaux passthrough param (kept permissive)
-  }
-}
+Single-file implementation (keeps deploy simple, matches sibling functions like `get-price-data`). Indicator functions are internal but each gets a JSDoc block.
+
+## Handler flow
+
+```
+POST { symbol, lookback_days? = 365 }
+  → CORS / OPTIONS
+  → validate symbol
+  → call sibling edge fn `finedge-fetch` { endpoint:"daily-quotes", symbol }
+     using SUPABASE_URL + caller's Authorization header (same pattern as
+     get-price-data → callEdge)
+  → parse rows via the same shape parseFinedgeDailyQuotes already handles
+    (close_price/high_price/low_price/open_price/quote_date/volume)
+  → sort ascending, slice last `lookback_days`
+  → guard: candles.length < 200 → { success:false, error:"INSUFFICIENT_HISTORY" }
+  → compute indicators → signals → score
+  → return JSON in the exact shape from the spec
 ```
 
-**Logic:**
-1. Handle `OPTIONS` preflight with standard CORS headers (`*` origin, `POST, OPTIONS`, `authorization, content-type, apikey, x-client-info`).
-2. Reject non-POST with 405.
-3. Read `MARKETAUX_API_TOKEN` from `Deno.env`. Missing → `500 { success:false, error:"MARKETAUX_API_TOKEN not configured" }`.
-4. Parse body, validate `endpoint` ∈ {`news/all`, `news/by-symbol`}. Invalid → 400.
-5. Build URL: `https://api.marketaux.com/v1/{endpoint}?api_token=...&...flat params`.
-   - Append `symbols` if provided.
-   - Flatten `params` into query string (skip undefined/null, coerce booleans/numbers to strings).
-6. `fetch` GET. Map upstream status:
-   - 200 → `{ success:true, endpoint, symbols, data }` (data = parsed JSON from Marketaux, includes `data[]` array + `meta`).
-   - 401 → `401 { success:false, code:"MARKETAUX_UNAUTHORIZED", error:"Invalid Marketaux token" }`.
-   - 429 → `429 { success:false, code:"MARKETAUX_RATE_LIMIT", error:"Rate limit exceeded" }`.
-   - other non-2xx → forward status + `{ success:false, code:"MARKETAUX_UPSTREAM_ERROR", status, error: <upstream text> }`.
-7. All responses include the same CORS headers + `Content-Type: application/json`.
-8. Wrap entire handler in try/catch → 500 with `{ success:false, error: e.message }`.
+Errors:
+- finedge call !ok or success≠true → `{ success:false, error:"DATA_FETCH_FAILED", details }`
+- thrown exception → 500 `{ success:false, error:"INTERNAL_ERROR", details }`
 
-## 2. Config: `supabase/config.toml`
+## Indicator math (pure JS, no deps)
 
-Append:
-```toml
-[functions.marketaux-fetch]
-verify_jwt = true
+All operate on arrays of numbers; OHLCV split into `closes`, `highs`, `lows`, `volumes`.
+
+- `sma(values, period)` → array
+- `ema(values, period)` → array, seeded with SMA of first `period`
+- `rsi(closes, 14)` → Wilder's smoothing
+- `macd(closes, 12, 26, 9)` → { line[], signal[], histogram[] }
+- `stochastic(highs, lows, closes, 14, 3, 3)` → { k[], d[] }
+- `roc(closes, 12)`
+- `bollinger(closes, 20, 2)` → { upper, middle, lower, bandwidth, percentB } as arrays
+- `atr(highs, lows, closes, 14)` → Wilder TR smoothing
+- `stdDev(values, 20)` → annualized × √252 × 100
+- `obv(closes, volumes)` → cumulative array; trend = sign of linear slope over last 20
+- `adx(highs, lows, closes, 14)` → { adx[], plusDI[], minusDI[] }, Wilder smoothing
+- `pivots(prevHigh, prevLow, prevClose)` → classic PP/R1-3/S1-3
+
+Each function has a JSDoc header documenting inputs, period semantics, and the formula source.
+
+## Signals (return string[])
+
+Implemented as small predicates on the computed series + last candle:
+
+| Signal | Rule |
+|---|---|
+| golden_cross / death_cross | ema50 vs ema200 crossover within last 5 bars |
+| rsi_oversold / overbought | rsi_last < 30 / > 70 |
+| macd_bullish/bearish_crossover | line vs signal crossover within last 3 bars |
+| bollinger_squeeze | last bandwidth == min(bandwidth over last ~126 bars) |
+| bollinger_breakout_up/down | last close vs last upper/lower band |
+| volume_surge | lastVol > 2 × volSMA20 |
+| new_52w_high/low | last close ≥ max / ≤ min of last 252 closes |
+| above_all_emas / below_all_emas | close vs ema20/50/200 ordering |
+
+## Scoring (0–100)
+
 ```
-(Consistent with `dhan-fetch`, `finedge-fetch`, `get-price-data`.)
+trend       0–30   EMA alignment + slope of EMA50
+momentum    0–25   RSI band (40–60 mid = full) + MACD hist sign/magnitude
+volatility  0–15   %B near 0.5 best; ATR% reasonableness
+volume      0–15   ratio vs SMA20, OBV trend sign
+signals     0–15   +3 per bullish signal, –3 per bearish, clamp 0–15
+```
+Final = round, clamped 0–100. `trend` field mirrors `indicators.trend.direction`.
 
-## 3. Deploy + smoke test
+## Output
 
-After implementation:
-1. Deploy via `supabase--deploy_edge_functions` (`["marketaux-fetch"]`).
-2. Call via `supabase--curl_edge_functions`:
-   ```json
-   { "endpoint": "news/all", "params": { "countries": "in", "limit": 3 } }
-   ```
-3. Verify response contains `success: true` and `data.data[]` with 3 items, each exposing `title`, `description`/`snippet`, `published_at`, `source`, and `entities[].sentiment_score` (Marketaux returns sentiment per matched entity; top-level `sentiment` is also surfaced when `filter_entities` is on).
-4. Report the 3 headlines back to the user.
+Exactly the schema in the spec (current_price = last close, computed_at = `new Date().toISOString()`, data_range from first/last candle dates).
 
-## 4. Out of scope
+## Deploy + smoke test
 
-- No Brain (`generate-ai-report`) integration in this pass — only the wrapper + smoke test, matching the user's request.
-- No caching layer, no DB persistence of news items.
-- `MARKETAUX_API_TOKEN` secret already exists (visible in `fetch_secrets`); no `add_secret` call needed.
+1. Deploy `compute-technicals` via `supabase--deploy_edge_functions`.
+2. Call via `supabase--curl_edge_functions` for RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK.
+3. Render markdown table: Symbol | Price | RSI | Trend | Signals | Score.
+
+## Out of scope
+
+- No DB writes / caching (pure compute).
+- No Dhan fallback (FinEdge alone gives 13y per Task 2.0).
+- No TanStack server function wrapper yet — added when Brain orchestrator lands.
