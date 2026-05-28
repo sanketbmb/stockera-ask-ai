@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
       lovable_key_set: !!LOVABLE_API_KEY,
       db_url_set: !!SUPABASE_URL,
       service_key_set: !!SERVICE_KEY,
-      twelve_data_set: !!TWELVE_DATA_API_KEY,
+      
     };
     const tables = { ai_reports_exists: false, audit_events_exists: false };
     try {
