@@ -414,7 +414,7 @@ Deno.serve(async (req) => {
 
     stage = "fetch_ltp";
     const stockData = ["buy_decision", "stuck_position", "should_average"].includes(intent) && query.stock_symbol
-      ? await fetchStockData(query.stock_symbol)
+      ? await fetchStockData(query.stock_symbol, supabase)
       : null;
     const ltp = stockData?.ltp ?? query.current_price ?? null;
     const pnl_state = computePnlState(query.buy_price, ltp);
