@@ -17,7 +17,7 @@ interface StockData {
   marketCap: number | null;
   marketCapFormatted: string | null;
   ohlc30d: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
-  source: "twelvedata" | "gemini_estimate";
+  source: "gemini_estimate";
   warning?: string;
 }
 
