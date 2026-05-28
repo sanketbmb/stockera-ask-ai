@@ -169,22 +169,8 @@ function classifyIntent(question: string): string {
 
 async function fetchStockData(symbol: string) {
   if (!symbol) return null;
-  try {
-    if (TWELVE_DATA_API_KEY) {
-      const url = `https://api.twelvedata.com/quote?symbol=${symbol}:NSE&apikey=${TWELVE_DATA_API_KEY}`;
-      const r = await fetch(url);
-      const j = await r.json();
-      if (j && !j.code && j.close) {
-        return {
-          ltp: parseFloat(j.close),
-          ltp_timestamp: new Date().toISOString(),
-          source: "Twelve Data",
-          exchange: "NSE",
-        };
-      }
-      console.log("STEP 4a: Twelve Data returned no usable data", { symbol, code: j?.code, status: j?.status });
-    }
-  } catch (e) { console.error("twelvedata error", e); }
+  // Live price comes from dhan-fetch / finedge-fetch elsewhere; this path is Gemini-estimate only.
+
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
