@@ -53,7 +53,7 @@ function buildGroundTruthBlock(d: StockData | null): string {
   }
   const recent = d.ohlc30d.slice(-10);
   const ohlcLines = recent.map(c => `  ${c.date}: O ${c.open} H ${c.high} L ${c.low} C ${c.close} Vol ${c.volume}`).join("\n");
-  return `GROUND TRUTH MARKET DATA (${d.source === "twelvedata" ? "live from Twelve Data" : "AI-estimated fallback"}):
+  return `GROUND TRUTH MARKET DATA (AI-estimated fallback):
 - Symbol: ${d.symbol} (${d.exchange})
 - Current Price (LTP): ₹${d.price}
 - Day change: ${d.change ?? "?"} (${d.changePercent ?? "?"}%)
