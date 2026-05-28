@@ -1,6 +1,7 @@
 // fetch-stock-data
-// Returns ground-truth market data for an NSE/BSE symbol.
-// Primary source: Twelve Data. Fallback: Gemini estimate (clearly flagged).
+// Returns market data for an NSE/BSE symbol via Lovable AI estimate (Gemini).
+// NOTE: Live market data is served by dhan-fetch / finedge-fetch; this function
+// is retained only as an AI-estimated fallback for callers that still rely on it.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -21,7 +22,7 @@ interface StockData {
   marketCap: number | null;
   marketCapFormatted: string | null;
   ohlc30d: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
-  source: "twelvedata" | "gemini_estimate";
+  source: "gemini_estimate";
   fetchedAt: string;
   warning?: string;
 }
@@ -34,78 +35,15 @@ function formatMarketCap(n: number | null): string | null {
   return `₹${n.toFixed(0)}`;
 }
 
-function normalizeSymbol(input: string): { td: string; clean: string; exchange: string } {
+function parseSymbol(input: string): { clean: string; exchange: string } {
   const raw = input.trim().toUpperCase();
-  // Strip common suffixes
   const clean = raw.replace(/\.(NS|BO|NSE|BSE)$/, "").replace(/:(NSE|BSE)$/, "");
-  // Twelve Data uses SYMBOL:NSE / SYMBOL:BSE
   const exchange = raw.includes("BSE") || raw.endsWith(".BO") ? "BSE" : "NSE";
-  return { td: `${clean}:${exchange}`, clean, exchange };
-}
-
-async function fetchFromTwelveData(symbol: string, apiKey: string): Promise<StockData | null> {
-  const { td, clean, exchange } = normalizeSymbol(symbol);
-
-  try {
-    const [quoteRes, tsRes] = await Promise.all([
-      fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(td)}&apikey=${apiKey}`),
-      fetch(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(td)}&interval=1day&outputsize=30&apikey=${apiKey}`),
-    ]);
-
-    const quote = await quoteRes.json();
-    const ts = await tsRes.json();
-
-    // Twelve Data returns { code, message, status: "error" } on failure
-    if (quote?.status === "error" || quote?.code) {
-      console.warn("Twelve Data quote error:", quote?.message || quote?.code);
-      return null;
-    }
-
-    const price = parseFloat(quote.close ?? quote.price);
-    if (!isFinite(price)) {
-      console.warn("Twelve Data returned no price for", td);
-      return null;
-    }
-
-    const marketCap = quote.market_cap ? parseFloat(quote.market_cap) : null;
-    const ohlc30d = Array.isArray(ts?.values)
-      ? ts.values
-          .slice(0, 30)
-          .map((v: Record<string, string>) => ({
-            date: v.datetime,
-            open: parseFloat(v.open),
-            high: parseFloat(v.high),
-            low: parseFloat(v.low),
-            close: parseFloat(v.close),
-            volume: parseFloat(v.volume ?? "0"),
-          }))
-          .reverse()
-      : [];
-
-    return {
-      symbol: clean,
-      exchange,
-      price,
-      currency: quote.currency ?? "INR",
-      change: quote.change ? parseFloat(quote.change) : null,
-      changePercent: quote.percent_change ? parseFloat(quote.percent_change) : null,
-      fiftyTwoWeekHigh: quote.fifty_two_week?.high ? parseFloat(quote.fifty_two_week.high) : null,
-      fiftyTwoWeekLow: quote.fifty_two_week?.low ? parseFloat(quote.fifty_two_week.low) : null,
-      peRatio: quote.pe ? parseFloat(quote.pe) : null,
-      marketCap,
-      marketCapFormatted: formatMarketCap(marketCap),
-      ohlc30d,
-      source: "twelvedata",
-      fetchedAt: new Date().toISOString(),
-    };
-  } catch (err) {
-    console.error("Twelve Data fetch threw:", (err as Error).message);
-    return null;
-  }
+  return { clean, exchange };
 }
 
 async function fetchFromLovableAI(symbol: string, apiKey: string): Promise<StockData | null> {
-  const { clean, exchange } = normalizeSymbol(symbol);
+  const { clean, exchange } = parseSymbol(symbol);
   const prompt = `Return ONLY a raw JSON object (no markdown, no commentary) with the most recent publicly known market data for the Indian listed stock ${clean} on ${exchange}.
 {
   "price": number_in_INR,
@@ -134,7 +72,7 @@ Return your best honest estimate based on your training data. Numbers only, no s
     });
 
     if (!res.ok) {
-      console.warn("Lovable AI fallback HTTP", res.status, (await res.text()).slice(0, 200));
+      console.warn("Lovable AI HTTP", res.status, (await res.text()).slice(0, 200));
       return null;
     }
     const data = await res.json();
@@ -161,10 +99,10 @@ Return your best honest estimate based on your training data. Numbers only, no s
       ohlc30d: [],
       source: "gemini_estimate",
       fetchedAt: new Date().toISOString(),
-      warning: "Live data provider unavailable for this symbol. Prices are AI-estimated and may be outdated by hours or days.",
+      warning: "Prices are AI-estimated and may be outdated by hours or days. Use dhan-fetch for live data.",
     };
   } catch (err) {
-    console.error("Lovable AI fallback failed:", (err as Error).message);
+    console.error("Lovable AI fetch failed:", (err as Error).message);
     return null;
   }
 }
@@ -181,17 +119,8 @@ serve(async (req) => {
       });
     }
 
-    const tdKey = Deno.env.get("TWELVE_DATA_API_KEY");
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-
-    let data: StockData | null = null;
-    if (tdKey) {
-      data = await fetchFromTwelveData(symbol, tdKey);
-    }
-    if (!data && lovableKey) {
-      console.log("Falling back to Lovable AI estimate for", symbol);
-      data = await fetchFromLovableAI(symbol, lovableKey);
-    }
+    const data = lovableKey ? await fetchFromLovableAI(symbol, lovableKey) : null;
 
     if (!data) {
       return new Response(JSON.stringify({ error: "No market data available", symbol }), {

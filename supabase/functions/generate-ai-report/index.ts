@@ -7,7 +7,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
+
 
 const PROMPT_VERSION = "1.2.0";
 const PROHIBITED = [
@@ -169,22 +169,8 @@ function classifyIntent(question: string): string {
 
 async function fetchStockData(symbol: string) {
   if (!symbol) return null;
-  try {
-    if (TWELVE_DATA_API_KEY) {
-      const url = `https://api.twelvedata.com/quote?symbol=${symbol}:NSE&apikey=${TWELVE_DATA_API_KEY}`;
-      const r = await fetch(url);
-      const j = await r.json();
-      if (j && !j.code && j.close) {
-        return {
-          ltp: parseFloat(j.close),
-          ltp_timestamp: new Date().toISOString(),
-          source: "Twelve Data",
-          exchange: "NSE",
-        };
-      }
-      console.log("STEP 4a: Twelve Data returned no usable data", { symbol, code: j?.code, status: j?.status });
-    }
-  } catch (e) { console.error("twelvedata error", e); }
+  // Live price comes from dhan-fetch / finedge-fetch elsewhere; this path is Gemini-estimate only.
+
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
@@ -335,7 +321,7 @@ Deno.serve(async (req) => {
       lovable_key_set: !!LOVABLE_API_KEY,
       db_url_set: !!SUPABASE_URL,
       service_key_set: !!SERVICE_KEY,
-      twelve_data_set: !!TWELVE_DATA_API_KEY,
+      
     };
     const tables = { ai_reports_exists: false, audit_events_exists: false };
     try {
