@@ -157,6 +157,49 @@ Deno.serve(async (req) => {
 
     /** Response shaping */
     if (upstream.ok) {
+      /** Detect empty marketfeed responses (status:success but no segment data).
+       *  Dhan returns this when: market is closed, Data API marketfeed tier is
+       *  not active on the plan, or the segment is not enabled on the token. */
+      const isMarketfeed =
+        endpoint === "ltp" ||
+        endpoint === "ohlc" ||
+        endpoint === "quote" ||
+        endpoint === "marketfeed";
+
+      if (isMarketfeed && typeof data === "object" && data !== null) {
+        const outer = data as Record<string, unknown>;
+        const inner = outer.data;
+        if (typeof inner === "object" && inner !== null) {
+          const segs = inner as Record<string, unknown>;
+          const segKeys = Object.keys(segs);
+          const allEmpty =
+            segKeys.length === 0 ||
+            segKeys.every((k) => {
+              const v = segs[k];
+              return (
+                v !== null &&
+                typeof v === "object" &&
+                Object.keys(v as Record<string, unknown>).length === 0
+              );
+            });
+          if (allEmpty) {
+            return jsonResponse(
+              {
+                success: false,
+                error: "DHAN_EMPTY_QUOTE",
+                message:
+                  "Dhan returned no data for this security. Likely causes: market is closed (NSE: 09:15–15:30 IST Mon–Fri), Data API marketfeed tier not active on your Dhan plan, or the requested segment is not enabled on the token.",
+                endpoint,
+                securityId: securityId ?? null,
+                exchangeSegment,
+                raw: data,
+              },
+              200,
+            );
+          }
+        }
+      }
+
       return jsonResponse(
         {
           success: true,
@@ -167,6 +210,7 @@ Deno.serve(async (req) => {
         200,
       );
     }
+
 
     if (upstream.status === 401) {
       return jsonResponse(
