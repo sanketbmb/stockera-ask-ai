@@ -1,34 +1,77 @@
-## Plan: Improve `dhan-fetch` empty-quote error surfacing
+# Plan: Unified `get-price-data` Edge Function
 
-### Goal
-Update the `dhan-fetch` edge function so realtime marketfeed calls (`ltp`, `ohlc`, `quote`) that come back with `status: "success"` but an empty segment map return a clear, actionable error instead of silently returning `success: true` with `{}`.
+Single source of price truth for the Brain. Routes between FinEdge (accurate EOD/historical settlement closes) and Dhan (live LTP during market hours), with automatic fallback.
 
-### Changes
+## 1. New edge function: `supabase/functions/get-price-data/index.ts`
 
-**File:** `supabase/functions/dhan-fetch/index.ts`
+**Input:**
+```ts
+{ symbol: string;          // FinEdge symbol, e.g. "RELIANCE"
+  securityId?: string;     // Dhan numeric ID, e.g. "2885" (required for live)
+  exchangeSegment?: "NSE_EQ" | "BSE_EQ";  // default NSE_EQ
+  mode: "live" | "eod" | "historical";
+  fromDate?: string;       // historical only (YYYY-MM-DD)
+  toDate?: string;         // historical only
+}
+```
 
-After the Dhan API response is parsed for `ltp` / `ohlc` / `quote` endpoints:
+**Output (unified shape):**
+```ts
+{ success: true,
+  mode, symbol,
+  price: number | null,           // single price for live/eod
+  timestamp: string | null,       // ISO
+  candles?: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>,
+  source: "finedge" | "dhan" | "finedge-fallback" | "dhan-fallback",
+  marketStatus: "open" | "closed" | "pre" | "post" | "holiday",
+  fallbackUsed: boolean,
+  primaryError?: string }
+```
 
-1. Check whether `data.data` exists and every segment key (e.g. `NSE_EQ`, `BSE_EQ`) is an empty object.
-2. If so, return:
-   ```json
-   {
-     "success": false,
-     "error": "DHAN_EMPTY_QUOTE",
-     "message": "Dhan returned no data for this security. Likely causes: market is closed (NSE: 09:15–15:30 IST Mon–Fri), Data API marketfeed tier not active on your Dhan plan, or NSE_EQ segment not enabled on the token.",
-     "endpoint": "<endpoint>",
-     "securityId": "<id>",
-     "raw": <original response>
-   }
-   ```
-   with HTTP 200 (so the frontend can read the structured error).
-3. Leave populated responses, `historical`, `holdings`, and other endpoints untouched.
+**Routing logic per mode:**
 
-### Verification
-- Call `dhan-fetch { endpoint: "ltp", securityId: "2885" }` → expect `success: false, error: "DHAN_EMPTY_QUOTE"`.
-- Call `dhan-fetch { endpoint: "historical", securityId: "2885", ... }` → expect populated candles (unchanged).
-- Call `dhan-fetch { endpoint: "holdings" }` → unchanged.
+| mode | primary | fallback |
+|---|---|---|
+| `live` | `dhan-fetch` ltp | `finedge-fetch` quote (latest tick) |
+| `eod` | `finedge-fetch` daily-quotes (last row) | `dhan-fetch` historical (last candle) |
+| `historical` | `finedge-fetch` daily-quotes (range) | `dhan-fetch` historical (range) |
 
-### Out of scope
-- No frontend changes. UI surfaces consuming this can be updated in a follow-up once we confirm tomorrow's market-hours test (Plan A) whether the empty response was market-closure or entitlement.
-- No retry/fallback logic to `historical` for last-close — separate decision.
+Primary considered failed if: HTTP error, `success: false`, `DHAN_EMPTY_QUOTE`, or empty/null price field. Falls back transparently and sets `fallbackUsed: true` + records `primaryError`.
+
+**Market hours helper (`isMarketOpen()`):**
+- IST timezone (UTC+5:30)
+- Mon–Fri, 09:15–15:30
+- NSE holiday list 2026 hardcoded (Republic Day, Holi, Good Friday, etc. — small constant array)
+- Returns `"open" | "closed" | "pre" | "post" | "holiday"`
+
+For `mode: "live"` when market is closed → still call Dhan ltp (returns last tick), but mark `marketStatus` accordingly so the Brain can decide whether to prefer EOD instead.
+
+**Implementation pattern:** Internal HTTP calls to existing `dhan-fetch` and `finedge-fetch` functions (forwarding auth header), so we reuse upstream wrappers and secrets — no duplication of API logic.
+
+**Config:** Add `[functions.get-price-data]` with `verify_jwt = true` to `supabase/config.toml`.
+
+## 2. Brain integration (`generate-ai-report/index.ts`)
+
+Replace the Gemini-estimate `fetchStockData()` (lines 170–209) with a real call to `get-price-data`:
+
+- During market hours → `mode: "live"` (Dhan LTP).
+- Outside market hours / weekends / holidays → `mode: "eod"` (FinEdge settlement close).
+- Return `{ ltp, ltp_timestamp, source, exchange }` in the same shape so downstream code (lines 376+) is unchanged.
+- Gemini fallback retained only if both Dhan + FinEdge fail.
+
+The Brain now always gets the most accurate price for the context: settlement close after-hours, live tick during trading.
+
+## 3. Out of scope
+
+- No frontend changes.
+- No changes to `dhan-fetch` or `finedge-fetch` internals.
+- Historical OHLCV bulk usage by other parts of the app (chart components etc.) is not migrated in this pass — they can adopt `get-price-data` incrementally.
+- NSE holiday calendar is hardcoded for 2026; a DB-backed calendar can come later.
+
+## 4. Verification
+
+After deploy, via `curl_edge_functions`:
+1. `{symbol:"RELIANCE", securityId:"2885", mode:"live"}` → returns Dhan LTP, `marketStatus` reflects current time.
+2. `{symbol:"RELIANCE", mode:"eod"}` → returns FinEdge close ≈ ₹1352 for 27 May 2026.
+3. `{symbol:"RELIANCE", securityId:"2885", mode:"eod"}` with FinEdge key temporarily wrong → falls back to Dhan historical, `fallbackUsed: true`.
+4. Re-run an AI report and confirm `ltp_source` in the saved report is `finedge` or `dhan` (not `Gemini estimate`).
