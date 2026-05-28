@@ -304,7 +304,6 @@ Deno.serve(async (req) => {
     let primaryError: string | undefined;
     const fe = await callEdge("finedge-fetch", {
       endpoint: "daily-quotes", symbol,
-      params: { from: body.fromDate, to: body.toDate },
     }, authHeader);
     const feData = (typeof fe.data === "object" && fe.data) ? fe.data as Record<string, unknown> : {};
     if (fe.ok && feData.success === true) {
