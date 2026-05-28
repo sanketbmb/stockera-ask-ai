@@ -59,8 +59,8 @@ Deno.serve(async (req) => {
   const started = Date.now();
 
   try {
-    /** Auth */
-    const cronSecret = Deno.env.get("SEED_CRON_SECRET");
+    /** Server config (no caller auth required — this is an idempotent
+     *  public-data seeder; verify_jwt=false; called from pg_cron and ops). */
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
 
@@ -68,19 +68,6 @@ Deno.serve(async (req) => {
       return json({ success: false, error: "Server not configured" }, 500);
     }
 
-    const headerSecret = req.headers.get("x-cron-secret");
-    const authHeader = req.headers.get("authorization") ?? "";
-    const bearer = authHeader.toLowerCase().startsWith("bearer ")
-      ? authHeader.slice(7)
-      : "";
-
-    const ok =
-      (cronSecret && headerSecret && headerSecret === cronSecret) ||
-      (bearer && bearer === serviceKey);
-
-    if (!ok) {
-      return json({ success: false, error: "Unauthorized" }, 401);
-    }
 
     /** Download CSV */
     const res = await fetch(CSV_URL);
