@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
         upstreamBody = {
           securityId,
           exchangeSegment,
-          instrument: "EQUITY",
+          instrument: params.instrument ?? "EQUITY",
           fromDate: params.fromDate,
           toDate: params.toDate,
           ...(params.interval ? { interval: params.interval } : {}),
