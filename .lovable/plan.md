@@ -95,3 +95,30 @@ Append to `.lovable/plan.md` (or wherever the tracker lives) — final closeout 
 - `.lovable/plan.md` — closeout tech debt section.
 
 ## Approve to switch to build mode and execute Commits 2–3 + validation re-run.
+
+---
+
+## Task 2.3 Closeout (2026-05-29)
+
+### Final validation table
+
+| stock      | benchmark  | beta   | correlation | r²    | band_breach |
+|------------|------------|--------|-------------|-------|-------------|
+| TCS        | NIFTYIT    | 0.868  | 0.882       | 0.777 | null ✅     |
+| INFY       | NIFTYIT    | 1.068  | 0.925       | 0.856 | null ✅     |
+| HDFCBANK   | BANKNIFTY  | 1.032  | 0.852       | 0.726 | null ✅     |
+| ICICIBANK  | BANKNIFTY  | 0.785  | 0.694       | 0.482 | null ✅     |
+| RELIANCE   | NIFTY      | 0.919  | 0.577       | 0.333 | null ✅     |
+
+All Betas unchanged from prior run (±0). `BENCHMARK_CALENDAR_BUG` silent on all 5.
+
+### Tech debt tracker
+
+- ✅ RESOLVED: IST timestamp bug in `fetchBenchmarkFromDhan()` (Commit 1)
+- ✅ RESOLVED: Benchmark-type-aware validation bands + `validation_band_breach` flag (Commit 2)
+- ✅ RESOLVED: Sector index ID corrections — NIFTY100 (24→17), NIFTYAUTO (27→14), NIFTYPHARMA (33→32) (Commit 3)
+- ⏳ PENDING (medium): `toISTDateString(unixSeconds)` shared utility under `supabase/functions/_shared/` — land with compute-momentum
+- ⏳ PENDING (low): Vendor request — FinEdge to expose ISIN/series in `daily-quotes` for SEBI traceability
+- ⏳ PENDING (low): `nse_trading_calendar` table for momentum/sentiment windowing
+
+**Task 2.3 (compute-risk) is complete and validated.** Next: Task 2.4 — compute-momentum.
