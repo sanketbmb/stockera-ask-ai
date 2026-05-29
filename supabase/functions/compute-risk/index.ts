@@ -746,6 +746,27 @@ Deno.serve(async (req) => {
 
     const betaCls: "HIGH" | "NORMAL" | "LOW" | null =
       Number.isFinite(betaVal) ? (betaVal > 1.3 ? "HIGH" : betaVal >= 0.8 ? "NORMAL" : "LOW") : null;
+
+    // Validation-band breach flag (benchmark-type-aware sanity check).
+    let bandBreach: null | {
+      benchmark: string; benchmark_type: "concentrated" | "broad";
+      beta: number; correlation: number;
+      bands: { betaMin: number; betaMax: number; corrMin: number; corrMax: number };
+    } = null;
+    if (benchUsed && Number.isFinite(betaVal) && Number.isFinite(corrVal)) {
+      const bands = validationBandsFor(benchUsed);
+      const breach =
+        betaVal < bands.betaMin || betaVal > bands.betaMax ||
+        corrVal < bands.corrMin || corrVal > bands.corrMax;
+      if (breach) {
+        bandBreach = {
+          benchmark: benchUsed,
+          benchmark_type: CONCENTRATED_BENCHMARKS.has(benchUsed) ? "concentrated" : "broad",
+          beta: betaVal, correlation: corrVal, bands,
+        };
+      }
+    }
+
     const marketRisk = benchUsed
       ? {
           benchmark: benchUsed,
@@ -754,8 +775,10 @@ Deno.serve(async (req) => {
           correlation_with_benchmark: safe(() => corrVal),
           r_squared: safe(() => r2Val),
           freshness: benchFreshness,
+          validation_band_breach: bandBreach,
         }
       : null;
+
 
     // 5. Vol / Sharpe / Sortino / DD / VaR (always daily)
     const annVol = annualizedVol(stockReturns) * 100;
