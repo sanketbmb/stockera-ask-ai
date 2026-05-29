@@ -1,114 +1,85 @@
-## Task 2.5 — compute-sentiment
+## Task 2.6 — `generate-stock-analysis` orchestrator
 
-Build the 5th and final Brain scoring module. News-driven sentiment via Marketaux Basic tier, with hard caching to protect the 2,500/day budget.
+Build a new Supabase Edge Function that fans out to the five Brain modules and returns one normalized JSON payload matching the contract you specified. No LLM, no UI, minimal schema churn.
 
-### Scope (single commit)
+### Files
 
-1. **DB migration** — `sentiment_cache` + `marketaux_usage_log`
-2. **Edge Function** — `supabase/functions/compute-sentiment/index.ts`
-3. **Wrapper cleanup** — drop `news/by-symbol` from `ALLOWED_ENDPOINTS` in `marketaux-fetch/index.ts`
-4. **Validation run** — TCS, INFY, HDFCBANK, ICICIBANK, RELIANCE + TCS re-run cache check
+**New:**
+- `supabase/functions/generate-stock-analysis/index.ts` — orchestrator
 
-### Migration
+**No changes** to existing compute-* functions, marketaux-fetch, dhan-fetch, finedge-fetch, or DB schema. (`stock_master` already has symbol/company_name/exchange/segment; sector/industry come from `finedge-fetch` `company-profile` already used by compute-momentum/compute-risk.)
 
-```sql
-CREATE TABLE public.sentiment_cache (
-  symbol TEXT PRIMARY KEY,
-  articles JSONB NOT NULL,
-  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ttl_hours INT NOT NULL DEFAULT 6,
-  symbol_format_used TEXT
-);
--- GRANTs: service_role only (Edge Function writes via service key, no client access)
-GRANT ALL ON public.sentiment_cache TO service_role;
-ALTER TABLE public.sentiment_cache ENABLE ROW LEVEL SECURITY;
--- no policies → locked to service_role
+### Flow
 
-CREATE TABLE public.marketaux_usage_log (
-  date DATE PRIMARY KEY,
-  call_count INT NOT NULL DEFAULT 0,
-  articles_returned INT NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-GRANT ALL ON public.marketaux_usage_log TO service_role;
-ALTER TABLE public.marketaux_usage_log ENABLE ROW LEVEL SECURITY;
+1. **Validate input** — `{ symbol, exchange?, query_type?, language?, user_context?, include_news? }`. Default `query_type="medium-term"`, `language="en"`, `include_news=true`. Reject empty symbol.
+2. **Resolve stock** — `stock_master` lookup by symbol (normalize to uppercase, strip `.NS`). Capture `company_name`, `exchange`, `segment`. Fetch sector/industry via `finedge-fetch` `company-profile` (best-effort; null on fail → `flags.incomplete_data` stays false unless multiple modules fail).
+3. **Fan out in parallel** — `Promise.allSettled` to the five compute modules via `${SUPABASE_URL}/functions/v1/<fn>`, forwarding caller's `authorization` header (fallback `Bearer ${ANON_KEY}`) — same pattern as compute-sentiment. Skip `compute-sentiment` if `include_news=false`.
+4. **Normalize** — for each settled-fulfilled response with `success:true`, extract into the snapshot shape. For rejected/`success:false`, leave snapshot fields null and append `{module, status, error}` to `audit_meta.source_trace`.
+5. **Compute verdict + final JSON** — see below.
+6. **Return** the unified payload (status 200 even when modules degrade; `success:false` only for orchestrator-level failure like unresolved symbol).
+
+### Normalization mapping (compute-* → snapshot)
+
+- **technical** → `technical_snapshot{rsi, macd_signal, trend_label, ema_stack, adx, bollinger_position, vwap_signal}`, `levels{support_1/2, resistance_1/2, entry_zone, stop_loss, target_1/2}`, `price_context{current_price, price_source:"finedge", as_of}`, `score_breakdown.technical_score`.
+- **fundamentals** → `fundamental_snapshot{pe_ratio, roe, piotroski_f_score, altman_z_score, dcf_upside_pct, valuation_label}`, `score_breakdown.fundamental_score`. Detect banking from sector → `flags.banking_override_applied=true` when Altman Z is intentionally null.
+- **risk** → `risk_snapshot{beta, volatility_1y, sharpe_ratio, sortino_ratio, max_drawdown, var_95, liquidity_label}`, `score_breakdown.risk_score`. If risk module reports benchmark fallback in diagnostics → `flags.benchmark_fallback_used=true`.
+- **momentum** → `momentum_snapshot{relative_strength_vs_nifty, trend_strength, volume_confirmation, momentum_label}`, `returns_snapshot{one_week, one_month, three_month, one_year, vs_nifty_one_month, vs_nifty_three_month}`, `score_breakdown.momentum_score`.
+- **sentiment** → `sentiment_snapshot{news_sentiment_score, sentiment_label, article_count, top_news_driver}`, `score_breakdown.sentiment_score`. If skipped or NO_NEWS → `flags.news_data_limited=true`, score treated as null (excluded from weighting).
+- **audit_meta** — capture each module's `as_of_date`/`metadata.computed_at` and `formula_version`. `source_trace` lists `{module, ok, http_status, latency_ms, code?}`.
+
+Each compute fn has its own field names — orchestrator owns a single `normalize<Module>()` helper that returns the snapshot + score + flags, isolating shape drift.
+
+### Verdict logic (deterministic, no LLM)
+
 ```
-
-Both tables are server-only (Edge Function uses service role). No anon/authenticated grants — clients never read these directly.
-
-### Edge Function flow
-
-```text
-POST { symbol: "TCS" }
-  │
-  ├─ 1. Load today's marketaux_usage_log row (upsert if missing)
-  │     if call_count > 2300 → conservation mode
-  │
-  ├─ 2. Read sentiment_cache[symbol]
-  │     if fetched_at + ttl_hours > now() → use cached articles (cache_hit=true)
-  │     if conservation mode AND cached → use cached even if stale
-  │
-  ├─ 3. Cache miss path:
-  │     a. Call marketaux-fetch (endpoint=news/all, symbols=<SYM>.NS, limit=20,
-  │        published_after = now()-30d)
-  │     b. If 0 articles → retry with bare <SYM>
-  │     c. Increment usage log (call_count, articles_returned)
-  │     d. Upsert cache with symbol_format_used + ttl
-  │        (ttl_hours = 24 if total < 3 articles, else 6)
-  │     e. If still 0 → cache empty 24h, classification SYMBOL_UNRECOGNIZED
-  │
-  ├─ 4. For each article, extract sentiment for target symbol:
-  │     entity = entities.find(e => e.symbol matches <SYM>.NS OR <SYM>)
-  │     sentiment = entity?.sentiment_score (fallback skip if missing)
-  │     age_hours = (nowIST - publishedAtIST) / 3600s
-  │
-  ├─ 5. Compute metrics (pure JS, IST-windowed):
-  │     - counts.{24h,7d,30d}.{positive,negative,neutral,total}
-  │     - weighted_sentiment = Σ(s · exp(-h/168)) / Σ exp(-h/168)
-  │     - velocity {articles_last_24h, avg_per_24h_over_7d, ratio, flag}
-  │     - diversity {unique_sources_7d, flag}
-  │     - sentiment_score = 0.5·norm(w,-0.5,+0.5) + 0.2·norm(net_pos_7d,-1,+1)
-  │                       + 0.15·velocity_bonus + 0.15·diversity_bonus
-  │     - classification per thresholds; NO_NEWS override if total_30d == 0
-  │
-  └─ 6. Return output schema (counts, weighted_sentiment, velocity,
-        diversity, top 3 articles by |sentiment|·recency, score,
-        classification, data_quality, metadata)
+weights (medium-term default):
+  technical 0.25, fundamental 0.25, risk 0.20, momentum 0.20, sentiment 0.10
 ```
+- Build `weighted = Σ(score_i × weight_i)` over **non-null** scores; renormalize weights so missing modules don't penalize blindly.
+- Map `overall_score` → `action`: ≥75 BUY · 60–74 HOLD · 45–59 WATCHLIST · 30–44 SELL · <30 AVOID.
+- **Guardrails (applied in order):**
+  1. `risk_score < 25` → cap action at HOLD (no BUY).
+  2. `max_drawdown < -50%` or `beta > 2.0` → demote BUY→HOLD, HOLD→WATCHLIST.
+  3. Missing technical OR fundamental → cap at WATCHLIST.
+  4. `≥3 of 5` modules missing → action = `AVOID`, `flags.incomplete_data=true`.
+- **Confidence** = `100 − (missing_modules × 15) − (guardrail_demotions × 10)`, clamped 20–95.
+- `risk_label` derived from risk_score (LOW ≥70, MODERATE 45–69, HIGH 25–44, VERY_HIGH <25).
+- `time_horizon` mirrors `query_type` (intraday→"1–5 days", medium-term→"1–6 months", long-term→"12+ months").
+- `summary_reason` = deterministic templated string concatenating top driver per pillar (e.g. `"Strong momentum (78), weak fundamentals (42), elevated risk (31)."`). No prose generation.
 
-### Key implementation details
+For non-medium-term `query_type`, swap weight presets:
+- intraday: tech 0.45, momentum 0.30, risk 0.20, sentiment 0.05, fundamental 0.0
+- long-term: fundamental 0.40, risk 0.20, technical 0.15, momentum 0.15, sentiment 0.10
 
-- **IST conversion**: same helper used in compute-risk — `new Date(utc).getTime() + 5.5*3600*1000` then build windows from IST midnight.
-- **Entity match**: iterate `article.entities`, pick the one whose `symbol` equals `<SYM>.NS` first, else `<SYM>`, else any with same `name` prefix. If none, skip the article for scoring but still count it.
-- **Cache writes**: store the full Marketaux article array (already includes per-entity sentiment) — keeps re-scoring cheap and auditable.
-- **Usage log**: single-row-per-date upsert with atomic increment via `INSERT … ON CONFLICT DO UPDATE SET call_count = call_count + EXCLUDED.call_count`.
-- **No external NLP** — Marketaux `entities[].sentiment_score` is the only sentiment source.
-- **Failure modes as outputs** (HTTP 200): `NO_NEWS`, `SYMBOL_UNRECOGNIZED`, `DAILY_BUDGET_CONSERVATION_MODE` warning.
+### `report_modules` defaults
 
-### marketaux-fetch cleanup
+All true except `show_stocks_in_focus=false`. `show_news_widget` follows `include_news && !flags.news_data_limited`.
 
-Single-line change in `ALLOWED_ENDPOINTS`:
-```ts
-const ALLOWED_ENDPOINTS = new Set(["news/all"]);
+### Error handling
+
+- Symbol not in `stock_master` → 200 with `{success:false, error:"SYMBOL_NOT_FOUND"}`.
+- Orchestrator-level uncaught → 500 with `{success:false, error:"INTERNAL_ERROR", details}`.
+- Per-module failure never throws — captured in `source_trace`.
+- 25s overall timeout per module call (AbortController) — prevents hanging on slow Marketaux.
+
+### Test plan
+
+After deploy, invoke via `supabase--curl_edge_functions`:
+```json
+{"symbol":"RELIANCE","query_type":"medium-term"}
+{"symbol":"TCS","query_type":"long-term"}
+{"symbol":"HDFCBANK","include_news":false}   // banking override path
 ```
-Header comment updated to drop `news/by-symbol` reference. Redeploy.
+Verify: 200, `success:true`, all five `score_breakdown` populated for RELIANCE/TCS, `banking_override_applied=true` for HDFCBANK, deterministic verdict, `source_trace` complete.
 
-### Validation
+### Deliverables checklist (post-build)
 
-Curl `compute-sentiment` for TCS, INFY, HDFCBANK, ICICIBANK, RELIANCE (one each), then TCS again to confirm cache hit. Report:
+1. What was created — file list
+2. What files changed — none beyond the new function
+3. How verdict is computed — weight table + guardrail list
+4. Test payload examples with actual responses
+5. Blockers before 2.6.1 — flagged if any compute-* return shape disagrees with assumptions
 
-| symbol | total_7d | weighted_sentiment | velocity_flag | diversity_flag | symbol_format | score | classification |
+### Open question before I build
 
-Plus footer: `marketaux_calls_today` (target ≤ 5), TCS re-run `cache_hit=true`, any NO_NEWS for large caps flagged.
-
-### Out of scope
-
-- No UI
-- No other compute-* module edits
-- No pre-population of 600-stock cache
-- No Twitter/Reddit
-- No external NLP libs
-
-### Open questions
-
-None — symbol format strategy, endpoint, budget thresholds, scoring weights, and validation set are all fully specified in your brief. Proceeding on green light.
+The output contract has `levels.entry_zone / stop_loss / target_1 / target_2`. `compute-technicals` currently produces support/resistance and likely a swing-based stop, but I haven't confirmed it emits explicit `entry_zone` and `target_1/2`. **Plan:** if those fields aren't already in the technical payload, I'll derive them deterministically here (entry = current_price ± 1% near support; stop = nearest support − 1 ATR; targets = resistance_1, resistance_2) and tag them in `audit_meta.source_trace` as `derived:orchestrator`. OK to proceed with that fallback, or do you want me to push that into `compute-technicals` instead?
