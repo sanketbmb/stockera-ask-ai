@@ -354,7 +354,7 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
 // Main component
 // ─────────────────────────────────────────────────────────────────
 
-export function StockAnalysisReport({ data }: { data: StockAnalysisPayload }) {
+export function StockAnalysisReport({ data, printMode = false }: { data: StockAnalysisPayload; printMode?: boolean }) {
   const {
     stock, query_context, final_verdict, score_breakdown, price_context,
     levels, returns_snapshot, technical_snapshot, fundamental_snapshot,
@@ -379,7 +379,11 @@ export function StockAnalysisReport({ data }: { data: StockAnalysisPayload }) {
     return reward / risk;
   }, [levels]);
 
-  return (
+  // Print mode: disable all motion deterministically. MotionConfig forces
+  // useReducedMotion()=true throughout the tree, snapping initial states
+  // to final values (count-ups, score ring, score bars, price band all
+  // honor reduced motion via their existing branches).
+  const content = (
     <TooltipProvider delayDuration={150}>
       <motion.article
         className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 md:px-6 print:max-w-none print:py-0"
@@ -387,6 +391,7 @@ export function StockAnalysisReport({ data }: { data: StockAnalysisPayload }) {
         initial="hidden"
         animate="visible"
       >
+
 
         {/* ═══ 1. HEADER STRIP ═══ */}
         <motion.header variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-5 shadow-card">
