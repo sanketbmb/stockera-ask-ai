@@ -410,7 +410,7 @@ Deno.serve(async (req) => {
 
       try {
         formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`);
+        fetched = await fetchMarketaux(`${symbol}.NS`, callerAuth);
         callsThisRequest += 1;
         articlesThisRequest += fetched.length;
         symbol_format_used = `${symbol}.NS`;
