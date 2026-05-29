@@ -258,6 +258,27 @@ export type Database = {
         }
         Relationships: []
       }
+      benchmark_cache: {
+        Row: {
+          benchmark_symbol: string
+          candle_count: number
+          daily_candles: Json
+          last_updated_at: string
+        }
+        Insert: {
+          benchmark_symbol: string
+          candle_count?: number
+          daily_candles: Json
+          last_updated_at?: string
+        }
+        Update: {
+          benchmark_symbol?: string
+          candle_count?: number
+          daily_candles?: Json
+          last_updated_at?: string
+        }
+        Relationships: []
+      }
       grievances: {
         Row: {
           against_analyst_id: string | null
@@ -577,6 +598,36 @@ export type Database = {
         }
         Relationships: []
       }
+      risk_compute_meta: {
+        Row: {
+          last_benchmark: string | null
+          last_beta: number | null
+          last_beta_compute_at: string | null
+          last_correlation: number | null
+          last_r_squared: number | null
+          stock_symbol: string
+          updated_at: string
+        }
+        Insert: {
+          last_benchmark?: string | null
+          last_beta?: number | null
+          last_beta_compute_at?: string | null
+          last_correlation?: number | null
+          last_r_squared?: number | null
+          stock_symbol: string
+          updated_at?: string
+        }
+        Update: {
+          last_benchmark?: string | null
+          last_beta?: number | null
+          last_beta_compute_at?: string | null
+          last_correlation?: number | null
+          last_r_squared?: number | null
+          stock_symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       session_bookings: {
         Row: {
           amount_paise: number
@@ -633,6 +684,7 @@ export type Database = {
           segment: string
           symbol: string
           tick_size: number | null
+          type: string | null
           updated_at: string
         }
         Insert: {
@@ -645,6 +697,7 @@ export type Database = {
           segment: string
           symbol: string
           tick_size?: number | null
+          type?: string | null
           updated_at?: string
         }
         Update: {
@@ -657,6 +710,7 @@ export type Database = {
           segment?: string
           symbol?: string
           tick_size?: number | null
+          type?: string | null
           updated_at?: string
         }
         Relationships: []
