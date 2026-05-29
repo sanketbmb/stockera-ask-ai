@@ -123,6 +123,8 @@ Deno.serve(async (req) => {
           securityId,
           exchangeSegment,
           instrument: params.instrument ?? "EQUITY",
+          expiryCode: 0,
+          oi: false,
           fromDate: params.fromDate,
           toDate: params.toDate,
           ...(params.interval ? { interval: params.interval } : {}),
