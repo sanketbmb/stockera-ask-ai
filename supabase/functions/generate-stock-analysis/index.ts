@@ -15,7 +15,8 @@ const corsHeaders = {
 const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY      = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
-const FORMULA_VERSION = "orchestrator-1.0";
+const FORMULA_VERSION = "orchestrator-1.1";
+const VERDICT_MODEL_VERSION = "tiered-verdict-1.0";
 const MODULE_TIMEOUT_MS = 25_000;
 
 type QueryType = "intraday" | "medium-term" | "long-term";
