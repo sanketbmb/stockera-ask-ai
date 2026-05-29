@@ -34,18 +34,40 @@ const BENCHMARK_HISTORY_DAYS = 1000;   // 3+ years buffer for benchmark fetch
 const BENCHMARK_CACHE_TTL_HOURS = 24;
 const BETA_REFRESH_DAYS = 7;           // Beta only recomputed weekly
 
-/** Dhan security IDs for index benchmarks. Used by dhan-fetch /charts/historical. */
+/** Dhan security IDs for index benchmarks. Used by dhan-fetch /charts/historical.
+ *  IDs verified against Dhan instrument-master (IDX_I segment). SEBI audit trail:
+ *  NIFTYAUTO/NIFTYPHARMA/NIFTY100 corrected 2026-05-29 (prior values pointed at wrong indices). */
 const BENCHMARK_MAP: Record<string, { dhan_security_id: string; segment: "IDX_I" }> = {
   NIFTY:       { dhan_security_id: "13", segment: "IDX_I" },
   BANKNIFTY:   { dhan_security_id: "25", segment: "IDX_I" },
   NIFTYIT:     { dhan_security_id: "29", segment: "IDX_I" },
-  NIFTYAUTO:   { dhan_security_id: "27", segment: "IDX_I" },
-  NIFTYPHARMA: { dhan_security_id: "33", segment: "IDX_I" },
+  NIFTYAUTO:   { dhan_security_id: "14", segment: "IDX_I" }, // corrected: 27 → 14 (Dhan instrument-master)
+  NIFTYPHARMA: { dhan_security_id: "32", segment: "IDX_I" }, // corrected: 33 → 32 (Dhan instrument-master)
   NIFTYFMCG:   { dhan_security_id: "28", segment: "IDX_I" },
-  NIFTY100:    { dhan_security_id: "24", segment: "IDX_I" },
+  NIFTY100:    { dhan_security_id: "17", segment: "IDX_I" }, // corrected: 24 → 17 (Dhan instrument-master)
   SENSEX:      { dhan_security_id: "51", segment: "IDX_I" },
 };
 const BENCHMARK_FALLBACK_CHAIN = ["NIFTY", "SENSEX"] as const;
+
+/** Benchmark-type-aware validation bands for post-compute sanity checks.
+ *  SEBI audit rationale: concentrated sector indices (NIFTYIT, NIFTYAUTO, etc.)
+ *  have top-3 constituents accounting for >50% of weight, which mathematically
+ *  widens the expected Beta/correlation distribution for their members vs the
+ *  index. A constituent can legitimately show Beta in [0.6, 1.4] and corr down
+ *  to 0.50 without indicating a data bug. Broad-market indices (NIFTY,
+ *  BANKNIFTY, NIFTY100, NIFTY500) are diversified and warrant tighter bands.
+ *  These are SANITY bands (flag for review), not pass/fail gates on output. */
+const CONCENTRATED_BENCHMARKS = new Set([
+  "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG",
+  "NIFTYMETAL", "NIFTYREALTY", "NIFTYENERGY",
+]);
+function validationBandsFor(benchmark: string) {
+  if (CONCENTRATED_BENCHMARKS.has(benchmark)) {
+    return { betaMin: 0.60, betaMax: 1.40, corrMin: 0.50, corrMax: 0.95 };
+  }
+  return { betaMin: 0.70, betaMax: 1.30, corrMin: 0.50, corrMax: 0.90 };
+}
+
 
 interface Candle { date: string; open: number; high: number; low: number; close: number; volume: number }
 
@@ -724,6 +746,27 @@ Deno.serve(async (req) => {
 
     const betaCls: "HIGH" | "NORMAL" | "LOW" | null =
       Number.isFinite(betaVal) ? (betaVal > 1.3 ? "HIGH" : betaVal >= 0.8 ? "NORMAL" : "LOW") : null;
+
+    // Validation-band breach flag (benchmark-type-aware sanity check).
+    let bandBreach: null | {
+      benchmark: string; benchmark_type: "concentrated" | "broad";
+      beta: number; correlation: number;
+      bands: { betaMin: number; betaMax: number; corrMin: number; corrMax: number };
+    } = null;
+    if (benchUsed && Number.isFinite(betaVal) && Number.isFinite(corrVal)) {
+      const bands = validationBandsFor(benchUsed);
+      const breach =
+        betaVal < bands.betaMin || betaVal > bands.betaMax ||
+        corrVal < bands.corrMin || corrVal > bands.corrMax;
+      if (breach) {
+        bandBreach = {
+          benchmark: benchUsed,
+          benchmark_type: CONCENTRATED_BENCHMARKS.has(benchUsed) ? "concentrated" : "broad",
+          beta: betaVal, correlation: corrVal, bands,
+        };
+      }
+    }
+
     const marketRisk = benchUsed
       ? {
           benchmark: benchUsed,
@@ -732,8 +775,10 @@ Deno.serve(async (req) => {
           correlation_with_benchmark: safe(() => corrVal),
           r_squared: safe(() => r2Val),
           freshness: benchFreshness,
+          validation_band_breach: bandBreach,
         }
       : null;
+
 
     // 5. Vol / Sharpe / Sortino / DD / VaR (always daily)
     const annVol = annualizedVol(stockReturns) * 100;

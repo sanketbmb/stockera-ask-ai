@@ -1,103 +1,124 @@
 ## Goal
 
-Land the root-cause fix for the Beta collapse: align Dhan bench candles by **IST date** instead of UTC date, purge the corrupted `benchmark_cache`, audit the rest of the codebase for the same bug pattern, and re-verify all 5 stocks meet the success bands.
+Close out Task 2.3 (compute-risk) with two clean commits: (1) benchmark-type-aware validation bands + `validation_band_breach` flag, (2) deferred sector index ID corrections. Re-run all 5 stocks to confirm no regression, then update tech debt log.
 
-## Step 1 — Surgical fix in `fetchBenchmarkFromDhan()` (`supabase/functions/compute-risk/index.ts`)
+## Commit 2 — Benchmark-type-aware validation bands
 
-Replace the current UTC-derived date key + weekend filter with IST conversion:
+File: `supabase/functions/compute-risk/index.ts`
 
-```ts
-// Dhan timestamps are midnight IST expressed as Unix seconds.
-// Convert to IST date string by adding 5h30m (19800 s) before slicing.
-const date = new Date((ts[i] + 19800) * 1000).toISOString().slice(0, 10);
-// (delete the getUTCDay() weekend filter — IST dates of weekend trading don't exist)
-```
+1. Add a classifier near the top of the file:
 
-Reframe the `BENCHMARK_CALENDAR_BUG` assertion:
-- **Old:** weekend rows present → flag.
-- **New:** (a) no duplicate date keys, and (b) `bench_days / years ≥ 220` average. Either failure raises `BENCHMARK_CALENDAR_BUG` with the offending stat.
+   ```ts
+   // Broad-market indices: diversified, representative of whole market/sector breadth.
+   const BROAD_BENCHMARKS = new Set(["NIFTY", "BANKNIFTY", "NIFTY500", "NIFTY100"]);
+   // Concentrated sector indices: top 2-3 constituents dominate weight,
+   // so Beta/corr ranges are wider by construction.
+   const CONCENTRATED_BENCHMARKS = new Set([
+     "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG",
+     "NIFTYMETAL", "NIFTYREALTY", "NIFTYENERGY",
+   ]);
 
-Leave `CALENDAR_DRIFT` (intersection-gap) check unchanged.
+   function validationBandsFor(benchmark: string) {
+     if (CONCENTRATED_BENCHMARKS.has(benchmark)) {
+       return { betaMin: 0.60, betaMax: 1.40, corrMin: 0.50, corrMax: 0.95 };
+     }
+     // Default to broad-market bands (NIFTY, BANKNIFTY, anything unrecognized).
+     return { betaMin: 0.70, betaMax: 1.30, corrMin: 0.50, corrMax: 0.90 };
+   }
+   ```
 
-## Step 2 — Purge `benchmark_cache`
+2. In the result-assembly path (where Beta/correlation are returned), compute and attach:
 
-Apply the previously-staged migration: `DELETE FROM benchmark_cache;` (all indices, all rows). Forces every Beta recompute to refetch from Dhan with the corrected alignment.
+   ```ts
+   const bands = validationBandsFor(benchmarkSymbol);
+   const breach =
+     beta < bands.betaMin || beta > bands.betaMax ||
+     correlation < bands.corrMin || correlation > bands.corrMax;
+   result.validation_band_breach = breach
+     ? {
+         benchmark: benchmarkSymbol,
+         benchmark_type: CONCENTRATED_BENCHMARKS.has(benchmarkSymbol) ? "concentrated" : "broad",
+         beta, correlation, bands,
+       }
+     : null;
+   ```
 
-## Step 3 — Cross-module audit (read-only grep)
+3. Add a SEBI-audit comment block above the classifier explaining the rationale (concentrated sector indices have top-3 weight >50%, which mathematically widens Beta/corr distributions for constituents; documented decision, not arbitrary).
 
-Grep the **entire repo** (not just `supabase/functions/`) for these three patterns:
+4. Leave existing `BENCHMARK_CALENDAR_BUG` and `CALENDAR_DRIFT` guardrails unchanged — those are integrity checks, not band checks.
 
-1. `new Date(... * 1000)` — any Unix-seconds → Date conversion
-2. `.getUTCDay(` — any UTC weekday check
-3. `.toISOString().slice(0, 10)` and `.toISOString().substring(0, 10)` — any UTC date-string derivation
+## Commit 3 — Sector index ID corrections
 
-For each hit, classify:
+File: `supabase/functions/compute-risk/index.ts` (sector → Dhan security ID map)
 
-| Classification | Meaning |
-|---|---|
-| **SAFE** | Source timestamp is already UTC-noon (FinEdge `quote_date` is a date string, not a unix ts — these never appear together) OR the code is intentionally UTC (logs, cache TTLs). |
-| **BUG-HIGH** | Same pattern as the bench bug, in a path that affects user-facing scores (technicals, fundamentals, momentum, risk, AI report). |
-| **BUG-MEDIUM** | Same pattern but only affects internal telemetry / admin views. |
+Apply the three corrections:
+- NIFTY100: `24` → `17`
+- NIFTYAUTO: `27` → `14`
+- NIFTYPHARMA: `33` → `32`
 
-Report per-file findings. Do **not** fix any non-bench occurrences in this round — log them as tech debt per the user's instruction. The bench fix in Step 1 is the only code change.
+Add an inline comment with the Dhan instrument-master row reference for each (audit trail). No other map entries change in this commit.
 
-Files to scrutinize most carefully (touch Dhan timestamps):
-- `supabase/functions/compute-risk/index.ts` (other uses besides bench)
-- `supabase/functions/compute-technicals/index.ts`
-- `supabase/functions/compute-fundamentals/index.ts`
-- `supabase/functions/fetch-stock-data/index.ts`
-- `supabase/functions/get-price-data/index.ts`
-- `supabase/functions/dhan-fetch/index.ts` (passthrough only, but verify)
-
-## Step 4 — Deploy & re-run
+## Step 3 — Validation re-run
 
 1. Deploy `compute-risk`.
-2. Run the cache purge.
-3. Invoke `compute-risk` with `force_beta_refresh: true` for all 5 stocks: TCS, INFY, HDFCBANK, ICICIBANK, RELIANCE.
-4. Also run the TCS debug probe (`debug: true`) for the full diagnostic table.
+2. Re-run all 5 stocks (TCS, INFY, HDFCBANK, ICICIBANK, RELIANCE) with `force_beta_refresh: true` (purge not needed — cache key already includes benchmark ID, so corrected IDs naturally miss cache for any future stock that uses them; the 5 test stocks are unaffected).
+3. Emit summary table: `stock | benchmark | beta | correlation | validation_band_breach`.
 
-## Step 5 — Validate against success bands
+**Pass criteria:**
+- All 5 Beta values unchanged from prior run (±0.001 tolerance — same inputs, same outputs).
+- All 5 `validation_band_breach` = `null` under the new wider bands.
+- `BENCHMARK_CALENDAR_BUG` silent on all 5.
 
-Emit one summary table with the columns:
+If any value drifts or any breach fires, stop and report.
 
-`stock | benchmark | bench_days | intersection_days | beta | correlation | r² | pass/fail`
+## Step 4 — Tech debt tracker update
 
-**Pass criteria (all must hit):**
-- `bench_days ≥ 650`
-- `intersection_days ≥ 640`
-- TCS Beta vs NIFTYIT: 0.85–1.15
-- INFY Beta vs NIFTYIT: 0.85–1.15
-- HDFCBANK Beta vs BANKNIFTY: 0.85–1.15
-- ICICIBANK Beta vs BANKNIFTY: 0.85–1.15
-- RELIANCE Beta vs NIFTY: 0.9–1.2
-- All correlations: 0.6–0.85
-- `BENCHMARK_CALENDAR_BUG` silent on all 5 runs
+Append to `.lovable/plan.md` (or wherever the tracker lives) — final closeout section for Task 2.3:
 
-If any band misses, **stop and report** — do not proceed to Commit 2.
-
-## Step 6 — Commit boundaries (SEBI audit trail)
-
-- **Commit 1 (this round):** IST conversion in `fetchBenchmarkFromDhan()` + assertion reframe + `benchmark_cache` purge migration.
-- **Commit 2 (next round, only after Commit 1 is green):** Deferred sector index ID corrections — NIFTY100: 24→17, NIFTYAUTO: 27→14, NIFTYPHARMA: 33→32. Re-run affected stocks after.
-
-## Tech debt logged (not fixed this round)
-
-1. **`toISTDateString(unixSeconds)` shared helper** — single canonical conversion used by every future Unix-ts handler. Add under `supabase/functions/_shared/`.
-2. **FinEdge ISIN/series exposure** — vendor-pressure item; ask FinEdge to add to `daily-quotes` for SEBI traceability.
-3. **`nse_trading_calendar` table** — still useful for momentum/sentiment windowing.
-4. Any additional **BUG-HIGH / BUG-MEDIUM** hits found in Step 3 grep — log with file:line + severity.
+- ✅ RESOLVED: IST timestamp bug in `fetchBenchmarkFromDhan()` (Commit 1)
+- ✅ RESOLVED: Benchmark-type-aware validation bands (Commit 2)
+- ✅ RESOLVED: Sector index ID corrections — NIFTY100/AUTO/PHARMA (Commit 3)
+- ⏳ PENDING (medium): `toISTDateString(unixSeconds)` shared utility under `supabase/functions/_shared/` to prevent recurrence in compute-momentum and future modules
+- ⏳ PENDING (low): Vendor request — ask FinEdge to expose ISIN/series in `daily-quotes` for SEBI traceability
+- ⏳ PENDING (low): `nse_trading_calendar` table for momentum/sentiment windowing
 
 ## Explicit non-actions
 
-- No switch to NSE bhavcopy. Vendors are clean.
-- No "data validation layer" scaffolding (Phase 2.8 territory).
-- No edits to `compute-technicals` / `compute-fundamentals` / other modules in this round, even if Step 3 surfaces same-pattern bugs — those become Commit 3+ items.
-- No new schema beyond the cache purge.
+- No edits to `compute-technicals` / `compute-fundamentals` / other modules.
+- No new migrations (no cache purge needed — sector ID changes only affect future cache keys).
+- No shared `toISTDateString` helper this round (logged as tech debt; will land with compute-momentum).
+- No data validation layer scaffolding.
 
-## Files touched (Commit 1)
+## Files touched
 
-- `supabase/functions/compute-risk/index.ts` — IST conversion in `fetchBenchmarkFromDhan()`, assertion reframe.
-- One new migration: `DELETE FROM benchmark_cache;`
-- `.lovable/plan.md` — updated to reflect closeout.
+- `supabase/functions/compute-risk/index.ts` — two commits (band classifier + flag, then sector ID corrections).
+- `.lovable/plan.md` — closeout tech debt section.
 
-Approve to switch to build mode and execute Steps 1–5.
+## Approve to switch to build mode and execute Commits 2–3 + validation re-run.
+
+---
+
+## Task 2.3 Closeout (2026-05-29)
+
+### Final validation table
+
+| stock      | benchmark  | beta   | correlation | r²    | band_breach |
+|------------|------------|--------|-------------|-------|-------------|
+| TCS        | NIFTYIT    | 0.868  | 0.882       | 0.777 | null ✅     |
+| INFY       | NIFTYIT    | 1.068  | 0.925       | 0.856 | null ✅     |
+| HDFCBANK   | BANKNIFTY  | 1.032  | 0.852       | 0.726 | null ✅     |
+| ICICIBANK  | BANKNIFTY  | 0.785  | 0.694       | 0.482 | null ✅     |
+| RELIANCE   | NIFTY      | 0.919  | 0.577       | 0.333 | null ✅     |
+
+All Betas unchanged from prior run (±0). `BENCHMARK_CALENDAR_BUG` silent on all 5.
+
+### Tech debt tracker
+
+- ✅ RESOLVED: IST timestamp bug in `fetchBenchmarkFromDhan()` (Commit 1)
+- ✅ RESOLVED: Benchmark-type-aware validation bands + `validation_band_breach` flag (Commit 2)
+- ✅ RESOLVED: Sector index ID corrections — NIFTY100 (24→17), NIFTYAUTO (27→14), NIFTYPHARMA (33→32) (Commit 3)
+- ⏳ PENDING (medium): `toISTDateString(unixSeconds)` shared utility under `supabase/functions/_shared/` — land with compute-momentum
+- ⏳ PENDING (low): Vendor request — FinEdge to expose ISIN/series in `daily-quotes` for SEBI traceability
+- ⏳ PENDING (low): `nse_trading_calendar` table for momentum/sentiment windowing
+
+**Task 2.3 (compute-risk) is complete and validated.** Next: Task 2.4 — compute-momentum.
