@@ -1,7 +1,7 @@
 // Marketaux news API wrapper (thin passthrough)
 // Plan: Basic ($24/mo) — 2,500 calls/day, up to 20 articles per call.
 // Callers control `limit` via params (default recommendation: 20).
-// Endpoints: news/all, news/by-symbol
+// Endpoint: news/all (news/by-symbol returns 404 upstream — dropped 2026-05-29).
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +12,7 @@ const CORS_HEADERS = {
 const JSON_HEADERS = { ...CORS_HEADERS, "Content-Type": "application/json" };
 
 const BASE_URL = "https://api.marketaux.com/v1/";
-const ALLOWED_ENDPOINTS = new Set(["news/all", "news/by-symbol"]);
+const ALLOWED_ENDPOINTS = new Set(["news/all"]);
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
