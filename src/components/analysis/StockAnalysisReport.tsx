@@ -807,10 +807,18 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             This is an AI-generated educational analysis, not personalised SEBI investment advice. A SEBI-Registered Research Analyst follows up with a personalised video opinion within 24 hours. Markets carry risk; please read all scheme-related documents carefully.
           </p>
         </motion.footer>
+        {/* Browserless waits for this marker before snapshotting. */}
+        {printMode && <div id="print-ready" data-print-ready="1" />}
       </motion.article>
     </TooltipProvider>
   );
+
+  if (printMode) {
+    return <MotionConfig reducedMotion="always">{content}</MotionConfig>;
+  }
+  return content;
 }
+
 
 // ─────────────────────────────────────────────────────────────────
 // Small composed components & prose generators
