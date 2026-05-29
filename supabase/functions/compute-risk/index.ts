@@ -600,6 +600,81 @@ Deno.serve(async (req) => {
           };
           (debugPayload.computed as Record<string, unknown>).stock_returns_used = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1)).length;
           (debugPayload.computed as Record<string, unknown>).bench_returns_used = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1)).length;
+
+          // ───────────────── Hypothesis A/B/C/D diagnostic block ─────────────────
+          const hypoA: Array<{
+            i: number; date: string;
+            stock_close_t: number; stock_close_prev: number; stock_return_formula: number;
+            bench_close_t: number; bench_close_prev: number; bench_return_formula: number;
+            same_prev_date: string;
+          }> = [];
+          for (let i = 1; i < alignedTuples.length; i++) {
+            const prev = alignedTuples[i - 1];
+            const cur  = alignedTuples[i];
+            hypoA.push({
+              i, date: cur.date,
+              stock_close_t: cur.stock_close, stock_close_prev: prev.stock_close,
+              stock_return_formula: (cur.stock_close - prev.stock_close) / prev.stock_close,
+              bench_close_t: cur.bench_close, bench_close_prev: prev.bench_close,
+              bench_return_formula: (cur.bench_close - prev.bench_close) / prev.bench_close,
+              same_prev_date: prev.date,
+            });
+          }
+          // Hypothesis B counters
+          let bench_zero = 0, stock_zero = 0, both_near_zero = 0, returns_equal = 0;
+          for (const r of hypoA) {
+            if (r.bench_return_formula === 0) bench_zero++;
+            if (r.stock_return_formula === 0) stock_zero++;
+            if (Math.abs(r.stock_return_formula) < 1e-6 && Math.abs(r.bench_return_formula) < 1e-6) both_near_zero++;
+            if (Math.abs(r.stock_return_formula - r.bench_return_formula) < 1e-9) returns_equal++;
+          }
+          // Hypothesis C: stock single-day moves > 15%
+          const hypoC = hypoA
+            .filter((r) => Math.abs(r.stock_return_formula) > 0.15)
+            .map((r) => ({ date: r.date, prev: r.stock_close_prev, cur: r.stock_close_t, return: r.stock_return_formula }));
+          // Hypothesis D: manual beta math using same arrays as production code
+          const sR_dbg = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1));
+          const bR_dbg = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1));
+          const n_dbg = Math.min(sR_dbg.length, bR_dbg.length);
+          const sOff = sR_dbg.length - n_dbg, bOff = bR_dbg.length - n_dbg;
+          const sTail = sR_dbg.slice(-n_dbg), bTail = bR_dbg.slice(-n_dbg);
+          const mS_tail = mean(sTail), mB_tail = mean(bTail);
+          let cov_num = 0, var_num = 0;
+          for (let i = 0; i < n_dbg; i++) {
+            cov_num += (sTail[i] - mS_tail) * (bTail[i] - mB_tail);
+            var_num += (bTail[i] - mB_tail) ** 2;
+          }
+          const cov_div = n_dbg - 1, var_div = n_dbg - 1;
+          const beta_manual = (cov_num / cov_div) / (var_num / var_div);
+
+          (debugPayload as Record<string, unknown>).hypothesis_a_first_10 = hypoA.slice(0, 10);
+          (debugPayload as Record<string, unknown>).hypothesis_a_last_10  = hypoA.slice(-10);
+          (debugPayload as Record<string, unknown>).hypothesis_b_counts = {
+            total_pairs: hypoA.length,
+            bench_return_exactly_zero: bench_zero,
+            stock_return_exactly_zero: stock_zero,
+            both_near_zero_lt_1e6: both_near_zero,
+            returns_exactly_equal: returns_equal,
+            healthy_expectation: "fewer than 5 zero-return days out of ~660",
+          };
+          (debugPayload as Record<string, unknown>).hypothesis_c_extreme_stock_moves = hypoC;
+          (debugPayload as Record<string, unknown>).hypothesis_d_beta_math = {
+            cov_numerator: cov_num, cov_divisor: cov_div, cov_value: cov_num / cov_div,
+            var_numerator: var_num, var_divisor: var_div, var_value: var_num / var_div,
+            beta_manual, beta_from_code: betaVal,
+            beta_matches_code: Number.isFinite(beta_manual) && Number.isFinite(betaVal) && Math.abs(beta_manual - betaVal) < 1e-9,
+          };
+          (debugPayload as Record<string, unknown>).length_audit = {
+            aligned_a_len: aligned.a.length,
+            aligned_b_len: aligned.b.length,
+            hypoA_pairs: hypoA.length,
+            sR_len: sR_dbg.length,
+            bR_len: bR_dbg.length,
+            length_mismatch: sR_dbg.length !== bR_dbg.length,
+            cov_uses_n: n_dbg,
+            stock_slice_offset: sOff,
+            bench_slice_offset: bOff,
+          };
         }
       }
     }

@@ -1,114 +1,138 @@
 
 ## Goal
 
-Validate disputed Dhan index `security_id` mappings against the **live Dhan API** (not our own seed migration) before changing `BENCHMARK_MAP` in `compute-risk`. Then apply the verified fix, re-run all 5 stocks, and add a defensive daily sanity check so a future Dhan re-mapping cannot silently corrupt Beta in production.
+Diagnose why TCS Beta vs NIFTYIT collapses to 0.23. Run a single extended debug probe that tests Hypotheses A–D explicitly, return the diagnosis, and propose a one-line fix. **Do not apply the fix yet.** Defer the 3 sector-index ID fixes (NIFTY100, NIFTYAUTO, NIFTYPHARMA) for a clean post-Beta-fix commit.
 
-## Step 1 — Verification probes (no code changes yet)
+## Pre-existing code smells I already spotted (will be confirmed/refuted by the probe)
 
-Use `supabase--curl_edge_functions` to call `dhan-fetch` seven times with a 5-day daily window ending today. Body for each call:
+1. `dailyReturns()` at line 85 silently **drops any row where `prev <= 0`** instead of pushing `NaN`. Called independently on `aligned.a` and `aligned.b` (lines 536–537), so a single dropped row on one side desynchronizes every subsequent return on that side from the other — a textbook Hypothesis A trigger.
+2. `covariance()` at line 71 uses `Math.min(x.length, y.length)` and `.slice(-n)` on both arrays. If `sR.length !== bR.length`, it silently aligns to the *tail* — which masks (1) above and makes the misalignment invisible to logs.
+3. `dailyReturns(aligned.a.slice(-253))` and `dailyReturns(aligned.b.slice(-253))` are recomputed *again* in the debug-fill at lines 601–602 — same bug, but at least it gives us the length to compare.
 
-```json
-{
-  "endpoint": "historical",
-  "securityId": "<ID>",
-  "exchangeSegment": "IDX_I",
-  "params": {
-    "instrument": "INDEX",
-    "fromDate": "<today-7>",
-    "toDate":   "<today>",
-    "interval": "1D"
-  }
-}
-```
+The probe will measure both side-lengths and dump enough data to confirm whether 1+2 is the actual cause.
 
-Probes:
+## Step 1 — Extend the debug payload (additive, gated by `?debug=true`)
 
-| Index        | security_id | Expected close (May 2026) | Purpose |
-|--------------|-------------|---------------------------|---------|
-| NIFTYIT      | 27          | 38,000–39,000             | Verify proposed ID |
-| NIFTYAUTO    | 35          | 23,000–24,000             | Verify proposed ID |
-| NIFTYPHARMA  | 31          | 21,000–22,000             | Verify proposed ID |
-| NIFTYFMCG    | 23          | 55,000–57,000             | Verify proposed ID |
-| NIFTY100     | 17          | 24,000–25,000             | Verify proposed ID |
-| NIFTY        | 13          | 24,000–25,000             | Confirm `interval:"1D"` removes weekend rows |
-| BANKNIFTY    | 25          | 52,000–55,000             | Confirm `interval:"1D"` removes weekend rows |
-
-For each: report latest close, candle count, and list any non-weekday dates.
-
-## Step 2 — Decision tree (gate before fix)
-
-- **All 7 close prices land in expected bands AND no Sunday/Saturday rows for NIFTY/BANKNIFTY** → proceed to Step 3.
-- **Any ID returns a wrong-magnitude close** → STOP. Fetch `https://images.dhan.co/api-data/api-scrip-master.csv`, grep for the index name, report the matching row(s) back in chat. Do not change `BENCHMARK_MAP` until user picks the correct ID.
-- **Daily candles still contain weekend rows even with `interval:"1D"`** → STOP. The interval param isn't the (full) fix. Dump the raw Dhan response for one probe and reassess.
-- **Levels slightly off (1–3%)** → accepted, proceed.
-
-Present the probe table + decision in chat and wait for user approval before any code edits.
-
-## Step 3 — Apply fix (only after Step 2 passes)
-
-Edit `supabase/functions/compute-risk/index.ts`:
-
-1. Update `BENCHMARK_MAP` entries for `NIFTYIT`, `NIFTYAUTO`, `NIFTYPHARMA`, `NIFTYFMCG`, `NIFTY100` to the verified IDs (27, 35, 31, 23, 17 — assuming probes pass).
-2. In `fetchBenchmarkFromDhan()` add `interval: "1D"` to the `params` object passed to `dhan-fetch`.
-3. Keep the existing `?debug=true` instrumentation in place (don't revert it yet — still useful for post-fix verification).
-
-Then:
-4. Purge `benchmark_cache` rows for the affected indices via `supabase--migration` (DELETE WHERE id IN (...)).
-5. Deploy `compute-risk` via `supabase--deploy_edge_functions`.
-
-## Step 4 — Re-run all 5 stocks with `?force_beta_refresh=true`
-
-Curl `compute-risk` for: RELIANCE/NIFTY, TCS/NIFTYIT, INFY/NIFTYIT, HDFCBANK/BANKNIFTY, ICICIBANK/BANKNIFTY.
-
-Success bands (any miss → return debug payload, do not tune):
-- TCS, INFY vs NIFTYIT: **0.85–1.15**
-- HDFCBANK, ICICIBANK vs BANKNIFTY: **0.85–1.15**
-- RELIANCE vs NIFTY: **0.9–1.2**
-- `intersection_days` rises from ~506 → ~660 for all
-- Zero weekend rows in any aligned tuple
-
-Report the new summary table.
-
-## Step 5 — Defensive sanity check (add in same deploy as Step 3)
-
-In `compute-risk/index.ts`, add a once-per-day-per-benchmark check. When `fetchBenchmarkFromDhan` returns, compare the latest close against a configurable sane range and log a `BENCHMARK_DATA_SUSPECT` warning if outside. Implementation outline:
+In `supabase/functions/compute-risk/index.ts`, inside the existing `if (debugMode) { ... }` block, **add** these fields without removing what's already there. Use the aligned arrays already in scope.
 
 ```ts
-const BENCHMARK_SANE_RANGE: Record<string, [number, number]> = {
-  NIFTY:       [20000, 30000],
-  BANKNIFTY:   [45000, 60000],
-  NIFTYIT:     [30000, 45000],
-  NIFTYAUTO:   [18000, 28000],
-  NIFTYPHARMA: [17000, 25000],
-  NIFTYFMCG:   [45000, 65000],
-  NIFTY100:    [20000, 28000],
+// --- Hypothesis A: explicit per-row return computation, both sides, with manual formula
+const hypoA: Array<{
+  i: number; date: string;
+  stock_close_t: number; stock_close_prev: number; stock_return_formula: number;
+  bench_close_t: number; bench_close_prev: number; bench_return_formula: number;
+  same_prev_date: string;  // both should reference this exact date
+}> = [];
+// Build from alignedTuples (already has dates + closes)
+for (let i = 1; i < alignedTuples.length; i++) {
+  const prev = alignedTuples[i - 1];
+  const cur  = alignedTuples[i];
+  hypoA.push({
+    i, date: cur.date,
+    stock_close_t: cur.stock_close, stock_close_prev: prev.stock_close,
+    stock_return_formula: (cur.stock_close - prev.stock_close) / prev.stock_close,
+    bench_close_t: cur.bench_close, bench_close_prev: prev.bench_close,
+    bench_return_formula: (cur.bench_close - prev.bench_close) / prev.bench_close,
+    same_prev_date: prev.date,
+  });
+}
+
+// --- Hypothesis B: scattered stale/forward-fill counters
+let bench_zero = 0, stock_zero = 0, both_near_zero = 0, returns_equal = 0;
+for (const r of hypoA) {
+  if (r.bench_return_formula === 0) bench_zero++;
+  if (r.stock_return_formula === 0) stock_zero++;
+  if (Math.abs(r.stock_return_formula) < 1e-6 && Math.abs(r.bench_return_formula) < 1e-6) both_near_zero++;
+  if (Math.abs(r.stock_return_formula - r.bench_return_formula) < 1e-9) returns_equal++;
+}
+
+// --- Hypothesis C: extreme stock returns (split/dividend artifacts)
+const hypoC = hypoA
+  .filter((r) => Math.abs(r.stock_return_formula) > 0.15)
+  .map((r) => ({ date: r.date, prev: r.stock_close_prev, cur: r.stock_close_t, return: r.stock_return_formula }));
+
+// --- Hypothesis D: literal beta numerator/denominator using the SAME arrays the code uses
+const sR_dbg = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1));
+const bR_dbg = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1));
+const mB = mean(bR_dbg);
+let cov_num = 0, var_num = 0;
+const n = Math.min(sR_dbg.length, bR_dbg.length);
+const sOff = sR_dbg.length - n, bOff = bR_dbg.length - n;
+const mS_tail = mean(sR_dbg.slice(-n));
+const mB_tail = mean(bR_dbg.slice(-n));
+for (let i = 0; i < n; i++) {
+  cov_num += (sR_dbg[sOff + i] - mS_tail) * (bR_dbg[bOff + i] - mB_tail);
+  var_num += (bR_dbg[bOff + i] - mB_tail) ** 2;
+}
+const cov_div = n - 1, var_div = n - 1;
+const beta_manual = (cov_num / cov_div) / (var_num / var_div);
+
+// --- Side-length sanity (will expose drift caused by dailyReturns()'s prev>0 filter)
+const length_audit = {
+  aligned_a_len: aligned.a.length,           // stock closes after date intersection
+  aligned_b_len: aligned.b.length,           // bench closes after date intersection
+  hypoA_pairs: hypoA.length,                 // (intersection - 1)
+  sR_len: sR_dbg.length,                     // returns from dailyReturns(aligned.a tail)
+  bR_len: bR_dbg.length,                     // returns from dailyReturns(aligned.b tail)
+  length_mismatch: sR_dbg.length !== bR_dbg.length,
+  cov_uses_n: n,
+  stock_slice_offset: sOff,                  // if >0, returns silently shifted in cov calc
+  bench_slice_offset: bOff,
 };
 
-function assertBenchmarkSane(symbol: string, latestClose: number) {
-  const range = BENCHMARK_SANE_RANGE[symbol];
-  if (!range) return;
-  const [lo, hi] = range;
-  if (latestClose < lo || latestClose > hi) {
-    console.warn(
-      `BENCHMARK_DATA_SUSPECT symbol=${symbol} latest_close=${latestClose} ` +
-      `expected=[${lo},${hi}] — possible Dhan security_id remap or wrong instrument`,
-    );
-  }
-}
+// Attach
+(debugPayload as Record<string, unknown>).hypothesis_a_first_10 = hypoA.slice(0, 10);
+(debugPayload as Record<string, unknown>).hypothesis_a_last_10  = hypoA.slice(-10);
+(debugPayload as Record<string, unknown>).hypothesis_b_counts = {
+  total_pairs: hypoA.length,
+  bench_return_exactly_zero: bench_zero,
+  stock_return_exactly_zero: stock_zero,
+  both_near_zero_lt_1e6: both_near_zero,
+  returns_exactly_equal: returns_equal,
+  healthy_expectation: "fewer than 5 zero-return days out of ~660",
+};
+(debugPayload as Record<string, unknown>).hypothesis_c_extreme_stock_moves = hypoC;
+(debugPayload as Record<string, unknown>).hypothesis_d_beta_math = {
+  cov_numerator: cov_num, cov_divisor: cov_div, cov_value: cov_num / cov_div,
+  var_numerator: var_num, var_divisor: var_div, var_value: var_num / var_div,
+  beta_manual, beta_from_code: betaVal,
+  beta_matches_code: Math.abs(beta_manual - betaVal) < 1e-9,
+};
+(debugPayload as Record<string, unknown>).length_audit = length_audit;
 ```
 
-Call it once per `fetchBenchmarkFromDhan` invocation after candles parse. Non-blocking — proceeds with the (possibly suspect) data so a transient mis-range doesn't take risk computation offline; the warning surfaces in `supabase--edge_function_logs` for monitoring.
+Total addition: ~70 lines, all inside the existing debug branch. No production-path changes.
 
-Ranges are intentionally wide (±25%) so normal market moves don't trip them; only an order-of-magnitude wrong instrument or a re-mapped ID will fire.
+## Step 2 — Deploy + invoke
 
-## Files touched (Step 3 + 5 only)
+1. `supabase--deploy_edge_functions` for `compute-risk`.
+2. `supabase--curl_edge_functions` POST to `/compute-risk?debug=true` with `{ "symbol": "TCS", "benchmark": "NIFTYIT", "force_beta_refresh": true }`.
 
-- `supabase/functions/compute-risk/index.ts` — `BENCHMARK_MAP` IDs, `interval:"1D"`, sanity-check helper + call site.
-- New migration: `DELETE FROM benchmark_cache WHERE symbol IN ('NIFTYIT','NIFTYAUTO','NIFTYPHARMA','NIFTYFMCG','NIFTY100','NIFTY','BANKNIFTY');` (or equivalent by `id`).
+## Step 3 — Decision matrix on the returned payload
 
-## Out of scope (deferred)
+Evaluate in this order; first one that fires wins:
 
-- Task 2.4 progression — still blocked until success bands hit.
-- Removing `?debug=true` instrumentation — keep one more cycle, prune after Beta values are confirmed stable.
+| Test | Fires when | Diagnosis | Proposed one-line fix |
+|---|---|---|---|
+| **Length audit** | `length_mismatch === true` OR `stock_slice_offset !== bench_slice_offset` OR either offset > 0 | Hypothesis A confirmed via the `dailyReturns()` `prev>0` filter desynchronizing arrays | Replace `dailyReturns` for the beta path with a paired version that walks both arrays together and emits returns only when both `prev > 0` |
+| **Hypothesis A row-by-row** | `hypoA[i].same_prev_date` is consistent AND lengths match but `correlation` still ~0.3 | Off-by-one not at the indexing layer — recheck date join | Investigate `alignByDate` for duplicate-date handling |
+| **Hypothesis B counts** | `bench_return_exactly_zero > 20` OR `stock_return_exactly_zero > 20` OR `both_near_zero > 20` | Forward-filled stale rows crushing variance/covariance | Drop rows where either return is < 1e-6 from the beta calc |
+| **Hypothesis C** | Any single-day TCS `|return| > 0.15` not matching a known earnings/news date | FinEdge adjusted vs Dhan unadjusted mismatch (but TCS has no recent splits → unlikely) | Source closes from a single adjusted feed |
+| **Hypothesis D** | `beta_manual !== betaVal` OR cov/var divisors differ | Math error in beta() / variance() / covariance() | Fix the offending divisor |
+| **None fire** | All four clean but beta still 0.23 | Unknown — return the full 660-row aligned series as a CSV artifact and escalate to Super Agent | (n/a) |
 
-Approve to execute Step 1 probes.
+## Step 4 — Deliverable to user
+
+A single report containing:
+1. Which hypothesis fired (one of A/B/C/D, or "none → escalate").
+2. The 5–10 specific rows from the debug payload that prove it.
+3. The proposed one-line fix.
+4. **No code changes** — wait for approval.
+
+If none fire: write `/mnt/documents/tcs_aligned_series.csv` with the full 660-row aligned tuples and emit a `<presentation-artifact>` tag for download, then escalate.
+
+## Files touched
+
+- `supabase/functions/compute-risk/index.ts` — additive debug-only block.
+
+Approve to execute.
