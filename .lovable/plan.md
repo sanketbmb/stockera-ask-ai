@@ -1,73 +1,114 @@
+
 ## Goal
-Diagnose why constituent stocks show Beta 0.23–0.50 vs their own sector index (mathematically near-impossible). Return debug payload first, then propose a fix.
 
-## Hypothesis (highest-likelihood bug)
+Validate disputed Dhan index `security_id` mappings against the **live Dhan API** (not our own seed migration) before changing `BENCHMARK_MAP` in `compute-risk`. Then apply the verified fix, re-run all 5 stocks, and add a defensive daily sanity check so a future Dhan re-mapping cannot silently corrupt Beta in production.
 
-`compute-risk/index.ts` line 192–194:
+## Step 1 — Verification probes (no code changes yet)
+
+Use `supabase--curl_edge_functions` to call `dhan-fetch` seven times with a 5-day daily window ending today. Body for each call:
+
+```json
+{
+  "endpoint": "historical",
+  "securityId": "<ID>",
+  "exchangeSegment": "IDX_I",
+  "params": {
+    "instrument": "INDEX",
+    "fromDate": "<today-7>",
+    "toDate":   "<today>",
+    "interval": "1D"
+  }
+}
+```
+
+Probes:
+
+| Index        | security_id | Expected close (May 2026) | Purpose |
+|--------------|-------------|---------------------------|---------|
+| NIFTYIT      | 27          | 38,000–39,000             | Verify proposed ID |
+| NIFTYAUTO    | 35          | 23,000–24,000             | Verify proposed ID |
+| NIFTYPHARMA  | 31          | 21,000–22,000             | Verify proposed ID |
+| NIFTYFMCG    | 23          | 55,000–57,000             | Verify proposed ID |
+| NIFTY100     | 17          | 24,000–25,000             | Verify proposed ID |
+| NIFTY        | 13          | 24,000–25,000             | Confirm `interval:"1D"` removes weekend rows |
+| BANKNIFTY    | 25          | 52,000–55,000             | Confirm `interval:"1D"` removes weekend rows |
+
+For each: report latest close, candle count, and list any non-weekday dates.
+
+## Step 2 — Decision tree (gate before fix)
+
+- **All 7 close prices land in expected bands AND no Sunday/Saturday rows for NIFTY/BANKNIFTY** → proceed to Step 3.
+- **Any ID returns a wrong-magnitude close** → STOP. Fetch `https://images.dhan.co/api-data/api-scrip-master.csv`, grep for the index name, report the matching row(s) back in chat. Do not change `BENCHMARK_MAP` until user picks the correct ID.
+- **Daily candles still contain weekend rows even with `interval:"1D"`** → STOP. The interval param isn't the (full) fix. Dump the raw Dhan response for one probe and reassess.
+- **Levels slightly off (1–3%)** → accepted, proceed.
+
+Present the probe table + decision in chat and wait for user approval before any code edits.
+
+## Step 3 — Apply fix (only after Step 2 passes)
+
+Edit `supabase/functions/compute-risk/index.ts`:
+
+1. Update `BENCHMARK_MAP` entries for `NIFTYIT`, `NIFTYAUTO`, `NIFTYPHARMA`, `NIFTYFMCG`, `NIFTY100` to the verified IDs (27, 35, 31, 23, 17 — assuming probes pass).
+2. In `fetchBenchmarkFromDhan()` add `interval: "1D"` to the `params` object passed to `dhan-fetch`.
+3. Keep the existing `?debug=true` instrumentation in place (don't revert it yet — still useful for post-fix verification).
+
+Then:
+4. Purge `benchmark_cache` rows for the affected indices via `supabase--migration` (DELETE WHERE id IN (...)).
+5. Deploy `compute-risk` via `supabase--deploy_edge_functions`.
+
+## Step 4 — Re-run all 5 stocks with `?force_beta_refresh=true`
+
+Curl `compute-risk` for: RELIANCE/NIFTY, TCS/NIFTYIT, INFY/NIFTYIT, HDFCBANK/BANKNIFTY, ICICIBANK/BANKNIFTY.
+
+Success bands (any miss → return debug payload, do not tune):
+- TCS, INFY vs NIFTYIT: **0.85–1.15**
+- HDFCBANK, ICICIBANK vs BANKNIFTY: **0.85–1.15**
+- RELIANCE vs NIFTY: **0.9–1.2**
+- `intersection_days` rises from ~506 → ~660 for all
+- Zero weekend rows in any aligned tuple
+
+Report the new summary table.
+
+## Step 5 — Defensive sanity check (add in same deploy as Step 3)
+
+In `compute-risk/index.ts`, add a once-per-day-per-benchmark check. When `fetchBenchmarkFromDhan` returns, compare the latest close against a configurable sane range and log a `BENCHMARK_DATA_SUSPECT` warning if outside. Implementation outline:
+
 ```ts
-const d = new Date(ts[i] * 1000);
-out.push({ date: isoDate(d), close });
+const BENCHMARK_SANE_RANGE: Record<string, [number, number]> = {
+  NIFTY:       [20000, 30000],
+  BANKNIFTY:   [45000, 60000],
+  NIFTYIT:     [30000, 45000],
+  NIFTYAUTO:   [18000, 28000],
+  NIFTYPHARMA: [17000, 25000],
+  NIFTYFMCG:   [45000, 65000],
+  NIFTY100:    [20000, 28000],
+};
+
+function assertBenchmarkSane(symbol: string, latestClose: number) {
+  const range = BENCHMARK_SANE_RANGE[symbol];
+  if (!range) return;
+  const [lo, hi] = range;
+  if (latestClose < lo || latestClose > hi) {
+    console.warn(
+      `BENCHMARK_DATA_SUSPECT symbol=${symbol} latest_close=${latestClose} ` +
+      `expected=[${lo},${hi}] — possible Dhan security_id remap or wrong instrument`,
+    );
+  }
+}
 ```
 
-Dhan returns epoch **seconds**. `isoDate()` calls `d.toISOString().slice(0,10)` which is **UTC**. If Dhan timestamps land at 00:00 IST (= 18:30 UTC previous day), every benchmark date shifts back by 1 calendar day vs FinEdge stock dates (which appear to be IST trading-day strings like `2026-05-28`).
+Call it once per `fetchBenchmarkFromDhan` invocation after candles parse. Non-blocking — proceeds with the (possibly suspect) data so a transient mis-range doesn't take risk computation offline; the warning surfaces in `supabase--edge_function_logs` for monitoring.
 
-Result: when `alignByDate` joins on `date`, Monday's stock close gets paired with Sunday's "benchmark close" — which is actually **Monday's** index close mis-labelled. Net effect: stock returns are correlated with the **next** day's index returns → correlation collapses from ~0.95 to ~0.3, beta shrinks toward 0.
+Ranges are intentionally wide (±25%) so normal market moves don't trip them; only an order-of-magnitude wrong instrument or a re-mapped ID will fire.
 
-This matches the observed pattern exactly: nonzero but heavily attenuated beta, low R², and the misalignment count discrepancy mentioned in the prior turn (676 aligned of 750 stock-days).
+## Files touched (Step 3 + 5 only)
 
-Secondary suspects to check in the dump:
-- NIFTYIT security_id mismatch: `BENCHMARK_MAP.NIFTYIT = "29"` in code vs `"27"` in the seed migration — code wins (direct Dhan fetch ignores `stock_master`), but "29" may not actually be NIFTY IT.
-- Returns computed from **aligned closes** that may not be consecutive trading days (gap-spanning returns still pair correctly but distort variance).
+- `supabase/functions/compute-risk/index.ts` — `BENCHMARK_MAP` IDs, `interval:"1D"`, sanity-check helper + call site.
+- New migration: `DELETE FROM benchmark_cache WHERE symbol IN ('NIFTYIT','NIFTYAUTO','NIFTYPHARMA','NIFTYFMCG','NIFTY100','NIFTY','BANKNIFTY');` (or equivalent by `id`).
 
-## Step 1 — Add debug payload (no behaviour change without `?debug=true`)
+## Out of scope (deferred)
 
-In `supabase/functions/compute-risk/index.ts`:
+- Task 2.4 progression — still blocked until success bands hit.
+- Removing `?debug=true` instrumentation — keep one more cycle, prune after Beta values are confirmed stable.
 
-1. Parse `?debug=true` from the request URL.
-2. In the benchmark-compute branch (after `alignByDate`), build a debug object:
-   ```ts
-   {
-     return_type: "simple_arithmetic",
-     date_join: "ISO YYYY-MM-DD string equality, UTC-derived from Dhan epoch_sec",
-     stock_days: stockCandles.length,
-     bench_days: bench.candles.length,
-     intersection_days: aligned.a.length,
-     dropped_stock_only: stockCandles.length - aligned.a.length,
-     dropped_bench_only: bench.candles.length - aligned.a.length,
-     stock_date_range: [stock[0].date, stock.at(-1).date],
-     bench_date_range: [bench.candles[0].date, bench.candles.at(-1).date],
-     first_10: <first 10 aligned tuples>,
-     last_10:  <last 10 aligned tuples>,
-   }
-   ```
-   Each tuple: `{ date, stock_close, stock_return, bench_close, bench_return }` (returns computed in-place from the aligned arrays).
-3. Also include 5 sample raw Dhan rows: `{ raw_ts, ist_date, utc_date, close }` where `ist_date = isoDate(new Date(ts*1000 + 5.5*3600*1000))` so we can visually confirm the timezone shift.
-4. Attach as `debug: {...}` on the JSON response **only** when `debug=true`. Production calls stay byte-identical.
-
-## Step 2 — Run TCS vs NIFTYIT with debug
-
-Single curl via `supabase--curl_edge_functions`:
-```
-POST /compute-risk?debug=true
-{ "symbol": "TCS", "benchmark": "NIFTYIT", "force_beta_refresh": true }
-```
-
-Return the full `debug` block and the computed beta/correlation. Compare the first-10 / last-10 tuples — if `bench_date` is consistently 1 calendar day behind `stock_date` after alignment (or if many stock dates have no match), the timezone hypothesis is confirmed.
-
-## Step 3 — Report findings, do NOT fix yet
-
-Per the user's instruction, stop after the debug dump. Present:
-- Which of the 5 candidate bugs the dump points to (timezone, string vs Date, forward-fill, off-by-one, holiday handling, or truncation).
-- Proposed one-line fix (likely: shift Dhan ts to IST before `isoDate`, i.e. `new Date(ts*1000 + 19800000)`).
-- Expected impact (TCS beta should jump from 0.23 → 0.9–1.1).
-
-Wait for approval before applying the fix and re-running all 5 stocks.
-
-## Files touched
-- `supabase/functions/compute-risk/index.ts` — add debug branch only (additive, gated by query param).
-
-## Deploy + invoke
-- `supabase--deploy_edge_functions` for `compute-risk`.
-- `supabase--curl_edge_functions` for the TCS probe.
-
-Approve to execute.
+Approve to execute Step 1 probes.
