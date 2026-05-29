@@ -417,7 +417,7 @@ Deno.serve(async (req) => {
 
         if (fetched.length === 0) {
           formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol);
+          const fallback = await fetchMarketaux(symbol, callerAuth);
           callsThisRequest += 1;
           articlesThisRequest += fallback.length;
           if (fallback.length > 0) {
