@@ -139,9 +139,6 @@ Deno.serve(async (req) => {
     }
 
     /** Upstream fetch with Dhan auth headers */
-    if (endpoint === "historical") {
-      console.log("dhan-fetch historical upstream body:", JSON.stringify(upstreamBody));
-    }
     const upstream = await fetch(url, {
       method,
       headers: {
