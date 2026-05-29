@@ -1,94 +1,103 @@
-
 ## Goal
 
-Determine whether the TCS Beta collapse is caused by a FinEdge stock-data issue. Run a read-only diff probe comparing FinEdge `daily-quotes` vs Dhan `historical EQUITY` close series for **TCS + 2 controls (RELIANCE, HDFCBANK)**. Return diagnosis + recommendation only. **No code changes to `compute-risk` or any feed switch in this round.**
+Land the root-cause fix for the Beta collapse: align Dhan bench candles by **IST date** instead of UTC date, purge the corrupted `benchmark_cache`, audit the rest of the codebase for the same bug pattern, and re-verify all 5 stocks meet the success bands.
 
-## Step 1 — Build a one-shot probe script
+## Step 1 — Surgical fix in `fetchBenchmarkFromDhan()` (`supabase/functions/compute-risk/index.ts`)
 
-A throwaway Deno script (run via `deno run` against the deployed `finedge-fetch` and `dhan-fetch` edge functions, authenticated with the same JWT the app uses) that, for each of `{TCS, RELIANCE, HDFCBANK}`:
+Replace the current UTC-derived date key + weekend filter with IST conversion:
 
-1. Calls `finedge-fetch daily-quotes` for the full overlap range (2023-09-04 → 2026-05-28).
-2. Calls `dhan-fetch historical` with `instrument: "EQUITY"`, `exchangeSegment: "NSE_EQ"` and the correct security IDs:
-   - TCS: 11536
-   - RELIANCE: 2885
-   - HDFCBANK: 1333
-3. Aligns by date (intersection only; no weekend filtering needed — both are daily closes).
-4. Builds a diff row per date: `date | finedge_close | dhan_close | abs_diff | pct_diff`.
+```ts
+// Dhan timestamps are midnight IST expressed as Unix seconds.
+// Convert to IST date string by adding 5h30m (19800 s) before slicing.
+const date = new Date((ts[i] + 19800) * 1000).toISOString().slice(0, 10);
+// (delete the getUTCDay() weekend filter — IST dates of weekend trading don't exist)
+```
 
-## Step 2 — Sampled diff table (per stock)
+Reframe the `BENCHMARK_CALENDAR_BUG` assertion:
+- **Old:** weekend rows present → flag.
+- **New:** (a) no duplicate date keys, and (b) `bench_days / years ≥ 220` average. Either failure raises `BENCHMARK_CALENDAR_BUG` with the offending stat.
 
-For each stock, print:
+Leave `CALENDAR_DRIFT` (intersection-gap) check unchanged.
 
-- First 10 overlapping trading days (Sept 2023)
-- 10 random days from mid-2024
-- 10 random days from mid-2025
-- Last 10 trading days (May 2026)
+## Step 2 — Purge `benchmark_cache`
 
-Plus aggregates over the **full** series: `mean_pct_diff`, `max_abs_pct_diff`, `count(pct_diff > 0.1%)`, `count(pct_diff > 1%)`.
+Apply the previously-staged migration: `DELETE FROM benchmark_cache;` (all indices, all rows). Forces every Beta recompute to refetch from Dhan with the corrected alignment.
 
-## Step 3 — TCS raw-payload dump (May 11–19, 2026)
+## Step 3 — Cross-module audit (read-only grep)
 
-Print the **raw FinEdge JSON** for TCS over 2026-05-11 → 2026-05-19, untrimmed. Goal: see the exact close FinEdge reports for the −3.94% NIFTYIT day, side by side with Dhan's close for the same dates.
+Grep the **entire repo** (not just `supabase/functions/`) for these three patterns:
 
-## Step 4 — ISIN / identifier drift check
+1. `new Date(... * 1000)` — any Unix-seconds → Date conversion
+2. `.getUTCDay(` — any UTC weekday check
+3. `.toISOString().slice(0, 10)` and `.toISOString().substring(0, 10)` — any UTC date-string derivation
 
-For each stock's FinEdge response, extract whatever instrument-identifier fields are present (`symbol`, `isin`, `exchange`, `series` — whatever the payload carries) at the **first**, **middle**, and **last** observations. Assert constant. Expected:
+For each hit, classify:
 
-- TCS ISIN: `INE467B01029`
-- RELIANCE ISIN: `INE002A01018`
-- HDFCBANK ISIN: `INE040A01034`
+| Classification | Meaning |
+|---|---|
+| **SAFE** | Source timestamp is already UTC-noon (FinEdge `quote_date` is a date string, not a unix ts — these never appear together) OR the code is intentionally UTC (logs, cache TTLs). |
+| **BUG-HIGH** | Same pattern as the bench bug, in a path that affects user-facing scores (technicals, fundamentals, momentum, risk, AI report). |
+| **BUG-MEDIUM** | Same pattern but only affects internal telemetry / admin views. |
 
-Flag any mid-series drift as `INSTRUMENT_DRIFT`.
+Report per-file findings. Do **not** fix any non-bench occurrences in this round — log them as tech debt per the user's instruction. The bench fix in Step 1 is the only code change.
 
-## Step 5 — Corporate-action sanity check (TCS only)
+Files to scrutinize most carefully (touch Dhan timestamps):
+- `supabase/functions/compute-risk/index.ts` (other uses besides bench)
+- `supabase/functions/compute-technicals/index.ts`
+- `supabase/functions/compute-fundamentals/index.ts`
+- `supabase/functions/fetch-stock-data/index.ts`
+- `supabase/functions/get-price-data/index.ts`
+- `supabase/functions/dhan-fetch/index.ts` (passthrough only, but verify)
 
-Known TCS dividends in the window:
-- 2024: ₹76 special + ₹10 final
-- 2025: ₹66 special
+## Step 4 — Deploy & re-run
 
-For each, check the FinEdge close on the trading day **before** vs **on** the ex-date. Compute the implied jump and compare to Dhan's same-day pair. If FinEdge shows continuous (back-adjusted) prices and Dhan shows the dividend-sized gap, that's an **adjustment-policy difference**, not a bug — and likely the entire explanation for the Beta collapse.
+1. Deploy `compute-risk`.
+2. Run the cache purge.
+3. Invoke `compute-risk` with `force_beta_refresh: true` for all 5 stocks: TCS, INFY, HDFCBANK, ICICIBANK, RELIANCE.
+4. Also run the TCS debug probe (`debug: true`) for the full diagnostic table.
 
-## Step 6 — Decision matrix (report-only)
+## Step 5 — Validate against success bands
 
-Apply the user's decision matrix and emit one of `{CASE_1, CASE_2_TCS_ONLY, CASE_3_SYSTEMIC, CASE_4_BOTH_WRONG}` with the supporting evidence:
+Emit one summary table with the columns:
 
-| Case | Signature | Recommendation surfaced |
-|---|---|---|
-| 1 | All 3 stocks: pct_diff < 0.1% always | FinEdge OK. Re-investigate `dailyReturns()` / array-truncation in compute-risk. Do not switch feeds. |
-| 2 | Only TCS has large divergence | TCS-specific FinEdge issue. Propose per-stock `data_source` column in `stock_master`. |
-| 3 | All 3 stocks systematically diverge | Adjustment-policy mismatch. **Cross-check vs NSE bhavcopy for 2026-05-27 before any feed switch.** |
-| 4 | FinEdge ≈ Dhan, both ≠ bhavcopy | Escalate to Super Agent. |
+`stock | benchmark | bench_days | intersection_days | beta | correlation | r² | pass/fail`
 
-For Case 1 specifically, also surface the **next** debug step we'd take inside `compute-risk` (instrumenting `dailyReturns()` to log array lengths + first/last 5 values per leg for TCS), but do **not** implement it yet.
+**Pass criteria (all must hit):**
+- `bench_days ≥ 650`
+- `intersection_days ≥ 640`
+- TCS Beta vs NIFTYIT: 0.85–1.15
+- INFY Beta vs NIFTYIT: 0.85–1.15
+- HDFCBANK Beta vs BANKNIFTY: 0.85–1.15
+- ICICIBANK Beta vs BANKNIFTY: 0.85–1.15
+- RELIANCE Beta vs NIFTY: 0.9–1.2
+- All correlations: 0.6–0.85
+- `BENCHMARK_CALENDAR_BUG` silent on all 5 runs
 
-## Step 7 — Cross-module risk flag
+If any band misses, **stop and report** — do not proceed to Commit 2.
 
-Regardless of case, explicitly state in the report whether the finding implicates `compute-technicals` and `compute-fundamentals` (they both consume FinEdge `daily-quotes` / `financials`). If Case 2/3/4 fires, flag that prior scores may need re-validation. If Case 1, state explicitly that other modules are unaffected.
+## Step 6 — Commit boundaries (SEBI audit trail)
 
-## Deliverable
+- **Commit 1 (this round):** IST conversion in `fetchBenchmarkFromDhan()` + assertion reframe + `benchmark_cache` purge migration.
+- **Commit 2 (next round, only after Commit 1 is green):** Deferred sector index ID corrections — NIFTY100: 24→17, NIFTYAUTO: 27→14, NIFTYPHARMA: 33→32. Re-run affected stocks after.
 
-Single report containing:
+## Tech debt logged (not fixed this round)
 
-1. Per-stock sampled diff tables (40 rows × 3 stocks).
-2. Per-stock full-series aggregate stats.
-3. Raw FinEdge TCS payload for 2026-05-11 → 2026-05-19, plus matching Dhan slice.
-4. ISIN-drift assertion result per stock.
-5. TCS corporate-action adjustment comparison.
-6. Case verdict + evidence.
-7. Cross-module risk statement.
-8. Recommended next action — **no code changes applied**.
+1. **`toISTDateString(unixSeconds)` shared helper** — single canonical conversion used by every future Unix-ts handler. Add under `supabase/functions/_shared/`.
+2. **FinEdge ISIN/series exposure** — vendor-pressure item; ask FinEdge to add to `daily-quotes` for SEBI traceability.
+3. **`nse_trading_calendar` table** — still useful for momentum/sentiment windowing.
+4. Any additional **BUG-HIGH / BUG-MEDIUM** hits found in Step 3 grep — log with file:line + severity.
 
-## Explicit non-actions this round
+## Explicit non-actions
 
-- No edits to `supabase/functions/compute-risk/index.ts`.
-- No changes to any feed selection or `stock_master` schema.
-- No new migrations. (The previously-staged `DELETE FROM benchmark_cache` migration stays unapplied until weekend-filter follow-up is closed out separately.)
-- No changes to `compute-technicals` or `compute-fundamentals`.
-- Deferred sector-ID corrections (NIFTY100/AUTO/PHARMA) remain queued.
+- No switch to NSE bhavcopy. Vendors are clean.
+- No "data validation layer" scaffolding (Phase 2.8 territory).
+- No edits to `compute-technicals` / `compute-fundamentals` / other modules in this round, even if Step 3 surfaces same-pattern bugs — those become Commit 3+ items.
+- No new schema beyond the cache purge.
 
-## Files touched
+## Files touched (Commit 1)
 
-- One throwaway probe script (not committed; run from sandbox against deployed edge functions).
-- No project source files.
+- `supabase/functions/compute-risk/index.ts` — IST conversion in `fetchBenchmarkFromDhan()`, assertion reframe.
+- One new migration: `DELETE FROM benchmark_cache;`
+- `.lovable/plan.md` — updated to reflect closeout.
 
-Approve to switch to build mode and run the probe.
+Approve to switch to build mode and execute Steps 1–5.
