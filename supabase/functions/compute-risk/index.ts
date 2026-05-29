@@ -567,7 +567,7 @@ Deno.serve(async (req) => {
       const bench = await resolveBenchmark(benchmarkSymbol, auth, log);
       if (bench) {
         benchUsed = bench.symbol;
-        const aligned = alignByDate(stock, bench.candles);
+        const aligned = alignByDate(stock, bench.candles, { symbol, benchmark: bench.symbol });
         if (aligned.a.length >= MIN_DAYS_REQUIRED) {
           const sR = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1));
           const bR = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1));
