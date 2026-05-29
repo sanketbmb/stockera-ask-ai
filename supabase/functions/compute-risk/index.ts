@@ -728,7 +728,9 @@ Deno.serve(async (req) => {
       signals,
       risk_score: riskScore,
       risk_classification: classification,
+      ...(debugPayload ? { debug: debugPayload } : {}),
     });
+
   } catch (e) {
     console.error("compute-risk:", e);
     return json({ success: false, error: "INTERNAL_ERROR", details: String(e) }, 500);
