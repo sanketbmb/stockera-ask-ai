@@ -58,18 +58,21 @@ async function sbSelect<T = unknown>(path: string): Promise<T | null> {
 async function callModule(
   fnName: string,
   body: Record<string, unknown>,
-  callerAuth: string | null,
+  _callerAuth: string | null,
 ): Promise<{ trace: ModuleTrace; data: Record<string, unknown> | null }> {
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), MODULE_TIMEOUT_MS);
   try {
+    // Orchestrator→module calls are trusted internal calls. We use the service-role
+    // key as Bearer so the gateway's verify_jwt check passes regardless of whether
+    // the original caller is anonymous or has a stale session token.
     const res = await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: ANON_KEY,
-        authorization: callerAuth ?? `Bearer ${ANON_KEY}`,
+        apikey: SERVICE_KEY,
+        authorization: `Bearer ${SERVICE_KEY}`,
       },
       body: JSON.stringify(body),
       signal: ctrl.signal,
