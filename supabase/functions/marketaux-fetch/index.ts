@@ -1,4 +1,6 @@
-// Marketaux news API wrapper
+// Marketaux news API wrapper (thin passthrough)
+// Plan: Basic ($24/mo) — 2,500 calls/day, up to 20 articles per call.
+// Callers control `limit` via params (default recommendation: 20).
 // Endpoints: news/all, news/by-symbol
 
 const CORS_HEADERS = {
