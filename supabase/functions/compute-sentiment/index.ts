@@ -157,7 +157,7 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
 }
 
 // ───────────────── Marketaux fetch (via wrapper) ─────────────────
-async function fetchMarketaux(symbols: string): Promise<Article[]> {
+async function fetchMarketaux(symbols: string, callerAuth: string | null): Promise<Article[]> {
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 19); // YYYY-MM-DDTHH:MM:SS
@@ -165,8 +165,8 @@ async function fetchMarketaux(symbols: string): Promise<Article[]> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ANON_KEY}`,
       apikey: ANON_KEY,
+      authorization: callerAuth ?? `Bearer ${ANON_KEY}`,
     },
     body: JSON.stringify({
       endpoint: "news/all",
@@ -360,6 +360,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
 
   try {
+    const callerAuth = req.headers.get("authorization");
     const body = await req.json().catch(() => ({}));
     const rawSymbol = String(body?.symbol ?? "").trim().toUpperCase();
     if (!rawSymbol) return json({ success: false, error: "symbol required" }, 400);
@@ -409,14 +410,14 @@ Deno.serve(async (req) => {
 
       try {
         formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`);
+        fetched = await fetchMarketaux(`${symbol}.NS`, callerAuth);
         callsThisRequest += 1;
         articlesThisRequest += fetched.length;
         symbol_format_used = `${symbol}.NS`;
 
         if (fetched.length === 0) {
           formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol);
+          const fallback = await fetchMarketaux(symbol, callerAuth);
           callsThisRequest += 1;
           articlesThisRequest += fallback.length;
           if (fallback.length > 0) {
