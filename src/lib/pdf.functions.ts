@@ -61,7 +61,7 @@ async function verifyPrintToken<T>(token: string): Promise<T | null> {
     if (!secret) return null;
     const key = await hmacKey(secret);
     const bodyBytes = b64urlDecode(bodyB64);
-    const ok = await crypto.subtle.verify("HMAC", key, b64urlDecode(sigB64), bodyBytes);
+    const ok = await crypto.subtle.verify("HMAC", key, b64urlDecode(sigB64) as BufferSource, bodyBytes as BufferSource);
     if (!ok) return null;
     const obj = JSON.parse(new TextDecoder().decode(bodyBytes)) as { exp?: number };
     if (!obj.exp || obj.exp < Math.floor(Date.now() / 1000)) return null;
