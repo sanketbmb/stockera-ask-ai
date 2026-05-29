@@ -474,6 +474,8 @@ async function writeBetaMeta(symbol: string, beta: number, corr: number, r2: num
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   try {
+    const url = new URL(req.url);
+    const debugMode = url.searchParams.get("debug") === "true";
     const body = await req.json().catch(() => ({})) as {
       symbol?: string;
       benchmark?: string;
@@ -484,6 +486,8 @@ Deno.serve(async (req) => {
     if (!symbol) return json({ success: false, error: "SYMBOL_REQUIRED" }, 400);
     const auth = req.headers.get("authorization");
     const log: string[] = [];
+    let debugPayload: Record<string, unknown> | null = null;
+
 
     // 1. Stock data
     let stockCandles: Candle[];
