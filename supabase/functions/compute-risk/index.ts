@@ -303,16 +303,38 @@ async function fetchSector(symbol: string, auth: string | null): Promise<string 
   } catch { return null; }
 }
 
-/** Intersect stock & benchmark by ISO date. */
+/** Intersect stock & benchmark by ISO date.
+ *  Logs CALENDAR_DRIFT for dates present on only one side (observability —
+ *  rows are NOT dropped beyond the natural intersection). Capped at 20 lines. */
 function alignByDate(
   stock: Candle[],
   bench: Array<{ date: string; close: number }>,
+  ctx?: { symbol?: string; benchmark?: string },
 ): { a: number[]; b: number[] } {
   const mb = new Map(bench.map((c) => [c.date, c.close]));
+  const ms = new Set(stock.map((c) => c.date));
   const a: number[] = [], b: number[] = [];
   for (const c of stock) {
     const bc = mb.get(c.date);
     if (bc !== undefined) { a.push(c.close); b.push(bc); }
+  }
+  // Symmetric difference — drift visibility for SEBI audit
+  let drift = 0;
+  const sym = ctx?.symbol ?? "?";
+  const bm = ctx?.benchmark ?? "?";
+  for (const c of stock) {
+    if (drift >= 20) break;
+    if (!mb.has(c.date)) {
+      console.warn(`CALENDAR_DRIFT: date=${c.date} present_in=stock missing_in=bench symbol=${sym} benchmark=${bm}`);
+      drift++;
+    }
+  }
+  for (const c of bench) {
+    if (drift >= 20) break;
+    if (!ms.has(c.date)) {
+      console.warn(`CALENDAR_DRIFT: date=${c.date} present_in=bench missing_in=stock symbol=${sym} benchmark=${bm}`);
+      drift++;
+    }
   }
   return { a, b };
 }
