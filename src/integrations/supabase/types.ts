@@ -465,6 +465,51 @@ export type Database = {
         }
         Relationships: []
       }
+      pdf_generation_log: {
+        Row: {
+          as_of_date: string | null
+          cache_hit: boolean
+          cache_key: string
+          created_at: string
+          duration_ms: number
+          error_message: string | null
+          horizon: string
+          id: string
+          include_news: boolean
+          success: boolean
+          symbol: string
+          user_id: string | null
+        }
+        Insert: {
+          as_of_date?: string | null
+          cache_hit?: boolean
+          cache_key: string
+          created_at?: string
+          duration_ms?: number
+          error_message?: string | null
+          horizon: string
+          id?: string
+          include_news?: boolean
+          success?: boolean
+          symbol: string
+          user_id?: string | null
+        }
+        Update: {
+          as_of_date?: string | null
+          cache_hit?: boolean
+          cache_key?: string
+          created_at?: string
+          duration_ms?: number
+          error_message?: string | null
+          horizon?: string
+          id?: string
+          include_news?: boolean
+          success?: boolean
+          symbol?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

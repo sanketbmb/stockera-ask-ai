@@ -31,6 +31,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
+import { Route as PrintSymbolRouteImport } from './routes/print.$symbol'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
@@ -150,6 +151,11 @@ const RQueryIdRoute = RQueryIdRouteImport.update({
   path: '/r/$queryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrintSymbolRoute = PrintSymbolRouteImport.update({
+  id: '/print/$symbol',
+  path: '/print/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -220,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
@@ -252,6 +259,7 @@ export interface FileRoutesByTo {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
@@ -285,6 +293,7 @@ export interface FileRoutesById {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
@@ -319,6 +328,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
@@ -351,6 +361,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
@@ -383,6 +394,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
@@ -416,6 +428,7 @@ export interface RootRouteChildren {
   AdminSuperRoute: typeof AdminSuperRoute
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  PrintSymbolRoute: typeof PrintSymbolRoute
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
@@ -577,6 +590,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/print/$symbol': {
+      id: '/print/$symbol'
+      path: '/print/$symbol'
+      fullPath: '/print/$symbol'
+      preLoaderRoute: typeof PrintSymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -664,6 +684,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminSuperRoute: AdminSuperRoute,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  PrintSymbolRoute: PrintSymbolRoute,
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
@@ -671,13 +692,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

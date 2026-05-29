@@ -1,12 +1,17 @@
 import { createFileRoute, useParams, useSearch, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { Navbar } from "@/components/layout/Navbar";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { supabase } from "@/integrations/supabase/client";
+import { generateAnalysisPdf } from "@/lib/pdf.functions";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
@@ -73,6 +78,9 @@ function AnalysisPage() {
           {includeNews ? "On" : "Off"}
         </Link>
         {isFetching && <span className="ml-2 text-[11px] text-muted-foreground">refreshing…</span>}
+        <div className="ml-auto">
+          <DownloadPdfButton symbol={symbol} horizon={horizon} includeNews={includeNews} disabled={!data} />
+        </div>
       </div>
 
       {isLoading && <LoadingState />}
@@ -106,3 +114,31 @@ function LoadingState() {
     </div>
   );
 }
+
+function DownloadPdfButton({
+  symbol, horizon, includeNews, disabled,
+}: { symbol: string; horizon: QueryType; includeNews: boolean; disabled?: boolean }) {
+  const generate = useServerFn(generateAnalysisPdf);
+  const [busy, setBusy] = useState(false);
+  const handleClick = async () => {
+    if (busy || disabled) return;
+    setBusy(true);
+    const t = toast.loading("Preparing PDF…");
+    try {
+      const res = await generate({ data: { symbol, horizon, include_news: includeNews } });
+      window.open(res.url, "_blank", "noopener,noreferrer");
+      toast.success(res.cache_hit ? "Loaded cached PDF" : "PDF ready", { id: t });
+    } catch (err) {
+      toast.error((err as Error).message || "Could not generate PDF", { id: t });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || disabled} className="gap-1.5">
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      <span className="text-xs">{busy ? "Generating…" : "Download PDF"}</span>
+    </Button>
+  );
+}
+
