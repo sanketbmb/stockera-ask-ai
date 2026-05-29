@@ -78,6 +78,9 @@ function AnalysisPage() {
           {includeNews ? "On" : "Off"}
         </Link>
         {isFetching && <span className="ml-2 text-[11px] text-muted-foreground">refreshing…</span>}
+        <div className="ml-auto">
+          <DownloadPdfButton symbol={symbol} horizon={horizon} includeNews={includeNews} disabled={!data} />
+        </div>
       </div>
 
       {isLoading && <LoadingState />}
