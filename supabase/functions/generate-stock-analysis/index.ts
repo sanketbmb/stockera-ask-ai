@@ -540,7 +540,7 @@ Deno.serve(async (req) => {
         overall_score: verdict.overall_score,
         risk_label: riskLabel(scores.risk),
         time_horizon: timeHorizonLabel(queryType),
-        summary_reason: summaryReason(scores),
+        summary_reason: summaryReason(scores, queryType),
       },
       score_breakdown: {
         technical_score:   scores.technical   ?? 0,
