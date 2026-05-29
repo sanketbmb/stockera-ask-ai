@@ -9,7 +9,7 @@ import {
   Compass, Eye, Flame, Gauge, HelpCircle, LineChart, Newspaper,
   ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp,
 } from "lucide-react";
-import { motion, AnimatePresence, useReducedMotion, useInView } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
