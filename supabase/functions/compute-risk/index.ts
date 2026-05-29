@@ -188,27 +188,33 @@ async function fetchBenchmarkFromDhan(symbol: string, auth: string | null): Prom
   for (let i = 0; i < ts.length; i++) {
     const close = Number(closes[i]);
     if (!Number.isFinite(close) || close <= 0) continue;
-    // Dhan timestamps are epoch seconds (IST market data).
-    // Dhan IDX_I emits Sunday/Saturday-stamped rows for some indices —
-    // filter them out before they pollute the date-aligned beta calc.
-    const d = new Date(ts[i] * 1000);
-    const wd = d.getUTCDay(); // 0=Sun, 6=Sat
-    if (wd === 0 || wd === 6) continue;
-    out.push({ date: isoDate(d), close });
+    // Dhan timestamps are midnight IST expressed as Unix seconds
+    // (e.g. 1778437800 = 2026-05-10 18:30:00 UTC = 2026-05-11 00:00:00 IST).
+    // Convert to IST date string by shifting +5h30m (19800s) before slicing,
+    // so the bench key matches FinEdge's IST-based quote_date on the stock side.
+    const date = new Date((ts[i] + 19800) * 1000).toISOString().slice(0, 10);
+    out.push({ date, close });
   }
   out.sort((a, b) => a.date.localeCompare(b.date));
 
-  // Guardrail: assert no weekend rows survived. If Dhan ever changes its
-  // timestamp timezone, this fires before bad data hits production.
-  const sundayCount = out.filter((r) => new Date(r.date).getUTCDay() === 0).length;
-  const saturdayCount = out.filter((r) => new Date(r.date).getUTCDay() === 6).length;
-  if (sundayCount > 0 || saturdayCount > 0) {
+  // Guardrail: (a) no duplicate date keys, (b) ≥220 trading days/year on average.
+  // Either failure means the timestamp→date mapping is wrong again.
+  const dateSet = new Set(out.map((r) => r.date));
+  const duplicates = out.length - dateSet.size;
+  const firstDate = out[0]?.date;
+  const lastDate = out[out.length - 1]?.date;
+  const years = firstDate && lastDate
+    ? Math.max(0.25, (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 86_400_000))
+    : 1;
+  const daysPerYear = out.length / years;
+  if (duplicates > 0 || daysPerYear < 220) {
     console.error(
-      `BENCHMARK_CALENDAR_BUG: ${sundayCount} Sun, ${saturdayCount} Sat survived filter for benchmark=${symbol}`,
+      `BENCHMARK_CALENDAR_BUG: benchmark=${symbol} rows=${out.length} duplicates=${duplicates} daysPerYear=${daysPerYear.toFixed(1)} span=${firstDate}..${lastDate}`,
     );
   }
   return out;
 }
+
 
 /** Read cached benchmark candles if fresh enough (TTL hours). */
 async function readBenchmarkCache(symbol: string): Promise<Array<{ date: string; close: number }> | null> {
