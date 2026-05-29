@@ -1,106 +1,94 @@
 
 ## Goal
 
-Fix Beta collapse (TCS 0.23 → expected 0.85–1.15) by filtering Sunday/Saturday rows out of Dhan IDX_I benchmark candles. No alignByDate changes, no math changes, no source switch. Two clean commits afterward: this fix, then the deferred sector-ID corrections.
+Determine whether the TCS Beta collapse is caused by a FinEdge stock-data issue. Run a read-only diff probe comparing FinEdge `daily-quotes` vs Dhan `historical EQUITY` close series for **TCS + 2 controls (RELIANCE, HDFCBANK)**. Return diagnosis + recommendation only. **No code changes to `compute-risk` or any feed switch in this round.**
 
-## Step 1 — Weekend filter in `fetchBenchmarkFromDhan()`
+## Step 1 — Build a one-shot probe script
 
-File: `supabase/functions/compute-risk/index.ts`.
+A throwaway Deno script (run via `deno run` against the deployed `finedge-fetch` and `dhan-fetch` edge functions, authenticated with the same JWT the app uses) that, for each of `{TCS, RELIANCE, HDFCBANK}`:
 
-Inside the loop that walks the Dhan historical response (where `ts[i]`, `close[i]`, etc. are read into the row array), insert at the top of the loop body, before pushing the row:
+1. Calls `finedge-fetch daily-quotes` for the full overlap range (2023-09-04 → 2026-05-28).
+2. Calls `dhan-fetch historical` with `instrument: "EQUITY"`, `exchangeSegment: "NSE_EQ"` and the correct security IDs:
+   - TCS: 11536
+   - RELIANCE: 2885
+   - HDFCBANK: 1333
+3. Aligns by date (intersection only; no weekend filtering needed — both are daily closes).
+4. Builds a diff row per date: `date | finedge_close | dhan_close | abs_diff | pct_diff`.
 
-```ts
-const wd = new Date(ts[i] * 1000).getUTCDay(); // 0=Sun, 6=Sat
-if (wd === 0 || wd === 6) continue;
-```
+## Step 2 — Sampled diff table (per stock)
 
-That's it for the production path. No changes to `alignByDate()`, `dailyReturns()`, `covariance()`, or any divisor. Intersection-by-date is left to do its job — once Sundays are gone from the bench side, the intersection will naturally include every shared NSE trading day (Diwali, Holi, long weekends included).
+For each stock, print:
 
-## Step 2 — Permanent guardrail (post-filter assertion)
+- First 10 overlapping trading days (Sept 2023)
+- 10 random days from mid-2024
+- 10 random days from mid-2025
+- Last 10 trading days (May 2026)
 
-Immediately after the row array is fully built in `fetchBenchmarkFromDhan()`, before returning / caching:
+Plus aggregates over the **full** series: `mean_pct_diff`, `max_abs_pct_diff`, `count(pct_diff > 0.1%)`, `count(pct_diff > 1%)`.
 
-```ts
-const sundayCount = filteredRows.filter(
-  (r) => new Date(r.date).getUTCDay() === 0,
-).length;
-const saturdayCount = filteredRows.filter(
-  (r) => new Date(r.date).getUTCDay() === 6,
-).length;
-if (sundayCount > 0 || saturdayCount > 0) {
-  console.error(
-    `BENCHMARK_CALENDAR_BUG: ${sundayCount} Sun, ${saturdayCount} Sat survived filter for benchmark=${benchmarkSymbol}`,
-  );
-}
-```
+## Step 3 — TCS raw-payload dump (May 11–19, 2026)
 
-(Variable names adapted to whatever the actual row array + benchmark symbol are called in scope — I'll match them when implementing.)
+Print the **raw FinEdge JSON** for TCS over 2026-05-11 → 2026-05-19, untrimmed. Goal: see the exact close FinEdge reports for the −3.94% NIFTYIT day, side by side with Dhan's close for the same dates.
 
-## Step 3 — Calendar-drift visibility (no row dropping)
+## Step 4 — ISIN / identifier drift check
 
-In `alignByDate()`, after building the intersection, compute the symmetric difference between the stock-date set and the bench-date set (already trivially available from the existing code). For each date present on one side but not the other, log:
+For each stock's FinEdge response, extract whatever instrument-identifier fields are present (`symbol`, `isin`, `exchange`, `series` — whatever the payload carries) at the **first**, **middle**, and **last** observations. Assert constant. Expected:
 
-```ts
-console.warn(
-  `CALENDAR_DRIFT: date=${d} present_in=${side} missing_in=${other} symbol=${symbol} benchmark=${benchmark}`,
-);
-```
+- TCS ISIN: `INE467B01029`
+- RELIANCE ISIN: `INE002A01018`
+- HDFCBANK ISIN: `INE040A01034`
 
-Cap at 20 lines per call to avoid log spam. **No rows are dropped, no pairs filtered.** This is observability only — per the user's SEBI-defensibility requirement, we surface drift rather than hide it.
+Flag any mid-series drift as `INSTRUMENT_DRIFT`.
 
-## Step 4 — Purge `benchmark_cache`
+## Step 5 — Corporate-action sanity check (TCS only)
 
-Run a one-shot SQL via the insert tool:
+Known TCS dividends in the window:
+- 2024: ₹76 special + ₹10 final
+- 2025: ₹66 special
 
-```sql
-DELETE FROM public.benchmark_cache;
-```
+For each, check the FinEdge close on the trading day **before** vs **on** the ex-date. Compute the implied jump and compare to Dhan's same-day pair. If FinEdge shows continuous (back-adjusted) prices and Dhan shows the dividend-sized gap, that's an **adjustment-policy difference**, not a bug — and likely the entire explanation for the Beta collapse.
 
-(Confirming the table name from the codebase before executing — if it's named differently, the actual cache table gets truncated.)
+## Step 6 — Decision matrix (report-only)
 
-## Step 5 — Deploy + re-run all 5 stocks
+Apply the user's decision matrix and emit one of `{CASE_1, CASE_2_TCS_ONLY, CASE_3_SYSTEMIC, CASE_4_BOTH_WRONG}` with the supporting evidence:
 
-1. `supabase--deploy_edge_functions` for `compute-risk`.
-2. Call `compute-risk` with `force_beta_refresh: true` for each of the 5 stocks against its primary benchmark:
-   - TCS vs NIFTYIT
-   - INFY vs NIFTYIT
-   - HDFCBANK vs BANKNIFTY
-   - ICICIBANK vs BANKNIFTY
-   - RELIANCE vs NIFTY
-3. For TCS, also pull `?debug=true` once to confirm `bench_days` jumped from 676 → ~700+ and `intersection_days` from 506 → ~660+.
+| Case | Signature | Recommendation surfaced |
+|---|---|---|
+| 1 | All 3 stocks: pct_diff < 0.1% always | FinEdge OK. Re-investigate `dailyReturns()` / array-truncation in compute-risk. Do not switch feeds. |
+| 2 | Only TCS has large divergence | TCS-specific FinEdge issue. Propose per-stock `data_source` column in `stock_master`. |
+| 3 | All 3 stocks systematically diverge | Adjustment-policy mismatch. **Cross-check vs NSE bhavcopy for 2026-05-27 before any feed switch.** |
+| 4 | FinEdge ≈ Dhan, both ≠ bhavcopy | Escalate to Super Agent. |
 
-## Step 6 — Deliverable
+For Case 1 specifically, also surface the **next** debug step we'd take inside `compute-risk` (instrumenting `dailyReturns()` to log array lengths + first/last 5 values per leg for TCS), but do **not** implement it yet.
 
-Single summary table:
+## Step 7 — Cross-module risk flag
 
-| Stock | Benchmark | Beta (old) | Beta (new) | Correlation (new) | bench_days | intersection_days | Pass? |
-|---|---|---|---|---|---|---|---|
+Regardless of case, explicitly state in the report whether the finding implicates `compute-technicals` and `compute-fundamentals` (they both consume FinEdge `daily-quotes` / `financials`). If Case 2/3/4 fires, flag that prior scores may need re-validation. If Case 1, state explicitly that other modules are unaffected.
 
-Pass criteria:
-- TCS / INFY vs NIFTYIT: 0.85–1.15
-- HDFCBANK / ICICIBANK vs BANKNIFTY: 0.85–1.15
-- RELIANCE vs NIFTY: 0.9–1.2
-- Correlations: 0.6–0.85
-- `BENCHMARK_CALENDAR_BUG` log: must be silent
+## Deliverable
 
-Plus a count of `CALENDAR_DRIFT` warnings observed per benchmark (for the SEBI audit log — informational only, not a failure condition).
+Single report containing:
 
-If any stock misses its band, escalate before touching code further.
+1. Per-stock sampled diff tables (40 rows × 3 stocks).
+2. Per-stock full-series aggregate stats.
+3. Raw FinEdge TCS payload for 2026-05-11 → 2026-05-19, plus matching Dhan slice.
+4. ISIN-drift assertion result per stock.
+5. TCS corporate-action adjustment comparison.
+6. Case verdict + evidence.
+7. Cross-module risk statement.
+8. Recommended next action — **no code changes applied**.
 
-## Deferred (separate PR, after this lands green)
+## Explicit non-actions this round
 
-Sector-index ID corrections (single commit):
-- `NIFTY100`: 24 → 17
-- `NIFTYAUTO`: 27 → 14
-- `NIFTYPHARMA`: 33 → 32
-
-## Logged tech debt (not in this PR)
-
-`nse_trading_calendar` table seeded from NSE's official holiday list — Phase 3 task. Becomes the source of truth for "was date X a trading day in India" across Beta, momentum, sentiment windowing, and SEBI reporting.
+- No edits to `supabase/functions/compute-risk/index.ts`.
+- No changes to any feed selection or `stock_master` schema.
+- No new migrations. (The previously-staged `DELETE FROM benchmark_cache` migration stays unapplied until weekend-filter follow-up is closed out separately.)
+- No changes to `compute-technicals` or `compute-fundamentals`.
+- Deferred sector-ID corrections (NIFTY100/AUTO/PHARMA) remain queued.
 
 ## Files touched
 
-- `supabase/functions/compute-risk/index.ts` — weekend filter + guardrail in `fetchBenchmarkFromDhan()`, calendar-drift warnings in `alignByDate()`.
-- One SQL execution to truncate `benchmark_cache`.
+- One throwaway probe script (not committed; run from sandbox against deployed edge functions).
+- No project source files.
 
-Approve to switch to build mode and execute.
+Approve to switch to build mode and run the probe.
