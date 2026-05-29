@@ -21,7 +21,7 @@ import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import {
   pageContainer, sectionFadeUp, verdictScale, tierBadgeSlide,
   gridContainer, cardItem, innerStaggerContainer, innerStaggerItem,
-  barFill, tierPulse, priceBandLine, tabContent, nudgeReveal, footerFade,
+  priceBandLine, tabContent, nudgeReveal, footerFade,
   duration, ease,
 } from "./motion-variants";
 
