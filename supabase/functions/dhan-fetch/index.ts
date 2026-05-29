@@ -25,7 +25,7 @@ const ALLOWED_ENDPOINTS = new Set([
   "holdings",
 ]);
 
-type ExchangeSegment = "NSE_EQ" | "BSE_EQ" | "NSE_FNO";
+type ExchangeSegment = "NSE_EQ" | "BSE_EQ" | "NSE_FNO" | "IDX_I" | "BSE_I";
 
 interface RequestBody {
   endpoint: string;
@@ -35,6 +35,7 @@ interface RequestBody {
     fromDate?: string;
     toDate?: string;
     interval?: string;
+    instrument?: "EQUITY" | "INDEX";
   };
 }
 
@@ -121,7 +122,9 @@ Deno.serve(async (req) => {
         upstreamBody = {
           securityId,
           exchangeSegment,
-          instrument: "EQUITY",
+          instrument: params.instrument ?? "EQUITY",
+          expiryCode: 0,
+          oi: false,
           fromDate: params.fromDate,
           toDate: params.toDate,
           ...(params.interval ? { interval: params.interval } : {}),
