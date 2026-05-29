@@ -25,7 +25,7 @@ const ALLOWED_ENDPOINTS = new Set([
   "holdings",
 ]);
 
-type ExchangeSegment = "NSE_EQ" | "BSE_EQ" | "NSE_FNO";
+type ExchangeSegment = "NSE_EQ" | "BSE_EQ" | "NSE_FNO" | "IDX_I" | "BSE_I";
 
 interface RequestBody {
   endpoint: string;
@@ -35,6 +35,7 @@ interface RequestBody {
     fromDate?: string;
     toDate?: string;
     interval?: string;
+    instrument?: "EQUITY" | "INDEX";
   };
 }
 
