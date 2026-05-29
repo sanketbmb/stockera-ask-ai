@@ -188,11 +188,25 @@ async function fetchBenchmarkFromDhan(symbol: string, auth: string | null): Prom
   for (let i = 0; i < ts.length; i++) {
     const close = Number(closes[i]);
     if (!Number.isFinite(close) || close <= 0) continue;
-    // Dhan timestamps are epoch seconds (IST market data)
+    // Dhan timestamps are epoch seconds (IST market data).
+    // Dhan IDX_I emits Sunday/Saturday-stamped rows for some indices —
+    // filter them out before they pollute the date-aligned beta calc.
     const d = new Date(ts[i] * 1000);
+    const wd = d.getUTCDay(); // 0=Sun, 6=Sat
+    if (wd === 0 || wd === 6) continue;
     out.push({ date: isoDate(d), close });
   }
   out.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Guardrail: assert no weekend rows survived. If Dhan ever changes its
+  // timestamp timezone, this fires before bad data hits production.
+  const sundayCount = out.filter((r) => new Date(r.date).getUTCDay() === 0).length;
+  const saturdayCount = out.filter((r) => new Date(r.date).getUTCDay() === 6).length;
+  if (sundayCount > 0 || saturdayCount > 0) {
+    console.error(
+      `BENCHMARK_CALENDAR_BUG: ${sundayCount} Sun, ${saturdayCount} Sat survived filter for benchmark=${symbol}`,
+    );
+  }
   return out;
 }
 
@@ -289,16 +303,38 @@ async function fetchSector(symbol: string, auth: string | null): Promise<string 
   } catch { return null; }
 }
 
-/** Intersect stock & benchmark by ISO date. */
+/** Intersect stock & benchmark by ISO date.
+ *  Logs CALENDAR_DRIFT for dates present on only one side (observability —
+ *  rows are NOT dropped beyond the natural intersection). Capped at 20 lines. */
 function alignByDate(
   stock: Candle[],
   bench: Array<{ date: string; close: number }>,
+  ctx?: { symbol?: string; benchmark?: string },
 ): { a: number[]; b: number[] } {
   const mb = new Map(bench.map((c) => [c.date, c.close]));
+  const ms = new Set(stock.map((c) => c.date));
   const a: number[] = [], b: number[] = [];
   for (const c of stock) {
     const bc = mb.get(c.date);
     if (bc !== undefined) { a.push(c.close); b.push(bc); }
+  }
+  // Symmetric difference — drift visibility for SEBI audit
+  let drift = 0;
+  const sym = ctx?.symbol ?? "?";
+  const bm = ctx?.benchmark ?? "?";
+  for (const c of stock) {
+    if (drift >= 20) break;
+    if (!mb.has(c.date)) {
+      console.warn(`CALENDAR_DRIFT: date=${c.date} present_in=stock missing_in=bench symbol=${sym} benchmark=${bm}`);
+      drift++;
+    }
+  }
+  for (const c of bench) {
+    if (drift >= 20) break;
+    if (!ms.has(c.date)) {
+      console.warn(`CALENDAR_DRIFT: date=${c.date} present_in=bench missing_in=stock symbol=${sym} benchmark=${bm}`);
+      drift++;
+    }
   }
   return { a, b };
 }
@@ -531,7 +567,7 @@ Deno.serve(async (req) => {
       const bench = await resolveBenchmark(benchmarkSymbol, auth, log);
       if (bench) {
         benchUsed = bench.symbol;
-        const aligned = alignByDate(stock, bench.candles);
+        const aligned = alignByDate(stock, bench.candles, { symbol, benchmark: bench.symbol });
         if (aligned.a.length >= MIN_DAYS_REQUIRED) {
           const sR = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1));
           const bR = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1));
