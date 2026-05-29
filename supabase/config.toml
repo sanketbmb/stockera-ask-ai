@@ -24,6 +24,9 @@ verify_jwt = true
 [functions.compute-technicals]
 verify_jwt = true
 
+[functions.compute-fundamentals]
+verify_jwt = true
+
 [functions.seed-stock-master]
 verify_jwt = false
 
