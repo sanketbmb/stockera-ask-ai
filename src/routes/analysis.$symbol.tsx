@@ -1,12 +1,17 @@
 import { createFileRoute, useParams, useSearch, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { Navbar } from "@/components/layout/Navbar";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { supabase } from "@/integrations/supabase/client";
+import { generateAnalysisPdf } from "@/lib/pdf.functions";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
