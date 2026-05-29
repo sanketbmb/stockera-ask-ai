@@ -188,11 +188,25 @@ async function fetchBenchmarkFromDhan(symbol: string, auth: string | null): Prom
   for (let i = 0; i < ts.length; i++) {
     const close = Number(closes[i]);
     if (!Number.isFinite(close) || close <= 0) continue;
-    // Dhan timestamps are epoch seconds (IST market data)
+    // Dhan timestamps are epoch seconds (IST market data).
+    // Dhan IDX_I emits Sunday/Saturday-stamped rows for some indices —
+    // filter them out before they pollute the date-aligned beta calc.
     const d = new Date(ts[i] * 1000);
+    const wd = d.getUTCDay(); // 0=Sun, 6=Sat
+    if (wd === 0 || wd === 6) continue;
     out.push({ date: isoDate(d), close });
   }
   out.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Guardrail: assert no weekend rows survived. If Dhan ever changes its
+  // timestamp timezone, this fires before bad data hits production.
+  const sundayCount = out.filter((r) => new Date(r.date).getUTCDay() === 0).length;
+  const saturdayCount = out.filter((r) => new Date(r.date).getUTCDay() === 6).length;
+  if (sundayCount > 0 || saturdayCount > 0) {
+    console.error(
+      `BENCHMARK_CALENDAR_BUG: ${sundayCount} Sun, ${saturdayCount} Sat survived filter for benchmark=${symbol}`,
+    );
+  }
   return out;
 }
 
