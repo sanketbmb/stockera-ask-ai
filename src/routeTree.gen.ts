@@ -32,6 +32,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
+import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
@@ -154,6 +155,11 @@ const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   path: '/analyst/$analystId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnalysisSymbolRoute = AnalysisSymbolRouteImport.update({
+  id: '/analysis/$symbol',
+  path: '/analysis/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminSuperRoute = AdminSuperRouteImport.update({
   id: '/admin/super',
   path: '/admin/super',
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -275,6 +283,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -308,6 +317,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -339,6 +349,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -370,6 +381,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -402,6 +414,7 @@ export interface RootRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminProfileRoute: typeof AdminProfileRoute
   AdminSuperRoute: typeof AdminSuperRoute
+  AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
@@ -571,6 +584,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalystAnalystIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/analysis/$symbol': {
+      id: '/analysis/$symbol'
+      path: '/analysis/$symbol'
+      fullPath: '/analysis/$symbol'
+      preLoaderRoute: typeof AnalysisSymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/super': {
       id: '/admin/super'
       path: '/admin/super'
@@ -642,6 +662,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminProfileRoute: AdminProfileRoute,
   AdminSuperRoute: AdminSuperRoute,
+  AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
