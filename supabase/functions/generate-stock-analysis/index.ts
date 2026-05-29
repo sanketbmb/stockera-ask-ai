@@ -583,6 +583,10 @@ Deno.serve(async (req) => {
       },
       audit_meta: {
         formula_version: FORMULA_VERSION,
+        verdict_model_version: VERDICT_MODEL_VERSION,
+        tier_applied: queryType,
+        tier_weights: WEIGHT_PRESETS[queryType],
+        tier_guardrails: verdict.guardrailNotes,
         technical_as_of:   tech?.as_of ?? null,
         fundamental_as_of: fund?.as_of ?? null,
         risk_as_of:        risk?.as_of ?? null,
