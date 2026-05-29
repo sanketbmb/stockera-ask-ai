@@ -10,10 +10,10 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.finedge-fetch]
-verify_jwt = true
+verify_jwt = false
 
 [functions.dhan-fetch]
-verify_jwt = true
+verify_jwt = false
 
 [functions.get-price-data]
 verify_jwt = true
