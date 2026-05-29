@@ -545,8 +545,65 @@ Deno.serve(async (req) => {
         } else {
           log.push(`align_insufficient(${aligned.a.length})`);
         }
+
+        if (debugMode) {
+          // Rebuild aligned tuples with dates for inspection
+          const benchMap = new Map(bench.candles.map((c) => [c.date, c.close]));
+          const alignedTuples: Array<{ date: string; stock_close: number; bench_close: number; stock_return: number | null; bench_return: number | null }> = [];
+          let prevS: number | null = null, prevB: number | null = null;
+          for (const c of stock) {
+            const bc = benchMap.get(c.date);
+            if (bc === undefined) continue;
+            alignedTuples.push({
+              date: c.date,
+              stock_close: c.close,
+              bench_close: bc,
+              stock_return: prevS != null ? (c.close - prevS) / prevS : null,
+              bench_return: prevB != null ? (bc - prevB) / prevB : null,
+            });
+            prevS = c.close; prevB = bc;
+          }
+          const stockDateSet = new Set(stock.map((c) => c.date));
+          const benchDateSet = new Set(bench.candles.map((c) => c.date));
+          const stockOnly = stock.filter((c) => !benchDateSet.has(c.date)).map((c) => c.date);
+          const benchOnly = bench.candles.filter((c) => !stockDateSet.has(c.date)).map((c) => c.date);
+
+          // Raw Dhan timestamp sample — refetch first/last 5 to expose tz drift
+          // (we don't have ts here; re-derive by sampling bench.candles edges)
+          debugPayload = {
+            return_type: "simple_arithmetic (c_t - c_{t-1}) / c_{t-1}",
+            date_join_logic: "ISO YYYY-MM-DD string equality; benchmark dates derived via new Date(ts*1000).toISOString().slice(0,10) [UTC]",
+            timezone_note: "Dhan ts is epoch seconds (IST market data). UTC isoDate may shift IST-midnight rows back 1 day.",
+            counts: {
+              stock_days_total: stockCandles.length,
+              stock_days_lookback: stock.length,
+              bench_days: bench.candles.length,
+              intersection_days: aligned.a.length,
+              stock_only_days: stockOnly.length,
+              bench_only_days: benchOnly.length,
+            },
+            date_ranges: {
+              stock: [stock[0]?.date, stock[stock.length - 1]?.date],
+              bench: [bench.candles[0]?.date, bench.candles[bench.candles.length - 1]?.date],
+            },
+            sample_stock_only_dates: stockOnly.slice(0, 10),
+            sample_bench_only_dates: benchOnly.slice(0, 10),
+            first_10_aligned: alignedTuples.slice(0, 10),
+            last_10_aligned: alignedTuples.slice(-10),
+            computed: {
+              beta: Number.isFinite(betaVal) ? betaVal : null,
+              correlation: Number.isFinite(corrVal) ? corrVal : null,
+              r_squared: Number.isFinite(r2Val) ? r2Val : null,
+              stock_returns_used: 0, // filled below
+              bench_returns_used: 0,
+            },
+          };
+          (debugPayload.computed as Record<string, unknown>).stock_returns_used = dailyReturns(aligned.a.slice(-TRADING_DAYS_PER_YEAR - 1)).length;
+          (debugPayload.computed as Record<string, unknown>).bench_returns_used = dailyReturns(aligned.b.slice(-TRADING_DAYS_PER_YEAR - 1)).length;
+        }
       }
     }
+
 
     const betaCls: "HIGH" | "NORMAL" | "LOW" | null =
       Number.isFinite(betaVal) ? (betaVal > 1.3 ? "HIGH" : betaVal >= 0.8 ? "NORMAL" : "LOW") : null;
