@@ -348,12 +348,13 @@ function timeHorizonLabel(q: QueryType): string {
 
 function computeVerdict(
   scores: { technical: number | null; fundamental: number | null; risk: number | null; momentum: number | null; sentiment: number | null },
-  riskSnap: { max_drawdown: number | null; beta: number | null } | null,
+  riskSnap: { max_drawdown: number | null; beta: number | null; volatility_1y: number | null } | null,
   queryType: QueryType,
 ) {
   const weights = WEIGHT_PRESETS[queryType];
   let weightedSum = 0, weightUsed = 0;
   let missingCount = 0;
+  const guardrailNotes: string[] = [];
   (Object.keys(weights) as Array<keyof typeof weights>).forEach((k) => {
     const w = weights[k];
     const s = scores[k];
@@ -363,42 +364,90 @@ function computeVerdict(
   const overall = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
   let action = actionFromScore(overall);
   let demotions = 0;
+  let confidencePenalty = 0;
 
-  // Guardrails
-  if (scores.risk != null && scores.risk < 25 && action === "BUY") { action = "HOLD"; demotions++; }
-  if (riskSnap && ((riskSnap.max_drawdown != null && riskSnap.max_drawdown < -50) || (riskSnap.beta != null && riskSnap.beta > 2.0))) {
-    if (action === "BUY")  { action = "HOLD"; demotions++; }
-    else if (action === "HOLD") { action = "WATCHLIST"; demotions++; }
+  // ─── Tier-aware guardrails ───
+  // Universal: very weak risk caps BUY.
+  if (scores.risk != null && scores.risk < 25 && action === "BUY") {
+    action = "HOLD"; demotions++; guardrailNotes.push("risk<25 caps BUY→HOLD");
   }
-  if ((scores.technical == null || scores.fundamental == null) && (action === "BUY" || action === "HOLD")) {
-    action = "WATCHLIST"; demotions++;
+
+  if (queryType === "intraday") {
+    // Intraday: weak technicals/momentum matter heavily.
+    if (scores.technical != null && scores.technical < 35 && (action === "BUY" || action === "HOLD")) {
+      action = demote(action); demotions++; guardrailNotes.push("intraday weak technical demotes");
+    }
+    if (scores.momentum != null && scores.momentum < 35 && (action === "BUY" || action === "HOLD")) {
+      action = demote(action); demotions++; guardrailNotes.push("intraday weak momentum demotes");
+    }
+    // High beta / volatility hits confidence hard intraday; minor demotion on extreme.
+    if (riskSnap?.beta != null && riskSnap.beta > 1.5) confidencePenalty += 10;
+    if (riskSnap?.volatility_1y != null && riskSnap.volatility_1y > 45) confidencePenalty += 10;
+    if (riskSnap?.beta != null && riskSnap.beta > 2.0 && action === "BUY") {
+      action = "HOLD"; demotions++; guardrailNotes.push("intraday beta>2 demotes BUY");
+    }
+    // Missing fundamentals must NOT cap action for intraday (weight is 0 anyway).
+  } else if (queryType === "long-term") {
+    // Long-term: missing fundamental is a hard cap.
+    if (scores.fundamental == null && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("long-term missing fundamental caps→WATCHLIST");
+    }
+    // Weak fundamentals materially demote.
+    if (scores.fundamental != null && scores.fundamental < 35 && (action === "BUY" || action === "HOLD")) {
+      action = demote(action); demotions++; guardrailNotes.push("long-term weak fundamental demotes");
+    }
+    // Drawdown alone does NOT destroy quality setup; only demote if risk score is also weak.
+    if (riskSnap?.max_drawdown != null && riskSnap.max_drawdown < -50 &&
+        scores.risk != null && scores.risk < 45) {
+      if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term drawdown+weak risk demotes"); }
+    }
+    if (riskSnap?.beta != null && riskSnap.beta > 2.0 && scores.risk != null && scores.risk < 50) {
+      if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term high beta+weak risk demotes"); }
+    }
+  } else {
+    // Medium-term: balanced baseline.
+    if (riskSnap && ((riskSnap.max_drawdown != null && riskSnap.max_drawdown < -50) || (riskSnap.beta != null && riskSnap.beta > 2.0))) {
+      if (action === "BUY")  { action = "HOLD"; demotions++; guardrailNotes.push("medium drawdown/beta demotes BUY"); }
+      else if (action === "HOLD") { action = "WATCHLIST"; demotions++; guardrailNotes.push("medium drawdown/beta demotes HOLD"); }
+    }
+    if ((scores.technical == null || scores.fundamental == null) && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing tech/fund caps→WATCHLIST");
+    }
   }
+
+  // Universal: too many missing modules → AVOID.
   const totalModulesConsidered = (Object.values(weights).filter((w) => w > 0)).length;
   if (missingCount >= 3 || missingCount >= Math.ceil(totalModulesConsidered * 0.6)) {
-    action = "AVOID"; demotions++;
+    action = "AVOID"; demotions++; guardrailNotes.push("≥3 modules missing → AVOID");
   }
 
-  const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10));
-  return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions };
+  const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10 - confidencePenalty));
+  return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes };
 }
 
-function summaryReason(scores: Record<string, number | null>): string {
+const TIER_REASON_PREFIX: Record<QueryType, string> = {
+  "intraday":    "Short-term setup driven by technical and momentum conditions",
+  "medium-term": "Balanced swing view using technical, fundamental, risk and momentum factors",
+  "long-term":   "Long-horizon view prioritizing business quality, valuation support and risk profile",
+};
+
+function summaryReason(scores: Record<string, number | null>, queryType: QueryType): string {
   const labels: string[] = [];
-  const map: Array<[string, string]> = [
-    ["technical", "Technicals"],
-    ["fundamental", "Fundamentals"],
-    ["risk", "Risk"],
-    ["momentum", "Momentum"],
-    ["sentiment", "Sentiment"],
-  ];
-  for (const [k, lbl] of map) {
+  const order: Array<[string, string]> =
+    queryType === "intraday"
+      ? [["technical","Technicals"],["momentum","Momentum"],["risk","Risk"],["sentiment","Sentiment"]]
+      : queryType === "long-term"
+      ? [["fundamental","Fundamentals"],["risk","Risk"],["technical","Technicals"],["momentum","Momentum"],["sentiment","Sentiment"]]
+      : [["technical","Technicals"],["fundamental","Fundamentals"],["risk","Risk"],["momentum","Momentum"],["sentiment","Sentiment"]];
+  for (const [k, lbl] of order) {
     const v = scores[k];
     if (v == null) continue;
     const tag = v >= 70 ? "strong" : v >= 50 ? "moderate" : v >= 30 ? "weak" : "very weak";
     labels.push(`${tag} ${lbl.toLowerCase()} (${v})`);
   }
-  if (labels.length === 0) return "Insufficient data to generate a verdict.";
-  return labels.join(", ") + ".";
+  const prefix = TIER_REASON_PREFIX[queryType];
+  if (labels.length === 0) return `${prefix}. Insufficient data to generate a verdict.`;
+  return `${prefix}. ${labels.join(", ")}.`;
 }
 
 // ─── Main handler ───
