@@ -614,8 +614,8 @@ Deno.serve(async (req) => {
           // (we don't have ts here; re-derive by sampling bench.candles edges)
           debugPayload = {
             return_type: "simple_arithmetic (c_t - c_{t-1}) / c_{t-1}",
-            date_join_logic: "ISO YYYY-MM-DD string equality; benchmark dates derived via new Date(ts*1000).toISOString().slice(0,10) [UTC]",
-            timezone_note: "Dhan ts is epoch seconds (IST market data). UTC isoDate may shift IST-midnight rows back 1 day.",
+            date_join_logic: "ISO YYYY-MM-DD string equality; benchmark dates derived via (ts + 19800)*1000 → toISOString().slice(0,10) [IST]",
+            timezone_note: "Dhan ts is midnight-IST as epoch seconds; +19800s shift produces the IST calendar date, matching FinEdge quote_date on the stock side.",
             counts: {
               stock_days_total: stockCandles.length,
               stock_days_lookback: stock.length,
