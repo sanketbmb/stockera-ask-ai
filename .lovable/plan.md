@@ -1,153 +1,133 @@
-# Plan: `compute-fundamentals` Edge Function
 
-Second Brain module. Mirrors `compute-technicals` shape: single Deno file, calls `finedge-fetch` server-to-server, pure-JS math with JSDoc, deterministic 0–100 score.
+# Plan: `compute-risk` Edge Function
+
+Third Brain module. Same shape as `compute-technicals` / `compute-fundamentals`: single Deno file, server-to-server `finedge-fetch` calls, pure-JS math with JSDoc + academic references, deterministic 0–100 score. **Higher score = safer**.
 
 ## Files
 
-1. **`supabase/functions/compute-fundamentals/index.ts`** (new) — handler + all formulas
-2. **`supabase/config.toml`** — register `[functions.compute-fundamentals] verify_jwt = true`
+1. **`supabase/functions/compute-risk/index.ts`** (new) — handler + all formulas
+2. **`supabase/config.toml`** — register `[functions.compute-risk] verify_jwt = true`
+
+## Constants (top of file, SEBI-auditable)
+
+```
+RISK_FREE_RATE        = 0.071   // 10-yr G-Sec yield, India 2026
+TRADING_DAYS_PER_YEAR = 252
+LOOKBACK_DAYS         = 750     // ~3 yrs
+MIN_DAYS_REQUIRED     = 252     // 1 yr hard floor
+EPSILON               = 1e-9    // divide-by-zero guard
+BENCHMARK_FALLBACKS   = ["NIFTY", "NIFTY50", "^NSEI", "SENSEX"]
+```
 
 ## Handler flow
 
 ```
-POST { symbol }
+POST { symbol, benchmark? }
   → CORS / OPTIONS
   → validate symbol
-  → Promise.all 5 finedge-fetch calls (company-profile, ratios pr,
-     financials pl, financials bs, financials cf — all consolidated)
-  → normalize each payload (unwrap data.data, tolerate quotes/data/rows arrays)
-  → guard: <3 annual rows of P&L+BS → { success:false, error:"INSUFFICIENT_HISTORY" }
-  → compute valuation, profitability, growth, financial_health
-  → compute Piotroski, Altman Z, Graham, simple DCF
-  → detect signals → score → verdict
+  → fetch stock daily-quotes (parallel with first benchmark attempt)
+  → if benchmark fails, walk BENCHMARK_FALLBACKS sequentially
+  → normalize OHLCV (reuse the same patterns as compute-technicals:
+     unwrap data.data, accept data/quotes/rows arrays, sort asc by date)
+  → guard: stock candles < MIN_DAYS_REQUIRED → INSUFFICIENT_HISTORY
+  → align stock & benchmark by date intersection
+  → compute daily returns for both series
+  → compute every metric block (each safe()-wrapped → null on failure)
+  → detect signals
+  → compute risk_score + classification
   → return spec JSON
 ```
 
-Errors mirror compute-technicals:
-- Any finedge call !ok or `success !== true` → `{ success:false, error:"DATA_FETCH_FAILED", details }`
-- Insufficient history → `INSUFFICIENT_HISTORY`
-- Thrown → 500 `INTERNAL_ERROR`
-- Every field individually wrapped in `safe(() => …)` so a missing line item nulls one metric instead of failing the whole response.
+Error envelope mirrors the other two modules:
+- finedge !ok / success≠true → `{ success:false, error:"DATA_FETCH_FAILED", details }`
+- < MIN_DAYS_REQUIRED after alignment → `INSUFFICIENT_HISTORY`
+- all benchmark fallbacks fail → `BENCHMARK_UNAVAILABLE` (the rest of the report can still be returned with `market_risk: null`; emit a warning field rather than failing the whole call)
+- thrown → 500 `INTERNAL_ERROR`
 
-## Data fetch (parallel)
+## Helpers
 
-Reuse the same auth pattern (`SUPABASE_URL` + service-role key fallback, forward caller's `Authorization`):
+- `pick(row, ...aliases)` — case-insensitive field resolver (reused pattern)
+- `safe(fn)` — try/catch → null
+- `mean`, `stdev`, `variance`, `covariance`, `pearson` — textbook formulas, all guard `n>1` and use EPSILON
+- `dailyReturns(closes)` — `(c[i] - c[i-1]) / c[i-1]`
+- `alignByDate(stockRows, benchRows)` — intersection on ISO date, returns paired arrays
 
-```
-finedge-fetch { endpoint: "company-profile",  symbol }
-finedge-fetch { endpoint: "ratios",     symbol, params: { statement_type:"c", ratio_type:"pr" } }
-finedge-fetch { endpoint: "financials", symbol, params: { statement_type:"c", statement_code:"pl", period:"annual" } }
-finedge-fetch { endpoint: "financials", symbol, params: { statement_type:"c", statement_code:"bs", period:"annual" } }
-finedge-fetch { endpoint: "financials", symbol, params: { statement_type:"c", statement_code:"cf", period:"annual" } }
-```
+## Metric blocks (each formula carries a JSDoc with source)
 
-Normalizer probes common FinEdge keys (`data`, `rows`, `items`, `ratios`, `profitloss`, `balancesheet`, `cashflow`) and sorts ascending by fiscal year so index `-1` is the latest year.
+**A. Volatility** (Hull, *Options, Futures and Other Derivatives*)
+- `daily_pct = stdev(returns) * 100`
+- `annualized_pct = stdev(returns) * sqrt(252) * 100`
+- `rolling_30d_pct`, `rolling_90d_pct` — stdev of the last 30 / 90 returns
+- `trend` = compare rolling_30d vs rolling_90d: `>+10%` INCREASING, `<-10%` DECREASING, else STABLE
 
-A small `pick(row, ...aliases)` helper resolves field names case-insensitively against the row, since FinEdge uses snake/camel mixed keys (e.g. `net_income`/`netProfit`, `total_assets`/`totalAssets`). The whole alias map lives at the top of the file for SEBI auditability.
+**B. Beta + correlation** (CAPM, Sharpe 1964)
+- `beta = cov(stock, bench) / var(bench)` on the last 252 aligned returns
+- classification: `>1.3 HIGH | ≥0.8 NORMAL | else LOW`
+- `correlation_with_nifty = pearson(stock, bench)`
+- `r_squared = corr^2`
 
-## Formulas (pure JS, JSDoc on each)
+**C. Risk-adjusted returns**
+- `annualized_return = (1 + mean(returns))^252 - 1`
+- `sharpe = (annRet - RF) / annVol` — Sharpe 1966
+- rating: `>2 EXCELLENT | ≥1 GOOD | ≥0.5 AVERAGE | else POOR`
+- `sortino = (annRet - RF) / downsideDeviation` where downsideDeviation = stdev of `min(r-RF/252, 0)` × √252 — Sortino & Price 1994
+- `calmar = annRet / |maxDrawdown|` — Young 1991
 
-**Valuation**
-- `pe = price / eps_ttm` (prefer ratios.pe if provided; else compute)
-- `pb = price / bvps`
-- `ps = market_cap / revenue_ttm`
-- `peg = pe / (eps_cagr_3y * 100)` (guard div0 / negative growth → null)
-- `ev_ebitda = (market_cap + total_debt - cash) / ebitda` (null if EBITDA missing)
-- `dividend_yield` from ratios
+**D. Drawdown** (standard peak-to-trough)
+- Walk the close series tracking running max; `dd_t = (close_t - peak_t) / peak_t`
+- `max_drawdown_pct`, `current_drawdown_pct` (from all-time high)
+- `avg_drawdown_pct` over all in-drawdown days
+- `recovery_days` = days from max-DD trough back to a new peak (null if not yet recovered)
+- `drawdown_duration_days` = length of the max-DD episode (peak → trough)
 
-**Profitability**
-- `roe = net_income / shareholders_equity * 100`, plus 3y avg
-- `roa = net_income / total_assets * 100`, plus 3y avg
-- `roce = ebit / (total_assets - current_liabilities) * 100`
-- `net_margin = net_income / revenue * 100`
-- `operating_margin = operating_income / revenue * 100`
-- `gross_margin = gross_profit / revenue * 100`
+**E. Value at Risk** — historical method (Jorion, *Value at Risk*)
+- Sort returns ascending
+- `var_95_pct = -percentile(returns, 5) * 100`
+- `var_99_pct = -percentile(returns, 1) * 100`
+- `cvar_95_pct = -mean(returns ≤ percentile(returns,5)) * 100`
+- `worst_day_pct = min(returns) * 100`
+- `best_day_pct = max(returns) * 100`
 
-**Growth**
-- `yoy(latest, prev) = (latest - prev) / |prev| * 100`
-- `cagr(end, start, years) = (end/start)^(1/years) - 1` — returns null if either ≤ 0 (sign-flip undefined)
-- Series for revenue, net profit, EPS
+**F. Liquidity**
+- `avg_volume_20d = mean(volume[-20:])`
+- `avg_daily_turnover_cr = mean(volume[-20:] * close[-20:]) / 1e7`
+- classification: `>100 HIGH | ≥10 MEDIUM | else LOW`
 
-**Financial Health**
-- `debt_equity = total_debt / equity`
-- `current_ratio = current_assets / current_liabilities`
-- `quick_ratio = (current_assets - inventory) / current_liabilities`
-- `interest_coverage = ebit / interest_expense`
-- `debt_to_assets = total_debt / total_assets`
+**G. Behavior (last 252 days)**
+- `up_days`, `down_days`, `up_day_ratio`
+- `max_winning_streak`, `max_losing_streak` (single pass)
 
-**Piotroski F-Score** (9 binary checks, one function per check, return both score and breakdown):
-```
-1 netIncome[-1] > 0
-2 roa[-1] > 0
-3 cfo[-1] > 0
-4 cfo[-1] > netIncome[-1]
-5 longTermDebt[-1] < longTermDebt[-2]
-6 currentRatio[-1] > currentRatio[-2]
-7 sharesOutstanding[-1] <= sharesOutstanding[-2]
-8 grossMargin[-1] > grossMargin[-2]
-9 assetTurnover[-1] > assetTurnover[-2]    // revenue / avg assets
-```
+## Signals (one-liner predicates, skipped silently if input is null)
 
-**Altman Z-Score** (public-company formula exactly as specified):
-```
-A = (currentAssets - currentLiabilities) / totalAssets
-B = retainedEarnings / totalAssets
-C = ebit / totalAssets
-D = marketCap / totalLiabilities
-E = revenue / totalAssets
-Z = 1.2A + 1.4B + 3.3C + 0.6D + 1.0E
-zone = Z>3 SAFE | Z>=1.8 GREY | else DISTRESS
-```
+`high_volatility` (ann > 35), `low_volatility` (<15), `high_beta` (>1.5), `low_beta` (<0.7), `high_sharpe` (>1.5), `negative_sharpe` (<0), `deep_drawdown` (current >25), `recovery_phase` (5–25 + rolling_30d < rolling_90d), `near_ath` (current DD <5), `high_var` (var95 >3), `low_liquidity` (turnover <10 Cr), `high_correlation` (>0.85), `decoupled` (<0.4), `trending_up` (up_ratio ≥0.6), `trending_down` (up_ratio ≤0.4).
 
-**Graham Number**
-```
-graham = sqrt(22.5 * eps_ttm * bvps)   // null if either ≤ 0
-graham_vs_price_pct = (graham - price) / price * 100
-```
-
-**Simple DCF** (only if ≥5 yrs CF; else null)
-```
-fcf0 = freeCashFlow[-1]                    // operating CF − capex
-project 5 years at g=10%, terminal g=4%, WACC=12%
-PV = Σ fcf_t / (1+WACC)^t + terminal / (1+WACC)^5
-intrinsic_per_share = PV / sharesOutstanding
-```
-
-All constants (g=0.10, terminal=0.04, WACC=0.12) defined as named consts at top of file.
-
-## Signals
-
-Each predicate is a one-liner against computed fields. Includes everything in the spec: `high_roe`, `strong_growth`, `low_debt`, `high_debt`, `improving_margins`, `cheap_pe` (vs 5y avg of historical PE if available; sector P/E may be missing — degrade gracefully), `expensive_pe`, `graham_undervalued`, `graham_overvalued`, `altman_safe`, `altman_distress`, `high_piotroski`, `low_piotroski`, `consistent_profit` (net_income > 0 in last 5 yrs), `dividend_paying`.
-
-When a required input is null, the signal is simply not emitted (never crashes).
-
-## Score (0–100)
+## risk_score (0–100, higher = safer)
 
 ```
-profitability   0–25   ROE band + margin band (gradual, not step)
-growth          0–20   revenue_cagr_3y + profit_cagr_3y (clamped)
-financial_health 0–20  D/E inverse + current ratio + Altman zone
-valuation       0–20   P/E reasonableness + Graham gap
-quality         0–15   piotroski_f_score / 9 × 15
+volatility   0–25   piecewise: ann_vol ≤15→25, 15–25→linear→20, 25–35→linear→10, 35–50→linear→3, >50→0
+sharpe       0–25   sharpe ≥2→25, 1–2→linear, 0–1→linear→8, <0→0
+drawdown     0–20   |maxDD| ≤10→20, 10–25→linear→12, 25–40→linear→5, >40→0
+beta normalcy 0–15  band 0.8–1.3 → 15, then linear decay each side, 0 outside [0.3,1.8]
+liquidity    0–15   HIGH→15, MEDIUM→9, LOW→3, null→0
 ```
-Round, clamp 0–100.
-
-**Verdict bands:** ≥75 `STRONG_FUNDAMENTALS`, ≥60 `GOOD`, ≥40 `AVERAGE`, else `WEAK`.
+Round, clamp 0–100. **Classification bands:** `≥75 LOW_RISK | ≥55 MEDIUM_RISK | ≥35 HIGH_RISK | else VERY_HIGH_RISK`.
 
 ## SEBI-defensibility
 
-- No black-box weights — every score sub-component is the result of a named, documented formula.
-- Every formula has a JSDoc block with the textbook source (Piotroski 2000, Altman 1968, Graham 1973, standard DCF).
-- Inputs that fall back to null are reported as null in the output rather than imputed.
+- Every formula has a JSDoc citation (Sharpe 1964/66, Sortino & Price 1994, Young 1991, Jorion *VaR*, Hull *Derivatives*).
+- All thresholds defined as named constants at the top of the file.
+- Null inputs propagate to null outputs — no imputation, no black-box fallback.
 
 ## Out of scope
 
-- No DB writes / caching.
-- No sector P/E lookup table (signals using sector avg simply require it; otherwise omitted).
-- No TanStack server function wrapper yet.
+- No DB writes / caching
+- No multi-benchmark blending (single benchmark with fallback chain only)
+- No parametric/Monte-Carlo VaR (historical only, per spec)
+- No TanStack server function wrapper yet
 
 ## Deploy + smoke test
 
-1. `supabase--deploy_edge_functions ["compute-fundamentals"]`
+1. `supabase--deploy_edge_functions ["compute-risk"]`
 2. `supabase--curl_edge_functions` for RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK
-3. Print: `Symbol | P/E | ROE | D/E | F-Score | Z-Score | Signals | Score`
+3. Print: `Symbol | Vol% | Beta | Sharpe | MaxDD% | VaR95% | Score | Classification`
+4. Note in the reply which benchmark symbol actually resolved (NIFTY vs fallback).
