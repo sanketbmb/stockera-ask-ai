@@ -157,7 +157,7 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
 }
 
 // ───────────────── Marketaux fetch (via wrapper) ─────────────────
-async function fetchMarketaux(symbols: string): Promise<Article[]> {
+async function fetchMarketaux(symbols: string, callerAuth: string | null): Promise<Article[]> {
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 19); // YYYY-MM-DDTHH:MM:SS
@@ -165,8 +165,8 @@ async function fetchMarketaux(symbols: string): Promise<Article[]> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ANON_KEY}`,
       apikey: ANON_KEY,
+      authorization: callerAuth ?? `Bearer ${ANON_KEY}`,
     },
     body: JSON.stringify({
       endpoint: "news/all",
