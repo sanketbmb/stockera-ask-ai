@@ -21,15 +21,28 @@ verify_jwt = true
 [functions.marketaux-fetch]
 verify_jwt = true
 
+# compute-* modules are stateless internal compute layers called by the
+# generate-stock-analysis orchestrator (and other server-side callers) using
+# the service-role key. They take only a stock symbol as input and contain
+# no user-specific logic, so verify_jwt is intentionally disabled here.
+# User-facing access is gated by the orchestrator, which keeps verify_jwt=true.
 [functions.compute-technicals]
-verify_jwt = true
+verify_jwt = false
 
 [functions.compute-fundamentals]
-verify_jwt = true
+verify_jwt = false
 
 [functions.compute-risk]
+verify_jwt = false
+
+[functions.compute-momentum]
+verify_jwt = false
+
+[functions.compute-sentiment]
+verify_jwt = false
+
+[functions.generate-stock-analysis]
 verify_jwt = true
 
 [functions.seed-stock-master]
 verify_jwt = false
-
