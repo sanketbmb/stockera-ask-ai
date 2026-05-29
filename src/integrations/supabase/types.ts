@@ -360,6 +360,27 @@ export type Database = {
         }
         Relationships: []
       }
+      marketaux_usage_log: {
+        Row: {
+          articles_returned: number
+          call_count: number
+          date: string
+          updated_at: string
+        }
+        Insert: {
+          articles_returned?: number
+          call_count?: number
+          date: string
+          updated_at?: string
+        }
+        Update: {
+          articles_returned?: number
+          call_count?: number
+          date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           body: string | null
@@ -625,6 +646,30 @@ export type Database = {
           last_r_squared?: number | null
           stock_symbol?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      sentiment_cache: {
+        Row: {
+          articles: Json
+          fetched_at: string
+          symbol: string
+          symbol_format_used: string | null
+          ttl_hours: number
+        }
+        Insert: {
+          articles: Json
+          fetched_at?: string
+          symbol: string
+          symbol_format_used?: string | null
+          ttl_hours?: number
+        }
+        Update: {
+          articles?: Json
+          fetched_at?: string
+          symbol?: string
+          symbol_format_used?: string | null
+          ttl_hours?: number
         }
         Relationships: []
       }
