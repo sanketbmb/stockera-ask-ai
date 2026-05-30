@@ -557,10 +557,12 @@ Deno.serve(async (req) => {
         sentiment_score:   scores.sentiment   ?? 0,
       },
       price_context: tech?.price ?? { current_price: null, price_source: "", as_of: "" },
-      levels: tech?.levels ?? {
-        entry_zone: null, stop_loss: null, target_1: null, target_2: null,
-        support_1: null, support_2: null, resistance_1: null, resistance_2: null,
-      },
+      levels: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
+        ? (tpRes.data.levels as typeof tech extends null ? never : NonNullable<typeof tech>["levels"])
+        : (tech?.levels ?? {
+            entry_zone: null, stop_loss: null, target_1: null, target_2: null,
+            support_1: null, support_2: null, resistance_1: null, resistance_2: null,
+          }),
       returns_snapshot: mom?.returns ?? {
         one_week: null, one_month: null, three_month: null, one_year: null,
         vs_nifty_one_month: null, vs_nifty_three_month: null,
