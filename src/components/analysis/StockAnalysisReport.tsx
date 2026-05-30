@@ -913,7 +913,7 @@ function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
   );
 }
 
-function LevelCell({ label, value, tone }: { label: string; value: number | null; tone?: string }) {
+function LevelCell({ label, value, tone, reason }: { label: string; value: number | null; tone?: string; reason?: string }) {
   return (
     <motion.div
       variants={innerStaggerItem}
@@ -925,7 +925,9 @@ function LevelCell({ label, value, tone }: { label: string; value: number | null
       {value == null ? (
         <Tooltip>
           <TooltipTrigger asChild><p className="font-display text-lg cursor-help text-muted-foreground">{DASH}</p></TooltipTrigger>
-          <TooltipContent>Level not derivable from current data window.</TooltipContent>
+          <TooltipContent className="max-w-xs text-xs">
+            {reason ? `Omitted — ${reason}` : "Level not derivable from current data window."}
+          </TooltipContent>
         </Tooltip>
       ) : (
         <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
