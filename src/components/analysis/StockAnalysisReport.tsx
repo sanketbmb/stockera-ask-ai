@@ -368,6 +368,17 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
   const weights = audit_meta.tier_weights;
   const pulsePillars = TIER_PULSE_PILLARS[tier];
 
+  // Trade-plan validation: omission reasons keyed by level
+  const tradePlanReasons = useMemo(() => {
+    const map: Partial<Record<keyof typeof levels, string>> = {};
+    for (const o of audit_meta.trade_plan_validation ?? []) {
+      if (!map[o.level]) map[o.level] = o.reason;
+    }
+    return map;
+  }, [audit_meta.trade_plan_validation, levels]);
+  const tradePlanFromEngine = audit_meta.trade_plan_source === "compute-trade-plan";
+  const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
+
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
 
   // R:R from levels
