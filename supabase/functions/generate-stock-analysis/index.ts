@@ -15,9 +15,10 @@ const corsHeaders = {
 const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY      = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
-const FORMULA_VERSION = "orchestrator-1.1";
+const FORMULA_VERSION = "orchestrator-1.2";
 const VERDICT_MODEL_VERSION = "tiered-verdict-1.0";
 const MODULE_TIMEOUT_MS = 25_000;
+const TRADE_PLAN_SOURCE = (Deno.env.get("TRADE_PLAN_SOURCE") ?? "new").toLowerCase() === "legacy" ? "legacy" : "new";
 
 type QueryType = "intraday" | "medium-term" | "long-term";
 type Action = "BUY" | "HOLD" | "SELL" | "AVOID" | "WATCHLIST";
@@ -488,9 +489,15 @@ Deno.serve(async (req) => {
             trace: { module: "compute-sentiment", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_BY_REQUEST", code: "SKIPPED" } as ModuleTrace,
             data: null,
           }),
+      TRADE_PLAN_SOURCE === "new"
+        ? callModule("compute-trade-plan", { symbol: sym, query_type: queryType }, auth)
+        : Promise.resolve({
+            trace: { module: "compute-trade-plan", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_FLAG_LEGACY", code: "SKIPPED" } as ModuleTrace,
+            data: null,
+          }),
     ];
     const settled = await Promise.all(moduleCalls);
-    const [tRes, fRes, rRes, mRes, sRes] = settled;
+    const [tRes, fRes, rRes, mRes, sRes, tpRes] = settled;
 
     // 3. Normalize
     const tech = normalizeTechnical(tRes.data);
@@ -550,10 +557,12 @@ Deno.serve(async (req) => {
         sentiment_score:   scores.sentiment   ?? 0,
       },
       price_context: tech?.price ?? { current_price: null, price_source: "", as_of: "" },
-      levels: tech?.levels ?? {
-        entry_zone: null, stop_loss: null, target_1: null, target_2: null,
-        support_1: null, support_2: null, resistance_1: null, resistance_2: null,
-      },
+      levels: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
+        ? (tpRes.data.levels as Record<string, number | null>)
+        : (tech?.levels ?? {
+            entry_zone: null, stop_loss: null, target_1: null, target_2: null,
+            support_1: null, support_2: null, resistance_1: null, resistance_2: null,
+          }),
       returns_snapshot: mom?.returns ?? {
         one_week: null, one_month: null, three_month: null, one_year: null,
         vs_nifty_one_month: null, vs_nifty_three_month: null,
@@ -593,6 +602,12 @@ Deno.serve(async (req) => {
         momentum_as_of:    mom?.as_of  ?? null,
         sentiment_as_of:   sent?.as_of ?? null,
         source_trace: sourceTrace,
+        trade_plan_source: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
+          ? "compute-trade-plan"
+          : (TRADE_PLAN_SOURCE === "legacy" ? "compute-technicals-legacy" : "compute-technicals-fallback"),
+        trade_plan_flag: TRADE_PLAN_SOURCE,
+        trade_plan_validation: Array.isArray(tpRes.data?.validation) ? tpRes.data!.validation : [],
+        trade_plan_vol_1y: (tpRes.data?.vol_1y as number | null | undefined) ?? (risk?.snapshot.volatility_1y ?? null),
       },
       user_context: body.user_context ?? null,
     };
