@@ -558,7 +558,7 @@ Deno.serve(async (req) => {
       },
       price_context: tech?.price ?? { current_price: null, price_source: "", as_of: "" },
       levels: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
-        ? (tpRes.data.levels as typeof tech extends null ? never : NonNullable<typeof tech>["levels"])
+        ? (tpRes.data.levels as Record<string, number | null>)
         : (tech?.levels ?? {
             entry_zone: null, stop_loss: null, target_1: null, target_2: null,
             support_1: null, support_2: null, resistance_1: null, resistance_2: null,
