@@ -275,8 +275,11 @@ function mediumPlan(spot: number, atrV: number, swingHighs: number[], swingLows:
 
 function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, dcfFairValue: number | null, momentumPositive: boolean): Levels {
   const slPct = spot * 0.85;
-  const slDma = Number.isFinite(dma200) ? dma200 * 0.92 : NaN;
-  const sl = Number.isFinite(slDma) ? Math.max(slPct, slDma) : slPct;
+  // Uptrending (DMA below spot): use the higher (tighter) of the % stop or DMA-based stop.
+  // Downtrending (DMA above spot): the DMA term would push SL above spot — ignore it, use simple % stop.
+  const sl = (Number.isFinite(dma200) && dma200 < spot)
+    ? Math.max(slPct, dma200 * 0.92)
+    : slPct;
   return {
     entry_zone: spot,
     stop_loss: sl,
