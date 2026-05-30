@@ -46,10 +46,14 @@ function json(body: unknown, status = 200) {
   });
 }
 function r2(n: unknown): number | null {
+  if (n === null || n === undefined) return null;
+  if (typeof n === "number" && !Number.isFinite(n)) return null;
   const v = Number(n);
   return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
 }
 function finite(n: unknown): number | null {
+  if (n === null || n === undefined) return null;
+  if (typeof n === "number" && !Number.isFinite(n)) return null;
   const v = Number(n);
   return Number.isFinite(v) ? v : null;
 }
@@ -156,6 +160,12 @@ function validate(levels: Levels, spot: number, atrV: number, queryType: QueryTy
     const v = out[k];
     if (v != null && !Number.isFinite(v)) drop(k, "compute_error: non-finite value");
   });
+
+  // Rule 9: SL must be strictly below spot for LONG positions (all tiers — Stockera has no short recs).
+  // Catches the entire category of "SL above entry" bugs in any tier.
+  if (out.stop_loss != null && out.stop_loss >= spot) {
+    drop("stop_loss", "sl_above_spot_invalid_for_long_position");
+  }
 
   // Rule 1: SL distance ≥ 0.5×ATR
   if (out.stop_loss != null && Number.isFinite(atrV) && Math.abs(spot - out.stop_loss) < 0.5 * atrV) {
@@ -271,8 +281,11 @@ function mediumPlan(spot: number, atrV: number, swingHighs: number[], swingLows:
 
 function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, dcfFairValue: number | null, momentumPositive: boolean): Levels {
   const slPct = spot * 0.85;
-  const slDma = Number.isFinite(dma200) ? dma200 * 0.92 : NaN;
-  const sl = Number.isFinite(slDma) ? Math.max(slPct, slDma) : slPct;
+  // Uptrending (DMA below spot): use the higher (tighter) of the % stop or DMA-based stop.
+  // Downtrending (DMA above spot): the DMA term would push SL above spot — ignore it, use simple % stop.
+  const sl = (Number.isFinite(dma200) && dma200 < spot)
+    ? Math.max(slPct, dma200 * 0.92)
+    : slPct;
   return {
     entry_zone: spot,
     stop_loss: sl,
