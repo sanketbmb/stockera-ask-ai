@@ -489,9 +489,15 @@ Deno.serve(async (req) => {
             trace: { module: "compute-sentiment", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_BY_REQUEST", code: "SKIPPED" } as ModuleTrace,
             data: null,
           }),
+      TRADE_PLAN_SOURCE === "new"
+        ? callModule("compute-trade-plan", { symbol: sym, query_type: queryType }, auth)
+        : Promise.resolve({
+            trace: { module: "compute-trade-plan", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_FLAG_LEGACY", code: "SKIPPED" } as ModuleTrace,
+            data: null,
+          }),
     ];
     const settled = await Promise.all(moduleCalls);
-    const [tRes, fRes, rRes, mRes, sRes] = settled;
+    const [tRes, fRes, rRes, mRes, sRes, tpRes] = settled;
 
     // 3. Normalize
     const tech = normalizeTechnical(tRes.data);
