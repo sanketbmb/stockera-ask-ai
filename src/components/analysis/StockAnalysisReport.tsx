@@ -614,19 +614,38 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
 
         {/* ═══ 8. TRADE LEVELS ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} />
+            {tradePlanFromEngine && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="cursor-help border-emerald-500/40 bg-emerald-500/5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
+                    <ShieldCheck className="mr-1 h-3 w-3" /> Validated by Stockera Engine
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Trade plan validated by tier-aware engine with mandatory R:R, ATR and structural checks.</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" />
-            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" />
-            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" />
-            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" />
-            <LevelCell label="Support 1" value={levels.support_1} />
-            <LevelCell label="Support 2" value={levels.support_2} />
-            <LevelCell label="Resistance 1" value={levels.resistance_1} />
-            <LevelCell label="Resistance 2" value={levels.resistance_2} />
+            <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
+            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} />
+            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} />
+            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} />
+            <LevelCell label="Support 1" value={levels.support_1} reason={tradePlanReasons.support_1} />
+            <LevelCell label="Support 2" value={levels.support_2} reason={tradePlanReasons.support_2} />
+            <LevelCell label="Resistance 1" value={levels.resistance_1} reason={tradePlanReasons.resistance_1} />
+            <LevelCell label="Resistance 2" value={levels.resistance_2} reason={tradePlanReasons.resistance_2} />
           </motion.div>
+          {highVol && (
+            <motion.p variants={nudgeReveal} className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>High-volatility stock — wider stop loss recommended, smaller position size advised.</span>
+            </motion.p>
+          )}
         </motion.section>
+
 
         {/* ═══ 9. RETURNS SNAPSHOT ═══ */}
         {report_modules.show_returns_strip && (
