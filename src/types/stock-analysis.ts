@@ -139,6 +139,10 @@ export interface AuditMeta {
     code?: string | null;
     derived?: string;
   }>;
+  trade_plan_source?: string;
+  trade_plan_flag?: "new" | "legacy";
+  trade_plan_validation?: Array<{ level: keyof TradeLevels; reason: string }>;
+  trade_plan_vol_1y?: number | null;
 }
 
 export interface StockAnalysisPayload {
