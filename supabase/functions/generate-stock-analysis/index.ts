@@ -602,6 +602,12 @@ Deno.serve(async (req) => {
         momentum_as_of:    mom?.as_of  ?? null,
         sentiment_as_of:   sent?.as_of ?? null,
         source_trace: sourceTrace,
+        trade_plan_source: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
+          ? "compute-trade-plan"
+          : (TRADE_PLAN_SOURCE === "legacy" ? "compute-technicals-legacy" : "compute-technicals-fallback"),
+        trade_plan_flag: TRADE_PLAN_SOURCE,
+        trade_plan_validation: Array.isArray(tpRes.data?.validation) ? tpRes.data!.validation : [],
+        trade_plan_vol_1y: (tpRes.data?.vol_1y as number | null | undefined) ?? (risk?.snapshot.volatility_1y ?? null),
       },
       user_context: body.user_context ?? null,
     };
