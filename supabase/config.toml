@@ -41,6 +41,9 @@ verify_jwt = false
 [functions.compute-sentiment]
 verify_jwt = false
 
+[functions.compute-trade-plan]
+verify_jwt = false
+
 [functions.generate-stock-analysis]
 verify_jwt = true
 
