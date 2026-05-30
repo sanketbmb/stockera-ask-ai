@@ -46,10 +46,14 @@ function json(body: unknown, status = 200) {
   });
 }
 function r2(n: unknown): number | null {
+  if (n === null || n === undefined) return null;
+  if (typeof n === "number" && !Number.isFinite(n)) return null;
   const v = Number(n);
   return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
 }
 function finite(n: unknown): number | null {
+  if (n === null || n === undefined) return null;
+  if (typeof n === "number" && !Number.isFinite(n)) return null;
   const v = Number(n);
   return Number.isFinite(v) ? v : null;
 }
