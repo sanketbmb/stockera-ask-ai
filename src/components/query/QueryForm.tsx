@@ -23,23 +23,26 @@ import type { NseStock } from "@/data/nseStocks";
 
 type Intent = "buy_decision" | "stuck_position" | "should_average" | "educational" | "sector_view" | "other";
 
+// Phase 2.1 — hide intents whose Brain flows ship in Phase 3.
+const ENABLE_PHASE3_FEATURES = false;
+
 const QUESTION_EXAMPLES = [
-  "Should I buy HDFC Bank at current levels?",
-  "I'm stuck in IDFC First Bank at a loss, what should I do?",
-  "Best stocks in renewable energy sector?",
-  "Explain P/E ratio to me",
-  "Should I average down on Zomato?",
-  "Long-term view on TCS for 5 years?",
+  "I bought HDFC Bank at 1850 last year, should I sell now?",
+  "Currently holding Reliance, should I exit at current levels?",
+  "Should I buy ICICIBANK for the next 6 months?",
+  "I'm at a loss in Suzlon, should I average down?",
 ];
 
-const QUERY_TYPES: { id: Intent; label: string; emoji: string }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
-  { id: "educational", emoji: "📚", label: "Educational" },
-  { id: "sector_view", emoji: "🏭", label: "Sector View" },
-  { id: "other", emoji: "❓", label: "Other" },
+  { id: "educational", emoji: "📚", label: "Educational", phase3: true },
+  { id: "sector_view", emoji: "🏭", label: "Sector View", phase3: true },
+  { id: "other", emoji: "❓", label: "Other", phase3: true },
 ];
+
+const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => ENABLE_PHASE3_FEATURES || !t.phase3);
 
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
 const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
