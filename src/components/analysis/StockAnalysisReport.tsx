@@ -51,6 +51,24 @@ const fmtDateShort = (s: string | null | undefined): string => {
   try { return new Date(s).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }); }
   catch { return s; }
 };
+const fmtTimeIST = (s: string | null | undefined): string => {
+  if (!s) return DASH;
+  try { return new Date(s).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); }
+  catch { return s; }
+};
+// Friendly label for a price_context.price_source value coming from compute-technicals.
+const PRICE_SOURCE_LABEL: Record<string, string> = {
+  dhan_live: "Dhan live",
+  dhan_cache: "Dhan live",
+  finedge_eod: "finedge EOD",
+  finedge: "finedge EOD",
+};
+const formatPriceSource = (raw: string | null | undefined): { label: string; isLive: boolean } => {
+  const key = (raw ?? "").toLowerCase();
+  if (!key) return { label: "live feed", isLive: false };
+  const live = key.startsWith("dhan");
+  return { label: PRICE_SOURCE_LABEL[key] ?? key.replace(/_/g, " "), isLive: live };
+};
 const labelize = (s: string | null | undefined): string =>
   !s ? DASH : s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -532,9 +550,24 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             </div>
             <div className="text-right">
               <div className="font-display text-3xl tabular-nums text-foreground">{fmtPrice(price_context.current_price)}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                <span className="font-mono">via {price_context.price_source || "live feed"}</span> · as of {fmtDateShort(as_of_date)}
-              </div>
+              {(() => {
+                const src = formatPriceSource(price_context.price_source);
+                const ts = price_context.as_of || as_of_date;
+                const when = src.isLive ? `${fmtTimeIST(ts)} IST` : fmtDateShort(ts);
+                return (
+                  <div className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+                    {src.isLive && (
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </span>
+                    )}
+                    <span className="font-mono">{src.label}</span>
+                    <span>·</span>
+                    <span>as of {when}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 pt-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">

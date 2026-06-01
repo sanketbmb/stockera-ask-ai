@@ -49,3 +49,7 @@ verify_jwt = true
 
 [functions.seed-stock-master]
 verify_jwt = false
+
+# refresh-ltp is invoked by pg_cron with the anon apikey header — no JWT.
+[functions.refresh-ltp]
+verify_jwt = false

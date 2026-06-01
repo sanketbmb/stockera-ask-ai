@@ -339,6 +339,27 @@ export type Database = {
         }
         Relationships: []
       }
+      ltp_cache: {
+        Row: {
+          fetched_at: string
+          ltp: number
+          source: string
+          symbol: string
+        }
+        Insert: {
+          fetched_at?: string
+          ltp: number
+          source?: string
+          symbol: string
+        }
+        Update: {
+          fetched_at?: string
+          ltp?: number
+          source?: string
+          symbol?: string
+        }
+        Relationships: []
+      }
       market_cache: {
         Row: {
           data: Json
