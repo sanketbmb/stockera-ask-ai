@@ -558,6 +558,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
   }, [audit_meta.trade_plan_validation, levels]);
   const tradePlanFromEngine = audit_meta.trade_plan_source === "compute-trade-plan";
   const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
+  const targetsMeta = audit_meta.targets_meta ?? null;
 
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
 
