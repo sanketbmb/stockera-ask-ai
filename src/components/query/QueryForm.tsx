@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -437,7 +437,7 @@ export function QueryForm() {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Question type</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {QUERY_TYPES.map((t) => (
-                <button key={t.id} type="button" onClick={() => setIntent(t.id)}
+                <button key={t.id} type="button" onClick={() => { setIntent(t.id); setChipManuallyPicked(true); }}
                   className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
                   <span className="mr-1.5">{t.emoji}</span>{t.label}
                 </button>
