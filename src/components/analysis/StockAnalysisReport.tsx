@@ -5,22 +5,28 @@
 
 import { useMemo } from "react";
 import {
-  Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2,
-  Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
-  ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp,
+  Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
+  Clock, Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
+  ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp, Waves,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
 import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown, AuditMeta,
+  IntradayMicrostructureSnapshot, LongTermQualitySnapshot,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
 import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { METRIC_COPY, type MetricCopy } from "@/lib/metric-copy";
+import { getUpcomingCorporateActions, type UpcomingCorporateAction } from "@/lib/corporate-actions.functions";
 import {
   pageContainer, sectionFadeUp, verdictScale, tierBadgeSlide,
   gridContainer, cardItem, innerStaggerContainer, innerStaggerItem,
@@ -792,7 +798,13 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           </motion.section>
         )}
 
-        {/* ═══ 6. 4-CARD METRIC GRID ═══ */}
+        {/* ═══ 6. TIER-SHAPED METRIC GRID (B.2) ═══ */}
+        {FEATURE_FLAGS.tier_shaped_grid_v1 && (
+          <TierShapedGrid data={data} />
+        )}
+
+        {/* ═══ 6-LEGACY. 4-CARD METRIC GRID (kept behind flag for rollback; removed in B.3) ═══ */}
+        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
         <motion.section
           variants={gridContainer}
           initial="hidden"
@@ -865,6 +877,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             );
           })}
         </motion.section>
+        )}
 
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
@@ -1530,4 +1543,456 @@ function recapDriverLine(s: ScoreBreakdown, tier: QueryType): string {
   if (driver) return `Primary driver is ${driver[1]} (score ${s[driver[0]]}); secondary pillars frame the conviction.`;
   const weakest = order.reduce((a, b) => (s[a[0]] ?? 100) < (s[b[0]] ?? 100) ? a : b);
   return `No single pillar carries the call; weakest factor is ${weakest[1]} (${s[weakest[0]] ?? DASH}), which caps the confidence.`;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Tier-shaped metric grid (Mission 1 — Part B.2)
+// Renders a different card set per tier (intraday / medium / long).
+// Backed by the new B.1 snapshots when available; degrades gracefully.
+// ─────────────────────────────────────────────────────────────────
+
+function TierMethodologyChip({ copyKey }: { copyKey: string }) {
+  const copy = METRIC_COPY[copyKey];
+  if (!copy) return null;
+  return <CardMethodologyChip copy={copy} />;
+}
+
+function CardMethodologyChip({ copy }: { copy: MetricCopy }) {
+  const [showFormula, setShowFormula] = useState(false);
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="Methodology"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground"
+      >
+        <Info className="h-3 w-3" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[320px] text-xs leading-snug">
+        <p className="mb-1.5 font-display text-sm text-foreground">What this measures</p>
+        <p className="text-muted-foreground">{copy.measures}</p>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">How it&apos;s computed</p>
+        <p className="text-muted-foreground">{copy.how}</p>
+        {copy.scale && (
+          <p className="mt-2 text-[11px] text-foreground/80"><span className="font-mono uppercase tracking-wider text-muted-foreground">Scale · </span>{copy.scale}</p>
+        )}
+        {copy.interpretation && (
+          <p className="mt-2 text-[11px] italic text-foreground/80">{copy.interpretation}</p>
+        )}
+        {copy.formula && (
+          <div className="mt-3 border-t border-border pt-2">
+            <button
+              type="button"
+              onClick={() => setShowFormula((s) => !s)}
+              className="text-[10px] font-mono uppercase tracking-wider text-accent hover:underline"
+            >
+              {showFormula ? "Hide formula" : "Show formula"}
+            </button>
+            {showFormula && (
+              <pre className="mt-1.5 whitespace-pre-wrap rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/80">{copy.formula}</pre>
+            )}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TierCard({
+  eyebrow, title, icon: Icon, score, copyKey, summary, footnote, muted, children,
+}: {
+  eyebrow: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  score: number | null;
+  copyKey: string;
+  summary?: React.ReactNode;
+  footnote?: React.ReactNode;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  const tone = SCORE_TONE(score);
+  return (
+    <motion.div
+      variants={cardItem}
+      whileHover={{ y: -2, scale: 1.003 }}
+      transition={{ duration: duration.fast, ease: ease.standard }}
+      className={`rounded-2xl border border-border bg-card px-5 py-5 transition-colors hover:border-accent/50 ${muted ? "opacity-90" : ""}`}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Icon className="mt-0.5 h-4 w-4 text-accent" />
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+            <h3 className="font-display text-lg text-foreground leading-tight">{title}</h3>
+          </div>
+          <div className="ml-1 mt-0.5"><TierMethodologyChip copyKey={copyKey} /></div>
+        </div>
+        <div className="text-right">
+          <p className={`font-display text-2xl tabular-nums ${tone.color}`}>
+            {score == null ? DASH : <AnimatedNumber value={score} decimals={0} duration={700} />}
+            {score != null && <span className="ml-0.5 text-xs text-muted-foreground">/100</span>}
+          </p>
+          <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{tone.label}</p>
+        </div>
+      </div>
+      <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
+        {children}
+      </motion.div>
+      {summary && <p className="mt-3 text-[12px] leading-relaxed text-foreground/80">{summary}</p>}
+      {footnote && <div className="mt-3 text-[11px] italic text-muted-foreground">{footnote}</div>}
+    </motion.div>
+  );
+}
+
+const MICROSTRUCTURE_VOL_LABEL: Record<string, string> = {
+  ABOVE_AVERAGE: "Above average",
+  AVERAGE: "Average",
+  BELOW_AVERAGE: "Below average",
+};
+const GAP_LABEL: Record<string, string> = {
+  FLAT: "Flat open",
+  GAP_UP: "Gap up (unfilled)",
+  GAP_DOWN: "Gap down (unfilled)",
+  GAP_FILLED_UP: "Gap up · filled",
+  GAP_FILLED_DOWN: "Gap down · filled",
+};
+const RS_TODAY_LABEL: Record<string, string> = {
+  OUTPERFORMING: "Outperforming",
+  INLINE: "In line",
+  UNDERPERFORMING: "Underperforming",
+};
+const QUALITY_LABEL: Record<string, string> = {
+  HIGH_QUALITY: "High quality",
+  AVERAGE: "Average",
+  WEAK: "Weak",
+  BANKING_ADJUSTED: "Banking-adjusted",
+};
+
+function TierShapedGrid({ data }: { data: StockAnalysisPayload }) {
+  const tier = data.query_context.query_type;
+  if (tier === "intraday")    return <IntradayGrid data={data} />;
+  if (tier === "long-term")   return <LongTermGrid data={data} />;
+  return <MediumTermGrid data={data} />;
+}
+
+function IntradayGrid({ data }: { data: StockAnalysisPayload }) {
+  const {
+    technical_snapshot: t, risk_snapshot: r, sentiment_snapshot: sent,
+    score_breakdown: s, intraday_microstructure_snapshot,
+  } = data;
+  const m: IntradayMicrostructureSnapshot | null = intraday_microstructure_snapshot ?? null;
+  const freshness = m?.data_freshness ?? "stale";
+
+  return (
+    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+      {/* Card 1 — Trend & Levels */}
+      <TierCard
+        eyebrow="Intraday · Card 1"
+        title="Trend & Levels"
+        icon={LineChart}
+        score={s.technical_score}
+        copyKey="card_intraday_trend_levels"
+        summary={technicalProse(t)}
+      >
+        <Metric label="RSI(14)" value={<AnimatedNumber value={t.rsi} decimals={1} duration={700} />} tone={t.rsi != null && (t.rsi > 70 || t.rsi < 30) ? "text-amber-700" : ""} />
+        <Metric label="MACD" value={labelize(t.macd_signal)} />
+        <Metric label="ADX" value={<AnimatedNumber value={t.adx} decimals={1} duration={700} />} hint="Above 25 = trending" />
+        <Metric label="EMA stack" value={labelize(t.ema_stack)} />
+        <Metric label="VWAP signal" value={labelize(t.vwap_signal)} />
+        <Metric label="Bollinger" value={labelize(t.bollinger_position)} />
+      </TierCard>
+
+      {/* Card 2 — Intraday Microstructure */}
+      <TierCard
+        eyebrow="Intraday · Card 2"
+        title="Intraday Microstructure"
+        icon={Waves}
+        score={s.technical_score}
+        copyKey="card_intraday_microstructure"
+        summary={microstructureProse(m)}
+        footnote={
+          freshness === "post_market"
+            ? <span><Clock className="mr-1 inline-block h-3 w-3 align-[-2px]" />Refreshed at market close — live intraday tape not connected yet.</span>
+            : freshness === "stale"
+            ? <span><AlertTriangle className="mr-1 inline-block h-3 w-3 align-[-2px]" />Last bar is stale; values reflect the most recent EOD candle.</span>
+            : null
+        }
+      >
+        <Metric label="ATR(14)" value={m?.atr_14 != null ? <AnimatedNumber value={m.atr_14} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_atr_14.measures} />
+        <Metric label="Realised vol" value={m?.daily_realized_volatility != null ? <AnimatedNumber value={m.daily_realized_volatility} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_realized_vol.measures} />
+        <Metric label="VWAP" value={m?.vwap != null ? fmtPrice(m.vwap) : DASH} hint={METRIC_COPY.m_vwap.measures} />
+        <Metric label="Vs VWAP" value={m?.price_vs_vwap_pct != null ? fmtPct(m.price_vs_vwap_pct, 2, true) : DASH} />
+        <Metric label="Session H/L" value={m?.session_high != null && m?.session_low != null ? `${fmtPrice(m.session_high)} / ${fmtPrice(m.session_low)}` : DASH} />
+        <Metric label="Volume" value={m?.intraday_volume_profile_label ? MICROSTRUCTURE_VOL_LABEL[m.intraday_volume_profile_label] : DASH} hint={METRIC_COPY.m_volume_profile.measures} />
+        <Metric label="Gap" value={m?.gap_behavior_label ? GAP_LABEL[m.gap_behavior_label] : DASH} hint={METRIC_COPY.m_gap_behavior.measures} />
+        <Metric label="Sector RS" value={m?.sector_rs_today_label ? RS_TODAY_LABEL[m.sector_rs_today_label] : DASH} hint={METRIC_COPY.m_sector_rs_today.measures} />
+      </TierCard>
+
+      {/* Card 3 — Risk Profile (intraday) */}
+      <TierCard
+        eyebrow="Intraday · Card 3"
+        title="Risk Profile"
+        icon={ShieldCheck}
+        score={s.risk_score}
+        copyKey="card_intraday_risk"
+        summary={`Beta ${fmtNum(r.beta)} with annualised vol ${fmtPct(r.volatility_1y, 1)} sets the size envelope for a day trade.`}
+      >
+        <Metric label="Beta" value={<AnimatedNumber value={r.beta} decimals={2} duration={700} />} tone={riskTone("beta", r.beta)} hint={METRIC_COPY.m_beta.measures} />
+        <Metric label="Realised vol" value={r.volatility_1y != null ? <AnimatedNumber value={r.volatility_1y} decimals={1} suffix="%" duration={700} /> : DASH} tone={riskTone("vol", r.volatility_1y)} />
+        <Metric label="Daily ATR%" value={m?.atr_14 != null && data.price_context.current_price ? fmtPct((m.atr_14 / data.price_context.current_price) * 100, 2) : DASH} hint="ATR-14 as % of current price." />
+        <Metric label="Liquidity" value={labelize(r.liquidity_label)} hint={METRIC_COPY.m_liquidity.measures} />
+      </TierCard>
+
+      {/* Card 4 — Today's Catalysts */}
+      <TierCard
+        eyebrow="Intraday · Card 4"
+        title="Today's Catalysts"
+        icon={Newspaper}
+        score={s.sentiment_score}
+        copyKey="card_today_catalysts"
+        summary={
+          m?.intraday_news_catalysts && m.intraday_news_catalysts.length > 0
+            ? `Top driver: ${m.intraday_news_catalysts[0]}`
+            : sent.top_news_driver
+              ? `Most-cited driver: ${sent.top_news_driver}`
+              : "No standout catalysts in the last 24 hours."
+        }
+      >
+        <Metric label="Sentiment" value={sent.news_sentiment_score != null ? <AnimatedNumber value={sent.news_sentiment_score} decimals={0} duration={700} /> : DASH} hint={METRIC_COPY.m_news_sentiment.measures} />
+        <Metric label="Articles today" value={String(m?.intraday_news_catalysts?.length ?? 0)} />
+        <Metric label="Sentiment tag" value={labelize(sent.sentiment_label)} />
+        {m?.intraday_news_catalysts && m.intraday_news_catalysts.length > 0 && (
+          <div className="col-span-3 mt-1 space-y-1">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Today&apos;s headlines</p>
+            <ul className="space-y-1 text-[12px] text-foreground/85">
+              {m.intraday_news_catalysts.slice(0, 3).map((h, i) => (
+                <li key={i} className="flex gap-2"><span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-accent" />{h}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </TierCard>
+    </motion.section>
+  );
+}
+
+function microstructureProse(m: IntradayMicrostructureSnapshot | null): string {
+  if (!m) return "Microstructure snapshot pending — intraday module did not return data for this stock.";
+  const gap = m.gap_behavior_label ? GAP_LABEL[m.gap_behavior_label] : "no clear gap";
+  const vol = m.intraday_volume_profile_label ? MICROSTRUCTURE_VOL_LABEL[m.intraday_volume_profile_label].toLowerCase() : "average";
+  const atr = m.atr_14 != null ? `ATR-14 at ${fmtNum(m.atr_14)}` : "ATR unavailable";
+  return `${gap} on ${vol} volume; ${atr}.`;
+}
+
+function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
+  const {
+    technical_snapshot: t, fundamental_snapshot: f, momentum_snapshot: mom,
+    returns_snapshot: ret, sentiment_snapshot: sent, score_breakdown: s,
+    flags, stock,
+  } = data;
+
+  return (
+    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+      <TierCard
+        eyebrow="Medium · Card 1"
+        title="Trend & Structure"
+        icon={LineChart}
+        score={s.technical_score}
+        copyKey="card_medium_trend_structure"
+        summary={technicalProse(t)}
+      >
+        <Metric label="RSI" value={<AnimatedNumber value={t.rsi} decimals={1} duration={700} />} />
+        <Metric label="EMA stack" value={labelize(t.ema_stack)} hint="50DMA vs 200DMA position" />
+        <Metric label="Trend" value={labelize(t.trend_label)} />
+        <Metric label="ADX" value={<AnimatedNumber value={t.adx} decimals={1} duration={700} />} />
+        <Metric label="3M return" value={ret.three_month != null ? fmtPct(ret.three_month, 1, true) : DASH} hint={METRIC_COPY.m_returns_window.measures} />
+        <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} />
+      </TierCard>
+
+      <TierCard
+        eyebrow="Medium · Card 2"
+        title="Momentum & Relative Strength"
+        icon={Activity}
+        score={s.momentum_score}
+        copyKey="card_medium_momentum_rs"
+        summary={`Trend strength reads ${labelize(mom.trend_strength).toLowerCase()}; momentum regime is ${labelize(mom.momentum_label).toLowerCase()}.`}
+      >
+        <Metric label="RS vs Nifty" value={mom.relative_strength_vs_nifty != null ? fmtPct(mom.relative_strength_vs_nifty, 2, true) : DASH} hint={METRIC_COPY.m_rs_vs_nifty.measures} />
+        <Metric label="Trend strength" value={labelize(mom.trend_strength)} />
+        <Metric label="Regime" value={labelize(mom.momentum_label)} />
+        <Metric label="Volume" value={labelize(mom.volume_confirmation) || DASH} hint="Volume confirmation of the move" />
+        <Metric label="1M return" value={ret.one_month != null ? fmtPct(ret.one_month, 1, true) : DASH} />
+        <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
+      </TierCard>
+
+      <TierCard
+        eyebrow="Medium · Card 3"
+        title="Light Fundamentals"
+        icon={Building2}
+        score={s.fundamental_score}
+        copyKey="card_medium_fundamentals_lite"
+        summary={`P/E ${fmtNum(f.pe_ratio)} reads as ${labelize(f.valuation_label).toLowerCase()}. ROE ${fmtPct(f.roe)}.`}
+        muted={flags.banking_override_applied && (f.altman_z_score == null)}
+        footnote={flags.banking_override_applied ? "Banking sector — Altman Z & DCF de-emphasised." : null}
+      >
+        <Metric label="P/E" value={<AnimatedNumber value={f.pe_ratio} decimals={2} duration={700} />} hint={METRIC_COPY.m_pe_ratio.measures} />
+        <Metric label="ROE" value={f.roe != null ? <AnimatedNumber value={f.roe} decimals={2} suffix="%" duration={700} /> : DASH} />
+        <Metric label="F-Score" value={f.piotroski_f_score != null ? `${f.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
+        <Metric label="Valuation" value={labelize(f.valuation_label)} hint={METRIC_COPY.m_valuation_label.measures} />
+        <Metric label="DCF upside" value={f.dcf_upside_pct != null && f.dcf_upside_pct > -95 ? fmtPct(f.dcf_upside_pct, 1, true) : DASH} />
+      </TierCard>
+
+      <CatalystCalendarCard symbol={stock.symbol} sent={sent} score={s.sentiment_score} />
+    </motion.section>
+  );
+}
+
+function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: StockAnalysisPayload["sentiment_snapshot"]; score: number | null }) {
+  const fetcher = useServerFn(getUpcomingCorporateActions);
+  const { data: ca, isLoading } = useQuery({
+    queryKey: ["corporate-actions", symbol],
+    queryFn: () => fetcher({ data: { symbol } }),
+    staleTime: 30 * 60 * 1000,
+    retry: 1,
+  });
+  const actions: UpcomingCorporateAction[] = ca?.actions ?? [];
+
+  return (
+    <TierCard
+      eyebrow="Medium · Card 4"
+      title="Catalyst Calendar & Sentiment"
+      icon={Calendar}
+      score={score}
+      copyKey="card_medium_catalysts"
+      summary={
+        sent.top_news_driver
+          ? `Most-cited recent driver: ${sent.top_news_driver}`
+          : "No standout news driver this fortnight."
+      }
+    >
+      <Metric label="Sentiment" value={sent.news_sentiment_score != null ? <AnimatedNumber value={sent.news_sentiment_score} decimals={0} duration={700} /> : DASH} hint={METRIC_COPY.m_news_sentiment.measures} />
+      <Metric label="Articles (14d)" value={String(sent.article_count ?? 0)} />
+      <Metric label="Tag" value={labelize(sent.sentiment_label)} />
+      <div className="col-span-3 mt-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Upcoming actions · next 90 days</p>
+        {isLoading ? (
+          <p className="mt-1 text-[12px] italic text-muted-foreground">Loading corporate actions…</p>
+        ) : actions.length === 0 ? (
+          <p className="mt-1 text-[12px] italic text-muted-foreground">No upcoming corporate actions on record.</p>
+        ) : (
+          <ul className="mt-1 space-y-1 text-[12px]">
+            {actions.slice(0, 5).map((a, i) => (
+              <li key={i} className="flex items-center justify-between gap-3">
+                <span className="text-foreground/85"><span className="font-mono text-[10px] uppercase tracking-wider text-accent">{labelize(a.type)}</span> · {a.label}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">{new Date(a.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-[10px] italic text-muted-foreground">Earnings calendar — coming soon. Only corporate actions FinEdge confirms are shown.</p>
+      </div>
+    </TierCard>
+  );
+}
+
+function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
+  const {
+    fundamental_snapshot: f, risk_snapshot: r, momentum_snapshot: mom,
+    returns_snapshot: ret, score_breakdown: s, flags, long_term_quality_snapshot, audit_meta,
+  } = data;
+  const q: LongTermQualitySnapshot | null = long_term_quality_snapshot ?? null;
+  const sectorSource = audit_meta.targets_meta?.sector_aggregate_source ?? null;
+  const dcfDegenerate = f.dcf_upside_pct == null || f.dcf_upside_pct <= -95;
+
+  return (
+    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+      {/* Card 1 — Business Quality */}
+      <TierCard
+        eyebrow="Long-term · Card 1"
+        title="Business Quality"
+        icon={Sparkles}
+        score={s.fundamental_score}
+        copyKey="card_long_business_quality"
+        summary={businessQualityProse(q, flags.banking_override_applied)}
+        footnote={
+          q?.quality_label === "BANKING_ADJUSTED"
+            ? "Banking-adjusted view: EPS volatility suppressed; quality governed by ROE, leverage & promoter holding."
+            : null
+        }
+      >
+        <Metric label="ROE (5y)" value={q?.roe_5y_avg != null ? <AnimatedNumber value={q.roe_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roe_5y.measures} />
+        <Metric label="ROCE (5y)" value={q?.roce_5y_avg != null ? <AnimatedNumber value={q.roce_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roce_5y.measures} />
+        <Metric label="Debt / Equity" value={q?.debt_to_equity_current != null ? <AnimatedNumber value={q.debt_to_equity_current} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_debt_equity.measures} />
+        <Metric label="FCF yield" value={q?.fcf_yield != null ? fmtPct(q.fcf_yield, 1) : DASH} hint={METRIC_COPY.m_fcf_yield.measures} />
+        <Metric label="EPS CAGR (5y)" value={q?.eps_cagr_5y != null ? fmtPct(q.eps_cagr_5y, 1, true) : DASH} hint={METRIC_COPY.m_eps_cagr_5y.measures} />
+        <Metric label="Promoter %" value={q?.promoter_holding_pct != null ? fmtPct(q.promoter_holding_pct, 1) : DASH} hint={METRIC_COPY.m_promoter_holding.measures} />
+        <Metric label="F-Score" value={q?.piotroski_f_score != null ? `${q.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
+        <Metric label="Quality" value={q?.quality_label ? QUALITY_LABEL[q.quality_label] : DASH} hint={METRIC_COPY.m_quality_label.measures} />
+        <Metric label="Completeness" value={q?.data_completeness_pct != null ? `${q.data_completeness_pct}%` : DASH} hint="Share of quality fields populated for this stock." />
+      </TierCard>
+
+      {/* Card 2 — Valuation & Fair Value */}
+      <TierCard
+        eyebrow="Long-term · Card 2"
+        title="Valuation & Fair Value"
+        icon={Target}
+        score={s.fundamental_score}
+        copyKey="card_long_valuation"
+        summary={fundamentalProse(f, flags.banking_override_applied)}
+        footnote={
+          (dcfDegenerate || flags.banking_override_applied)
+            ? `Sector-multiple fair value used (DCF unavailable${sectorSource === "bootstrap" ? " · sector data: bootstrap" : sectorSource === "default_fallback" ? " · using default fallback" : ""}).`
+            : null
+        }
+      >
+        <Metric label="P/E" value={<AnimatedNumber value={f.pe_ratio} decimals={2} duration={700} />} hint={METRIC_COPY.m_pe_ratio.measures} />
+        <Metric label="ROE" value={f.roe != null ? <AnimatedNumber value={f.roe} decimals={1} suffix="%" duration={700} /> : DASH} />
+        <Metric label="DCF upside" value={!dcfDegenerate ? fmtPct(f.dcf_upside_pct, 1, true) : DASH} />
+        <Metric label="Valuation" value={labelize(f.valuation_label)} hint={METRIC_COPY.m_valuation_label.measures} />
+        <Metric label="Sector basis" value={sectorSource ? labelize(sectorSource) : DASH} hint="Source of the sector aggregate used for fair value." />
+      </TierCard>
+
+      {/* Card 3 — Risk Profile (long-term) */}
+      <TierCard
+        eyebrow="Long-term · Card 3"
+        title="Risk Profile"
+        icon={ShieldCheck}
+        score={s.risk_score}
+        copyKey="card_long_risk"
+        summary={riskProse(r)}
+      >
+        <Metric label="Vol (1Y)" value={r.volatility_1y != null ? <AnimatedNumber value={r.volatility_1y} decimals={1} suffix="%" duration={700} /> : DASH} tone={riskTone("vol", r.volatility_1y)} hint={METRIC_COPY.m_vol_1y.measures} />
+        <Metric label="Max DD" value={r.max_drawdown != null ? fmtPct(r.max_drawdown, 1, true) : DASH} tone={riskTone("dd", r.max_drawdown)} hint={METRIC_COPY.m_max_dd.measures} />
+        <Metric label="Beta" value={<AnimatedNumber value={r.beta} decimals={2} duration={700} />} tone={riskTone("beta", r.beta)} hint={METRIC_COPY.m_beta.measures} />
+        <Metric label="Sharpe" value={<AnimatedNumber value={r.sharpe_ratio} decimals={2} duration={700} />} tone={riskTone("sharpe", r.sharpe_ratio)} hint={METRIC_COPY.m_sharpe.measures} />
+        <Metric label="Liquidity" value={labelize(r.liquidity_label)} hint={METRIC_COPY.m_liquidity.measures} />
+      </TierCard>
+
+      {/* Card 4 — Long-Term Returns */}
+      <TierCard
+        eyebrow="Long-term · Card 4"
+        title="Long-Term Returns"
+        icon={TrendingUp}
+        score={s.momentum_score}
+        copyKey="card_long_returns"
+        summary={`1Y return ${fmtPct(ret.one_year, 1, true)}; 3M ${fmtPct(ret.three_month, 1, true)}.`}
+      >
+        <Metric label="1Y return" value={ret.one_year != null ? fmtPct(ret.one_year, 1, true) : DASH} hint={METRIC_COPY.m_returns_window.measures} />
+        <Metric label="3M return" value={ret.three_month != null ? fmtPct(ret.three_month, 1, true) : DASH} />
+        <Metric label="1M return" value={ret.one_month != null ? fmtPct(ret.one_month, 1, true) : DASH} />
+        <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} hint={METRIC_COPY.m_rs_vs_nifty.measures} />
+        <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
+        <Metric label="RS vs Nifty" value={mom.relative_strength_vs_nifty != null ? fmtPct(mom.relative_strength_vs_nifty, 2, true) : DASH} />
+      </TierCard>
+    </motion.section>
+  );
+}
+
+function businessQualityProse(q: LongTermQualitySnapshot | null, banking: boolean): string {
+  if (!q) return "Business-quality module did not return data for this stock.";
+  if (banking || q.quality_label === "BANKING_ADJUSTED") {
+    return `Banking-adjusted read: ROE ${fmtPct(q.roe_5y_avg)} with debt-to-equity ${fmtNum(q.debt_to_equity_current)} and Piotroski ${q.piotroski_f_score ?? DASH}/9. EPS-growth signals suppressed by design.`;
+  }
+  const lead = q.quality_label === "HIGH_QUALITY" ? "High-quality compounder profile" : q.quality_label === "WEAK" ? "Quality flags warrant caution" : "Average-quality profile";
+  return `${lead}: ROE ${fmtPct(q.roe_5y_avg)}, D/E ${fmtNum(q.debt_to_equity_current)}, Piotroski ${q.piotroski_f_score ?? DASH}/9, promoter holding ${fmtPct(q.promoter_holding_pct, 1)}.`;
 }

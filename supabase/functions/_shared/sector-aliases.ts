@@ -28,7 +28,14 @@ export const ALIASES: Record<string, string> = {
 
   // Banks (generic) → treat as private (the dominant class in stock_master)
   banks: "private_sector_bank",
+  bank: "private_sector_bank",
   banking: "private_sector_bank",
+  banks_private_sector: "private_sector_bank",
+  banks_public_sector: "public_sector_bank",
+  private_sector_banks_and_financial_institutions: "private_sector_bank",
+  small_finance_bank: "private_sector_bank",
+  small_finance_banks: "private_sector_bank",
+  finance: "private_sector_bank",
 
   // Petroleum / refining
   refineries_marketing: "petroleum_products",
