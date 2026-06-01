@@ -23,11 +23,27 @@ export const generateAiReport = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: query, error: queryError } = await context.supabase
       .from("queries")
-      .select("id")
+      .select("id, query_type")
       .eq("id", data.queryId)
       .single();
     if (queryError || !query) {
       throw new Error(`Query not found for this user: ${queryError?.message ?? data.queryId}`);
+    }
+    // Phase 2.1 — server-side allowlist. Reject any query whose intent is
+    // not in the live set (Fresh Entry / Sell or Hold / Should I Average).
+    // v1-engine intents persist as `fresh_entry` / `existing_position` /
+    // `averaging`; legacy v0 path persists the raw intent id.
+    const ALLOWED_QUERY_TYPES = new Set<string>([
+      "fresh_entry",
+      "existing_position",
+      "averaging",
+      "buy_decision",
+      "stuck_position",
+      "should_average",
+    ]);
+    const qt = (query as { query_type?: string | null }).query_type ?? "";
+    if (qt && !ALLOWED_QUERY_TYPES.has(qt)) {
+      throw new Error("Unsupported query type");
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;

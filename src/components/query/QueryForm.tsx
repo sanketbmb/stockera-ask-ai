@@ -17,20 +17,29 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useServerFn } from "@tanstack/react-start";
 import { generateAiReport } from "@/lib/report.functions";
 import { normalizeHorizon } from "@/lib/query-intake-parser";
+import {
+  ENABLE_PHASE3_QUERY_TYPES,
+  isLiveIntent,
+  type AnyIntent,
+} from "@/lib/feature-flags";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
 
-type Intent = "buy_decision" | "stuck_position" | "should_average" | "educational" | "sector_view" | "other";
+type Intent = AnyIntent;
 
-// Phase 2.1 — hide intents whose Brain flows ship in Phase 3.
-const ENABLE_PHASE3_FEATURES = false;
-
-const QUESTION_EXAMPLES = [
-  "I bought HDFC Bank at 1850 last year, should I sell now?",
-  "Currently holding Reliance, should I exit at current levels?",
-  "Should I buy ICICIBANK for the next 6 months?",
-  "I'm at a loss in Suzlon, should I average down?",
+// Phase 2.1 — 2 examples per live chip. Each entry pre-selects the matching
+// visible intent so a hidden type can never be silently chosen.
+const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
+  // Fresh Entry
+  { text: "Should I buy ICICIBANK for the next 6 months?", intent: "buy_decision" },
+  { text: "Fresh entry in Reliance for long term — good levels?", intent: "buy_decision" },
+  // Sell or Hold
+  { text: "I bought HDFC Bank at 1850 last year, should I sell now?", intent: "stuck_position" },
+  { text: "Currently holding Reliance, should I exit at current levels?", intent: "stuck_position" },
+  // Should I Average
+  { text: "I'm at a loss in Suzlon, should I average down?", intent: "should_average" },
+  { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
 const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean }[] = [
@@ -42,7 +51,8 @@ const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: bool
   { id: "other", emoji: "❓", label: "Other", phase3: true },
 ];
 
-const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => ENABLE_PHASE3_FEATURES || !t.phase3);
+const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => ENABLE_PHASE3_QUERY_TYPES || !t.phase3);
+
 
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
 const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
@@ -169,6 +179,9 @@ export function QueryForm() {
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
+    // Phase 2.1 — defense in depth: refuse to insert a query whose intent is
+    // gated behind ENABLE_PHASE3_QUERY_TYPES. UI already hides these chips.
+    if (!isLiveIntent(intent)) { toast.error("Unsupported query type"); return; }
 
     setSubmitting(true);
     setGenStage("creating");
@@ -177,7 +190,7 @@ export function QueryForm() {
     try {
       const baseInsert = {
         user_id: user.id,
-        stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
+        stock_name: stockName || "Stock Query",
         stock_symbol: stockSymbol || null,
         buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
@@ -312,8 +325,17 @@ export function QueryForm() {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {QUESTION_EXAMPLES.map((q) => (
-                <button key={q} type="button" onClick={() => setQueryText(q)}
-                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs">{q}</button>
+                <button
+                  key={q.text}
+                  type="button"
+                  onClick={() => {
+                    setQueryText(q.text);
+                    if (isLiveIntent(q.intent)) setIntent(q.intent);
+                  }}
+                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
+                >
+                  {q.text}
+                </button>
               ))}
             </div>
           </div>
