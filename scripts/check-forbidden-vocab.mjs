@@ -59,10 +59,10 @@ function walk(dir, out = []) {
 //   - String / template literal contents that include a space (sentence-like)
 function extractProse(line) {
   const out = [];
-  // JSX text content — require a space (filters TS generics like `=> Promise<`)
+  // JSX text content — require interior whitespace (filters `=> Promise<` etc.)
   for (const m of line.matchAll(/>([^<>{}]{3,})</g)) {
-    const frag = m[1];
-    if (frag.includes(" ") && !/[:=]/.test(frag)) out.push(frag);
+    const frag = m[1].trim();
+    if (/\S\s+\S/.test(frag) && !/[:=()]/.test(frag)) out.push(frag);
   }
   // String / template literals with at least one space inside
   for (const m of line.matchAll(/(["'`])((?:\\.|(?!\1).){3,}?)\1/g)) {
