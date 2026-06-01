@@ -69,9 +69,11 @@ Deno.serve(async (req) => {
   const nullReasons = diagnostic.null_reasons as Record<string, string>;
 
   // ── 1. Fundamentals + supporting raw FinEdge calls ──
-  const [fundR, shareR] = await Promise.all([
+  const [fundR, shareR, ratiosR, profileR] = await Promise.all([
     callFn("compute-fundamentals", { symbol }),
     callFn("finedge-fetch", { endpoint: "shareholdings/ownership-history", symbol }),
+    callFn("finedge-fetch", { endpoint: "ratios", symbol, params: { statement_type: "c", ratio_type: "pr" } }),
+    callFn("finedge-fetch", { endpoint: "company-profile", symbol }),
   ]);
 
   if (!fundR) nullReasons.compute_fundamentals = "module_failed_or_insufficient_history";
@@ -83,16 +85,33 @@ Deno.serve(async (req) => {
   const company = (fundR?.company         ?? {}) as Record<string, unknown>;
 
   // 5y proxies — compute-fundamentals exposes 3y avg ROE; treat as 5y proxy.
-  const roe_5y_avg  = r2(prof.roe_3yr_avg ?? prof.roe_latest);
-  const roce_5y_avg = r2(prof.roce);
-  const debt_to_equity_current = r2(health.debt_equity);
+  let roe_5y_avg  = r2(prof.roe_3yr_avg ?? prof.roe_latest);
+  let roce_5y_avg = r2(prof.roce);
+  let debt_to_equity_current = r2(health.debt_equity);
   const piotroski_f_score = num(qual.piotroski_f_score);
   const eps_cagr_5y = r2(growth.profit_cagr_5y);
+
+  // Direct FinEdge `ratios` fallback when compute-fundamentals failed
+  // (e.g. INSUFFICIENT_HISTORY for newly-listed names like BANDHANBNK).
+  if (roe_5y_avg == null || roce_5y_avg == null || debt_to_equity_current == null) {
+    try {
+      const inner = ((ratiosR?.data as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+      const rows = (inner.ratios ?? []) as Array<Record<string, unknown>>;
+      if (Array.isArray(rows) && rows.length > 0) {
+        const last = rows[rows.length - 1];
+        const pickPct = (k: string) => { const v = num(last[k]); return v != null ? r2(v * 100) : null; };
+        if (roe_5y_avg == null)  roe_5y_avg  = pickPct("returnOnEquity");
+        if (roce_5y_avg == null) roce_5y_avg = pickPct("returnOnCapitalEmployed") ?? pickPct("roce");
+        if (debt_to_equity_current == null) debt_to_equity_current = r2(num(last.debtEquityRatio ?? last.debtToEquity));
+      }
+    } catch { /* swallow */ }
+  }
 
   if (roe_5y_avg == null)  nullReasons.roe_5y_avg = "fundamentals_missing_roe";
   if (roce_5y_avg == null) nullReasons.roce_5y_avg = "fundamentals_missing_roce";
   if (debt_to_equity_current == null) nullReasons.debt_to_equity_current = "fundamentals_missing_de";
   if (piotroski_f_score == null) nullReasons.piotroski_f_score = "fundamentals_missing_piotroski";
+
 
   // FCF yield ≈ DCF-input fcf0 not exposed directly; derive from market cap & dcf intrinsic if possible.
   // Conservative: leave null unless we have a clear basis.
@@ -142,22 +161,42 @@ Deno.serve(async (req) => {
   if (promoter_holding_pct == null) nullReasons.promoter_holding_pct = "shareholdings_unavailable";
 
   // ── 2. Banking override ──
-  const sectorLower = String(sector ?? company.sector ?? "").toLowerCase();
+  // Use compute-fundamentals' company.sector when present, otherwise fall back
+  // to a direct company-profile fetch (handles newly-listed banks like BANDHANBNK
+  // where fundamentals fails with INSUFFICIENT_HISTORY).
+  let resolvedSector = String(sector ?? company.sector ?? "");
+  if (!resolvedSector) {
+    const pInner = ((profileR?.data as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+    resolvedSector = String(pInner.sector ?? pInner.sub_industry ?? pInner.industry ?? pInner.macro_sector ?? "");
+  }
+  const sectorLower = resolvedSector.toLowerCase();
   const isBanking = sectorLower.includes("bank") || sectorLower.includes("financial");
   let quality_label: string | null = null;
+  // Banking override PRESERVES ROE, ROCE, D/E, promoter holding — those remain
+  // core profitability/leverage signals for banks. It ONLY suppresses metrics
+  // that are misleading under bank accounting:
+  //   • EPS CAGR (provisioning cycles cause extreme prints)
+  //   • Piotroski F-Score (capital-structure assumptions don't fit banks)
+  //   • DCF / dcf_upside_pct (handled upstream in compute-trade-plan)
   let suppressedEps: number | null = eps_cagr_5y;
+  let bankAdjustedPiotroski: number | null = piotroski_f_score;
 
   if (isBanking) {
     diagnostic.banking_override_applied = true;
-    // Suppress degenerate EPS CAGR (banks frequently show negative or extreme prints
-    // due to provisioning cycles).
-    if (suppressedEps != null && (suppressedEps < -20 || suppressedEps > 80)) {
+    if (suppressedEps != null) {
       suppressedEps = null;
       nullReasons.eps_cagr_5y = "suppressed_under_banking_override";
     }
-    quality_label = "BANKING_ADJUSTED";
+    if (bankAdjustedPiotroski != null) {
+      bankAdjustedPiotroski = null;
+      nullReasons.piotroski_f_score = "suppressed_under_banking_override";
+    }
+    // Derive quality label from bank-relevant signals: ROE and D/E only.
+    const hi = roe_5y_avg != null && roe_5y_avg > 14;
+    const weak = roe_5y_avg != null && roe_5y_avg < 8;
+    quality_label = hi ? "BANKING_HIGH_QUALITY" : weak ? "BANKING_WEAK" : "BANKING_ADJUSTED";
   } else {
-    // High quality: ROE>15, D/E<1, Piotroski>=7
+    // High quality: ROE>15, D/E<1.5, Piotroski>=7
     const hi = (roe_5y_avg != null && roe_5y_avg > 15)
             && (debt_to_equity_current == null || debt_to_equity_current < 1.5)
             && (piotroski_f_score != null && piotroski_f_score >= 7);
@@ -166,10 +205,11 @@ Deno.serve(async (req) => {
     quality_label = hi ? "HIGH_QUALITY" : weak ? "WEAK" : "AVERAGE";
   }
 
+
   // Data completeness — fraction of populated leaf fields.
   const fields = [
     roe_5y_avg, roce_5y_avg, debt_to_equity_current, fcf_yield, suppressedEps,
-    earnings_consistency_label, promoter_holding_pct, piotroski_f_score,
+    earnings_consistency_label, promoter_holding_pct, bankAdjustedPiotroski,
     margin_trend_label, market_share_trend_label,
   ];
   const present = fields.filter((v) => v != null).length;
@@ -183,7 +223,7 @@ Deno.serve(async (req) => {
     eps_cagr_5y: suppressedEps,
     earnings_consistency_label,
     promoter_holding_pct,
-    piotroski_f_score,
+    piotroski_f_score: bankAdjustedPiotroski,
     quality_label,
     margin_trend_label,
     market_share_trend_label,
