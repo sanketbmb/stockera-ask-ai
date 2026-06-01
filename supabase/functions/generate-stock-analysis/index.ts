@@ -192,8 +192,8 @@ function normalizeTechnical(d: Record<string, unknown> | null) {
     },
     price: {
       current_price: r2(close),
-      price_source: "finedge",
-      as_of: String(((d.data_range ?? {}) as Record<string, unknown>).to ?? d.computed_at ?? ""),
+      price_source: String(d.ltp_source ?? "finedge_eod"),
+      as_of: String(d.ltp_timestamp ?? ((d.data_range ?? {}) as Record<string, unknown>).to ?? d.computed_at ?? ""),
     },
     score: num(d.technical_score),
     as_of: String(d.computed_at ?? ""),
