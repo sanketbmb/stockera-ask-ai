@@ -973,13 +973,15 @@ export function StockAnalysisReport({
               <p>Generated {fmtDate(as_of_date)} IST · Tier applied: {TIER_LABEL[tier]}</p>
               <p>
                 Modules:{" "}
-                {audit_meta.source_trace.map((t, i) => (
-                  <span key={t.module} className="inline-flex items-center gap-1">
-                    {i > 0 && <span>·</span>}
-                    {t.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-amber-600" />}
-                    {t.module.replace("compute-", "")}
-                  </span>
-                ))}
+                {audit_meta.source_trace
+                  .filter((t) => !TIER_IRRELEVANT_MODULES[tier].includes(t.module))
+                  .map((t, i) => (
+                    <span key={t.module} className="inline-flex items-center gap-1">
+                      {i > 0 && <span>·</span>}
+                      {t.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-amber-600" />}
+                      {t.module.replace("compute-", "")}
+                    </span>
+                  ))}
               </p>
             </div>
             <Badge variant="outline" className="text-[10px]"><ShieldCheck className="mr-1 h-3 w-3" /> SEBI-aligned</Badge>
