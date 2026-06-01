@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
 
       // Volume profile (last bar vs 20d avg)
       if (N >= 21) {
-        const vols = sorted.slice(N - 21, N - 1).map((r) => num(r.volume ?? r.Volume)).filter((v): v is number => v != null);
+        const vols = sorted.slice(N - 21, N - 1).map((r) => num(r.volume)).filter((v): v is number => v != null);
         const avg = vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null;
         if (avg && lastVol != null) {
           const ratio = lastVol / avg;
