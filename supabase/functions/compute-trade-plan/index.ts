@@ -424,8 +424,10 @@ type SlMethod = "vol_adaptive" | "dma200_anchor" | "max_distance_cap" | "min_dis
 
 function longTermPlanWithSl(spot: number, dma200: number, w52H: number, w52L: number, annVolPct: number | null, t1: number | null, t2: number | null): { levels: Levels; slMethod: SlMethod } {
   // Adaptive long-term SL — bounded by [10%, 20%] from spot.
+  // Multiplier 0.5 keeps SL close to spot for low-vol stocks so RR>=1.5 on
+  // long-term targets is achievable. e.g. HDFCBANK (vol~18%) → 10% SL.
   const volFrac = annVolPct != null && Number.isFinite(annVolPct) ? annVolPct / 100 : 0.20;
-  const volFactor = Math.max(0.10, Math.min(0.20, 1.5 * volFrac));
+  const volFactor = Math.max(0.10, Math.min(0.20, 0.5 * volFrac));
   const slVol = spot * (1 - volFactor);
   const slDma = Number.isFinite(dma200) && dma200 < spot ? dma200 * 0.92 : -Infinity;
   let sl = Math.max(slVol, slDma); // pick the tighter (higher) anchor
