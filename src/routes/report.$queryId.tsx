@@ -122,6 +122,17 @@ function TierShapedReportContent({
       })
     : null;
 
+  // Phase 2.1b — Action Zone default tab derived from intent, not tier.
+  const defaultActionTab: "holding" | "fresh" | "exploring" | undefined =
+    queryType === "fresh_entry" || queryType === "buy_decision"
+      ? "fresh"
+      : queryType === "existing_position" ||
+        queryType === "stuck_position" ||
+        queryType === "averaging" ||
+        queryType === "should_average"
+      ? "holding"
+      : undefined;
+
   const mfRejected = isMfOrPortfolioQuestion(customQuestion);
 
   const phase2Addendum = phase2Ctx ? (
