@@ -314,23 +314,6 @@ function ScoreBar({ label, value, weighted, pulse, note, methodology }: { label:
   );
 }
 
-function ReturnChip({ label, value }: { label: string; value: number | null }) {
-  const isMissing = value == null;
-  const pos = value != null && value >= 0;
-  return (
-    <motion.div
-      variants={innerStaggerItem}
-      whileHover={{ y: -1 }}
-      transition={{ duration: duration.fast, ease: ease.standard }}
-      className="flex flex-col items-start rounded-md border border-border/60 bg-card px-3 py-2 hover:border-accent/40"
-    >
-      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
-      <span className={`font-display text-base tabular-nums ${isMissing ? "text-muted-foreground" : pos ? "text-emerald-700" : "text-rose-700"}`}>
-        {isMissing ? DASH : <AnimatedNumber value={value} decimals={2} suffix="%" signed duration={700} />}
-      </span>
-    </motion.div>
-  );
-}
 
 // Score ring (SVG) — animated arc fill + count-up center.
 // Binds to `final_verdict.overall_score`. When score is null/undefined, the
