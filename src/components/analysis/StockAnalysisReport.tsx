@@ -550,9 +550,24 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             </div>
             <div className="text-right">
               <div className="font-display text-3xl tabular-nums text-foreground">{fmtPrice(price_context.current_price)}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                <span className="font-mono">via {price_context.price_source || "live feed"}</span> · as of {fmtDateShort(as_of_date)}
-              </div>
+              {(() => {
+                const src = formatPriceSource(price_context.price_source);
+                const ts = price_context.as_of || as_of_date;
+                const when = src.isLive ? `${fmtTimeIST(ts)} IST` : fmtDateShort(ts);
+                return (
+                  <div className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+                    {src.isLive && (
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </span>
+                    )}
+                    <span className="font-mono">{src.label}</span>
+                    <span>·</span>
+                    <span>as of {when}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 pt-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
