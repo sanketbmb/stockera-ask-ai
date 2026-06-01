@@ -214,11 +214,10 @@ function validate(levels: Levels, spot: number, atrV: number, queryType: QueryTy
     drop("resistance_2", "r2_alias_of_t2");
   }
 
-  // Rule 7: Long-term + degenerate DCF → strip targets
-  if (queryType === "long-term" && dcfDegenerate) {
-    drop("target_1", "long_term_dcf_degenerate");
-    drop("target_2", "long_term_dcf_degenerate");
-  }
+  // Rule 7: Long-term DCF degeneracy is no longer fatal — fallback hierarchy
+  // (sector-multiple → vol-band) supplies targets when DCF is unreliable. Any
+  // remaining null targets are reported via targets_meta with explicit reason.
+  void dcfDegenerate; void queryType;
 
   return { cleaned: out, omissions: om };
 }
