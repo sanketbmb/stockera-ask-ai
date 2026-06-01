@@ -766,6 +766,39 @@ export type Database = {
         }
         Relationships: []
       }
+      sector_aggregates: {
+        Row: {
+          pe_median: number
+          pe_p25: number | null
+          pe_p75: number | null
+          return_12m_median_pct: number | null
+          sample_size: number
+          sector: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          pe_median: number
+          pe_p25?: number | null
+          pe_p75?: number | null
+          return_12m_median_pct?: number | null
+          sample_size?: number
+          sector: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          pe_median?: number
+          pe_p25?: number | null
+          pe_p75?: number | null
+          return_12m_median_pct?: number | null
+          sample_size?: number
+          sector?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sentiment_cache: {
         Row: {
           articles: Json
