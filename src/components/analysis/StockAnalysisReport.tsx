@@ -798,7 +798,13 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           </motion.section>
         )}
 
-        {/* ═══ 6. 4-CARD METRIC GRID ═══ */}
+        {/* ═══ 6. TIER-SHAPED METRIC GRID (B.2) ═══ */}
+        {FEATURE_FLAGS.tier_shaped_grid_v1 && (
+          <TierShapedGrid data={data} />
+        )}
+
+        {/* ═══ 6-LEGACY. 4-CARD METRIC GRID (kept behind flag for rollback; removed in B.3) ═══ */}
+        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
         <motion.section
           variants={gridContainer}
           initial="hidden"
@@ -871,6 +877,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             );
           })}
         </motion.section>
+        )}
 
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
