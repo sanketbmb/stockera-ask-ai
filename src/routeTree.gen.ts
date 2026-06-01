@@ -37,6 +37,7 @@ import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
+import { Route as AdminExportsRouteImport } from './routes/admin.exports'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
@@ -182,6 +183,11 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminExportsRoute = AdminExportsRouteImport.update({
+  id: '/admin/exports',
+  path: '/admin/exports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/admin/dashboard',
   path: '/admin/dashboard',
@@ -227,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -261,6 +268,7 @@ export interface FileRoutesByTo {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -296,6 +304,7 @@ export interface FileRoutesById {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -332,6 +341,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -366,6 +376,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -400,6 +411,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -435,6 +447,7 @@ export interface RootRouteChildren {
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminExportsRoute: typeof AdminExportsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminProfileRoute: typeof AdminProfileRoute
   AdminSuperRoute: typeof AdminSuperRoute
@@ -645,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/exports': {
+      id: '/admin/exports'
+      path: '/admin/exports'
+      fullPath: '/admin/exports'
+      preLoaderRoute: typeof AdminExportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/dashboard': {
       id: '/admin/dashboard'
       path: '/admin/dashboard'
@@ -699,6 +719,7 @@ const rootRouteChildren: RootRouteChildren = {
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminExportsRoute: AdminExportsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminProfileRoute: AdminProfileRoute,
   AdminSuperRoute: AdminSuperRoute,
@@ -713,3 +734,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
