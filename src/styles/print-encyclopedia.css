@@ -1,0 +1,194 @@
+/* Architecture Encyclopedia — premium print stylesheet.
+   Scoped via .ae-doc root class so it does not bleed into the app. */
+
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+.ae-doc {
+  --ae-navy: #0b1b2b;
+  --ae-navy-2: #15314a;
+  --ae-ivory: #f5f1e8;
+  --ae-ivory-2: #ece6d3;
+  --ae-gold: #c9a24c;
+  --ae-gold-soft: #d8b97a;
+  --ae-ink: #141414;
+  --ae-muted: #6b6357;
+  --ae-rule: #d8d2c2;
+  --ae-display: "Instrument Serif", Georgia, serif;
+  --ae-body: "Inter Tight", system-ui, sans-serif;
+  --ae-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  background: var(--ae-ivory);
+  color: var(--ae-ink);
+  font-family: var(--ae-body);
+  font-size: 11pt;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ae-doc * { box-sizing: border-box; }
+
+.ae-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 22mm 20mm 26mm;
+  margin: 0 auto 8mm;
+  background: var(--ae-ivory);
+  position: relative;
+  break-after: page;
+  page-break-after: always;
+  overflow: hidden;
+}
+.ae-page:last-child { break-after: auto; page-break-after: auto; }
+
+.ae-page.dark {
+  background: var(--ae-navy);
+  color: var(--ae-ivory);
+}
+
+.ae-display { font-family: var(--ae-display); font-weight: 400; letter-spacing: -0.01em; }
+.ae-mono    { font-family: var(--ae-mono); font-size: 9pt; }
+
+.ae-eyebrow {
+  font-family: var(--ae-mono);
+  font-size: 8pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ae-gold);
+}
+.ae-page.dark .ae-eyebrow { color: var(--ae-gold-soft); }
+
+.ae-h1 { font-family: var(--ae-display); font-size: 44pt; line-height: 1.05; margin: 6mm 0 4mm; }
+.ae-h2 { font-family: var(--ae-display); font-size: 28pt; line-height: 1.1;  margin: 0 0 4mm; }
+.ae-h3 { font-family: var(--ae-display); font-size: 18pt; line-height: 1.2;  margin: 6mm 0 2mm; }
+.ae-h4 { font-family: var(--ae-body); font-weight: 600; font-size: 11pt; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ae-navy); margin: 5mm 0 1.5mm; }
+
+.ae-rule { border: 0; border-top: 1px solid var(--ae-rule); margin: 4mm 0; }
+.ae-rule.gold { border-top: 2px solid var(--ae-gold); width: 24mm; margin: 3mm 0; }
+
+.ae-lede {
+  font-family: var(--ae-display);
+  font-size: 14pt;
+  line-height: 1.45;
+  color: var(--ae-navy);
+}
+
+.ae-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+.ae-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+
+.ae-card {
+  border: 1px solid var(--ae-rule);
+  background: rgba(255,255,255,0.55);
+  padding: 5mm 5mm;
+  border-radius: 2px;
+}
+.ae-card.dark {
+  border-color: rgba(201,162,76,0.35);
+  background: rgba(255,255,255,0.04);
+  color: var(--ae-ivory);
+}
+
+.ae-tbl { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+.ae-tbl th, .ae-tbl td {
+  text-align: left;
+  vertical-align: top;
+  padding: 2.5mm 3mm;
+  border-bottom: 1px solid var(--ae-rule);
+}
+.ae-tbl thead th {
+  font-family: var(--ae-mono);
+  font-size: 8pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ae-navy);
+  border-bottom: 2px solid var(--ae-navy);
+  background: rgba(11,27,43,0.04);
+}
+.ae-tbl tbody tr:last-child td { border-bottom: 0; }
+
+.ae-footer {
+  position: absolute;
+  left: 20mm; right: 20mm; bottom: 10mm;
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--ae-mono);
+  font-size: 7.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ae-muted);
+  border-top: 1px solid var(--ae-rule);
+  padding-top: 3mm;
+}
+.ae-page.dark .ae-footer { color: var(--ae-gold-soft); border-top-color: rgba(201,162,76,0.3); }
+
+.ae-pill {
+  display: inline-block;
+  font-family: var(--ae-mono);
+  font-size: 7.5pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 1mm 2.5mm;
+  border: 1px solid var(--ae-gold);
+  color: var(--ae-navy);
+  border-radius: 999px;
+  background: rgba(201,162,76,0.08);
+}
+.ae-page.dark .ae-pill { color: var(--ae-gold-soft); border-color: var(--ae-gold-soft); background: rgba(201,162,76,0.12); }
+
+.ae-formula {
+  font-family: var(--ae-mono);
+  font-size: 9pt;
+  background: rgba(11,27,43,0.05);
+  border-left: 2px solid var(--ae-gold);
+  padding: 2.5mm 3.5mm;
+  margin: 1.5mm 0;
+}
+
+.ae-2col { columns: 2; column-gap: 8mm; }
+.ae-2col p, .ae-2col li { break-inside: avoid; }
+
+.ae-num {
+  font-family: var(--ae-display);
+  font-size: 56pt;
+  line-height: 1;
+  color: var(--ae-gold);
+  opacity: 0.6;
+}
+
+.ae-toc-row {
+  display: grid;
+  grid-template-columns: 12mm 1fr auto;
+  align-items: baseline;
+  padding: 2.5mm 0;
+  border-bottom: 1px dotted var(--ae-rule);
+  font-size: 11pt;
+}
+.ae-toc-row .num { font-family: var(--ae-mono); font-size: 9pt; color: var(--ae-gold); letter-spacing: 0.12em; }
+.ae-toc-row .ttl { font-family: var(--ae-display); font-size: 15pt; }
+.ae-toc-row .pg  { font-family: var(--ae-mono); font-size: 9pt; color: var(--ae-muted); }
+
+.ae-sequence {
+  display: grid;
+  grid-template-columns: 38mm 1fr;
+  gap: 4mm;
+  margin: 3mm 0;
+}
+.ae-sequence .step {
+  font-family: var(--ae-mono);
+  font-size: 8pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ae-gold);
+  border-left: 2px solid var(--ae-gold);
+  padding-left: 3mm;
+}
+.ae-sequence .body { font-size: 10pt; }
+
+.ae-check { color: #2f7a3e; font-weight: 600; }
+.ae-cross { color: #a8421d; font-weight: 600; }
+
+@page { size: A4; margin: 0; }
+
+@media print {
+  body { background: var(--ae-ivory); }
+  .ae-doc { font-size: 10.5pt; }
+  .ae-page { margin: 0; box-shadow: none; }
+}
