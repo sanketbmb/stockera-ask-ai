@@ -202,6 +202,14 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
               transition={{ duration: 0.45, ease: ease.standard, delay: 0.4 }}
             />
           )}
+          {note && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 cursor-help text-muted-foreground/60" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">{note}</TooltipContent>
+            </Tooltip>
+          )}
         </span>
         <span className={`font-mono tabular-nums font-semibold ${tone.color}`}>
           {isMissing ? DASH : countText}
