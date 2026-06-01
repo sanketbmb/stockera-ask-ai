@@ -118,17 +118,58 @@ export function QueryForm() {
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
 
-  // Live intent + field detection on Step 1
-  useEffect(() => {
-    if (queryText.length < 10) return;
-    const detected = classifyIntent(queryText);
-    if (detected !== "other") setIntent(detected);
-    const ex = extractFields(queryText);
-    setAutoDetected(ex);
-    if (ex.stock && !stockName) setStockName(ex.stock);
-    if (ex.buyPrice && !buyPrice) setBuyPrice(String(ex.buyPrice));
-    if (ex.holding && !holding) setHolding(ex.holding);
-  }, [queryText]); // eslint-disable-line
+  // Phase 3A — apply a router classification to the form state.
+  function applyRouterResult(r: RouterOutput) {
+    setRouterMeta(r);
+    const formIntent = toFormIntent(r.interpreted_type);
+    const band = confidenceBand(r.confidence_score);
+
+    // Manual-chip-wins logic: if the user picked a chip BEFORE we
+    // classified, only override on a clear high-confidence mismatch.
+    const userChip = chipManuallyPicked ? intent : null;
+    let nextIntent: Intent = intent;
+    if (userChip == null) {
+      nextIntent = formIntent;
+    } else if (userChip !== formIntent && band === "high") {
+      nextIntent = formIntent;
+      const newLabel = QUERY_TYPES.find((q) => q.id === formIntent)?.label ?? formIntent;
+      toast.message(`Updated question type to “${newLabel}” based on your wording.`);
+    }
+    setIntent(nextIntent);
+
+    if (band === "low") {
+      setRouterNotice("We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.");
+      // Force "other" only if we had no chip pick and no high confidence.
+      if (userChip == null) setIntent("other");
+      return; // No prefill on low confidence — never fabricate.
+    }
+
+    if (band === "medium") {
+      const label = QUERY_TYPES.find((q) => q.id === nextIntent)?.label ?? nextIntent;
+      setRouterNotice(`Looks like “${label}”. Confirm or adjust the chip below before continuing.`);
+    } else {
+      setRouterNotice(null);
+    }
+
+    // Prefill — never invent values. Only set fields the router actually returned.
+    const detected: { stock?: string; buyPrice?: number; holding?: string } = {};
+    if (r.symbol && !stockName) {
+      setStockName(r.symbol);
+      setStockSymbol(r.symbol);
+      detected.stock = r.symbol;
+    }
+    if (r.entry_price != null && r.entry_price > 0) {
+      if (!entryPrice) setEntryPrice(String(r.entry_price));
+      if (!buyPrice) setBuyPrice(String(r.entry_price));
+      detected.buyPrice = r.entry_price;
+    }
+    if (r.qty != null && r.qty > 0 && !qty) {
+      setQty(String(r.qty));
+    }
+    const mappedHorizon = routerHorizonToFormHorizon(r.horizon);
+    if (mappedHorizon && !horizon) setHorizon(mappedHorizon);
+    if (Object.keys(detected).length) setAutoDetected(detected);
+  }
 
   const { data: analysts = [] } = useQuery({
     queryKey: ["available-analysts"],
@@ -150,6 +191,8 @@ export function QueryForm() {
   const showPhase2Fields = isExistingPosition || isAveraging;
   // Phase 2 — these intents now route into the v1 tier-shaped engine, same as Fresh Entry.
   const usesV1Engine = intent === "buy_decision" || isExistingPosition || isAveraging;
+  // Phase 3A — "other" intent skips the v1 engine and lands in the routed-pending placeholder.
+  const isOther = intent === "other";
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -158,13 +201,39 @@ export function QueryForm() {
   const qtyValid = !isAveraging || (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isInteger(qtyNum));
   const anythingElseValid = anythingElse.length <= 500;
 
-  const goNext = () => {
+  const goNext = async () => {
     if (step === 0) {
       if (queryText.trim().length < 15) { toast.error("Add at least 15 characters describing your question"); return; }
+      // Phase 3A — call the free-text router before leaving Step 0 (unless
+      // already called or feature is off). Fail open: if it errors, fall
+      // back to the cheap local heuristic so the user is never blocked.
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading) {
+        setRouterLoading(true);
+        try {
+          const result = await runIntentRouter({ data: { text: queryText.trim() } });
+          applyRouterResult(result);
+          // On medium confidence we keep the user on Step 0 to confirm.
+          if (confidenceBand(result.confidence_score) === "medium" && !chipManuallyPicked) {
+            setRouterLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.warn("[QueryForm] router failed:", (err as Error).message);
+          if (!chipManuallyPicked) setIntent(heuristicClassify(queryText));
+        } finally {
+          setRouterLoading(false);
+        }
+      } else if (!ENABLE_FREE_TEXT_ROUTER && !chipManuallyPicked) {
+        // Router disabled — use the legacy heuristic only.
+        const detected = heuristicClassify(queryText);
+        if (detected !== "other") setIntent(detected);
+      }
       setStep(1);
       return;
     }
     if (step === 1) {
+      // Phase 3A — "other" skips stock/entry fields entirely.
+      if (isOther) { setStep(2); return; }
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
       if (showPhase2Fields) {
         if (!entryPrice) { toast.error("Please enter your entry price"); return; }
