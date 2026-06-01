@@ -123,6 +123,19 @@ export function QueryForm() {
   const balance = profile?.wallet_balance ?? 0;
   const showStockFields = ["stuck_position", "should_average", "buy_decision"].includes(intent);
   const showBuyPrice = ["stuck_position", "should_average"].includes(intent);
+  // Phase 2 — existing position / averaging both ask for entry_price; averaging additionally requires qty.
+  const isExistingPosition = intent === "stuck_position";
+  const isAveraging = intent === "should_average";
+  const showPhase2Fields = isExistingPosition || isAveraging;
+  // Phase 2 — these intents now route into the v1 tier-shaped engine, same as Fresh Entry.
+  const usesV1Engine = intent === "buy_decision" || isExistingPosition || isAveraging;
+
+  // ─ Phase 2 input sanitization ─
+  const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
+  const qtyNum = qty ? Number(qty) : NaN;
+  const entryPriceValid = !showPhase2Fields || (Number.isFinite(entryPriceNum) && entryPriceNum > 0 && /^\d+(\.\d{0,2})?$/.test(entryPrice));
+  const qtyValid = !isAveraging || (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isInteger(qtyNum));
+  const anythingElseValid = anythingElse.length <= 500;
 
   const goNext = () => {
     if (step === 0) {
@@ -132,8 +145,17 @@ export function QueryForm() {
     }
     if (step === 1) {
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
-      if (showBuyPrice && !buyPrice) { toast.error("Please enter your buy price"); return; }
-      if (showStockFields && !currentPrice) { toast.error("Please enter the current stock price"); return; }
+      if (showPhase2Fields) {
+        if (!entryPrice) { toast.error("Please enter your entry price"); return; }
+        if (!entryPriceValid) { toast.error("Please re-check your entry price"); return; }
+        if (isAveraging && !qty) { toast.error("Please enter your quantity"); return; }
+        if (isAveraging && !qtyValid) { toast.error("Quantity must be a positive whole number"); return; }
+        if (!horizon) { toast.error("Please pick your investment horizon"); return; }
+        if (!anythingElseValid) { toast.error("Please keep the extra context under 500 characters"); return; }
+      } else {
+        if (showBuyPrice && !buyPrice) { toast.error("Please enter your buy price"); return; }
+      }
+      if (showStockFields && !showPhase2Fields && !currentPrice) { toast.error("Please enter the current stock price"); return; }
       setStep(2);
       return;
     }
@@ -149,33 +171,34 @@ export function QueryForm() {
     setGenStage("creating");
     let createdQueryId: string | null = null;
 
-    // Mission 1.5 Phase 1 — Fresh Entry routes to the tier-shaped engine.
-    // All other intents preserve the legacy generate-ai-report flow.
-    const isFreshEntry = intent === "buy_decision";
-
     try {
       const baseInsert = {
         user_id: user.id,
         stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
         stock_symbol: stockSymbol || null,
-        buy_price: buyPrice ? Number(buyPrice) : null,
+        buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
         query_text: queryText,
         assigned_analyst_id: analystId,
       };
 
-      const insertPayload = isFreshEntry
+      const v1QueryType = intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
+      const trimmedExtra = anythingElse.trim();
+
+      const insertPayload = usesV1Engine
         ? {
             ...baseInsert,
-            // For v1 fresh-entry records, the orchestrator IS the answer —
-            // mark "ai_answered" so /report/<uuid> renders immediately and
-            // doesn't poll for a legacy ai_report JSONB that never arrives.
             status: "ai_answered" as const,
-            query_type: "fresh_entry",
+            query_type: v1QueryType,
             engine_version: "v1_tier_shaped",
             engine_source: "post_query",
             horizon: normalizeHorizon(horizon),
-            custom_question: queryText,
+            // Phase 2 — only the "Anything else?" textarea populates custom_question.
+            // The main question lives in query_text (existing column).
+            custom_question: trimmedExtra || null,
+            ...(showPhase2Fields && entryPrice ? { entry_price: Number(entryPrice) } : {}),
+            ...(isAveraging && qty ? { qty: Number(qty) } : {}),
+            ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
           }
         : {
             ...baseInsert,
@@ -190,22 +213,23 @@ export function QueryForm() {
       const queryId = inserted.id as string;
       createdQueryId = queryId;
 
-      // Audit (non-fatal)
       supabase.from("audit_events").insert({
         event_type: "query_submitted", actor_id: user.id,
         resource_type: "query", resource_id: queryId,
         payload: {
           intent,
+          v1_query_type: usesV1Engine ? v1QueryType : null,
           has_stock: !!stockSymbol,
-          engine_version: isFreshEntry ? "v1_tier_shaped" : "v0_legacy",
-          engine_source: isFreshEntry ? "post_query" : "legacy_post_query",
+          has_entry_price: !!entryPrice,
+          has_qty: !!qty,
+          custom_question_present: !!trimmedExtra,
+          engine_version: usesV1Engine ? "v1_tier_shaped" : "v0_legacy",
+          engine_source: usesV1Engine ? "post_query" : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (isFreshEntry) {
-        // No legacy generator call — /report/<uuid> will invoke
-        // generate-stock-analysis on render via TanStack Query.
+      if (usesV1Engine) {
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
