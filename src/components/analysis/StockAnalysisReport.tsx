@@ -178,7 +178,7 @@ function Metric({ label, value, tone = "", hint }: { label: string; value: React
 }
 
 // Animated score bar — width fills from 0 to target on view; tier-weighted pulses once.
-function ScoreBar({ label, value, weighted, pulse }: { label: string; value: number | null; weighted: boolean; pulse?: boolean }) {
+function ScoreBar({ label, value, weighted, pulse, note }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string }) {
   const v = value ?? 0;
   const tone = SCORE_TONE(value);
   // Only null/undefined count as missing. A literal 0 is a legitimate score.
