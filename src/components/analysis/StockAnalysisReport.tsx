@@ -1625,7 +1625,7 @@ function TierCard({
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
             <h3 className="font-display text-lg text-foreground leading-tight">{title}</h3>
           </div>
-          <div className="ml-1 mt-0.5"><MethodologyChip copyKey={copyKey} /></div>
+          <div className="ml-1 mt-0.5"><TierMethodologyChip copyKey={copyKey} /></div>
         </div>
         <div className="text-right">
           <p className={`font-display text-2xl tabular-nums ${tone.color}`}>
