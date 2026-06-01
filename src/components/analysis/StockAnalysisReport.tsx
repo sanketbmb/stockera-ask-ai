@@ -13,6 +13,7 @@ import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } fr
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
