@@ -1276,7 +1276,44 @@ function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
   );
 }
 
-function LevelCell({ label, value, tone, reason }: { label: string; value: number | null; tone?: string; reason?: string }) {
+const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
+  dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
+  sector_multiple:     { short: "Sector-multiple fair value", long: "Trailing EPS multiplied by the peer-group median P/E for the company's sector." },
+  historical_multiple: { short: "Historical multiple",     long: "Trailing EPS multiplied by the stock's own 5-year average P/E." },
+  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to a 6–18% sector-aware band)." },
+  none:                { short: "No method available",     long: "Every fallback in the hierarchy failed; target omitted." },
+};
+
+function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string }) {
+  if (!targetMeta || targetMeta.method === "none" || targetMeta.value == null) return null;
+  const copy = TARGET_METHOD_COPY[targetMeta.method] ?? TARGET_METHOD_COPY.none;
+  const inputs = Object.entries(targetMeta.inputs ?? {}).filter(([, v]) => v != null);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="mt-1 inline-flex cursor-help items-center gap-1 rounded border border-border/60 bg-background/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          {copy.short.split(" ")[0]} <Info className="h-2.5 w-2.5 opacity-60" aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-xs">
+        <p className="font-semibold">{label}: {copy.short}</p>
+        <p className="mt-1 leading-snug text-muted-foreground">{copy.long}</p>
+        {inputs.length > 0 && (
+          <div className="mt-2 border-t border-border/40 pt-1.5 space-y-0.5">
+            {inputs.map(([k, v]) => (
+              <p key={k} className="font-mono text-[10px]">
+                <span className="text-muted-foreground">{k}:</span>{" "}
+                <span className="text-foreground/80">{typeof v === "number" ? v.toFixed(2) : String(v)}</span>
+              </p>
+            ))}
+          </div>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function LevelCell({ label, value, tone, reason, methodTip }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode }) {
   const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
@@ -1302,7 +1339,10 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
           </TooltipContent>
         </Tooltip>
       ) : (
-        <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
+        <>
+          <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
+          {methodTip}
+        </>
       )}
     </motion.div>
   );
