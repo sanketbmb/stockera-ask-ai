@@ -1095,46 +1095,8 @@ function ConfidenceInfo({ audit }: { audit: StockAnalysisPayload["audit_meta"] }
   );
 }
 
-function DimensionCard({
-  eyebrow, title, icon: Icon, score, muted, children,
-}: { eyebrow: string; title: string; icon: React.ComponentType<{ className?: string }>; score: number | null; muted?: boolean; children: React.ReactNode }) {
-  const tone = SCORE_TONE(score);
-  return (
-    <motion.div
-      variants={cardItem}
-      whileHover={{ y: -2, scale: 1.003 }}
-      transition={{ duration: duration.fast, ease: ease.standard }}
-      className={`rounded-2xl border border-border bg-card px-5 py-5 transition-colors hover:border-accent/50 ${muted ? "opacity-90" : ""}`}
-    >
-      <div className="mb-4 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-accent" />
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
-            <h3 className="font-display text-lg text-foreground leading-tight">{title}</h3>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className={`font-display text-2xl tabular-nums ${tone.color}`}>
-            {score == null ? DASH : <AnimatedNumber value={score} decimals={0} duration={700} />}
-          </p>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{tone.label}</p>
-        </div>
-      </div>
-      {children}
-    </motion.div>
-  );
-}
 
-function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
-  const t = SCORE_TONE(tone);
-  return (
-    <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
-      <span className={`inline-block h-1.5 w-1.5 rounded-full ${t.color === "text-emerald-700" ? "bg-emerald-500" : t.color === "text-amber-700" ? "bg-amber-500" : t.color === "text-rose-700" ? "bg-rose-500" : "bg-muted-foreground"} align-middle`} />{" "}
-      {t.label === "no data" ? `Insufficient data on ${dim}.` : `${t.label[0].toUpperCase() + t.label.slice(1)} ${dim} reading.`}
-    </p>
-  );
-}
+
 
 const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
   dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
