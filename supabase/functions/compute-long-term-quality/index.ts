@@ -161,22 +161,42 @@ Deno.serve(async (req) => {
   if (promoter_holding_pct == null) nullReasons.promoter_holding_pct = "shareholdings_unavailable";
 
   // ── 2. Banking override ──
-  const sectorLower = String(sector ?? company.sector ?? "").toLowerCase();
+  // Use compute-fundamentals' company.sector when present, otherwise fall back
+  // to a direct company-profile fetch (handles newly-listed banks like BANDHANBNK
+  // where fundamentals fails with INSUFFICIENT_HISTORY).
+  let resolvedSector = String(sector ?? company.sector ?? "");
+  if (!resolvedSector) {
+    const pInner = ((profileR?.data as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+    resolvedSector = String(pInner.sector ?? pInner.sub_industry ?? pInner.industry ?? pInner.macro_sector ?? "");
+  }
+  const sectorLower = resolvedSector.toLowerCase();
   const isBanking = sectorLower.includes("bank") || sectorLower.includes("financial");
   let quality_label: string | null = null;
+  // Banking override PRESERVES ROE, ROCE, D/E, promoter holding — those remain
+  // core profitability/leverage signals for banks. It ONLY suppresses metrics
+  // that are misleading under bank accounting:
+  //   • EPS CAGR (provisioning cycles cause extreme prints)
+  //   • Piotroski F-Score (capital-structure assumptions don't fit banks)
+  //   • DCF / dcf_upside_pct (handled upstream in compute-trade-plan)
   let suppressedEps: number | null = eps_cagr_5y;
+  let bankAdjustedPiotroski: number | null = piotroski_f_score;
 
   if (isBanking) {
     diagnostic.banking_override_applied = true;
-    // Suppress degenerate EPS CAGR (banks frequently show negative or extreme prints
-    // due to provisioning cycles).
-    if (suppressedEps != null && (suppressedEps < -20 || suppressedEps > 80)) {
+    if (suppressedEps != null) {
       suppressedEps = null;
       nullReasons.eps_cagr_5y = "suppressed_under_banking_override";
     }
-    quality_label = "BANKING_ADJUSTED";
+    if (bankAdjustedPiotroski != null) {
+      bankAdjustedPiotroski = null;
+      nullReasons.piotroski_f_score = "suppressed_under_banking_override";
+    }
+    // Derive quality label from bank-relevant signals: ROE and D/E only.
+    const hi = roe_5y_avg != null && roe_5y_avg > 14;
+    const weak = roe_5y_avg != null && roe_5y_avg < 8;
+    quality_label = hi ? "BANKING_HIGH_QUALITY" : weak ? "BANKING_WEAK" : "BANKING_ADJUSTED";
   } else {
-    // High quality: ROE>15, D/E<1, Piotroski>=7
+    // High quality: ROE>15, D/E<1.5, Piotroski>=7
     const hi = (roe_5y_avg != null && roe_5y_avg > 15)
             && (debt_to_equity_current == null || debt_to_equity_current < 1.5)
             && (piotroski_f_score != null && piotroski_f_score >= 7);
@@ -184,6 +204,7 @@ Deno.serve(async (req) => {
               || (debt_to_equity_current != null && debt_to_equity_current > 3);
     quality_label = hi ? "HIGH_QUALITY" : weak ? "WEAK" : "AVERAGE";
   }
+
 
   // Data completeness — fraction of populated leaf fields.
   const fields = [
