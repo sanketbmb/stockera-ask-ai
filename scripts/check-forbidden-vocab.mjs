@@ -54,6 +54,20 @@ function walk(dir, out = []) {
   return out;
 }
 
+// Extract prose-like fragments from a line:
+//   - JSX text between > and <
+//   - String / template literal contents that include a space (sentence-like)
+function extractProse(line) {
+  const out = [];
+  // JSX text content
+  for (const m of line.matchAll(/>([^<>{}]{3,})</g)) out.push(m[1]);
+  // String / template literals with at least one space inside
+  for (const m of line.matchAll(/(["'`])((?:\\.|(?!\1).){3,}?)\1/g)) {
+    if (m[2].includes(" ")) out.push(m[2]);
+  }
+  return out;
+}
+
 const violations = [];
 for (const dir of SCAN_DIRS) {
   let files;
@@ -64,15 +78,18 @@ for (const dir of SCAN_DIRS) {
     const src = readFileSync(file, "utf8").split(/\r?\n/);
     src.forEach((line, idx) => {
       if (LINE_SKIP.some((re) => re.test(line))) return;
-      const lower = line.toLowerCase();
-      for (const word of FORBIDDEN) {
-        const i = lower.indexOf(word);
-        if (i === -1) continue;
-        // Word-boundary check for short tokens like "100%" / "promise".
-        const before = lower[i - 1] ?? " ";
-        const after = lower[i + word.length] ?? " ";
-        if (/[a-z0-9]/.test(before) || /[a-z]/.test(after)) continue;
-        violations.push({ file: rel, line: idx + 1, word, snippet: line.trim().slice(0, 120) });
+      const fragments = extractProse(line);
+      if (fragments.length === 0) return;
+      for (const frag of fragments) {
+        const lower = frag.toLowerCase();
+        for (const word of FORBIDDEN) {
+          const i = lower.indexOf(word);
+          if (i === -1) continue;
+          const before = lower[i - 1] ?? " ";
+          const after = lower[i + word.length] ?? " ";
+          if (/[a-z0-9]/.test(before) || /[a-z]/.test(after)) continue;
+          violations.push({ file: rel, line: idx + 1, word, snippet: frag.trim().slice(0, 120) });
+        }
       }
     });
   }
