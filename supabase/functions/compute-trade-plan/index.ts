@@ -20,8 +20,12 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const FORMULA_VERSION = "trade-plan-1.0";
+const FORMULA_VERSION = "trade-plan-1.1";
 const MODULE_TIMEOUT_MS = 20_000;
+const LT_T1_FLOOR_PCT = 0.05;   // T1 must be ≥ spot × 1.05
+const LT_TARGET_CAP_PCT = 0.60; // T1/T2 capped at spot × 1.60
+const LT_LIQUIDITY_MIN_CR = 5;  // avg daily turnover ≥ ₹5cr
+const LT_VOL_MAX_PCT = 60;      // annualized vol ≤ 60%
 
 type QueryType = "intraday" | "medium-term" | "long-term";
 
@@ -210,11 +214,10 @@ function validate(levels: Levels, spot: number, atrV: number, queryType: QueryTy
     drop("resistance_2", "r2_alias_of_t2");
   }
 
-  // Rule 7: Long-term + degenerate DCF → strip targets
-  if (queryType === "long-term" && dcfDegenerate) {
-    drop("target_1", "long_term_dcf_degenerate");
-    drop("target_2", "long_term_dcf_degenerate");
-  }
+  // Rule 7: Long-term DCF degeneracy is no longer fatal — fallback hierarchy
+  // (sector-multiple → vol-band) supplies targets when DCF is unreliable. Any
+  // remaining null targets are reported via targets_meta with explicit reason.
+  void dcfDegenerate; void queryType;
 
   return { cleaned: out, omissions: om };
 }
@@ -279,23 +282,173 @@ function mediumPlan(spot: number, atrV: number, swingHighs: number[], swingLows:
   };
 }
 
-function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, dcfFairValue: number | null, momentumPositive: boolean): Levels {
+type TargetMethod = "dcf" | "sector_multiple" | "historical_multiple" | "vol_band" | "none";
+interface TargetResolution {
+  value: number | null;
+  method: TargetMethod;
+  reason: string;
+  inputs: Record<string, number | string | null>;
+  attempts: Array<{ method: TargetMethod; ok: boolean; reason: string; value?: number | null }>;
+}
+
+interface LongTermContext {
+  spot: number;
+  dcfFairValue: number | null;     // null if degenerate
+  dcfDegenerate: boolean;
+  sectorPeMedian: number | null;
+  sectorReturn12mPct: number | null;
+  sectorName: string | null;
+  peRatio: number | null;
+  trailingEps: number | null;      // price / pe (if pe valid)
+  stockReturn12mPct: number | null;
+  annVolPct: number | null;
+}
+
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+function withinLongTermBand(spot: number, v: number): boolean {
+  return v >= spot * (1 + LT_T1_FLOOR_PCT) && v <= spot * (1 + LT_TARGET_CAP_PCT);
+}
+
+function resolveLongTermT1(ctx: LongTermContext): TargetResolution {
+  const attempts: TargetResolution["attempts"] = [];
+  const spot = ctx.spot;
+
+  // 1. DCF fair value
+  if (ctx.dcfFairValue != null && !ctx.dcfDegenerate) {
+    const v = ctx.dcfFairValue;
+    if (withinLongTermBand(spot, v)) {
+      return { value: v, method: "dcf", reason: "dcf_fair_value", inputs: { dcf: v, spot }, attempts: [{ method: "dcf", ok: true, reason: "dcf_fair_value", value: v }] };
+    }
+    attempts.push({ method: "dcf", ok: false, reason: v < spot * 1.05 ? "dcf_below_floor" : "dcf_above_cap", value: v });
+  } else {
+    attempts.push({ method: "dcf", ok: false, reason: ctx.dcfDegenerate ? "dcf_degenerate" : "dcf_missing" });
+  }
+
+  // 2. Sector multiple: trailing_eps × sector_pe_median (== spot × sector_pe / pe)
+  if (ctx.trailingEps != null && ctx.sectorPeMedian != null) {
+    const v = ctx.trailingEps * ctx.sectorPeMedian;
+    if (withinLongTermBand(spot, v)) {
+      return {
+        value: v, method: "sector_multiple",
+        reason: "sector_multiple_fair_value",
+        inputs: { trailing_eps: ctx.trailingEps, sector_pe_median: ctx.sectorPeMedian, sector: ctx.sectorName, spot },
+        attempts: [...attempts, { method: "sector_multiple", ok: true, reason: "sector_multiple_fair_value", value: v }],
+      };
+    }
+    attempts.push({ method: "sector_multiple", ok: false, reason: v < spot * 1.05 ? "sector_multiple_below_floor" : "sector_multiple_above_cap", value: v });
+  } else {
+    attempts.push({ method: "sector_multiple", ok: false, reason: ctx.sectorPeMedian == null ? "sector_pe_missing" : "trailing_eps_missing" });
+  }
+
+  // 3. Historical multiple — 5y avg PE not available in current data layer
+  attempts.push({ method: "historical_multiple", ok: false, reason: "historical_pe_unavailable" });
+
+  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.06..0.18, sector_return_12m))
+  const drift12m = ctx.sectorReturn12mPct != null
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+  const v = spot * (1 + drift12m);
+  if (withinLongTermBand(spot, v)) {
+    return {
+      value: v, method: "vol_band",
+      reason: "vol_band_expected_drift",
+      inputs: { drift_12m_pct: drift12m * 100, sector_return_12m_pct: ctx.sectorReturn12mPct, stock_return_12m_pct: ctx.stockReturn12mPct, spot },
+      attempts: [...attempts, { method: "vol_band", ok: true, reason: "vol_band_expected_drift", value: v }],
+    };
+  }
+  attempts.push({ method: "vol_band", ok: false, reason: "vol_band_below_floor", value: v });
+
+  return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
+}
+
+function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetResolution {
+  const attempts: TargetResolution["attempts"] = [];
+  const spot = ctx.spot;
+  const cap = spot * (1 + LT_TARGET_CAP_PCT);
+  const minT2 = (t1.value ?? spot * 1.05) * 1.005; // strictly above T1 if available
+
+  const tryVal = (raw: number, method: TargetMethod, reason: string, extraInputs: Record<string, number | string | null> = {}): TargetResolution | null => {
+    if (raw > minT2 && raw <= cap) {
+      return {
+        value: raw, method, reason,
+        inputs: { ...extraInputs, spot, min_required: minT2, cap },
+        attempts: [...attempts, { method, ok: true, reason, value: raw }],
+      };
+    }
+    attempts.push({ method, ok: false, reason: raw <= minT2 ? `${method}_not_above_t1` : `${method}_above_cap`, value: raw });
+    return null;
+  };
+
+  // 1. DCF stretch
+  if (ctx.dcfFairValue != null && !ctx.dcfDegenerate) {
+    const r = tryVal(ctx.dcfFairValue * 1.10, "dcf", "dcf_stretch", { dcf: ctx.dcfFairValue });
+    if (r) return r;
+  } else attempts.push({ method: "dcf", ok: false, reason: "dcf_unavailable" });
+
+  // 2. Sector-multiple stretch
+  if (ctx.trailingEps != null && ctx.sectorPeMedian != null) {
+    const r = tryVal(ctx.trailingEps * ctx.sectorPeMedian * 1.10, "sector_multiple", "sector_multiple_stretch", { trailing_eps: ctx.trailingEps, sector_pe_median: ctx.sectorPeMedian, sector: ctx.sectorName });
+    if (r) return r;
+  } else attempts.push({ method: "sector_multiple", ok: false, reason: "sector_inputs_missing" });
+
+  // 3. Historical band high — unavailable
+  attempts.push({ method: "historical_multiple", ok: false, reason: "historical_band_unavailable" });
+
+  // 4. Vol-band stretch: spot × (1 + 1.5 × drift)
+  const drift = ctx.sectorReturn12mPct != null
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+  const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
+  if (r) return r;
+
+  // 5. Final fallback: small buffer above T1 (if T1 exists) within cap
+  if (t1.value != null) {
+    const buffered = Math.min(t1.value * 1.05, cap * 0.999);
+    if (buffered > minT2) {
+      return {
+        value: buffered, method: "vol_band",
+        reason: "t1_plus_5pct_buffer (all other methods exceeded cap)",
+        inputs: { t1: t1.value, cap, spot },
+        attempts: [...attempts, { method: "vol_band", ok: true, reason: "t1_plus_5pct_buffer", value: buffered }],
+      };
+    }
+  }
+
+  return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
+}
+
+
+function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
   const slPct = spot * 0.85;
-  // Uptrending (DMA below spot): use the higher (tighter) of the % stop or DMA-based stop.
-  // Downtrending (DMA above spot): the DMA term would push SL above spot — ignore it, use simple % stop.
   const sl = (Number.isFinite(dma200) && dma200 < spot)
     ? Math.max(slPct, dma200 * 0.92)
     : slPct;
   return {
     entry_zone: spot,
     stop_loss: sl,
-    target_1: dcfFairValue != null && dcfFairValue > spot ? dcfFairValue : null,
-    target_2: momentumPositive ? spot * 1.25 : null,
+    target_1: t1,
+    target_2: t2,
     support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
     support_2: w52L < spot ? w52L : null,
     resistance_1: w52H > spot ? w52H : null,
     resistance_2: null,
   };
+}
+
+async function fetchSectorAggregate(sector: string | null): Promise<{ name: string; pe_median: number; return_12m_median_pct: number | null } | null> {
+  const tryNames = [sector, "__default__"].filter(Boolean) as string[];
+  for (const name of tryNames) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,pe_median,return_12m_median_pct&sector=eq.${encodeURIComponent(name)}`, {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+    }).catch(() => null);
+    if (!res || !res.ok) continue;
+    const rows = await res.json().catch(() => []) as Array<{ sector: string; pe_median: number; return_12m_median_pct: number | null }>;
+    if (rows.length > 0) {
+      return { name: rows[0].sector, pe_median: Number(rows[0].pe_median), return_12m_median_pct: rows[0].return_12m_median_pct != null ? Number(rows[0].return_12m_median_pct) : null };
+    }
+  }
+  return null;
 }
 
 // ─── Main ───
@@ -356,26 +509,114 @@ Deno.serve(async (req) => {
 
     // Annualized volatility (for nudge)
     let vol1y: number | null = null;
+    let avgTurnoverCr: number | null = null;
     if (riskRes) {
       const v = (riskRes.volatility ?? {}) as Record<string, unknown>;
       vol1y = finite(v.annualized_pct);
+      const liq = (riskRes.liquidity ?? {}) as Record<string, unknown>;
+      avgTurnoverCr = finite(liq.avg_daily_turnover_cr);
     }
 
-    // Momentum positive signal (for long-term T2 gate)
+    // Momentum positive signal (legacy gate, kept for non-long-term contexts) + 12m return
     let momentumPositive = false;
+    let stockReturn12mPct: number | null = null;
     if (momRes) {
       const cls = String(momRes.classification ?? "").toUpperCase();
       momentumPositive = cls.includes("STRONG") || cls.includes("POSITIVE") || cls.includes("UP");
+      const rets = (momRes.returns ?? {}) as Record<string, unknown>;
+      stockReturn12mPct = finite(rets["12m"]);
+    }
+
+    // ── 2b. Long-term fallback inputs ──
+    let targetsMeta: Record<string, unknown> | null = null;
+    let t1Resolved: TargetResolution | null = null;
+    let t2Resolved: TargetResolution | null = null;
+    let ltGuardrail: string | null = null;
+
+    if (queryType === "long-term") {
+      // Hard guardrails first — if violated, no targets at all.
+      if (avgTurnoverCr != null && avgTurnoverCr < LT_LIQUIDITY_MIN_CR) {
+        ltGuardrail = `insufficient_liquidity: avg daily turnover ₹${avgTurnoverCr.toFixed(2)}cr < ₹${LT_LIQUIDITY_MIN_CR}cr threshold`;
+      } else if (vol1y != null && vol1y > LT_VOL_MAX_PCT) {
+        ltGuardrail = `excessive_volatility: annualized vol ${vol1y.toFixed(1)}% > ${LT_VOL_MAX_PCT}% threshold`;
+      }
+
+      let sectorName: string | null = null;
+      let peRatio: number | null = null;
+      let trailingEps: number | null = null;
+      if (fundRes) {
+        const co = (fundRes.company ?? {}) as Record<string, unknown>;
+        sectorName = (co.sector as string | null) ?? null;
+        const val = (fundRes.valuation ?? {}) as Record<string, unknown>;
+        peRatio = finite(val.pe);
+        if (peRatio != null && peRatio > 0 && spot > 0) trailingEps = spot / peRatio;
+      }
+
+      const sectorAgg = await fetchSectorAggregate(sectorName);
+      const sectorMissing = sectorAgg == null || sectorAgg.name === "__default__"
+        ? (sectorAgg == null ? "sector_aggregate_missing" : null)
+        : null;
+
+      const ctx: LongTermContext = {
+        spot,
+        dcfFairValue: dcfDegenerate ? null : dcfPerShare,
+        dcfDegenerate,
+        sectorPeMedian: sectorAgg?.pe_median ?? null,
+        sectorReturn12mPct: sectorAgg?.return_12m_median_pct ?? null,
+        sectorName,
+        peRatio,
+        trailingEps,
+        stockReturn12mPct,
+        annVolPct: vol1y,
+      };
+
+      if (ltGuardrail) {
+        t1Resolved = { value: null, method: "none", reason: ltGuardrail, inputs: {}, attempts: [] };
+        t2Resolved = { value: null, method: "none", reason: ltGuardrail, inputs: {}, attempts: [] };
+      } else {
+        t1Resolved = resolveLongTermT1(ctx);
+        t2Resolved = resolveLongTermT2(ctx, t1Resolved);
+      }
+
+      targetsMeta = {
+        tier: "long-term",
+        t1: { value: t1Resolved.value, method: t1Resolved.method, reason: t1Resolved.reason, inputs: t1Resolved.inputs, attempts: t1Resolved.attempts },
+        t2: { value: t2Resolved.value, method: t2Resolved.method, reason: t2Resolved.reason, inputs: t2Resolved.inputs, attempts: t2Resolved.attempts },
+        guardrails: {
+          liquidity_ok: !(avgTurnoverCr != null && avgTurnoverCr < LT_LIQUIDITY_MIN_CR),
+          volatility_ok: !(vol1y != null && vol1y > LT_VOL_MAX_PCT),
+          avg_daily_turnover_cr: avgTurnoverCr,
+          ann_vol_pct: vol1y,
+          guardrail_breach: ltGuardrail,
+        },
+        sector_used: sectorAgg?.name ?? null,
+        sector_missing_reason: sectorMissing,
+      };
     }
 
     // ── 3. Per-tier raw plan ──
     let raw: Levels;
     if (queryType === "intraday")          raw = intradayPlan(spot, atrV, prevDay);
-    else if (queryType === "long-term")    raw = longTermPlan(spot, dma200, w52H, w52L, dcfDegenerate ? null : dcfPerShare, momentumPositive);
+    else if (queryType === "long-term")    raw = longTermPlan(spot, dma200, w52H, w52L, t1Resolved?.value ?? null, t2Resolved?.value ?? null);
     else                                   raw = mediumPlan(spot, atrV, swingHighs, swingLows);
 
     // ── 4. Validate ──
     const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);
+
+    // For long-term: if R:R validation drops a target that the resolver computed,
+    // surface the reason in targets_meta too so the UI can explain it.
+    if (queryType === "long-term" && targetsMeta) {
+      const t1Dropped = omissions.find((o) => o.level === "target_1");
+      const t2Dropped = omissions.find((o) => o.level === "target_2");
+      if (t1Dropped && (targetsMeta.t1 as Record<string, unknown>).value != null) {
+        (targetsMeta.t1 as Record<string, unknown>).reason = `dropped_by_validation: ${t1Dropped.reason}`;
+        (targetsMeta.t1 as Record<string, unknown>).value = null;
+      }
+      if (t2Dropped && (targetsMeta.t2 as Record<string, unknown>).value != null) {
+        (targetsMeta.t2 as Record<string, unknown>).reason = `dropped_by_validation: ${t2Dropped.reason}`;
+        (targetsMeta.t2 as Record<string, unknown>).value = null;
+      }
+    }
 
     // ── 5. Round ──
     const levels: Levels = {
@@ -398,6 +639,7 @@ Deno.serve(async (req) => {
       vol_1y: vol1y,
       levels,
       validation: omissions,
+      targets_meta: targetsMeta,
       inputs_summary: {
         bars: candles.length,
         prev_day: prevDay?.date ?? null,
@@ -409,6 +651,7 @@ Deno.serve(async (req) => {
         dcf_intrinsic: r2(dcfPerShare),
         dcf_degenerate: dcfDegenerate,
         momentum_positive: momentumPositive,
+        avg_daily_turnover_cr: avgTurnoverCr,
       },
       formula_version: FORMULA_VERSION,
       computed_at: new Date().toISOString(),

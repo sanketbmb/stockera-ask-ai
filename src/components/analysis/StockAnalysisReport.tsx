@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
-  StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
+  StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown, AuditMeta,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
@@ -558,6 +558,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
   }, [audit_meta.trade_plan_validation, levels]);
   const tradePlanFromEngine = audit_meta.trade_plan_source === "compute-trade-plan";
   const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
+  const targetsMeta = audit_meta.targets_meta ?? null;
 
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
 
@@ -907,12 +908,31 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
               </Tooltip>
             )}
           </div>
+          {targetsMeta && (targetsMeta.t1.method !== "dcf" || targetsMeta.t2.method !== "dcf") && (targetsMeta.t1.value != null || targetsMeta.t2.value != null) && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs leading-relaxed text-sky-900">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {targetsMeta.t1.value != null && targetsMeta.t1.method !== "dcf"
+                  ? <>Target 1 derived from <strong>{TARGET_METHOD_COPY[targetsMeta.t1.method]?.short ?? targetsMeta.t1.method}</strong> (DCF unavailable or out of band).</>
+                  : targetsMeta.t2.value != null && targetsMeta.t2.method !== "dcf"
+                  ? <>Target 2 derived from <strong>{TARGET_METHOD_COPY[targetsMeta.t2.method]?.short ?? targetsMeta.t2.method}</strong>.</>
+                  : null}
+                {targetsMeta.sector_used && targetsMeta.sector_used !== "__default__" && <> Sector benchmark: <em>{targetsMeta.sector_used}</em>.</>}
+              </span>
+            </div>
+          )}
+          {targetsMeta?.guardrails.guardrail_breach && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>Long-term targets omitted — {targetsMeta.guardrails.guardrail_breach}.</span>
+            </div>
+          )}
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
             <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
             <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} />
-            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} />
-            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} />
+            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" />} />
+            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" />} />
             <LevelCell label="Support 1" value={levels.support_1} reason={tradePlanReasons.support_1} />
             <LevelCell label="Support 2" value={levels.support_2} reason={tradePlanReasons.support_2} />
             <LevelCell label="Resistance 1" value={levels.resistance_1} reason={tradePlanReasons.resistance_1} />
@@ -1275,7 +1295,44 @@ function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
   );
 }
 
-function LevelCell({ label, value, tone, reason }: { label: string; value: number | null; tone?: string; reason?: string }) {
+const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
+  dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
+  sector_multiple:     { short: "Sector-multiple fair value", long: "Trailing EPS multiplied by the peer-group median P/E for the company's sector." },
+  historical_multiple: { short: "Historical multiple",     long: "Trailing EPS multiplied by the stock's own 5-year average P/E." },
+  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to a 6–18% sector-aware band)." },
+  none:                { short: "No method available",     long: "Every fallback in the hierarchy failed; target omitted." },
+};
+
+function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string }) {
+  if (!targetMeta || targetMeta.method === "none" || targetMeta.value == null) return null;
+  const copy = TARGET_METHOD_COPY[targetMeta.method] ?? TARGET_METHOD_COPY.none;
+  const inputs = Object.entries(targetMeta.inputs ?? {}).filter(([, v]) => v != null);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="mt-1 inline-flex cursor-help items-center gap-1 rounded border border-border/60 bg-background/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          {copy.short.split(" ")[0]} <Info className="h-2.5 w-2.5 opacity-60" aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-xs">
+        <p className="font-semibold">{label}: {copy.short}</p>
+        <p className="mt-1 leading-snug text-muted-foreground">{copy.long}</p>
+        {inputs.length > 0 && (
+          <div className="mt-2 border-t border-border/40 pt-1.5 space-y-0.5">
+            {inputs.map(([k, v]) => (
+              <p key={k} className="font-mono text-[10px]">
+                <span className="text-muted-foreground">{k}:</span>{" "}
+                <span className="text-foreground/80">{typeof v === "number" ? v.toFixed(2) : String(v)}</span>
+              </p>
+            ))}
+          </div>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function LevelCell({ label, value, tone, reason, methodTip }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode }) {
   const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
@@ -1301,7 +1358,10 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
           </TooltipContent>
         </Tooltip>
       ) : (
-        <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
+        <>
+          <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
+          {methodTip}
+        </>
       )}
     </motion.div>
   );
