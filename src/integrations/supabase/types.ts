@@ -768,32 +768,62 @@ export type Database = {
       }
       sector_aggregates: {
         Row: {
+          as_of_timestamp: string
+          bootstrap_source_reference: string | null
+          method_version: string
+          pb_median: number | null
+          pe_avg_5y: number | null
+          pe_high_5y: number | null
+          pe_low_5y: number | null
           pe_median: number
           pe_p25: number | null
           pe_p75: number | null
           return_12m_median_pct: number | null
+          roe_median: number | null
           sample_size: number
           sector: string
+          sector_canonical: string
+          sector_display: string | null
           source: string
           updated_at: string
         }
         Insert: {
+          as_of_timestamp?: string
+          bootstrap_source_reference?: string | null
+          method_version?: string
+          pb_median?: number | null
+          pe_avg_5y?: number | null
+          pe_high_5y?: number | null
+          pe_low_5y?: number | null
           pe_median: number
           pe_p25?: number | null
           pe_p75?: number | null
           return_12m_median_pct?: number | null
+          roe_median?: number | null
           sample_size?: number
           sector: string
+          sector_canonical: string
+          sector_display?: string | null
           source?: string
           updated_at?: string
         }
         Update: {
+          as_of_timestamp?: string
+          bootstrap_source_reference?: string | null
+          method_version?: string
+          pb_median?: number | null
+          pe_avg_5y?: number | null
+          pe_high_5y?: number | null
+          pe_low_5y?: number | null
           pe_median?: number
           pe_p25?: number | null
           pe_p75?: number | null
           return_12m_median_pct?: number | null
+          roe_median?: number | null
           sample_size?: number
           sector?: string
+          sector_canonical?: string
+          sector_display?: string | null
           source?: string
           updated_at?: string
         }

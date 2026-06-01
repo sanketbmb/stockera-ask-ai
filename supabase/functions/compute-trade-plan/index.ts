@@ -10,6 +10,7 @@
 // Validation always runs. Any rule failure → that level is null and a reason
 // is appended to `validation`. Compute errors → null with explicit reason
 // (never silently substitute defaults).
+import { resolveSectorCanonical } from "../_shared/sector-aliases.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -419,33 +420,70 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
 }
 
 
-function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
-  const slPct = spot * 0.85;
-  const sl = (Number.isFinite(dma200) && dma200 < spot)
-    ? Math.max(slPct, dma200 * 0.92)
-    : slPct;
+type SlMethod = "vol_adaptive" | "dma200_anchor" | "max_distance_cap" | "min_distance_floor";
+
+function longTermPlanWithSl(spot: number, dma200: number, w52H: number, w52L: number, annVolPct: number | null, t1: number | null, t2: number | null): { levels: Levels; slMethod: SlMethod } {
+  // Adaptive long-term SL — bounded by [10%, 20%] from spot.
+  const volFrac = annVolPct != null && Number.isFinite(annVolPct) ? annVolPct / 100 : 0.20;
+  const volFactor = Math.max(0.10, Math.min(0.20, 1.5 * volFrac));
+  const slVol = spot * (1 - volFactor);
+  const slDma = Number.isFinite(dma200) && dma200 < spot ? dma200 * 0.92 : -Infinity;
+  let sl = Math.max(slVol, slDma); // pick the tighter (higher) anchor
+  let slMethod: SlMethod = slDma > slVol ? "dma200_anchor" : "vol_adaptive";
+
+  // Hard cap: SL cannot be more than 20% from spot (floor on price)
+  const maxDistance = spot * 0.80;
+  if (sl < maxDistance) { sl = maxDistance; slMethod = "max_distance_cap"; }
+
+  // Tightness floor: for low-vol stocks, never tighter than 10% from spot
+  const minDistance = spot * 0.90;
+  if (sl > minDistance) { sl = minDistance; slMethod = "min_distance_floor"; }
+
   return {
-    entry_zone: spot,
-    stop_loss: sl,
-    target_1: t1,
-    target_2: t2,
-    support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
-    support_2: w52L < spot ? w52L : null,
-    resistance_1: w52H > spot ? w52H : null,
-    resistance_2: null,
+    levels: {
+      entry_zone: spot,
+      stop_loss: sl,
+      target_1: t1,
+      target_2: t2,
+      support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
+      support_2: w52L < spot ? w52L : null,
+      resistance_1: w52H > spot ? w52H : null,
+      resistance_2: null,
+    },
+    slMethod,
   };
 }
 
-async function fetchSectorAggregate(sector: string | null): Promise<{ name: string; pe_median: number; return_12m_median_pct: number | null } | null> {
-  const tryNames = [sector, "__default__"].filter(Boolean) as string[];
-  for (const name of tryNames) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,pe_median,return_12m_median_pct&sector=eq.${encodeURIComponent(name)}`, {
-      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-    }).catch(() => null);
+
+async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
+  display: string; canonical: string; pe_median: number; return_12m_median_pct: number | null;
+  data_source: "computed" | "bootstrap" | "default_fallback"; method_version: string | null; bootstrap_ref: string | null;
+} | null> {
+  const canonical = resolveSectorCanonical(sectorRaw);
+  const candidates = [canonical, "__default__"].filter(Boolean) as string[];
+  for (const c of candidates) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,sector_canonical,sector_display,pe_median,return_12m_median_pct,source,method_version,bootstrap_source_reference&sector_canonical=eq.${encodeURIComponent(c)}`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } },
+    ).catch(() => null);
     if (!res || !res.ok) continue;
-    const rows = await res.json().catch(() => []) as Array<{ sector: string; pe_median: number; return_12m_median_pct: number | null }>;
+    type Row = { sector: string; sector_canonical: string; sector_display: string | null; pe_median: number; return_12m_median_pct: number | null; source: string | null; method_version: string | null; bootstrap_source_reference: string | null };
+    let rows: Row[] = [];
+    try { rows = (await res.json()) as Row[]; } catch { rows = []; }
     if (rows.length > 0) {
-      return { name: rows[0].sector, pe_median: Number(rows[0].pe_median), return_12m_median_pct: rows[0].return_12m_median_pct != null ? Number(rows[0].return_12m_median_pct) : null };
+      const r = rows[0];
+      const src = r.sector_canonical === "__default__"
+        ? "default_fallback"
+        : (r.source === "computed" ? "computed" : "bootstrap");
+      return {
+        display: r.sector_display ?? r.sector,
+        canonical: r.sector_canonical,
+        pe_median: Number(r.pe_median),
+        return_12m_median_pct: r.return_12m_median_pct != null ? Number(r.return_12m_median_pct) : null,
+        data_source: src as "computed" | "bootstrap" | "default_fallback",
+        method_version: r.method_version,
+        bootstrap_ref: r.bootstrap_source_reference,
+      };
     }
   }
   return null;
@@ -553,9 +591,9 @@ Deno.serve(async (req) => {
       }
 
       const sectorAgg = await fetchSectorAggregate(sectorName);
-      const sectorMissing = sectorAgg == null || sectorAgg.name === "__default__"
-        ? (sectorAgg == null ? "sector_aggregate_missing" : null)
-        : null;
+      const sectorMissing = sectorAgg == null
+        ? "sector_aggregate_missing"
+        : (sectorAgg.canonical === "__default__" ? "alias_unmatched_used_default" : null);
 
       const ctx: LongTermContext = {
         spot,
@@ -578,6 +616,10 @@ Deno.serve(async (req) => {
         t2Resolved = resolveLongTermT2(ctx, t1Resolved);
       }
 
+      if (sectorAgg?.canonical === "__default__") {
+        console.warn(`[compute-trade-plan] sector_aggregate_source=default_fallback symbol=${symbol} raw_sector="${sectorName ?? ""}"`);
+      }
+
       targetsMeta = {
         tier: "long-term",
         t1: { value: t1Resolved.value, method: t1Resolved.method, reason: t1Resolved.reason, inputs: t1Resolved.inputs, attempts: t1Resolved.attempts },
@@ -589,16 +631,33 @@ Deno.serve(async (req) => {
           ann_vol_pct: vol1y,
           guardrail_breach: ltGuardrail,
         },
-        sector_used: sectorAgg?.name ?? null,
+        sector_used: sectorAgg?.display ?? null,
+        sector_canonical: sectorAgg?.canonical ?? null,
+        sector_aggregate_source: sectorAgg?.data_source ?? "missing",
+        sector_method_version: sectorAgg?.method_version ?? null,
+        sector_bootstrap_reference: sectorAgg?.bootstrap_ref ?? null,
         sector_missing_reason: sectorMissing,
       };
     }
 
+
+
     // ── 3. Per-tier raw plan ──
     let raw: Levels;
-    if (queryType === "intraday")          raw = intradayPlan(spot, atrV, prevDay);
-    else if (queryType === "long-term")    raw = longTermPlan(spot, dma200, w52H, w52L, t1Resolved?.value ?? null, t2Resolved?.value ?? null);
-    else                                   raw = mediumPlan(spot, atrV, swingHighs, swingLows);
+    let ltSlMethod: SlMethod | null = null;
+    if (queryType === "intraday") {
+      raw = intradayPlan(spot, atrV, prevDay);
+    } else if (queryType === "long-term") {
+      const lt = longTermPlanWithSl(spot, dma200, w52H, w52L, vol1y, t1Resolved?.value ?? null, t2Resolved?.value ?? null);
+      raw = lt.levels;
+      ltSlMethod = lt.slMethod;
+      if (targetsMeta) {
+        const tm = targetsMeta as Record<string, unknown>;
+        tm.sl_method = ltSlMethod;
+      }
+    } else {
+      raw = mediumPlan(spot, atrV, swingHighs, swingLows);
+    }
 
     // ── 4. Validate ──
     const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);

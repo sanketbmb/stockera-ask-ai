@@ -149,7 +149,12 @@ export interface AuditMeta {
     t2: { value: number | null; method: string; reason: string; inputs: Record<string, number | string | null>; attempts: Array<{ method: string; ok: boolean; reason: string; value?: number | null }> };
     guardrails: { liquidity_ok: boolean; volatility_ok: boolean; avg_daily_turnover_cr: number | null; ann_vol_pct: number | null; guardrail_breach: string | null };
     sector_used: string | null;
+    sector_canonical?: string | null;
+    sector_aggregate_source?: "computed" | "bootstrap" | "default_fallback" | "missing";
+    sector_method_version?: string | null;
+    sector_bootstrap_reference?: string | null;
     sector_missing_reason: string | null;
+    sl_method?: "vol_adaptive" | "dma200_anchor" | "max_distance_cap" | "min_distance_floor";
   } | null;
   confidence_breakdown?: {
     alignment: number;
