@@ -733,11 +733,11 @@ Deno.serve(async (req) => {
         modules_invoked: settled.filter((s) => s.trace.ok).map((s) => s.trace.module),
         tier_modules_added_version: "tier_shaped_v1",
         intraday_microstructure_diagnostic:
-          ((imRes.data?.audit_meta as Record<string, unknown> | undefined)?.intraday_microstructure_diagnostic
-            as Record<string, unknown> | undefined) ?? null,
+          ((imRes.data?.audit_meta as Record<string, unknown> | undefined)
+            ?.intraday_microstructure_diagnostic ?? null) as Record<string, unknown> | null,
         long_term_quality_diagnostic:
-          ((lqRes.data?.audit_meta as Record<string, unknown> | undefined)?.long_term_quality_diagnostic
-            as Record<string, unknown> | undefined) ?? null,
+          ((lqRes.data?.audit_meta as Record<string, unknown> | undefined)
+            ?.long_term_quality_diagnostic ?? null) as Record<string, unknown> | null,
       },
       user_context: body.user_context ?? null,
     };
