@@ -53,3 +53,7 @@ verify_jwt = false
 # refresh-ltp is invoked by pg_cron with the anon apikey header — no JWT.
 [functions.refresh-ltp]
 verify_jwt = false
+
+# seed-sector-aggregates is invoked by pg_cron at 03:00 IST daily.
+[functions.seed-sector-aggregates]
+verify_jwt = false
