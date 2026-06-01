@@ -256,9 +256,8 @@ export function QueryForm() {
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
-    // Phase 2.1 — defense in depth: refuse to insert a query whose intent is
-    // gated behind ENABLE_PHASE3_QUERY_TYPES. UI already hides these chips.
-    if (!isLiveIntent(intent)) { toast.error("Unsupported query type"); return; }
+    // Phase 3A — accept LIVE intents + "other" (when the router is live).
+    if (!isRoutableIntent(intent)) { toast.error("Unsupported query type"); return; }
 
     setSubmitting(true);
     setGenStage("creating");
@@ -273,6 +272,7 @@ export function QueryForm() {
         current_price: currentPrice ? Number(currentPrice) : null,
         query_text: queryText,
         assigned_analyst_id: analystId,
+        ...(routerMeta ? { router_meta: routerMeta as unknown as Record<string, unknown> } : {}),
       };
 
       const v1QueryType = intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
@@ -292,6 +292,16 @@ export function QueryForm() {
             ...(showPhase2Fields && entryPrice ? { entry_price: Number(entryPrice) } : {}),
             ...(isAveraging && qty ? { qty: Number(qty) } : {}),
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
+          }
+        : isOther
+        ? {
+            // Phase 3A — "other" lands in the routed-pending placeholder.
+            // No Brain call, no v1 engine, no charge. Analyst-routed.
+            ...baseInsert,
+            status: "pending" as const,
+            query_type: "other" as const,
+            engine_version: "router_v1",
+            engine_source: "free_text_router",
           }
         : {
             ...baseInsert,
@@ -316,13 +326,19 @@ export function QueryForm() {
           has_entry_price: !!entryPrice,
           has_qty: !!qty,
           custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine ? "v1_tier_shaped" : "v0_legacy",
-          engine_source: usesV1Engine ? "post_query" : "legacy_post_query",
+          engine_version: usesV1Engine ? "v1_tier_shaped" : isOther ? "router_v1" : "v0_legacy",
+          engine_source: usesV1Engine ? "post_query" : isOther ? "free_text_router" : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
+          router_version: routerMeta?.router_version ?? null,
+          router_interpreted_type: routerMeta?.interpreted_type ?? null,
+          router_confidence: routerMeta?.confidence_score ?? null,
+          router_clarification_needed: routerMeta?.clarification_needed ?? null,
+          router_language_hint: routerMeta?.language_hint ?? null,
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (usesV1Engine) {
+      if (usesV1Engine || isOther) {
+        // Both v1 engine and "other" navigate immediately — neither needs the legacy generator.
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
