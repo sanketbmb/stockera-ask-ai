@@ -326,10 +326,10 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
         )}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-display text-4xl tabular-nums text-foreground">
+        <span ref={countRef} className="font-display text-4xl tabular-nums text-foreground">
           {isMissing ? DASH : scoreText}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Stockera Score</span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{isMissing ? "Stockera Score" : "out of 100"}</span>
       </div>
     </div>
   );
