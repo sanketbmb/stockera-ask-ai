@@ -179,6 +179,9 @@ export function QueryForm() {
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
+    // Phase 2.1 — defense in depth: refuse to insert a query whose intent is
+    // gated behind ENABLE_PHASE3_QUERY_TYPES. UI already hides these chips.
+    if (!isLiveIntent(intent)) { toast.error("Unsupported query type"); return; }
 
     setSubmitting(true);
     setGenStage("creating");
