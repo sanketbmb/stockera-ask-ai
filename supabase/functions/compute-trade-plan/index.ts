@@ -283,23 +283,159 @@ function mediumPlan(spot: number, atrV: number, swingHighs: number[], swingLows:
   };
 }
 
-function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, dcfFairValue: number | null, momentumPositive: boolean): Levels {
+type TargetMethod = "dcf" | "sector_multiple" | "historical_multiple" | "vol_band" | "none";
+interface TargetResolution {
+  value: number | null;
+  method: TargetMethod;
+  reason: string;
+  inputs: Record<string, number | string | null>;
+  attempts: Array<{ method: TargetMethod; ok: boolean; reason: string; value?: number | null }>;
+}
+
+interface LongTermContext {
+  spot: number;
+  dcfFairValue: number | null;     // null if degenerate
+  dcfDegenerate: boolean;
+  sectorPeMedian: number | null;
+  sectorReturn12mPct: number | null;
+  sectorName: string | null;
+  peRatio: number | null;
+  trailingEps: number | null;      // price / pe (if pe valid)
+  stockReturn12mPct: number | null;
+  annVolPct: number | null;
+}
+
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+function withinLongTermBand(spot: number, v: number): boolean {
+  return v >= spot * (1 + LT_T1_FLOOR_PCT) && v <= spot * (1 + LT_TARGET_CAP_PCT);
+}
+
+function resolveLongTermT1(ctx: LongTermContext): TargetResolution {
+  const attempts: TargetResolution["attempts"] = [];
+  const spot = ctx.spot;
+
+  // 1. DCF fair value
+  if (ctx.dcfFairValue != null && !ctx.dcfDegenerate) {
+    const v = ctx.dcfFairValue;
+    if (withinLongTermBand(spot, v)) {
+      return { value: v, method: "dcf", reason: "dcf_fair_value", inputs: { dcf: v, spot }, attempts: [{ method: "dcf", ok: true, reason: "dcf_fair_value", value: v }] };
+    }
+    attempts.push({ method: "dcf", ok: false, reason: v < spot * 1.05 ? "dcf_below_floor" : "dcf_above_cap", value: v });
+  } else {
+    attempts.push({ method: "dcf", ok: false, reason: ctx.dcfDegenerate ? "dcf_degenerate" : "dcf_missing" });
+  }
+
+  // 2. Sector multiple: trailing_eps × sector_pe_median (== spot × sector_pe / pe)
+  if (ctx.trailingEps != null && ctx.sectorPeMedian != null) {
+    const v = ctx.trailingEps * ctx.sectorPeMedian;
+    if (withinLongTermBand(spot, v)) {
+      return {
+        value: v, method: "sector_multiple",
+        reason: "sector_multiple_fair_value",
+        inputs: { trailing_eps: ctx.trailingEps, sector_pe_median: ctx.sectorPeMedian, sector: ctx.sectorName, spot },
+        attempts: [...attempts, { method: "sector_multiple", ok: true, reason: "sector_multiple_fair_value", value: v }],
+      };
+    }
+    attempts.push({ method: "sector_multiple", ok: false, reason: v < spot * 1.05 ? "sector_multiple_below_floor" : "sector_multiple_above_cap", value: v });
+  } else {
+    attempts.push({ method: "sector_multiple", ok: false, reason: ctx.sectorPeMedian == null ? "sector_pe_missing" : "trailing_eps_missing" });
+  }
+
+  // 3. Historical multiple — 5y avg PE not available in current data layer
+  attempts.push({ method: "historical_multiple", ok: false, reason: "historical_pe_unavailable" });
+
+  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.06..0.18, sector_return_12m))
+  const drift12m = ctx.sectorReturn12mPct != null
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+  const v = spot * (1 + drift12m);
+  if (withinLongTermBand(spot, v)) {
+    return {
+      value: v, method: "vol_band",
+      reason: "vol_band_expected_drift",
+      inputs: { drift_12m_pct: drift12m * 100, sector_return_12m_pct: ctx.sectorReturn12mPct, stock_return_12m_pct: ctx.stockReturn12mPct, spot },
+      attempts: [...attempts, { method: "vol_band", ok: true, reason: "vol_band_expected_drift", value: v }],
+    };
+  }
+  attempts.push({ method: "vol_band", ok: false, reason: "vol_band_below_floor", value: v });
+
+  return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
+}
+
+function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetResolution {
+  const attempts: TargetResolution["attempts"] = [];
+  const spot = ctx.spot;
+  const cap = spot * (1 + LT_TARGET_CAP_PCT);
+  const minT2 = (t1.value ?? spot * 1.05) * 1.005; // strictly above T1 if available
+
+  const tryVal = (raw: number, method: TargetMethod, reason: string, extraInputs: Record<string, number | string | null> = {}): TargetResolution | null => {
+    if (raw > minT2 && raw <= cap) {
+      return {
+        value: raw, method, reason,
+        inputs: { ...extraInputs, spot, min_required: minT2, cap },
+        attempts: [...attempts, { method, ok: true, reason, value: raw }],
+      };
+    }
+    attempts.push({ method, ok: false, reason: raw <= minT2 ? `${method}_not_above_t1` : `${method}_above_cap`, value: raw });
+    return null;
+  };
+
+  // 1. DCF stretch
+  if (ctx.dcfFairValue != null && !ctx.dcfDegenerate) {
+    const r = tryVal(ctx.dcfFairValue * 1.10, "dcf", "dcf_stretch", { dcf: ctx.dcfFairValue });
+    if (r) return r;
+  } else attempts.push({ method: "dcf", ok: false, reason: "dcf_unavailable" });
+
+  // 2. Sector-multiple stretch
+  if (ctx.trailingEps != null && ctx.sectorPeMedian != null) {
+    const r = tryVal(ctx.trailingEps * ctx.sectorPeMedian * 1.10, "sector_multiple", "sector_multiple_stretch", { trailing_eps: ctx.trailingEps, sector_pe_median: ctx.sectorPeMedian, sector: ctx.sectorName });
+    if (r) return r;
+  } else attempts.push({ method: "sector_multiple", ok: false, reason: "sector_inputs_missing" });
+
+  // 3. Historical band high — unavailable
+  attempts.push({ method: "historical_multiple", ok: false, reason: "historical_band_unavailable" });
+
+  // 4. Vol-band stretch: spot × (1 + 1.5 × drift)
+  const drift = ctx.sectorReturn12mPct != null
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+  const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
+  if (r) return r;
+
+  return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
+}
+
+function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
   const slPct = spot * 0.85;
-  // Uptrending (DMA below spot): use the higher (tighter) of the % stop or DMA-based stop.
-  // Downtrending (DMA above spot): the DMA term would push SL above spot — ignore it, use simple % stop.
   const sl = (Number.isFinite(dma200) && dma200 < spot)
     ? Math.max(slPct, dma200 * 0.92)
     : slPct;
   return {
     entry_zone: spot,
     stop_loss: sl,
-    target_1: dcfFairValue != null && dcfFairValue > spot ? dcfFairValue : null,
-    target_2: momentumPositive ? spot * 1.25 : null,
+    target_1: t1,
+    target_2: t2,
     support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
     support_2: w52L < spot ? w52L : null,
     resistance_1: w52H > spot ? w52H : null,
     resistance_2: null,
   };
+}
+
+async function fetchSectorAggregate(sector: string | null): Promise<{ name: string; pe_median: number; return_12m_median_pct: number | null } | null> {
+  const tryNames = [sector, "__default__"].filter(Boolean) as string[];
+  for (const name of tryNames) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,pe_median,return_12m_median_pct&sector=eq.${encodeURIComponent(name)}`, {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+    }).catch(() => null);
+    if (!res || !res.ok) continue;
+    const rows = await res.json().catch(() => []) as Array<{ sector: string; pe_median: number; return_12m_median_pct: number | null }>;
+    if (rows.length > 0) {
+      return { name: rows[0].sector, pe_median: Number(rows[0].pe_median), return_12m_median_pct: rows[0].return_12m_median_pct != null ? Number(rows[0].return_12m_median_pct) : null };
+    }
+  }
+  return null;
 }
 
 // ─── Main ───
