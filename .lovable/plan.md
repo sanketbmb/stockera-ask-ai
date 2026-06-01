@@ -1,73 +1,45 @@
+## Add daily LTP history cleanup cron (B1 extension)
 
-## Investigation findings
+Extends the shipped B1 freshness work with a retention job. `ltp_cache` already self-caps at 1 row per symbol (upsert on `symbol` PK), so the only growth surface is the optional history table and the cron run log itself.
 
-### Bug 1 — "All pillars show 0"
+### Scope
 
-I cannot reproduce a code-level binding bug. The current UI is already wired correctly:
+1. **New table `public.ltp_history`** (append-only tick log; not yet in schema — created here so the cleanup job has something to prune and we can backfill intraday analytics later).
+   - Columns: `symbol TEXT`, `ltp NUMERIC`, `source TEXT`, `recorded_at TIMESTAMPTZ DEFAULT now()`.
+   - Index on `recorded_at DESC` for fast range deletes.
+   - RLS enabled; `GRANT SELECT` to authenticated, `GRANT ALL` to service_role. No anon access.
+   - `refresh-ltp` edge function gets one extra insert per refreshed symbol into `ltp_history` (alongside the existing `ltp_cache` upsert).
 
-`src/components/analysis/StockAnalysisReport.tsx`
-- L602  `ScoreRing score={final_verdict.overall_score}`
-- L612  `const s = score_breakdown[m.key]; <ScoreBar value={s ?? null} ...>`
-- L627  `<ScoreBar label="Sentiment" value={score_breakdown.sentiment_score ?? null} ...>`
+2. **New table `public.cron_run_log`** (audit trail for all cron jobs, not just cleanup).
+   - Columns: `job_name TEXT`, `run_at TIMESTAMPTZ DEFAULT now()`, `status TEXT` (`'ok' | 'error'`), `rows_affected INT`, `details JSONB`.
+   - RLS: service_role full, authenticated SELECT (so an admin UI can read it later). No anon.
 
-`ScoreBar` (L181–234) and `ScoreRing` (L259–306) treat only `null/undefined` as missing, real `0` animates as `0`. These were the changes we shipped in the previous polish pass.
+3. **Cleanup function `public.cleanup_ltp_history()`** (SQL `SECURITY DEFINER`):
+   - Deletes `ltp_history` rows where `recorded_at < now() - interval '7 days'`.
+   - Inserts one row into `cron_run_log` with `job_name='cleanup-ltp-history'`, status, deleted count.
+   - Runs entirely in Postgres — no edge function needed, no pg_net call, no auth header juggling.
 
-The mismatch you saw on screen ("summary text says technicals 35, momentum 29, risk 63, but bars show 0") points to the **orchestrator data layer**, not the component:
+4. **pg_cron schedule `cleanup-ltp-history-daily`**: `30 20 * * *` UTC = **02:00 IST** daily, invokes `public.cleanup_ltp_history()`.
 
-`supabase/functions/generate-stock-analysis/index.ts` L552–558
+5. **Audit existing `refresh-ltp-every-minute` cron** to also write to `cron_run_log` (one row per run, status + refreshed/failed counts). Small edit inside `supabase/functions/refresh-ltp/index.ts` — insert a `cron_run_log` row at end of handler.
 
-```ts
-score_breakdown: {
-  technical_score:   scores.technical   ?? 0,   // <- null collapses to 0
-  fundamental_score: scores.fundamental ?? 0,
-  risk_score:        scores.risk        ?? 0,
-  momentum_score:    scores.momentum    ?? 0,
-  sentiment_score:   scores.sentiment   ?? 0,
-},
-```
+### Files
 
-The `?? 0` was a legacy guard against `null` and is the only place that could turn legitimate scores into 0 on the wire. But the `summary_reason` builder (L435–452) reads the **same `scores` object** and clearly shows non-null numbers — so the data is alive at that point in the same request.
+- **migration** (single SQL file): create `ltp_history`, create `cron_run_log`, GRANTs + RLS + policies for both, create `cleanup_ltp_history()` function, schedule `cleanup-ltp-history-daily` via `cron.schedule`.
+- **edit `supabase/functions/refresh-ltp/index.ts`**: after the batch loop, `INSERT INTO ltp_history` for each successful tick, and `INSERT INTO cron_run_log` once with the summary.
 
-Most likely root cause is the screenshot is a stale cached response generated **before** the previous polish-pass deploy (when ScoreBar used `value || 0` and ScoreRing missed `?? null`). Two corroborating signals:
-1. `useQuery` has `staleTime: 60_000` and the route key doesn't include report version.
-2. No code change has been made to the orchestrator since the previous all-green test run that printed real pillar numbers in the curl output.
+### Why this shape
 
-### Bug 2 — Wrong / stale LTP
+- Keeps cleanup in pure SQL — no extra edge function, no apikey plumbing, no cold-start.
+- `cron_run_log` is reusable for every future cron (refresh-stock-master-daily, refresh-ltp-every-minute, cleanup-ltp-history-daily) — single pane of glass.
+- 7-day retention on minute ticks ≈ 6.5 * 60 * 5 * 7 ≈ 13 650 rows per symbol per week, well within Postgres budget; index on `recorded_at` keeps the daily delete cheap.
 
-Confirmed: there is **no LTP refresh cron**. The only cron in the project:
+### Out of scope (will not touch)
 
-```
-jobname                       schedule       active
-refresh-stock-master-daily    30 1 * * *     true
-```
+- `ltp_cache` shape — already 1 row per symbol.
+- UI — no changes; this is backend retention only.
+- Any of the Part-A polish items already shipped.
 
-LTP read path (`compute-technicals/index.ts` L231–247): pulls finedge **daily-quotes**, normalises into daily candles, takes the **last close** as `current_price`. There is no intraday tick, no Dhan fallback, no cache TTL — every report just re-reads finedge EOD. So during market hours the header shows yesterday's close (or today's last EOD-published close), which is exactly the ~₹1,321 vs live ~₹1,326 gap you saw.
+### Open question before I build
 
-The header also stringifies `as_of_date` (L536) through `fmtDateShort` which is date-only — no IST time component.
-
-## Proposed fixes
-
-### Fix A — Pillar binding hardening (defensive, low risk)
-
-1. **Stop collapsing nulls in `score_breakdown`** (orchestrator):
-   change `?? 0` → keep `null` for all five `*_score` fields so the UI can honour its "—" path.
-2. **Cache-bust the client query** when payload contract changes: bump the query key (`["stock-analysis", symbol, horizon, includeNews, "v2"]`) and lower `staleTime` to `30_000`.
-3. After deploy, verify on RELIANCE intraday that bars render 35 / 29 / 63 / fundamental / sentiment row.
-
-### Fix B — LTP freshness
-
-This needs a **product decision before I touch it** — see clarifying question below. Two viable shapes:
-
-- **B1 (server-side cron, recommended):** new `refresh-ltp` edge function that calls Dhan `/quote` for a watchlist of recently-queried symbols every 1 min during market hours (09:15–15:30 IST, Mon–Fri), writes to a new `ltp_cache(symbol, ltp, fetched_at)` table; `compute-technicals` reads from `ltp_cache` if `fetched_at` is within 60s, else falls back to live Dhan call, else falls back to finedge close. Header renders `as of HH:MM IST` from `fetched_at`.
-- **B2 (per-request live, cheaper to ship):** modify `compute-technicals` to call Dhan `/quote` directly inside the request; cache the result in-memory per-request only. Header renders the call time. Skips cron/table work but adds ~150–400ms latency to every report.
-
-Both end with the same header change (time stamp + source pill: `Dhan live · 14:32 IST` or `finedge EOD · 31 May`).
-
-## Clarifying question (need answer before I build)
-
-**Which LTP strategy do you want me to implement?**
-1. **B1 — Cron-refreshed `ltp_cache` table + Dhan fallback** (heavier, true 30–60s freshness, less Dhan quota usage)
-2. **B2 — Per-request live Dhan call inside `compute-technicals`** (lighter, freshness == request time, more Dhan quota usage)
-3. **Just add the timestamp now; defer the freshness fix** (header shows `finedge EOD · DD MMM` truthfully, no behaviour change, unblocks UI bug verification)
-
-Once you pick, I'll do Fix A + the chosen Fix B in a single build pass and re-test RELIANCE intraday end-to-end.
+Do you want `ltp_history` populated **starting now** (every minute refresh writes a tick), or should I create the table empty and only wire the insert later when intraday analytics actually needs it? The cleanup cron itself works either way — it just becomes a no-op until data exists.
