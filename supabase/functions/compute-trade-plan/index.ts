@@ -20,8 +20,12 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const FORMULA_VERSION = "trade-plan-1.0";
+const FORMULA_VERSION = "trade-plan-1.1";
 const MODULE_TIMEOUT_MS = 20_000;
+const LT_T1_FLOOR_PCT = 0.05;   // T1 must be ≥ spot × 1.05
+const LT_TARGET_CAP_PCT = 0.60; // T1/T2 capped at spot × 1.60
+const LT_LIQUIDITY_MIN_CR = 5;  // avg daily turnover ≥ ₹5cr
+const LT_VOL_MAX_PCT = 60;      // annualized vol ≤ 60%
 
 type QueryType = "intraday" | "medium-term" | "long-term";
 
