@@ -83,10 +83,23 @@ function todayIST(): string {
 function cacheKeyFor(symbol: string, horizon: QueryType, includeNews: boolean): string {
   return `${symbol}_${horizon}_n${includeNews ? 1 : 0}_${todayIST()}`;
 }
+// Browserless runs on the public internet, so the print URL must be a
+// publicly-reachable origin. In preview/dev the incoming request host is
+// `localhost:8080`, which Browserless cannot navigate to (Chrome loads its
+// own loopback → "Navigating frame was detached"). Prefer an explicit env
+// override, then a non-local request host, and finally the stable preview URL.
+const PUBLIC_PRINT_FALLBACK = `https://id-preview--ade3c248-761c-43a7-a732-1638e82a3239.lovable.app`;
+
 function originFromRequest(): string {
-  const host = getRequestHeader("host") ?? `id-preview--ade3c248-761c-43a7-a732-1638e82a3239.lovable.app`;
+  const envOrigin = process.env.PUBLIC_PRINT_ORIGIN;
+  if (envOrigin) return envOrigin.replace(/\/$/, "");
+
+  const host = getRequestHeader("host") ?? "";
   const proto = getRequestHeader("x-forwarded-proto") ?? "https";
-  return `${proto}://${host}`;
+  const isLocal = /^(localhost|127\.|0\.0\.0\.0|\[?::1)/i.test(host);
+  if (host && !isLocal) return `${proto}://${host}`;
+
+  return PUBLIC_PRINT_FALLBACK;
 }
 async function callOrchestrator(symbol: string, horizon: QueryType, includeNews: boolean): Promise<StockAnalysisPayload> {
   const url = process.env.SUPABASE_URL;
