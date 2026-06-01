@@ -444,6 +444,24 @@ export function QueryForm() {
               ))}
             </div>
           </div>
+
+          {routerLoading && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              <span>Understanding your question…</span>
+            </div>
+          )}
+          {!routerLoading && routerNotice && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              {routerNotice}
+            </div>
+          )}
+          {!routerLoading && routerMeta && !routerNotice && confidenceBand(routerMeta.confidence_score) === "high" && (
+            <p className="text-[11px] text-muted-foreground italic">
+              Auto-routed via free-text router · confidence: high
+              {routerMeta.symbol ? <> · <span className="font-mono not-italic">{routerMeta.symbol}</span></> : null}
+            </p>
+          )}
         </div>
       )}
 
