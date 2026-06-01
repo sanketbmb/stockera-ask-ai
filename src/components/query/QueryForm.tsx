@@ -89,6 +89,10 @@ export function QueryForm() {
   const [horizon, setHorizon] = useState("");
   const [language, setLanguage] = useState("English");
   const [analystId, setAnalystId] = useState<string | null>(null);
+  // Phase 2 — Existing Position + Averaging
+  const [entryPrice, setEntryPrice] = useState("");
+  const [qty, setQty] = useState("");
+  const [anythingElse, setAnythingElse] = useState("");
 
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
