@@ -1551,7 +1551,7 @@ function recapDriverLine(s: ScoreBreakdown, tier: QueryType): string {
 // Backed by the new B.1 snapshots when available; degrades gracefully.
 // ─────────────────────────────────────────────────────────────────
 
-function MethodologyChip({ copyKey }: { copyKey: string }) {
+function TierMethodologyChip({ copyKey }: { copyKey: string }) {
   const copy = METRIC_COPY[copyKey];
   if (!copy) return null;
   return <CardMethodologyChip copy={copy} />;
