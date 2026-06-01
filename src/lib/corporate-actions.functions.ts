@@ -66,7 +66,7 @@ export const getUpcomingCorporateActions = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<UpcomingActionsResult> => {
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SERVICE_KEY  = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
     const empty: UpcomingActionsResult = {
       symbol: data.symbol,
       fetched_at: new Date().toISOString(),
