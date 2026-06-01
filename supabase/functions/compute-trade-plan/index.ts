@@ -402,8 +402,20 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
   const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
   if (r) return r;
 
+  // 5. Final fallback: small buffer above T1 (if T1 exists) within cap
+  if (t1.value != null) {
+    const buffered = Math.min(t1.value * 1.05, cap * 0.999);
+    if (buffered > minT2) {
+      return {
+        value: buffered, method: "vol_band",
+        reason: "t1_plus_5pct_buffer (all other methods exceeded cap)",
+        inputs: { t1: t1.value, cap, spot },
+        attempts: [...attempts, { method: "vol_band", ok: true, reason: "t1_plus_5pct_buffer", value: buffered }],
+      };
+    }
+  }
+
   return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
-}
 
 function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
   const slPct = spot * 0.85;
