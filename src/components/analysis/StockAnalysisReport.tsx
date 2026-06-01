@@ -196,7 +196,7 @@ function Metric({ label, value, tone = "", hint }: { label: string; value: React
 }
 
 // Animated score bar — width fills from 0 to target on view; tier-weighted pulses once.
-function ScoreBar({ label, value, weighted, pulse, note }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string }) {
+function ScoreBar({ label, value, weighted, pulse, note, methodology }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string; methodology?: string }) {
   const v = value ?? 0;
   const tone = SCORE_TONE(value);
   // Only null/undefined count as missing. A literal 0 is a legitimate score.
@@ -205,7 +205,9 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const width = isMissing ? 0 : Math.max(0, Math.min(100, v));
-  const { text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
+  // CRITICAL: attach useCountUp's ref to the count span so its internal
+  // useInView fires; otherwise the count stays at 0 forever.
+  const { ref: countRef, text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
 
   return (
     <div ref={ref} className={isMissing ? "opacity-60" : ""}>
@@ -220,6 +222,16 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
               transition={{ duration: 0.45, ease: ease.standard, delay: 0.4 }}
             />
           )}
+          {methodology && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 cursor-help text-muted-foreground/50 hover:text-muted-foreground" aria-label={`${label} methodology`} />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs leading-snug">
+                Score 0–100. {methodology}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {note && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -229,8 +241,8 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
             </Tooltip>
           )}
         </span>
-        <span className={`font-mono tabular-nums font-semibold ${tone.color}`}>
-          {isMissing ? DASH : countText}
+        <span ref={countRef} className={`font-mono tabular-nums font-semibold ${tone.color}`}>
+          {isMissing ? DASH : <>{countText}<span className="text-muted-foreground/60 font-normal"> / 100</span></>}
         </span>
       </div>
       <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
