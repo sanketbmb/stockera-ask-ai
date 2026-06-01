@@ -397,10 +397,10 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
   // 3. Historical band high — unavailable
   attempts.push({ method: "historical_multiple", ok: false, reason: "historical_band_unavailable" });
 
-  // 4. Vol-band stretch: spot × (1 + 1.5 × drift)
+  // 4. Vol-band stretch: spot × (1 + 1.5 × drift); drift uses long-term floor 0.16
   const drift = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
   const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
   if (r) return r;
 
