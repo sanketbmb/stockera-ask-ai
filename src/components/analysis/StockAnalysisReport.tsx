@@ -169,11 +169,13 @@ function behavioralNudge(action: VerdictAction, tier: QueryType, riskLabel: stri
   return null;
 }
 
-// Default action-zone tab based on tier
-const TIER_DEFAULT_TAB: Record<QueryType, "holding" | "fresh" | "exploring"> = {
-  "intraday": "fresh",
-  "medium-term": "holding",
-  "long-term": "exploring",
+// Modules that are not relevant for a given tier — hidden from the audit
+// footer module strip. The underlying source_trace (PDF JSON, DB audit) is
+// untouched; this is a presentation-only filter.
+const TIER_IRRELEVANT_MODULES: Record<QueryType, string[]> = {
+  "intraday":    ["compute-long-term-quality"],
+  "medium-term": ["compute-intraday-microstructure"],
+  "long-term":   ["compute-intraday-microstructure"],
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -569,7 +571,7 @@ export function StockAnalysisReport({
   const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
   const targetsMeta = audit_meta.targets_meta ?? null;
 
-  const initialTab = defaultActionTab ?? (suppressFreshTab ? "holding" : TIER_DEFAULT_TAB[tier]);
+  const initialTab = defaultActionTab ?? (suppressFreshTab ? "holding" : "fresh");
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(initialTab);
 
   // R:R from levels (ratio + rupee breakdown for the dual-format display).
@@ -971,13 +973,15 @@ export function StockAnalysisReport({
               <p>Generated {fmtDate(as_of_date)} IST · Tier applied: {TIER_LABEL[tier]}</p>
               <p>
                 Modules:{" "}
-                {audit_meta.source_trace.map((t, i) => (
-                  <span key={t.module} className="inline-flex items-center gap-1">
-                    {i > 0 && <span>·</span>}
-                    {t.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-amber-600" />}
-                    {t.module.replace("compute-", "")}
-                  </span>
-                ))}
+                {audit_meta.source_trace
+                  .filter((t) => !TIER_IRRELEVANT_MODULES[tier].includes(t.module))
+                  .map((t, i) => (
+                    <span key={t.module} className="inline-flex items-center gap-1">
+                      {i > 0 && <span>·</span>}
+                      {t.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : <TrendingDown className="h-3 w-3 text-amber-600" />}
+                      {t.module.replace("compute-", "")}
+                    </span>
+                  ))}
               </p>
             </div>
             <Badge variant="outline" className="text-[10px]"><ShieldCheck className="mr-1 h-3 w-3" /> SEBI-aligned</Badge>

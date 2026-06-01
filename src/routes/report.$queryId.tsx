@@ -122,6 +122,17 @@ function TierShapedReportContent({
       })
     : null;
 
+  // Phase 2.1b — Action Zone default tab derived from intent, not tier.
+  const defaultActionTab: "holding" | "fresh" | "exploring" | undefined =
+    queryType === "fresh_entry" || queryType === "buy_decision"
+      ? "fresh"
+      : queryType === "existing_position" ||
+        queryType === "stuck_position" ||
+        queryType === "averaging" ||
+        queryType === "should_average"
+      ? "holding"
+      : undefined;
+
   const mfRejected = isMfOrPortfolioQuestion(customQuestion);
 
   const phase2Addendum = phase2Ctx ? (
@@ -165,7 +176,7 @@ function TierShapedReportContent({
         topBanner={topBannerNode}
         addendum={phase2Addendum}
         suppressFreshTab={isPhase2}
-        defaultActionTab={isPhase2 ? "holding" : undefined}
+        defaultActionTab={defaultActionTab}
       />
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
