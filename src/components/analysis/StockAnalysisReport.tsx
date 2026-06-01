@@ -1176,7 +1176,7 @@ function MethodologyChip({ tier, weights }: { tier: QueryType; weights: Record<s
 }
 
 
-function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string }) {
+function TriadCard({ icon: Icon, eyebrow, value, sub, info }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string; info?: React.ReactNode }) {
   return (
     <motion.div
       variants={cardItem}
@@ -1185,12 +1185,52 @@ function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentT
       className="rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-accent/50"
     >
       <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+          {info}
+        </div>
         <Icon className="h-4 w-4 text-accent" />
       </div>
       <p className="mt-2 font-display text-2xl text-foreground">{value}</p>
       <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
     </motion.div>
+  );
+}
+
+// "How confidence is calculated" — surfaces the 5-factor breakdown from audit_meta.
+function ConfidenceInfo({ audit }: { audit: StockAnalysisPayload["audit_meta"] }) {
+  const b = audit.confidence_breakdown;
+  return (
+    <InfoTip
+      title="How confidence is calculated"
+      body={
+        <>
+          <p>Confidence is a 0–100 reading of how trustworthy this verdict is, built from five deterministic signals:</p>
+          <ol className="ml-4 list-decimal space-y-0.5">
+            <li>How well the pillars <strong>agree</strong> on direction</li>
+            <li>How <strong>strong</strong> the signals are (distance from neutral)</li>
+            <li>How <strong>stable</strong> the stock is (volatility & drawdown)</li>
+            <li>How <strong>complete</strong> the underlying data is</li>
+            <li>How well-<strong>covered</strong> the stock is in recent news</li>
+          </ol>
+          {b && (
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] text-foreground/80">
+              <span>Alignment</span><span className="text-right">{b.alignment} / 40</span>
+              <span>Strength</span><span className="text-right">{b.strength} / 25</span>
+              <span>Stability</span><span className="text-right">{b.stability} / 15</span>
+              <span>Data quality</span><span className="text-right">{b.data_quality} / 10</span>
+              <span>Coverage</span><span className="text-right">{b.coverage} / 10</span>
+              <span className="border-t border-border pt-0.5">Total</span>
+              <span className="border-t border-border pt-0.5 text-right">{b.raw_total} → <strong>{b.clamped}</strong></span>
+            </div>
+          )}
+          {audit.confidence_band && (
+            <p className="italic">Band: {audit.confidence_band}</p>
+          )}
+        </>
+      }
+      formula={`alignment (≤40) + strength (≤25) + stability (≤15)\n+ data_quality (≤10) + coverage (≤10)\n→ clamp [10, 95]\n80+ High · 60–79 Moderate · 40–59 Cautious · <40 Low`}
+    />
   );
 }
 
