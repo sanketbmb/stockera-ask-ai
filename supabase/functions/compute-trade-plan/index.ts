@@ -416,6 +416,8 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
   }
 
   return { value: null, method: "none", reason: "all_methods_failed", inputs: {}, attempts };
+}
+
 
 function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
   const slPct = spot * 0.85;
