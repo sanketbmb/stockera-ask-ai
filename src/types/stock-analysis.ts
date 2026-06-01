@@ -143,6 +143,16 @@ export interface AuditMeta {
   trade_plan_flag?: "new" | "legacy";
   trade_plan_validation?: Array<{ level: keyof TradeLevels; reason: string }>;
   trade_plan_vol_1y?: number | null;
+  confidence_breakdown?: {
+    alignment: number;
+    strength: number;
+    stability: number;
+    data_quality: number;
+    coverage: number;
+    raw_total: number;
+    clamped: number;
+  };
+  confidence_band?: string;
 }
 
 export interface StockAnalysisPayload {

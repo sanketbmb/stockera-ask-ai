@@ -174,7 +174,7 @@ const TIER_DEFAULT_TAB: Record<QueryType, "holding" | "fresh" | "exploring"> = {
 // Atoms
 // ─────────────────────────────────────────────────────────────────
 
-function SectionTitle({ eyebrow, title, icon: Icon }: { eyebrow: string; title: string; icon?: React.ComponentType<{ className?: string }> }) {
+function SectionTitle({ eyebrow, title, icon: Icon, info }: { eyebrow: string; title: string; icon?: React.ComponentType<{ className?: string }>; info?: React.ReactNode }) {
   return (
     <div className="mb-4 flex items-end justify-between gap-3 border-b border-border/60 pb-3">
       <div className="flex items-center gap-3">
@@ -183,8 +183,42 @@ function SectionTitle({ eyebrow, title, icon: Icon }: { eyebrow: string; title: 
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
           <h2 className="font-display text-2xl text-foreground leading-tight">{title}</h2>
         </div>
+        {info}
       </div>
     </div>
+  );
+}
+
+// Reusable "How this is calculated" affordance — Popover for richer copy than tooltip.
+function InfoTip({ title, body, formula, className }: { title: string; body: React.ReactNode; formula?: React.ReactNode; className?: string }) {
+  const [showFormula, setShowFormula] = useState(false);
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={`inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground ${className ?? ""}`}
+        aria-label={`How ${title} is calculated`}
+      >
+        <Info className="h-3 w-3" /> How this is calculated
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[320px] text-xs leading-snug">
+        <p className="mb-1.5 font-display text-sm text-foreground">{title}</p>
+        <div className="space-y-1.5 text-muted-foreground">{body}</div>
+        {formula && (
+          <div className="mt-3 border-t border-border pt-2">
+            <button
+              type="button"
+              onClick={() => setShowFormula((s) => !s)}
+              className="text-[10px] font-mono uppercase tracking-wider text-accent hover:underline"
+            >
+              {showFormula ? "Hide formula" : "Show formula"}
+            </button>
+            {showFormula && (
+              <pre className="mt-1.5 whitespace-pre-wrap rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/80">{formula}</pre>
+            )}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -605,7 +639,19 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         <motion.section variants={sectionFadeUp} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Final verdict</p>
+              <div className="flex items-center gap-2">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Final verdict</p>
+                <InfoTip
+                  title="How the verdict is set"
+                  body={
+                    <>
+                      <p>The verdict (Buy / Hold / Watchlist / Reduce / Avoid) is derived from the composite score with tier-specific guardrails layered on top.</p>
+                      <p className="italic">Action = mapScoreToAction(overall) → demote on weak risk/fundamentals or missing modules.</p>
+                    </>
+                  }
+                  formula={`overall = Σ(pillar × weight) / Σ(weight present)\naction = score≥70 BUY · ≥55 HOLD · ≥40 WATCHLIST · ≥25 REDUCE · else AVOID\n+ tier guardrails (e.g. long-term missing fund → WATCHLIST)`}
+                />
+              </div>
               <div className="mt-2 flex flex-wrap items-baseline gap-4">
                 <motion.h2
                   variants={verdictScale}
@@ -625,19 +671,49 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-center justify-center rounded-2xl border border-border/60 bg-background/70 px-6 py-5 backdrop-blur">
-              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</p>
+                <ConfidenceInfo audit={audit_meta} />
+              </div>
               <p className="font-display text-5xl tabular-nums text-foreground">
                 <AnimatedNumber value={final_verdict.confidence_pct} duration={900} decimals={0} />
                 <span className="text-2xl text-muted-foreground">%</span>
               </p>
+              {audit_meta.confidence_band && (
+                <p className="mt-1 max-w-[180px] text-center text-[11px] leading-tight text-muted-foreground">
+                  {audit_meta.confidence_band}
+                </p>
+              )}
             </div>
           </div>
         </motion.section>
 
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
         <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <TriadCard icon={Gauge} eyebrow="Confidence" value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>} sub="Model conviction" />
-          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score ?? DASH}`} />
+          <TriadCard
+            icon={Gauge}
+            eyebrow="Confidence"
+            value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>}
+            sub={audit_meta.confidence_band ?? "Model conviction"}
+            info={<ConfidenceInfo audit={audit_meta} />}
+          />
+          <TriadCard
+            icon={ShieldCheck}
+            eyebrow="Risk profile"
+            value={labelize(final_verdict.risk_label)}
+            sub={`Score ${score_breakdown.risk_score ?? DASH}${score_breakdown.risk_score != null ? " / 100" : ""}`}
+            info={
+              <InfoTip
+                title="Risk profile"
+                body={
+                  <>
+                    <p>A 0–100 reading of the stock's risk character. Higher = lower realised risk.</p>
+                    <p className="italic">Blends beta, 1Y volatility, Sharpe/Sortino, max drawdown, VaR-95 and liquidity.</p>
+                  </>
+                }
+              />
+            }
+          />
           <TriadCard
             icon={Target}
             eyebrow="Reward potential"
@@ -645,6 +721,18 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             sub={rr != null && riskRupee != null && rewardRupee != null
               ? `Risk ₹${riskRupee.toLocaleString("en-IN")} / Reward ₹${rewardRupee.toLocaleString("en-IN")} per share`
               : "Insufficient levels — entry, stop loss or target unavailable"}
+            info={
+              <InfoTip
+                title="Reward potential (R:R)"
+                body={
+                  <>
+                    <p>Ratio of expected upside to defined downside on the proposed trade plan.</p>
+                    <p className="italic">A 2:1 setup means a winner pays twice what a loss costs.</p>
+                  </>
+                }
+                formula={`reward = |target_1 - entry|\nrisk   = |entry - stop_loss|\nR:R    = reward / risk`}
+              />
+            }
           />
 
         </motion.section>
@@ -807,7 +895,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 8. TRADE LEVELS ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} />
+            <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
             {tradePlanFromEngine && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -842,7 +930,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 9. RETURNS SNAPSHOT ═══ */}
         {report_modules.show_returns_strip && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-            <SectionTitle eyebrow="Performance" title="Returns snapshot" icon={TrendingUp} />
+            <SectionTitle eyebrow="Performance" title="Returns snapshot" icon={TrendingUp} info={<InfoTip title="Returns snapshot" body={<><p>Trailing total-return % over 1W / 1M / 3M / 1Y, plus relative performance vs NIFTY for 1M and 3M.</p><p className="italic">Computed from adjusted close prices.</p></>} />} />
             <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-2 md:grid-cols-6">
               <ReturnChip label="1W" value={returns_snapshot.one_week} />
               <ReturnChip label="1M" value={returns_snapshot.one_month} />
@@ -1088,7 +1176,7 @@ function MethodologyChip({ tier, weights }: { tier: QueryType; weights: Record<s
 }
 
 
-function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string }) {
+function TriadCard({ icon: Icon, eyebrow, value, sub, info }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string; info?: React.ReactNode }) {
   return (
     <motion.div
       variants={cardItem}
@@ -1097,12 +1185,52 @@ function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentT
       className="rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-accent/50"
     >
       <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+          {info}
+        </div>
         <Icon className="h-4 w-4 text-accent" />
       </div>
       <p className="mt-2 font-display text-2xl text-foreground">{value}</p>
       <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
     </motion.div>
+  );
+}
+
+// "How confidence is calculated" — surfaces the 5-factor breakdown from audit_meta.
+function ConfidenceInfo({ audit }: { audit: StockAnalysisPayload["audit_meta"] }) {
+  const b = audit.confidence_breakdown;
+  return (
+    <InfoTip
+      title="How confidence is calculated"
+      body={
+        <>
+          <p>Confidence is a 0–100 reading of how trustworthy this verdict is, built from five deterministic signals:</p>
+          <ol className="ml-4 list-decimal space-y-0.5">
+            <li>How well the pillars <strong>agree</strong> on direction</li>
+            <li>How <strong>strong</strong> the signals are (distance from neutral)</li>
+            <li>How <strong>stable</strong> the stock is (volatility & drawdown)</li>
+            <li>How <strong>complete</strong> the underlying data is</li>
+            <li>How well-<strong>covered</strong> the stock is in recent news</li>
+          </ol>
+          {b && (
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] text-foreground/80">
+              <span>Alignment</span><span className="text-right">{b.alignment} / 40</span>
+              <span>Strength</span><span className="text-right">{b.strength} / 25</span>
+              <span>Stability</span><span className="text-right">{b.stability} / 15</span>
+              <span>Data quality</span><span className="text-right">{b.data_quality} / 10</span>
+              <span>Coverage</span><span className="text-right">{b.coverage} / 10</span>
+              <span className="border-t border-border pt-0.5">Total</span>
+              <span className="border-t border-border pt-0.5 text-right">{b.raw_total} → <strong>{b.clamped}</strong></span>
+            </div>
+          )}
+          {audit.confidence_band && (
+            <p className="italic">Band: {audit.confidence_band}</p>
+          )}
+        </>
+      }
+      formula={`alignment (≤40) + strength (≤25) + stability (≤15)\n+ data_quality (≤10) + coverage (≤10)\n→ clamp [10, 95]\n80+ High · 60–79 Moderate · 40–59 Cautious · <40 Low`}
+    />
   );
 }
 
