@@ -639,7 +639,19 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         <motion.section variants={sectionFadeUp} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Final verdict</p>
+              <div className="flex items-center gap-2">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Final verdict</p>
+                <InfoTip
+                  title="How the verdict is set"
+                  body={
+                    <>
+                      <p>The verdict (Buy / Hold / Watchlist / Reduce / Avoid) is derived from the composite score with tier-specific guardrails layered on top.</p>
+                      <p className="italic">Action = mapScoreToAction(overall) → demote on weak risk/fundamentals or missing modules.</p>
+                    </>
+                  }
+                  formula={`overall = Σ(pillar × weight) / Σ(weight present)\naction = score≥70 BUY · ≥55 HOLD · ≥40 WATCHLIST · ≥25 REDUCE · else AVOID\n+ tier guardrails (e.g. long-term missing fund → WATCHLIST)`}
+                />
+              </div>
               <div className="mt-2 flex flex-wrap items-baseline gap-4">
                 <motion.h2
                   variants={verdictScale}
@@ -659,19 +671,49 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-center justify-center rounded-2xl border border-border/60 bg-background/70 px-6 py-5 backdrop-blur">
-              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</p>
+                <ConfidenceInfo audit={audit_meta} />
+              </div>
               <p className="font-display text-5xl tabular-nums text-foreground">
                 <AnimatedNumber value={final_verdict.confidence_pct} duration={900} decimals={0} />
                 <span className="text-2xl text-muted-foreground">%</span>
               </p>
+              {audit_meta.confidence_band && (
+                <p className="mt-1 max-w-[180px] text-center text-[11px] leading-tight text-muted-foreground">
+                  {audit_meta.confidence_band}
+                </p>
+              )}
             </div>
           </div>
         </motion.section>
 
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
         <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <TriadCard icon={Gauge} eyebrow="Confidence" value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>} sub="Model conviction" />
-          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score ?? DASH}`} />
+          <TriadCard
+            icon={Gauge}
+            eyebrow="Confidence"
+            value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>}
+            sub={audit_meta.confidence_band ?? "Model conviction"}
+            info={<ConfidenceInfo audit={audit_meta} />}
+          />
+          <TriadCard
+            icon={ShieldCheck}
+            eyebrow="Risk profile"
+            value={labelize(final_verdict.risk_label)}
+            sub={`Score ${score_breakdown.risk_score ?? DASH}${score_breakdown.risk_score != null ? " / 100" : ""}`}
+            info={
+              <InfoTip
+                title="Risk profile"
+                body={
+                  <>
+                    <p>A 0–100 reading of the stock's risk character. Higher = lower realised risk.</p>
+                    <p className="italic">Blends beta, 1Y volatility, Sharpe/Sortino, max drawdown, VaR-95 and liquidity.</p>
+                  </>
+                }
+              />
+            }
+          />
           <TriadCard
             icon={Target}
             eyebrow="Reward potential"
@@ -679,6 +721,18 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             sub={rr != null && riskRupee != null && rewardRupee != null
               ? `Risk ₹${riskRupee.toLocaleString("en-IN")} / Reward ₹${rewardRupee.toLocaleString("en-IN")} per share`
               : "Insufficient levels — entry, stop loss or target unavailable"}
+            info={
+              <InfoTip
+                title="Reward potential (R:R)"
+                body={
+                  <>
+                    <p>Ratio of expected upside to defined downside on the proposed trade plan.</p>
+                    <p className="italic">A 2:1 setup means a winner pays twice what a loss costs.</p>
+                  </>
+                }
+                formula={`reward = |target_1 - entry|\nrisk   = |entry - stop_loss|\nR:R    = reward / risk`}
+              />
+            }
           />
 
         </motion.section>
