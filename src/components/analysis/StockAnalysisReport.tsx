@@ -934,7 +934,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">In summary</p>
           <h2 className="mt-1 font-display text-2xl">Analyst-style recap</h2>
           <ol className="mt-4 max-w-3xl space-y-2 text-[15px] leading-relaxed text-white/95">
-            <li><span className="font-mono text-white/60">01 ·</span> Final view: <strong>{verdictStyle.label}</strong> with {final_verdict.confidence_pct}% confidence on a {final_verdict.time_horizon.toLowerCase()} horizon.</li>
+            <li><span className="font-mono text-white/60">01 ·</span> Final view: <strong>{displayVerdict}</strong> with {final_verdict.confidence_pct}% confidence on a {final_verdict.time_horizon.toLowerCase()} horizon.</li>
             <li><span className="font-mono text-white/60">02 ·</span> {recapDriverLine(score_breakdown, tier)}</li>
             <li><span className="font-mono text-white/60">03 ·</span> Risk profile is <strong>{labelize(final_verdict.risk_label)}</strong>{rr != null ? ` — current setup offers ${rr.toFixed(2)}:1 reward-to-risk` : ""}.</li>
           </ol>
