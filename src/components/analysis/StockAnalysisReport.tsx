@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
-  Clock, Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
+  Clock, Compass, Eye, Gauge, HelpCircle, Info, LineChart, Newspaper,
   ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp, Waves,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
