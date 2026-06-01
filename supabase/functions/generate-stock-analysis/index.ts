@@ -422,8 +422,109 @@ function computeVerdict(
     action = "AVOID"; demotions++; guardrailNotes.push("≥3 modules missing → AVOID");
   }
 
+  // Legacy confidence retained internally for guardrail telemetry only; final
+  // confidence_pct is computed by computeConfidence() (5-factor engine).
   const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10 - confidencePenalty));
   return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes };
+}
+
+// ─── Confidence engine (5-factor, deterministic) ──────────────────────────
+// Replaces the legacy "100 - missing*15 - demotions*10" heuristic which
+// collapsed almost every report to 85%. Each factor is bounded and the sum
+// is clamped to [10, 95].
+type ConfidenceBreakdown = {
+  alignment: number;
+  strength: number;
+  stability: number;
+  data_quality: number;
+  coverage: number;
+  raw_total: number;
+  clamped: number;
+};
+function computeConfidence(
+  scores: { technical: number | null; fundamental: number | null; risk: number | null; momentum: number | null; sentiment: number | null },
+  riskSnap: { volatility_1y: number | null; max_drawdown: number | null } | null,
+  flagsIn: { news_data_limited: boolean; benchmark_fallback_used: boolean },
+  sentArticleCount: number | null,
+  queryType: QueryType,
+  weights: Record<string, number>,
+): { confidence_pct: number; band: string; breakdown: ConfidenceBreakdown } {
+  // 1. Alignment — direction of each available pillar
+  const dirs: number[] = [];
+  (Object.keys(scores) as Array<keyof typeof scores>).forEach((k) => {
+    const s = scores[k];
+    if (s == null) return;
+    if (s < 40) dirs.push(-1);
+    else if (s < 60) dirs.push(0);
+    else dirs.push(1);
+  });
+  const pos = dirs.filter((d) => d > 0).length;
+  const neg = dirs.filter((d) => d < 0).length;
+  const neu = dirs.filter((d) => d === 0).length;
+  const aligned = Math.max(pos, neg, neu);
+  const ALIGNMENT_MAP = [4, 4, 12, 22, 32, 40];
+  let alignment = ALIGNMENT_MAP[Math.min(aligned, 5)];
+
+  // 2. Strength — avg distance from neutral 50
+  const presentScores = Object.values(scores).filter((v): v is number => v != null);
+  let strength = 0;
+  if (presentScores.length > 0) {
+    const avgDist = presentScores.reduce((a, b) => a + Math.abs(b - 50), 0) / presentScores.length;
+    strength = avgDist >= 25 ? 25 : avgDist >= 20 ? 20 : avgDist >= 15 ? 15 : avgDist >= 10 ? 10 : avgDist >= 5 ? 6 : 2;
+  }
+
+  // 3. Stability — volatility band, with drawdown penalty
+  const vol = riskSnap?.volatility_1y;
+  let stability: number;
+  if (vol == null) stability = 6;
+  else if (vol < 20) stability = 15;
+  else if (vol < 30) stability = 10;
+  else if (vol < 40) stability = 6;
+  else if (vol < 50) stability = 3;
+  else stability = 1;
+  if ((riskSnap?.max_drawdown ?? 0) < -50) stability = Math.max(0, stability - 5);
+
+  // 4. Data quality
+  let dataQuality = 10;
+  const missingWeighted = (Object.keys(weights) as Array<keyof typeof scores>)
+    .filter((k) => (weights[k] ?? 0) > 0 && scores[k] == null).length;
+  dataQuality -= missingWeighted * 2;
+  if (flagsIn.news_data_limited) dataQuality -= 2;
+  if (flagsIn.benchmark_fallback_used) dataQuality -= 2;
+  dataQuality = Math.max(0, dataQuality);
+
+  // 5. Coverage (news articles in last 30d)
+  const c = sentArticleCount;
+  let coverage: number;
+  if (c == null) coverage = 2;
+  else if (c >= 20) coverage = 10;
+  else if (c >= 10) coverage = 7;
+  else if (c >= 3) coverage = 5;
+  else if (c >= 1) coverage = 3;
+  else coverage = 2;
+
+  // Tier adjustments
+  if (queryType === "intraday") {
+    stability = Math.round(stability / 2);
+  } else if (queryType === "long-term") {
+    dataQuality = Math.min(15, dataQuality + Math.round(dataQuality * 0.5));
+    coverage = Math.min(15, coverage + Math.round(coverage * 0.5));
+    alignment = Math.round(alignment * 0.9);
+  }
+
+  const raw_total = alignment + strength + stability + dataQuality + coverage;
+  const clamped = Math.max(10, Math.min(95, raw_total));
+  const band =
+    clamped >= 80 ? "High conviction" :
+    clamped >= 60 ? "Moderate conviction" :
+    clamped >= 40 ? "Cautious conviction" :
+                    "Low conviction — interpret with care";
+
+  return {
+    confidence_pct: clamped,
+    band,
+    breakdown: { alignment, strength, stability, data_quality: dataQuality, coverage, raw_total, clamped },
+  };
 }
 
 const TIER_REASON_PREFIX: Record<QueryType, string> = {
