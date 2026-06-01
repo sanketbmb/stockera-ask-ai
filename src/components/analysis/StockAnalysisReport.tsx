@@ -253,16 +253,24 @@ function ReturnChip({ label, value }: { label: string; value: number | null }) {
 }
 
 // Score ring (SVG) — animated arc fill + count-up center.
-function ScoreRing({ score, action }: { score: number; action: VerdictAction }) {
+// Binds to `final_verdict.overall_score`. When score is null/undefined, the
+// stroke stays at 0 and the centre renders the universal DASH; a literal 0
+// still renders as "0" so we never silently fabricate a non-zero reading.
+function ScoreRing({ score, action }: { score: number | null | undefined; action: VerdictAction }) {
   const r = 64, c = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(100, score));
+  const isMissing = score == null || !Number.isFinite(score);
+  const pct = isMissing ? 0 : Math.max(0, Math.min(100, score as number));
   const dash = (pct / 100) * c;
-  const stroke = ringStroke(pct, action);
+  const stroke = isMissing ? "hsl(var(--muted-foreground))" : ringStroke(pct, action);
   const reduce = useReducedMotion();
   const ref = useRef<SVGSVGElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-  const { text: scoreText } = useCountUp({ value: score, duration: 800, decimals: 0 });
-  const isBuy = action === "BUY";
+  const { text: scoreText } = useCountUp({
+    value: isMissing ? null : (score as number),
+    duration: 800,
+    decimals: 0,
+  });
+  const isBuy = action === "BUY" && !isMissing;
 
   return (
     <div className="relative inline-flex flex-col items-center">
@@ -277,21 +285,27 @@ function ScoreRing({ score, action }: { score: number; action: VerdictAction }) 
       )}
       <svg ref={ref} width="160" height="160" viewBox="0 0 160 160" className="-rotate-90">
         <circle cx="80" cy="80" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="10" />
-        <motion.circle
-          cx="80" cy="80" r={r} fill="none" stroke={stroke} strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={c}
-          initial={reduce ? { strokeDashoffset: c - dash } : { strokeDashoffset: c }}
-          animate={inView ? { strokeDashoffset: c - dash } : undefined}
-          transition={{ duration: duration.cinematic, ease: ease.standard }}
-        />
+        {!isMissing && (
+          <motion.circle
+            cx="80" cy="80" r={r} fill="none" stroke={stroke} strokeWidth="10" strokeLinecap="round"
+            strokeDasharray={c}
+            initial={reduce ? { strokeDashoffset: c - dash } : { strokeDashoffset: c }}
+            animate={inView ? { strokeDashoffset: c - dash } : undefined}
+            transition={{ duration: duration.cinematic, ease: ease.standard }}
+          />
+        )}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-display text-4xl tabular-nums text-foreground">{scoreText}</span>
+        <span className="font-display text-4xl tabular-nums text-foreground">
+          {isMissing ? DASH : scoreText}
+        </span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Stockera Score</span>
       </div>
     </div>
   );
 }
+
+
 
 // Price band visual for trade levels — line draws first, markers stagger in by priority.
 function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]; current: number | null }) {
