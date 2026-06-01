@@ -143,6 +143,14 @@ export interface AuditMeta {
   trade_plan_flag?: "new" | "legacy";
   trade_plan_validation?: Array<{ level: keyof TradeLevels; reason: string }>;
   trade_plan_vol_1y?: number | null;
+  targets_meta?: {
+    tier: string;
+    t1: { value: number | null; method: string; reason: string; inputs: Record<string, number | string | null>; attempts: Array<{ method: string; ok: boolean; reason: string; value?: number | null }> };
+    t2: { value: number | null; method: string; reason: string; inputs: Record<string, number | string | null>; attempts: Array<{ method: string; ok: boolean; reason: string; value?: number | null }> };
+    guardrails: { liquidity_ok: boolean; volatility_ok: boolean; avg_daily_turnover_cr: number | null; ann_vol_pct: number | null; guardrail_breach: string | null };
+    sector_used: string | null;
+    sector_missing_reason: string | null;
+  } | null;
   confidence_breakdown?: {
     alignment: number;
     strength: number;
