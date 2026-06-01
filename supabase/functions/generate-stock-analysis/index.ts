@@ -720,6 +720,7 @@ Deno.serve(async (req) => {
         trade_plan_flag: TRADE_PLAN_SOURCE,
         trade_plan_validation: Array.isArray(tpRes.data?.validation) ? tpRes.data!.validation : [],
         trade_plan_vol_1y: (tpRes.data?.vol_1y as number | null | undefined) ?? (risk?.snapshot.volatility_1y ?? null),
+        targets_meta: (tpRes.data?.targets_meta as Record<string, unknown> | null | undefined) ?? null,
         confidence_breakdown: confidence.breakdown,
         confidence_band: confidence.band,
       },
