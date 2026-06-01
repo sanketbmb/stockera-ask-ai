@@ -651,6 +651,7 @@ export type Database = {
           custom_question: string | null
           engine_source: string | null
           engine_version: string | null
+          frozen_at: string | null
           horizon: string | null
           id: string
           intent: string | null
@@ -659,6 +660,7 @@ export type Database = {
           query_text: string
           query_type: string | null
           regenerated_from_uuid: string | null
+          report_artifact_status: string | null
           status: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol: string | null
@@ -676,6 +678,7 @@ export type Database = {
           custom_question?: string | null
           engine_source?: string | null
           engine_version?: string | null
+          frozen_at?: string | null
           horizon?: string | null
           id?: string
           intent?: string | null
@@ -684,6 +687,7 @@ export type Database = {
           query_text: string
           query_type?: string | null
           regenerated_from_uuid?: string | null
+          report_artifact_status?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol?: string | null
@@ -701,6 +705,7 @@ export type Database = {
           custom_question?: string | null
           engine_source?: string | null
           engine_version?: string | null
+          frozen_at?: string | null
           horizon?: string | null
           id?: string
           intent?: string | null
@@ -709,6 +714,7 @@ export type Database = {
           query_text?: string
           query_type?: string | null
           regenerated_from_uuid?: string | null
+          report_artifact_status?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name?: string
           stock_symbol?: string | null

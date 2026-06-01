@@ -14,11 +14,13 @@ import { FreshEntryAddendum } from "@/components/report/FreshEntryAddendum";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { buildInterpretation } from "@/lib/query-intake-parser";
+import { freezeOrReadReport } from "@/lib/freeze-report.functions";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -61,17 +63,15 @@ function TierShapedReportContent({
   horizon: QueryType;
   rawQuestion: string;
 }) {
+  const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
-    queryKey: ["stock-analysis", "v2", "report", queryId, symbol, horizon],
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("generate-stock-analysis", {
-        body: { symbol, query_type: horizon, include_news: true },
-      });
-      if (error) throw new Error(error.message);
-      if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
-      return data as StockAnalysisPayload;
-    },
-    staleTime: 30_000,
+    // Cache key includes queryId so each frozen artifact gets its own slot.
+    queryKey: ["stock-analysis", "v1", "frozen", queryId],
+    queryFn: () => freezeOrRead({ data: { queryId } }),
+    // Frozen artifacts never change client-side. Long stale so we don't re-fetch.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   if (isLoading) return <LoadingScreen />;
@@ -93,13 +93,24 @@ function TierShapedReportContent({
     if (!validationReasons[o.level]) validationReasons[o.level] = o.reason;
   }
 
+  // Phase 1.1 — read freezing metadata stamped by freezeOrReadReport.
+  const auditExtras = data.audit_meta as typeof data.audit_meta & {
+    frozen_at?: string;
+    served_from_cache?: boolean;
+    report_artifact_status?: "frozen" | "regenerated";
+  };
+  const frozenAt = auditExtras.frozen_at ?? null;
+  const frozenAge = frozenAt ? Date.now() - new Date(frozenAt).getTime() : 0;
+  const isStale = frozenAt ? frozenAge > 24 * 60 * 60 * 1000 : false;
+
   return (
-    <div className="min-h-screen bg-mesh">
+    <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
       <Navbar />
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Tier-shaped report · {horizon.replace("-", " ")}
         </span>
+        {frozenAt && <FrozenBadge frozenAt={frozenAt} isStale={isStale} />}
         <div className="ml-auto">
           <DownloadPdfButton symbol={symbol} horizon={horizon} />
         </div>
@@ -110,9 +121,45 @@ function TierShapedReportContent({
         addendum={<FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />}
       />
       <main className="px-4 sm:px-6 lg:px-8 pb-12">
-        <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={new Date().toISOString()} />
+        <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
+      {/* Phase 1.1 — when frozen >24h, mute live-price chips and explain why. */}
+      {isStale && (
+        <style>{`
+          .frozen-stale [data-live-chip="true"] {
+            opacity: 0.55;
+            filter: grayscale(0.7);
+          }
+        `}</style>
+      )}
     </div>
+  );
+}
+
+function FrozenBadge({ frozenAt, isStale }: { frozenAt: string; isStale: boolean }) {
+  const formatted = new Date(frozenAt).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const badge = (
+    <span
+      className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded border ${
+        isStale ? "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border bg-muted/40 text-muted-foreground"
+      }`}
+    >
+      Generated on {formatted} IST{isStale ? " · stale" : ""}
+    </span>
+  );
+  if (!isStale) return badge;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-xs">
+          This report is a frozen artifact. For live levels, generate a fresh report.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
