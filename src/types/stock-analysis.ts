@@ -166,6 +166,54 @@ export interface AuditMeta {
     clamped: number;
   };
   confidence_band?: string;
+  modules_invoked?: string[];
+  tier_modules_added_version?: string;
+  intraday_microstructure_diagnostic?: IntradayMicrostructureDiagnostic | null;
+  long_term_quality_diagnostic?: LongTermQualityDiagnostic | null;
+}
+
+export interface IntradayMicrostructureDiagnostic {
+  symbol: string;
+  null_reasons: Record<string, string>;
+}
+
+export interface LongTermQualityDiagnostic {
+  symbol: string;
+  banking_override_applied: boolean;
+  null_reasons: Record<string, string>;
+}
+
+
+
+export interface IntradayMicrostructureSnapshot {
+  atr_14: number | null;
+  daily_realized_volatility: number | null;
+  opening_range_15m_high: number | null;
+  opening_range_15m_low: number | null;
+  vwap: number | null;
+  price_vs_vwap_pct: number | null;
+  intraday_volume_profile_label: "ABOVE_AVERAGE" | "AVERAGE" | "BELOW_AVERAGE" | null;
+  gap_behavior_label: "GAP_UP" | "GAP_DOWN" | "FLAT" | "GAP_FILLED_UP" | "GAP_FILLED_DOWN" | null;
+  session_high: number | null;
+  session_low: number | null;
+  sector_rs_today_label: "OUTPERFORMING" | "INLINE" | "UNDERPERFORMING" | null;
+  intraday_news_catalysts: string[] | null;
+  data_freshness: "live" | "post_market" | "stale";
+}
+
+export interface LongTermQualitySnapshot {
+  roe_5y_avg: number | null;
+  roce_5y_avg: number | null;
+  debt_to_equity_current: number | null;
+  fcf_yield: number | null;
+  eps_cagr_5y: number | null;
+  earnings_consistency_label: "VERY_HIGH" | "HIGH" | "MODERATE" | "LOW" | "VERY_LOW" | null;
+  promoter_holding_pct: number | null;
+  piotroski_f_score: number | null;
+  quality_label: "HIGH_QUALITY" | "AVERAGE" | "WEAK" | "BANKING_ADJUSTED" | null;
+  margin_trend_label: "IMPROVING" | "STABLE" | "DETERIORATING" | null;
+  market_share_trend_label: "GAINING" | "STABLE" | "LOSING" | "UNKNOWN" | null;
+  data_completeness_pct: number;
 }
 
 export interface StockAnalysisPayload {
@@ -183,6 +231,8 @@ export interface StockAnalysisPayload {
   risk_snapshot: RiskSnapshot;
   momentum_snapshot: MomentumSnapshot;
   sentiment_snapshot: SentimentSnapshot;
+  intraday_microstructure_snapshot?: IntradayMicrostructureSnapshot | null;
+  long_term_quality_snapshot?: LongTermQualitySnapshot | null;
   flags: Flags;
   report_modules: ReportModules;
   audit_meta: AuditMeta;
