@@ -231,6 +231,8 @@ export interface StockAnalysisPayload {
   risk_snapshot: RiskSnapshot;
   momentum_snapshot: MomentumSnapshot;
   sentiment_snapshot: SentimentSnapshot;
+  intraday_microstructure_snapshot?: IntradayMicrostructureSnapshot | null;
+  long_term_quality_snapshot?: LongTermQualitySnapshot | null;
   flags: Flags;
   report_modules: ReportModules;
   audit_meta: AuditMeta;
