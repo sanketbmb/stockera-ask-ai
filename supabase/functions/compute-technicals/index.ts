@@ -451,10 +451,16 @@ Deno.serve(async (req) => {
 
     // Data range = visible (lookback) slice
     const visible = candles.slice(-lookback);
+    // Resolve LTP: cache (≤60s) → live Dhan → EOD finedge close.
+    // Indicator math stays on EOD closes (lastClose); current_price reflects freshest tick.
+    const ltp = await resolveLtp(symbol, lastClose, last(visible).date);
     return json({
       success: true,
       symbol,
-      current_price: lastClose,
+      current_price: ltp.price,
+      ltp_source: ltp.source,
+      ltp_timestamp: ltp.timestamp,
+      eod_close: lastClose,
       computed_at: new Date().toISOString(),
       data_range: { from: visible[0].date, to: last(visible).date, days: visible.length },
       indicators: {
