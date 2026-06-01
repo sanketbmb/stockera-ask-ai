@@ -1,76 +1,140 @@
-# Diagnosis — AI Report PDF (Bug 1 + Bug 2)
 
-## Setup: there are TWO different "PDF" paths in this app
+# Mission 1.5 Phase 1 — Wire Fresh Entry to Tier-Shaped Report
 
-| # | Trigger | Pipeline | Component rendered |
-|---|---|---|---|
-| A | `/analysis/$symbol` → "Download PDF" button | `generateAnalysisPdf` (server fn) → Browserless → Supabase storage | `<StockAnalysisReport printMode />` (the **new tier-shaped** layout, including `<TierShapedGrid>`) |
-| B | `/report/$queryId` → "Download PDF" button | `window.print()` (browser-native, no server) | `<AIReportCardV2>` styled via print CSS |
+## Critical clarifications before I build (please confirm)
 
-The user reports symptoms against **path A** (`/analysis/RELIANCE?horizon=intraday`). All findings below are scoped to path A unless noted.
+These are blocking. Spec assumes things that aren't true in the current code; I need a decision before touching the wallet path.
 
----
+1. **Wallet/credit deduction does not exist in /post-query today.** `QueryForm.handleSubmit` only inserts a row into `queries` and calls `generateAiReport`. Neither the form, the server fn, nor `generate-ai-report` edge function calls `deduct_wallet_balance`. The "preserve wallet accounting exactly as today" rule therefore means *no deduction at all* — including for Fresh Entry submissions on the new path. Confirm this is what you want, OR tell me which constant (₹X) and which RPC to call. I will not invent a deduction step.
+2. **Scope of "Fresh Entry"** = only `intent === "buy_decision"` from `QueryForm`. All other intents (`stuck_position`, `should_average`, `educational`, `sector_view`, `other`) keep the existing legacy `generateAiReport` path untouched. Confirm.
+3. **Horizon mapping** from the form's free-text dropdown:
+   - "Intraday" → `intraday`
+   - "Short-term (<3mo)" → `medium-term` (no `short-term` tier exists in the orchestrator)
+   - "Medium-term (3-12mo)" → `medium-term`
+   - "Long-term (1+ year)" → `long-term`
+   - missing → `medium-term`
+   Confirm the Short-term collapse to medium-term is acceptable.
+4. **PDF regression for /report/&lt;uuid&gt;**: I will reuse the existing `generateAnalysisPdf` server fn (keyed by symbol+horizon+date+template_version). The /report/$queryId page will mount the same `DownloadPdfButton` and produce a byte-identical filename. Confirm OK.
 
-## Bug 1 — "Unauthorized: no authorization header provided"
+## Scope
 
-### Click handler chain
-- `src/routes/analysis.$symbol.tsx` lines **133–155** — `DownloadPdfButton` calls `useServerFn(generateAnalysisPdf)` and invokes it with `{ data: { symbol, horizon, include_news } }`.
-- `src/lib/pdf.functions.ts` lines **161–169** — `generateAnalysisPdf` has `.middleware([requireSupabaseAuth])`.
-- `src/integrations/supabase/auth-middleware.ts` lines **31–37** — throws exactly `Unauthorized: No authorization header provided` when the incoming server-fn request has no `Authorization` header.
-- The bearer attacher IS wired (`src/start.ts` line 24 → `functionMiddleware: [attachSupabaseAuth]`), and `src/integrations/supabase/auth-attacher.ts` reads `supabase.auth.getSession()` and attaches `Authorization: Bearer <token>` **only if a session exists**.
+Touching only the surfaces in the allow-list. No Brain, orchestrator, weighting, confidence math, trade-plan, or Puppeteer changes.
 
-### Root cause
-`/analysis/$symbol` is a **public route** (no `RequireAuth`, no `_authenticated` layout). The "Download PDF" button is rendered to every visitor, signed in or not. When `supabase.auth.getSession()` returns no session for that browser/tab, the attacher attaches nothing → server middleware rejects with the exact error the user sees.
+## Files to create
 
-Why "the user is logged in" can still hit this:
-- The login event in the auth logs has `referer: http://localhost:3000`, but the preview is being served from `id-preview--…lovable.app`. Supabase auth state is stored in `localStorage` keyed to the origin — a session created on `localhost:3000` is **invisible** on `id-preview--…lovable.app`. The preview tab effectively has no session even though another tab does.
-- Same effect if the access token silently expired without a refresh, or if the user opened `/analysis/RELIANCE` in an incognito/new browser session.
+```
+src/lib/query-intake-parser.ts         # horizon/symbol/type normalizer + interpretation line
+src/components/report/ReflectiveBanner.tsx
+src/components/report/FreshEntryAddendum.tsx
+src/components/report/HybridRegenerateBanner.tsx
+src/lib/regenerate-from-legacy.functions.ts  # server fn: clones legacy row → new v1 row, no deduction
+```
 
-### Ranked fix options
-1. **RECOMMENDED — Gate the Download PDF button on auth client-side.** Read `useAuth()` in `DownloadPdfButton`; if not signed in, render a "Sign in to download" button that routes to `/login?next=/analysis/...`. Still call the protected server fn for actual users. One-component change in `src/routes/analysis.$symbol.tsx`, no server changes. Surface origin-mismatch issue with a clear message ("Sign in again — your session is on another tab/origin").
-2. **Also recommended (defensive)** — Before calling `generateAnalysisPdf`, do `const { data } = await supabase.auth.getSession(); if (!data.session) { toast("Please sign in to download"); return; }`. Prevents the raw "Unauthorized" string from leaking into a toast.
-3. **Alternative — Move PDF behind `_authenticated` layout.** Heavier: requires extracting an authenticated variant of `/analysis/$symbol` or wrapping the whole route. Breaks SEO/share for the public view.
-4. **NOT recommended — Drop `requireSupabaseAuth` from `generateAnalysisPdf`.** Loses per-user rate limiting, abuse protection, and the `user_id` audit column in `pdf_generation_log`. Browserless quota (1000/mo, warn at 800) would be exposed to anonymous traffic.
+## Files to modify
 
----
+```
+supabase/migrations/<ts>_extend_queries_v1.sql   # additive columns on public.queries (see below)
+src/integrations/supabase/types.ts               # auto-regenerated after migration
+src/components/query/QueryForm.tsx               # Fresh Entry branch → new path
+src/routes/report.$queryId.tsx                   # renderer switch by engine_version
+src/components/analysis/StockAnalysisReport.tsx  # add 3 optional slot props (topBanner, addendum, analystCTAPlacement)
+```
 
-## Bug 2 — "PDF shows OLD 4-card legacy template, web shows new tier-shaped"
+Nothing else.
 
-### Which component renders the PDF
-- Browserless navigates to `/print/$symbol?...&token=...` — `src/routes/print.$symbol.tsx`.
-- That route renders **`<StockAnalysisReport data={data} printMode />`** at line 84 — exactly the same component as the live web view.
-- Inside `StockAnalysisReport` (`src/components/analysis/StockAnalysisReport.tsx`), the tier-shaped grid renders at **line 785** (`<TierShapedGrid data={data} />`) unconditionally — there is no `printMode` branch that swaps it out. The only `printMode` branches are: verdict label (line 565), the `#print-ready` marker (line 965), and a `MotionConfig reducedMotion="always"` wrapper (line 971). None of them change the layout.
+## Data model (additive only)
 
-### Files that import / render the AI report PDF template
-- `src/routes/print.$symbol.tsx` (the only Browserless target)
-- `src/components/analysis/StockAnalysisReport.tsx` (the template itself, also reused by the live page)
-- `src/routes/analysis.$symbol.tsx` (live web view — same component, no `printMode`)
+Migration adds these nullable columns to `public.queries`; existing rows untouched, implicitly `engine_version = 'v0_legacy'`:
 
-No other PDF template component exists. There is **no separate legacy PDF renderer** in the codebase — the "old 4-card layout" the user is seeing cannot be coming from a different React component on this build.
+| column | type | default |
+|---|---|---|
+| engine_version | text | null |
+| engine_source | text | null |
+| horizon | text | null |
+| custom_question | text | null |
+| orchestrator_response_id | text | null |
+| regenerated_from_uuid | uuid | null |
 
-### Root cause (most likely → least likely)
-1. **Stale cached PDF being re-served (most likely).** `src/lib/pdf.functions.ts` lines **177–207** look up `pdf_generation_log` for any row with the same `cache_key = ${symbol}_${horizon}_n${0|1}_${todayIST()}` and `success = true` from the last hour, and if found, return the previously-uploaded `${key}.pdf` from storage without ever calling Browserless. If a PDF was successfully generated **earlier today** against an older deploy (pre-B.2/B.3 tier-shaped grid), every click today for the same symbol+horizon+news combo returns that stale PDF. Cache key has no app/template version in it — only the date. This is the only mechanism in the current code that can serve an "old" layout from a build that already contains the new layout.
-2. **Browserless navigated to the wrong origin (was the previous bug)** — recently fixed via `PUBLIC_PRINT_FALLBACK`. If a stale storage object was uploaded back when origin resolution was broken, see (1).
-3. **User looking at a downloaded PDF file from a previous session.** Re-downloading via the cached signed URL serves the same bytes. The browser may also show a cached file from a previous click.
-4. Extremely unlikely: a separate "legacy" template lurking outside `src/`. A `rg` over `src/` finds none.
+The other spec fields (`query_type`, `stock_symbol`, `buy_price` as qty/entry_price proxy, `query_text` as raw_text) already exist on `queries`. I won't duplicate them. RLS unchanged (existing `queries_own*` policies already cover new columns). GRANTs unchanged.
 
-### Ranked fix options
-1. **RECOMMENDED — Add a template version to the cache key.** In `src/lib/pdf.functions.ts`, change `cacheKeyFor(...)` to include a constant like `ANALYSIS_PDF_TEMPLATE_VERSION = "v2"` (or import `DOC_VERSION` analog). Bumping that constant whenever the print layout changes invalidates all stale caches without manual cleanup. Two-line change. Same pattern already used by `generateArchitecturePdf` (`architecture_v${DOC_VERSION}_${today}`).
-2. **One-time cleanup** — delete today's stale `*.pdf` objects from the `pdf-cache` storage bucket AND mark today's `pdf_generation_log` rows for analysis PDFs as `success=false` (or delete them) so the cache lookup misses and Browserless regenerates. Can be done from Supabase SQL editor + storage UI. Pair with fix 1 going forward.
-3. **Shrink `CACHE_TTL_SEC`** from 1h to e.g. 5 min during the active release window. Doesn't fix the root issue (stale rendering of any cached PDF), just shortens the blast radius.
-4. **NOT recommended** — disabling caching entirely. Browserless costs ~real money (1000/mo ceiling, warn at 800 already wired in `maybeWarnQuota`). Cache is correct, the **key** is the bug.
+## Routing behavior
 
-### Verification plan once fixes ship
-- After fix 1+2: click Download on `/analysis/RELIANCE?horizon=intraday` while signed in → check `pdf_generation_log` for a new `cache_hit=false, success=true` row → open the signed URL → confirm the tier-shaped sections (Intraday Microstructure, Today's Catalysts, etc.) are present.
-- Add a quick `?refresh=1` query param (optional) to bypass cache during the next release smoke test.
+### /post-query (Fresh Entry branch only)
+- On submit when `intent === "buy_decision"`:
+  - Normalize horizon via `query-intake-parser`.
+  - Insert `queries` row with `engine_version='v1_tier_shaped'`, `engine_source='post_query'`, `horizon`, `custom_question=queryText`, `query_type='fresh_entry'`.
+  - Skip `generateAiReport`. Instead call `supabase.functions.invoke('generate-stock-analysis', { symbol, query_type: horizon, include_news: true })` (same call shape as /analysis/$symbol) and store `audit_meta.tier_applied` (or response id surrogate) back into `queries.orchestrator_response_id`.
+  - Navigate to `/report/<uuid>`.
+- All other intents: unchanged.
 
----
+### /report/$queryId
+- Fetch the row (existing query). Branch:
+  - **v1_tier_shaped**: invoke `generate-stock-analysis` with stored `stock_symbol`+`horizon` via TanStack Query (same pattern as /analysis page, 30s staleTime), render `<StockAnalysisReport data={…} topBanner={<ReflectiveBanner …/>} addendum={<FreshEntryAddendum …/>} />`. Mount existing `DownloadPdfButton`.
+  - **legacy** (no v1 marker): render existing `AIReportCardV2`/legacy renderer untouched, mount `<HybridRegenerateBanner queryId=… symbol=… horizon=…/>` above it.
+  - **Missing record**: 404 (existing notFoundComponent / fallthrough — do not auto-create).
 
-## Out of scope (explicitly NOT touched in this plan)
-- The `/report/$queryId` `window.print()` flow (path B). Different mechanism, not what the user reported.
-- The print page chrome (header, footer, SEBI disclosure).
-- `StockAnalysisReport` itself — already on tier-shaped, no migration needed.
-- Edge function `generate-stock-analysis` — orchestrator is fine, it's what feeds both web and print.
-- Browserless timeouts / `waitUntil` strategy — already tuned in the previous fix.
+### /analysis/$symbol — untouched. No `queries` row written. No wallet effect.
 
-Awaiting approval before switching to build mode.
+## Slot-extension contract for `StockAnalysisReport`
+
+Add **three** optional props; do not add the rest from the spec (not used in Phase 1, YAGNI per "Touch only what is explicitly authorized"):
+```ts
+topBanner?: ReactNode;       // rendered above HEADER STRIP
+addendum?: ReactNode;        // rendered between Action Zone block and Behavioral Nudge block
+analystCTAPlacement?: "default" | "elevated" | "hidden"; // default keeps existing render
+```
+If/when Phase 2 needs `actionZoneOverrides` / `behavioralNudgeOverride` / `queryContext`, add then.
+
+## Components
+
+### `ReflectiveBanner`
+Deterministic, no LLM. Reads `{ rawQuestion, interpretedType, interpretedSymbol, interpretedHorizon }`. Renders:
+- Line 1: `"<rawQuestion>"` in serif italic.
+- Line 2: `Interpreted as: Fresh Entry · {SYMBOL} · {horizon-label}` muted.
+Premium card, navy/ivory tokens, no emoji.
+
+### `FreshEntryAddendum`
+Receives `levels` + `tier` + `targets_meta`. Renders entry/SL/T1/T2/RR, with the existing `omissionCopy()` tooltip on nulls. Invalidation line:
+- Intraday: "View invalidates if a 15-min close prints below {SL}."
+- Medium/Long: "View invalidates if a daily close prints below {SL}."
+Behavioral guard line as specified. Static, PDF-safe (no motion).
+
+### `HybridRegenerateBanner`
+Calm copy + "Regenerate Free" button. Calls `regenerateFromLegacy({ legacyQueryId })` server fn which:
+- Reads legacy row (RLS scoped to user).
+- Inserts new `queries` row with `engine_version='v1_tier_shaped'`, `engine_source='regenerated_from_legacy'`, `regenerated_from_uuid=<legacy id>`, copied `stock_symbol`/`stock_name`/`query_text`, `horizon = legacy.horizon ?? 'medium-term'`, `query_type='fresh_entry'`.
+- Returns new id. Client navigates to `/report/<new id>`.
+- **No wallet deduction** (consistent with current zero-deduction reality; see clarification #1).
+
+## Audit meta extensions
+
+`audit_meta` lives on the orchestrator response, which we don't modify. Instead, I will persist the Phase-1 audit fields **in the `queries` row** (the columns added above are the source of truth) and additionally on the **client-side render** of the audit footer pass `reflective_banner_used` / `addendum_used` flags into a small `<PhaseOneAuditChip />` that mounts inside the existing audit footer. The orchestrator's `audit_meta.formula_version` etc. remain unchanged. `credit_action` is logged into `audit_events` table (existing) as `credit_action: deducted | skipped_free_regeneration | skipped_no_charge_path` per submission — I'll write that row alongside the `query_submitted` event already present in `QueryForm`.
+
+## Forbidden vocabulary lint
+
+I'll add a Vitest unit test `src/__tests__/forbidden-vocab.test.ts` that greps the new components + addendum + banner for `/guaranteed|sure shot|100%|prediction|forecast|promise|definitely/i` and fails on hit. Run with existing test command.
+
+## Verification I will run before declaring done
+
+| # | Scenario | Pass criterion |
+|---|---|---|
+| A | Submit Fresh Entry RELIANCE medium-term via /post-query | row has v1_tier_shaped; /report/&lt;uuid&gt; renders tier-shaped + banner + addendum + SEBI + analyst CTA |
+| B | Direct /analysis/RELIANCE?horizon=medium-term | zero queries row, zero deduction, same report |
+| C | Open existing legacy /report/&lt;uuid&gt; | original legacy template untouched + HybridRegenerateBanner on top; Regenerate Free creates new v1 row |
+| D | PDF for RELIANCE, ICICIBANK, TCS from both /report/&lt;new uuid&gt; and /analysis/&lt;sym&gt; | byte-identical cache key (`{symbol}_{horizon}_n1_v2_{date}`) → same signed URL; filename `Stockera_Analysis_{SYM}_{HORIZON}_{YYYY-MM-DD}.pdf` |
+| E | Wallet | balance unchanged on all three paths (matches reality today) |
+| F | Vocab lint | passes |
+
+D-pass is automatic because the PDF cache key is derived from `(symbol, horizon, includeNews, template_version, IST date)` — the route that triggers it doesn't affect the key.
+
+## Out of scope (will not touch)
+
+Brain modules, orchestrator, weighting profiles, action buckets, confidence engine math, compute-trade-plan, Puppeteer/Browserless pipeline, tier-shaped grid internals, LLM calls, analyst booking handler, SEBI disclaimer text, all non-Fresh-Entry intents.
+
+## Risks / blockers I want acknowledged before build
+
+1. Clarification #1 — wallet deduction does not exist; spec is misaligned with current code.
+2. The /report renderer for v1 invokes the orchestrator on every visit (same as /analysis page). That's a paid API call. If you'd rather we cache the orchestrator payload in `queries.ai_report` JSONB on first generation and re-read it on revisit, say so — that's a 10-line change but it's a behavior decision.
+3. Existing `ai_report` JSONB column on `queries` will be `null` for v1 rows (we don't cache there unless you ask). That's fine for the renderer branch but worth flagging for analytics.
+
+Awaiting approval, then I implement in this order: migration → parser → components → QueryForm branch → report route switch → slot props on StockAnalysisReport → regenerate fn → vocab test → PDF verification.
