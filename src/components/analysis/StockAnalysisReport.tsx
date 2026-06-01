@@ -13,6 +13,7 @@ import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } fr
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
@@ -86,6 +87,15 @@ const TIER_LABEL: Record<QueryType, string> = {
   "medium-term": "Medium-term view",
   "long-term": "Long-term view",
 };
+
+// Plain-English, deterministic methodology copy for each pillar (0–100 scale).
+const PILLAR_METHODOLOGY = {
+  technical:   "RSI, MACD, moving-average stack, ADX, Bollinger position and VWAP signal blended into a single trend/strength reading.",
+  fundamental: "Valuation (PE, DCF upside), profitability (ROE), and quality scores (Piotroski F, Altman Z) combined with a banking-aware override.",
+  risk:        "Beta, 1-year volatility, Sharpe/Sortino ratios, max drawdown, VaR-95 and liquidity classification — higher score means lower realised risk.",
+  momentum:    "1-week / 1-month / 3-month returns, relative strength vs Nifty, moving-average cross status and volume confirmation.",
+  sentiment:   "News-flow sentiment score from recent headlines; null when news is disabled or no coverage is available.",
+} as const;
 
 const SCORE_TONE = (s: number | null | undefined): { color: string; label: string } => {
   if (s == null) return { color: "text-muted-foreground", label: "no data" };
@@ -196,7 +206,7 @@ function Metric({ label, value, tone = "", hint }: { label: string; value: React
 }
 
 // Animated score bar — width fills from 0 to target on view; tier-weighted pulses once.
-function ScoreBar({ label, value, weighted, pulse, note }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string }) {
+function ScoreBar({ label, value, weighted, pulse, note, methodology }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string; methodology?: string }) {
   const v = value ?? 0;
   const tone = SCORE_TONE(value);
   // Only null/undefined count as missing. A literal 0 is a legitimate score.
@@ -205,7 +215,9 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const width = isMissing ? 0 : Math.max(0, Math.min(100, v));
-  const { text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
+  // CRITICAL: attach useCountUp's ref to the count span so its internal
+  // useInView fires; otherwise the count stays at 0 forever.
+  const { ref: countRef, text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
 
   return (
     <div ref={ref} className={isMissing ? "opacity-60" : ""}>
@@ -220,6 +232,16 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
               transition={{ duration: 0.45, ease: ease.standard, delay: 0.4 }}
             />
           )}
+          {methodology && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 cursor-help text-muted-foreground/50 hover:text-muted-foreground" aria-label={`${label} methodology`} />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs leading-snug">
+                Score 0–100. {methodology}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {note && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -229,8 +251,8 @@ function ScoreBar({ label, value, weighted, pulse, note }: { label: string; valu
             </Tooltip>
           )}
         </span>
-        <span className={`font-mono tabular-nums font-semibold ${tone.color}`}>
-          {isMissing ? DASH : countText}
+        <span ref={countRef} className={`font-mono tabular-nums font-semibold ${tone.color}`}>
+          {isMissing ? DASH : <>{countText}<span className="text-muted-foreground/60 font-normal"> / 100</span></>}
         </span>
       </div>
       <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
@@ -283,7 +305,7 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
   const reduce = useReducedMotion();
   const ref = useRef<SVGSVGElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-  const { text: scoreText } = useCountUp({
+  const { ref: countRef, text: scoreText } = useCountUp({
     value: isMissing ? null : (score as number),
     duration: 800,
     decimals: 0,
@@ -314,10 +336,10 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
         )}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-display text-4xl tabular-nums text-foreground">
+        <span ref={countRef} className="font-display text-4xl tabular-nums text-foreground">
           {isMissing ? DASH : scoreText}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Stockera Score</span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{isMissing ? "Stockera Score" : "out of 100"}</span>
       </div>
     </div>
   );
@@ -630,16 +652,19 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
         {report_modules.show_score_ring && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-            <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
+              <MethodologyChip tier={tier} weights={weights} />
+            </div>
             <div className="grid items-center gap-8 md:grid-cols-[auto_1fr]">
               <ScoreRing score={final_verdict.overall_score} action={final_verdict.action} />
               <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }} className="space-y-3">
                 {SECTION_ORDER[tier].map((k) => {
-                  const map: Record<typeof k, { label: string; key: keyof ScoreBreakdown }> = {
-                    technical:   { label: "Technical",   key: "technical_score" },
-                    fundamental: { label: "Fundamental", key: "fundamental_score" },
-                    risk:        { label: "Risk",        key: "risk_score" },
-                    momentum:    { label: "Momentum",    key: "momentum_score" },
+                  const map: Record<typeof k, { label: string; key: keyof ScoreBreakdown; methodology: string }> = {
+                    technical:   { label: "Technical",   key: "technical_score",   methodology: PILLAR_METHODOLOGY.technical },
+                    fundamental: { label: "Fundamental", key: "fundamental_score", methodology: PILLAR_METHODOLOGY.fundamental },
+                    risk:        { label: "Risk",        key: "risk_score",        methodology: PILLAR_METHODOLOGY.risk },
+                    momentum:    { label: "Momentum",    key: "momentum_score",    methodology: PILLAR_METHODOLOGY.momentum },
                   };
                   const m = map[k];
                   const s = score_breakdown[m.key];
@@ -650,6 +675,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                         value={s ?? null}
                         weighted={(weights[k] ?? 0) >= 0.25}
                         pulse={pulsePillars.has(k)}
+                        methodology={m.methodology}
                       />
                     </motion.div>
                   );
@@ -659,6 +685,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                     label="Sentiment"
                     value={score_breakdown.sentiment_score ?? null}
                     weighted={(weights.sentiment ?? 0) >= 0.15}
+                    methodology={PILLAR_METHODOLOGY.sentiment}
                     note={
                       score_breakdown.sentiment_score == null
                         ? (query_context.include_news
@@ -1018,6 +1045,48 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
 // ─────────────────────────────────────────────────────────────────
 // Small composed components & prose generators
 // ─────────────────────────────────────────────────────────────────
+
+function MethodologyChip({ tier, weights }: { tier: QueryType; weights: Record<string, number> }) {
+  const rows: Array<{ key: keyof typeof PILLAR_METHODOLOGY; label: string }> = [
+    { key: "technical",   label: "Technical" },
+    { key: "fundamental", label: "Fundamental" },
+    { key: "risk",        label: "Risk" },
+    { key: "momentum",    label: "Momentum" },
+    { key: "sentiment",   label: "Sentiment" },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground">
+        <Info className="h-3 w-3" /> How this is calculated
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[340px] text-xs leading-snug">
+        <p className="mb-2 font-display text-sm text-foreground">Stockera Score methodology</p>
+        <p className="mb-3 text-muted-foreground">
+          Each pillar is scored 0–100 by a deterministic compute module. The composite is a
+          tier-weighted average — weights below are tuned for the <span className="font-semibold text-foreground">{TIER_LABEL[tier].toLowerCase()}</span>.
+        </p>
+        <ul className="space-y-2">
+          {rows.map((r) => {
+            const w = weights[r.key] ?? 0;
+            return (
+              <li key={r.key} className="flex gap-2">
+                <span className="mt-0.5 inline-block w-20 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {r.label}
+                  <span className="ml-1 text-foreground/70">{Math.round(w * 100)}%</span>
+                </span>
+                <span className="text-muted-foreground">{PILLAR_METHODOLOGY[r.key]}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground">
+          Final action (Buy / Hold / Watchlist / Reduce / Avoid) layers tier guardrails on top of the composite.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string }) {
   return (
