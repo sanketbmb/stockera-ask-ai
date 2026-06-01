@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { Newspaper, Sparkles, History, TrendingUp, Brain, Bot, Database, FileText, UserCheck } from "lucide-react";
+import { verdictUILabel } from "@/lib/verdict-labels";
+import type { VerdictAction } from "@/types/stock-analysis";
 
 function timeAgo(iso: string) {
   const d = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -13,11 +15,13 @@ function timeAgo(iso: string) {
   return `${Math.floor(d / 86400)}d ago`;
 }
 
-const FALLBACK_RECENT = [
+type RecentRow = { stock_name: string; verdict: VerdictAction | null; created_at: string };
+
+const FALLBACK_RECENT: RecentRow[] = [
   { stock_name: "IDFC First Bank", verdict: "HOLD", created_at: new Date(Date.now() - 12 * 60_000).toISOString() },
   { stock_name: "Tata Motors", verdict: "BUY", created_at: new Date(Date.now() - 47 * 60_000).toISOString() },
-  { stock_name: "Yes Bank", verdict: "WAIT", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() },
-  { stock_name: "Adani Power", verdict: "PARTIAL_EXIT", created_at: new Date(Date.now() - 5 * 3600_000).toISOString() },
+  { stock_name: "Yes Bank", verdict: "WATCHLIST", created_at: new Date(Date.now() - 2 * 3600_000).toISOString() },
+  { stock_name: "Adani Power", verdict: "SELL", created_at: new Date(Date.now() - 5 * 3600_000).toISOString() },
 ];
 
 const TRENDING = [
@@ -26,17 +30,28 @@ const TRENDING = [
   { title: "Top 5 analyst picks for this week", source: "LiveMint", time: "5h ago" },
 ];
 
-const VERDICT_COLOR: Record<string, string> = {
+const VERDICT_COLOR: Record<VerdictAction, string> = {
   BUY: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  SELL: "bg-red-500/15 text-red-700 dark:text-red-300",
   HOLD: "bg-orange-500/15 text-orange-700 dark:text-orange-300",
-  AVERAGE: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-  WAIT: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300",
-  PARTIAL_EXIT: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
+  SELL: "bg-red-500/15 text-red-700 dark:text-red-300",
+  WATCHLIST: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300",
+  AVOID: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300",
 };
 
+const VALID_ACTIONS: VerdictAction[] = ["BUY", "HOLD", "SELL", "WATCHLIST", "AVOID"];
+
+function extractAction(report: unknown): VerdictAction | null {
+  if (!report || typeof report !== "object") return null;
+  const r = report as Record<string, unknown>;
+  const fv = r.final_verdict as Record<string, unknown> | undefined;
+  const raw = (fv?.action ?? r.verdict) as unknown;
+  if (typeof raw !== "string") return null;
+  const up = raw.toUpperCase() as VerdictAction;
+  return VALID_ACTIONS.includes(up) ? up : null;
+}
+
 export function QueryContextPanel() {
-  const { data: recent = FALLBACK_RECENT } = useQuery({
+  const { data: recent = FALLBACK_RECENT } = useQuery<RecentRow[]>({
     queryKey: ["recent-queries-anon"],
     queryFn: async () => {
       const { data } = await supabase
@@ -45,9 +60,9 @@ export function QueryContextPanel() {
         .not("ai_report", "is", null)
         .order("created_at", { ascending: false })
         .limit(10);
-      const rows = (data ?? []).map((r) => ({
+      const rows: RecentRow[] = (data ?? []).map((r) => ({
         stock_name: r.stock_name,
-        verdict: ((r.ai_report as { verdict?: string } | null)?.verdict ?? "HOLD"),
+        verdict: extractAction(r.ai_report),
         created_at: r.created_at as string,
       }));
       return rows.length ? rows : FALLBACK_RECENT;
@@ -73,13 +88,18 @@ export function QueryContextPanel() {
                   <span className="text-sm font-medium truncate">{q.stock_name}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className={`text-[10px] ${VERDICT_COLOR[q.verdict] ?? ""}`}>{q.verdict}</Badge>
+                  {q.verdict && (
+                    <Badge variant="outline" className={`text-[10px] ${VERDICT_COLOR[q.verdict]}`}>
+                      {verdictUILabel(q.verdict)}
+                    </Badge>
+                  )}
                   <span className="text-[10px] text-muted-foreground">{timeAgo(q.created_at)}</span>
                 </div>
               </li>
             ))}
           </ul>
         </TabsContent>
+
 
         <TabsContent value="news" className="mt-4 space-y-3">
           {TRENDING.map((n, i) => (
