@@ -174,7 +174,7 @@ const TIER_DEFAULT_TAB: Record<QueryType, "holding" | "fresh" | "exploring"> = {
 // Atoms
 // ─────────────────────────────────────────────────────────────────
 
-function SectionTitle({ eyebrow, title, icon: Icon }: { eyebrow: string; title: string; icon?: React.ComponentType<{ className?: string }> }) {
+function SectionTitle({ eyebrow, title, icon: Icon, info }: { eyebrow: string; title: string; icon?: React.ComponentType<{ className?: string }>; info?: React.ReactNode }) {
   return (
     <div className="mb-4 flex items-end justify-between gap-3 border-b border-border/60 pb-3">
       <div className="flex items-center gap-3">
@@ -183,8 +183,42 @@ function SectionTitle({ eyebrow, title, icon: Icon }: { eyebrow: string; title: 
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
           <h2 className="font-display text-2xl text-foreground leading-tight">{title}</h2>
         </div>
+        {info}
       </div>
     </div>
+  );
+}
+
+// Reusable "How this is calculated" affordance — Popover for richer copy than tooltip.
+function InfoTip({ title, body, formula, className }: { title: string; body: React.ReactNode; formula?: React.ReactNode; className?: string }) {
+  const [showFormula, setShowFormula] = useState(false);
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={`inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground ${className ?? ""}`}
+        aria-label={`How ${title} is calculated`}
+      >
+        <Info className="h-3 w-3" /> How this is calculated
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[320px] text-xs leading-snug">
+        <p className="mb-1.5 font-display text-sm text-foreground">{title}</p>
+        <div className="space-y-1.5 text-muted-foreground">{body}</div>
+        {formula && (
+          <div className="mt-3 border-t border-border pt-2">
+            <button
+              type="button"
+              onClick={() => setShowFormula((s) => !s)}
+              className="text-[10px] font-mono uppercase tracking-wider text-accent hover:underline"
+            >
+              {showFormula ? "Hide formula" : "Show formula"}
+            </button>
+            {showFormula && (
+              <pre className="mt-1.5 whitespace-pre-wrap rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/80">{formula}</pre>
+            )}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
