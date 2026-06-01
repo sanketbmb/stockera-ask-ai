@@ -648,11 +648,17 @@ export type Database = {
           buy_price: number | null
           created_at: string | null
           current_price: number | null
+          custom_question: string | null
+          engine_source: string | null
+          engine_version: string | null
+          horizon: string | null
           id: string
           intent: string | null
+          orchestrator_response_id: string | null
           pnl_state: string | null
           query_text: string
           query_type: string | null
+          regenerated_from_uuid: string | null
           status: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol: string | null
@@ -667,11 +673,17 @@ export type Database = {
           buy_price?: number | null
           created_at?: string | null
           current_price?: number | null
+          custom_question?: string | null
+          engine_source?: string | null
+          engine_version?: string | null
+          horizon?: string | null
           id?: string
           intent?: string | null
+          orchestrator_response_id?: string | null
           pnl_state?: string | null
           query_text: string
           query_type?: string | null
+          regenerated_from_uuid?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol?: string | null
@@ -686,11 +698,17 @@ export type Database = {
           buy_price?: number | null
           created_at?: string | null
           current_price?: number | null
+          custom_question?: string | null
+          engine_source?: string | null
+          engine_version?: string | null
+          horizon?: string | null
           id?: string
           intent?: string | null
+          orchestrator_response_id?: string | null
           pnl_state?: string | null
           query_text?: string
           query_type?: string | null
+          regenerated_from_uuid?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name?: string
           stock_symbol?: string | null
