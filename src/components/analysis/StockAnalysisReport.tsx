@@ -571,7 +571,7 @@ export function StockAnalysisReport({
   const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
   const targetsMeta = audit_meta.targets_meta ?? null;
 
-  const initialTab = defaultActionTab ?? (suppressFreshTab ? "holding" : TIER_DEFAULT_TAB[tier]);
+  const initialTab = defaultActionTab ?? (suppressFreshTab ? "holding" : "fresh");
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(initialTab);
 
   // R:R from levels (ratio + rupee breakdown for the dual-format display).
