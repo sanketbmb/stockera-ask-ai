@@ -190,7 +190,7 @@ export function QueryForm() {
     try {
       const baseInsert = {
         user_id: user.id,
-        stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
+        stock_name: stockName || "Stock Query",
         stock_symbol: stockSymbol || null,
         buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
