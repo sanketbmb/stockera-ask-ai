@@ -57,7 +57,7 @@ async function verifyPrintToken<T>(token: string): Promise<T | null> {
   try {
     const [bodyB64, sigB64] = token.split(".");
     if (!bodyB64 || !sigB64) return null;
-    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const secret = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!secret) return null;
     const key = await hmacKey(secret);
     const bodyBytes = b64urlDecode(bodyB64);
