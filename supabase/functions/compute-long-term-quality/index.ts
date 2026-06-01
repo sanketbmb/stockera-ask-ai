@@ -209,7 +209,7 @@ Deno.serve(async (req) => {
   // Data completeness — fraction of populated leaf fields.
   const fields = [
     roe_5y_avg, roce_5y_avg, debt_to_equity_current, fcf_yield, suppressedEps,
-    earnings_consistency_label, promoter_holding_pct, piotroski_f_score,
+    earnings_consistency_label, promoter_holding_pct, bankAdjustedPiotroski,
     margin_trend_label, market_share_trend_label,
   ];
   const present = fields.filter((v) => v != null).length;
@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
     eps_cagr_5y: suppressedEps,
     earnings_consistency_label,
     promoter_holding_pct,
-    piotroski_f_score,
+    piotroski_f_score: bankAdjustedPiotroski,
     quality_label,
     margin_trend_label,
     market_share_trend_label,
