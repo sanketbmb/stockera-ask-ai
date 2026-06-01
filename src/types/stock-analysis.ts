@@ -168,9 +168,19 @@ export interface AuditMeta {
   confidence_band?: string;
   modules_invoked?: string[];
   tier_modules_added_version?: string;
-  intraday_microstructure_diagnostic?: Record<string, unknown> | null;
-  long_term_quality_diagnostic?: Record<string, unknown> | null;
+  intraday_microstructure_diagnostic?: IntradayMicrostructureDiagnostic | null;
+  long_term_quality_diagnostic?: LongTermQualityDiagnostic | null;
 }
+
+export interface IntradayMicrostructureDiagnostic {
+  symbol: string;
+  null_reasons: Record<string, string>;
+}
+
+export interface LongTermQualityDiagnostic {
+  symbol: string;
+  banking_override_applied: boolean;
+  null_reasons: Record<string, string>;
 
 export interface IntradayMicrostructureSnapshot {
   atr_14: number | null;
