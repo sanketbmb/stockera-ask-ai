@@ -224,16 +224,37 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
   const pe = num(val.pe);
   const dcfPerShare = num(q.dcf_intrinsic_value);
   const price = num(company.price);
-  const dcfUpside = dcfPerShare != null && price != null && price > 0 ? r2(((dcfPerShare - price) / price) * 100) : null;
+  let dcfUpside = dcfPerShare != null && price != null && price > 0
+    ? r2(((dcfPerShare - price) / price) * 100)
+    : null;
+  // Fix 3: clamp DCF upside to [-50, +200] when present.
+  if (dcfUpside != null) {
+    dcfUpside = Math.max(-50, Math.min(200, dcfUpside));
+  }
 
   // Valuation label
   let valuationLabel = "";
   if (pe != null) {
     valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
   }
+
+  // Fix 4: prefer upstream banking_override flag when present; fall back to legacy detection.
+  const upstreamBankingApplied = q.banking_override_applied === true;
+  const upstreamBankingReason  = typeof q.banking_override_reason === "string" ? q.banking_override_reason : null;
   const isBanking = (sector ?? "").toLowerCase().includes("bank") || (sector ?? "").toLowerCase().includes("financial");
-  const altmanZ = num(q.altman_z_score);
-  const bankingOverride = isBanking && altmanZ == null;
+  let altmanZ = num(q.altman_z_score);
+  const bankingOverride = upstreamBankingApplied || (isBanking && altmanZ == null);
+  const bankingReason = upstreamBankingReason
+    ?? (bankingOverride ? "legacy_sector_or_missing_altman" : null);
+  if (bankingOverride) altmanZ = null;
+
+  // Fix 3: surface DCF status / method from upstream (compute-fundamentals) with safe fallbacks.
+  const dcfStatus = typeof q.dcf_status === "string"
+    ? q.dcf_status
+    : (dcfPerShare == null ? "DCF_UNAVAILABLE" : "DCF_OK");
+  const dcfMethod = typeof q.dcf_method_used === "string"
+    ? q.dcf_method_used
+    : (dcfPerShare == null ? "DCF_SKIPPED" : "DCF_FCFF");
 
   return {
     snapshot: {
@@ -241,12 +262,15 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
       roe: num(prof.roe_latest),
       piotroski_f_score: num(q.piotroski_f_score),
       altman_z_score: altmanZ,
-      dcf_upside_pct: dcfUpside,
+      dcf_upside_pct: bankingOverride ? null : dcfUpside,
       valuation_label: valuationLabel,
     },
     score: num(d.fundamental_score),
     as_of: String(d.computed_at ?? ""),
     banking_override: bankingOverride,
+    banking_override_reason: bankingReason,
+    dcf_status: bankingOverride ? "DCF_SKIPPED" : dcfStatus,
+    dcf_method_used: bankingOverride ? "DCF_SKIPPED" : dcfMethod,
   };
 }
 
