@@ -42,6 +42,9 @@ export const ALIASES: Record<string, string> = {
   it_services: "it_services",
   information_technology: "it_services",
   software_services: "it_services",
+  computers_software_consulting: "it_services",
+  computers_software: "it_services",
+  software: "it_services",
 
   // Pharma
   pharmaceuticals: "pharmaceuticals",

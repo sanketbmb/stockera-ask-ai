@@ -345,10 +345,11 @@ function resolveLongTermT1(ctx: LongTermContext): TargetResolution {
   // 3. Historical multiple — 5y avg PE not available in current data layer
   attempts.push({ method: "historical_multiple", ok: false, reason: "historical_pe_unavailable" });
 
-  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.06..0.18, sector_return_12m))
+  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.16..0.22, sector_return_12m))
+  // Floor 0.16 ensures long-term T1 sits ≥16% above spot, large enough to clear RR≥1.5 against a 10–20% SL.
   const drift12m = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
   const v = spot * (1 + drift12m);
   if (withinLongTermBand(spot, v)) {
     return {
@@ -396,10 +397,10 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
   // 3. Historical band high — unavailable
   attempts.push({ method: "historical_multiple", ok: false, reason: "historical_band_unavailable" });
 
-  // 4. Vol-band stretch: spot × (1 + 1.5 × drift)
+  // 4. Vol-band stretch: spot × (1 + 1.5 × drift); drift uses long-term floor 0.16
   const drift = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
   const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
   if (r) return r;
 
@@ -424,8 +425,10 @@ type SlMethod = "vol_adaptive" | "dma200_anchor" | "max_distance_cap" | "min_dis
 
 function longTermPlanWithSl(spot: number, dma200: number, w52H: number, w52L: number, annVolPct: number | null, t1: number | null, t2: number | null): { levels: Levels; slMethod: SlMethod } {
   // Adaptive long-term SL — bounded by [10%, 20%] from spot.
+  // Multiplier 0.5 keeps SL close to spot for low-vol stocks so RR>=1.5 on
+  // long-term targets is achievable. e.g. HDFCBANK (vol~18%) → 10% SL.
   const volFrac = annVolPct != null && Number.isFinite(annVolPct) ? annVolPct / 100 : 0.20;
-  const volFactor = Math.max(0.10, Math.min(0.20, 1.5 * volFrac));
+  const volFactor = Math.max(0.10, Math.min(0.20, 0.5 * volFrac));
   const slVol = spot * (1 - volFactor);
   const slDma = Number.isFinite(dma200) && dma200 < spot ? dma200 * 0.92 : -Infinity;
   let sl = Math.max(slVol, slDma); // pick the tighter (higher) anchor
