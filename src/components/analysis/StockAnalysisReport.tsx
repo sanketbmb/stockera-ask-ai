@@ -181,7 +181,8 @@ function Metric({ label, value, tone = "", hint }: { label: string; value: React
 function ScoreBar({ label, value, weighted, pulse }: { label: string; value: number | null; weighted: boolean; pulse?: boolean }) {
   const v = value ?? 0;
   const tone = SCORE_TONE(value);
-  const isMissing = value == null || value === 0;
+  // Only null/undefined count as missing. A literal 0 is a legitimate score.
+  const isMissing = value == null;
   const reduce = useReducedMotion();
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
@@ -189,7 +190,7 @@ function ScoreBar({ label, value, weighted, pulse }: { label: string; value: num
   const { text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
 
   return (
-    <div ref={ref} className={isMissing ? "opacity-50" : ""}>
+    <div ref={ref} className={isMissing ? "opacity-60" : ""}>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="flex items-center gap-1.5 text-muted-foreground">
           {label}
@@ -209,7 +210,7 @@ function ScoreBar({ label, value, weighted, pulse }: { label: string; value: num
       <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
         <motion.div
-          className="h-full origin-left rounded-full bg-gradient-to-r from-primary to-accent"
+          className={`h-full origin-left rounded-full ${isMissing ? "bg-muted-foreground/30" : "bg-gradient-to-r from-primary to-accent"}`}
           style={{ width: `${width}%` }}
           initial={reduce ? { scaleX: 1 } : { scaleX: 0 }}
           animate={inView ? (pulse && !reduce
