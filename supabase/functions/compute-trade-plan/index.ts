@@ -645,14 +645,19 @@ Deno.serve(async (req) => {
     // ── 3. Per-tier raw plan ──
     let raw: Levels;
     let ltSlMethod: SlMethod | null = null;
-    if (queryType === "intraday")          raw = intradayPlan(spot, atrV, prevDay);
-    else if (queryType === "long-term") {
+    if (queryType === "intraday") {
+      raw = intradayPlan(spot, atrV, prevDay);
+    } else if (queryType === "long-term") {
       const lt = longTermPlanWithSl(spot, dma200, w52H, w52L, vol1y, t1Resolved?.value ?? null, t2Resolved?.value ?? null);
       raw = lt.levels;
       ltSlMethod = lt.slMethod;
-      if (targetsMeta) (targetsMeta as Record<string, unknown>).sl_method = ltSlMethod;
+      if (targetsMeta) {
+        const tm = targetsMeta as Record<string, unknown>;
+        tm.sl_method = ltSlMethod;
+      }
+    } else {
+      raw = mediumPlan(spot, atrV, swingHighs, swingLows);
     }
-    else                                   raw = mediumPlan(spot, atrV, swingHighs, swingLows);
 
     // ── 4. Validate ──
     const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);
