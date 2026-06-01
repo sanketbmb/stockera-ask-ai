@@ -592,9 +592,9 @@ Deno.serve(async (req) => {
       }
 
       const sectorAgg = await fetchSectorAggregate(sectorName);
-      const sectorMissing = sectorAgg == null || sectorAgg.name === "__default__"
-        ? (sectorAgg == null ? "sector_aggregate_missing" : null)
-        : null;
+      const sectorMissing = sectorAgg == null
+        ? "sector_aggregate_missing"
+        : (sectorAgg.canonical === "__default__" ? "alias_unmatched_used_default" : null);
 
       const ctx: LongTermContext = {
         spot,
@@ -617,6 +617,10 @@ Deno.serve(async (req) => {
         t2Resolved = resolveLongTermT2(ctx, t1Resolved);
       }
 
+      if (sectorAgg?.canonical === "__default__") {
+        console.warn(`[compute-trade-plan] sector_aggregate_source=default_fallback symbol=${symbol} raw_sector="${sectorName ?? ""}"`);
+      }
+
       targetsMeta = {
         tier: "long-term",
         t1: { value: t1Resolved.value, method: t1Resolved.method, reason: t1Resolved.reason, inputs: t1Resolved.inputs, attempts: t1Resolved.attempts },
@@ -628,9 +632,15 @@ Deno.serve(async (req) => {
           ann_vol_pct: vol1y,
           guardrail_breach: ltGuardrail,
         },
-        sector_used: sectorAgg?.name ?? null,
+        sector_used: sectorAgg?.display ?? null,
+        sector_canonical: sectorAgg?.canonical ?? null,
+        sector_aggregate_source: sectorAgg?.data_source ?? "missing",
+        sector_method_version: sectorAgg?.method_version ?? null,
+        sector_bootstrap_reference: sectorAgg?.bootstrap_ref ?? null,
         sector_missing_reason: sectorMissing,
       };
+    }
+
     }
 
     // ── 3. Per-tier raw plan ──
