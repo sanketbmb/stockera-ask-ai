@@ -345,10 +345,11 @@ function resolveLongTermT1(ctx: LongTermContext): TargetResolution {
   // 3. Historical multiple — 5y avg PE not available in current data layer
   attempts.push({ method: "historical_multiple", ok: false, reason: "historical_pe_unavailable" });
 
-  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.06..0.18, sector_return_12m))
+  // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.16..0.22, sector_return_12m))
+  // Floor 0.16 ensures long-term T1 sits ≥16% above spot, large enough to clear RR≥1.5 against a 10–20% SL.
   const drift12m = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.06, 0.18)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.06, 0.18) : 0.10);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
   const v = spot * (1 + drift12m);
   if (withinLongTermBand(spot, v)) {
     return {
