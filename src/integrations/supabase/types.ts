@@ -643,6 +643,7 @@ export type Database = {
       }
       queries: {
         Row: {
+          addendum_used: string | null
           ai_report: Json | null
           assigned_analyst_id: string | null
           buy_price: number | null
@@ -651,12 +652,16 @@ export type Database = {
           custom_question: string | null
           engine_source: string | null
           engine_version: string | null
+          entry_price: number | null
           frozen_at: string | null
           horizon: string | null
           id: string
           intent: string | null
           orchestrator_response_id: string | null
           pnl_state: string | null
+          position_state: string | null
+          profit_loss_pct: number | null
+          qty: number | null
           query_text: string
           query_type: string | null
           regenerated_from_uuid: string | null
@@ -670,6 +675,7 @@ export type Database = {
           video_requested: boolean
         }
         Insert: {
+          addendum_used?: string | null
           ai_report?: Json | null
           assigned_analyst_id?: string | null
           buy_price?: number | null
@@ -678,12 +684,16 @@ export type Database = {
           custom_question?: string | null
           engine_source?: string | null
           engine_version?: string | null
+          entry_price?: number | null
           frozen_at?: string | null
           horizon?: string | null
           id?: string
           intent?: string | null
           orchestrator_response_id?: string | null
           pnl_state?: string | null
+          position_state?: string | null
+          profit_loss_pct?: number | null
+          qty?: number | null
           query_text: string
           query_type?: string | null
           regenerated_from_uuid?: string | null
@@ -697,6 +707,7 @@ export type Database = {
           video_requested?: boolean
         }
         Update: {
+          addendum_used?: string | null
           ai_report?: Json | null
           assigned_analyst_id?: string | null
           buy_price?: number | null
@@ -705,12 +716,16 @@ export type Database = {
           custom_question?: string | null
           engine_source?: string | null
           engine_version?: string | null
+          entry_price?: number | null
           frozen_at?: string | null
           horizon?: string | null
           id?: string
           intent?: string | null
           orchestrator_response_id?: string | null
           pnl_state?: string | null
+          position_state?: string | null
+          profit_loss_pct?: number | null
+          qty?: number | null
           query_text?: string
           query_type?: string | null
           regenerated_from_uuid?: string | null
