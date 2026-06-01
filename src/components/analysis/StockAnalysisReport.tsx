@@ -558,7 +558,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                   animate="visible"
                   className={`font-display text-5xl md:text-6xl ${verdictStyle.accent}`}
                 >
-                  {verdictStyle.label.toUpperCase()}
+                  {displayVerdict}
                 </motion.h2>
                 <motion.div variants={tierBadgeSlide} initial="hidden" animate="visible">
                   <Badge variant="outline" className={`text-xs ${verdictStyle.chip}`}>{TIER_LABEL[tier]}</Badge>
