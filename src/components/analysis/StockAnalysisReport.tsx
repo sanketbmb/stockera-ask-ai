@@ -642,16 +642,19 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
         {report_modules.show_score_ring && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-            <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
+              <MethodologyChip tier={tier} weights={weights} />
+            </div>
             <div className="grid items-center gap-8 md:grid-cols-[auto_1fr]">
               <ScoreRing score={final_verdict.overall_score} action={final_verdict.action} />
               <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }} className="space-y-3">
                 {SECTION_ORDER[tier].map((k) => {
-                  const map: Record<typeof k, { label: string; key: keyof ScoreBreakdown }> = {
-                    technical:   { label: "Technical",   key: "technical_score" },
-                    fundamental: { label: "Fundamental", key: "fundamental_score" },
-                    risk:        { label: "Risk",        key: "risk_score" },
-                    momentum:    { label: "Momentum",    key: "momentum_score" },
+                  const map: Record<typeof k, { label: string; key: keyof ScoreBreakdown; methodology: string }> = {
+                    technical:   { label: "Technical",   key: "technical_score",   methodology: PILLAR_METHODOLOGY.technical },
+                    fundamental: { label: "Fundamental", key: "fundamental_score", methodology: PILLAR_METHODOLOGY.fundamental },
+                    risk:        { label: "Risk",        key: "risk_score",        methodology: PILLAR_METHODOLOGY.risk },
+                    momentum:    { label: "Momentum",    key: "momentum_score",    methodology: PILLAR_METHODOLOGY.momentum },
                   };
                   const m = map[k];
                   const s = score_breakdown[m.key];
@@ -662,6 +665,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                         value={s ?? null}
                         weighted={(weights[k] ?? 0) >= 0.25}
                         pulse={pulsePillars.has(k)}
+                        methodology={m.methodology}
                       />
                     </motion.div>
                   );
@@ -671,6 +675,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                     label="Sentiment"
                     value={score_breakdown.sentiment_score ?? null}
                     weighted={(weights.sentiment ?? 0) >= 0.15}
+                    methodology={PILLAR_METHODOLOGY.sentiment}
                     note={
                       score_breakdown.sentiment_score == null
                         ? (query_context.include_news
