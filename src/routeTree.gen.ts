@@ -37,8 +37,10 @@ import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
+import { Route as AdminExportsRouteImport } from './routes/admin.exports'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
+import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
 
 const WalletRoute = WalletRouteImport.update({
@@ -181,6 +183,11 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminExportsRoute = AdminExportsRouteImport.update({
+  id: '/admin/exports',
+  path: '/admin/exports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/admin/dashboard',
   path: '/admin/dashboard',
@@ -189,6 +196,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
 const AdminApplyRoute = AdminApplyRouteImport.update({
   id: '/admin/apply',
   path: '/admin/apply',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsArchitecturePrintRoute = DocsArchitecturePrintRouteImport.update({
+  id: '/docs/architecture/print',
+  path: '/docs/architecture/print',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUploadAnswerQueryIdRoute =
@@ -221,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -230,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/docs/architecture/print': typeof DocsArchitecturePrintRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -254,6 +268,7 @@ export interface FileRoutesByTo {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -263,6 +278,7 @@ export interface FileRoutesByTo {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/docs/architecture/print': typeof DocsArchitecturePrintRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -288,6 +304,7 @@ export interface FileRoutesById {
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
@@ -297,6 +314,7 @@ export interface FileRoutesById {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/docs/architecture/print': typeof DocsArchitecturePrintRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -323,6 +341,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -332,6 +351,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
+    | '/docs/architecture/print'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -356,6 +376,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -365,6 +386,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
+    | '/docs/architecture/print'
   id:
     | '__root__'
     | '/'
@@ -389,6 +411,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/admin/apply'
     | '/admin/dashboard'
+    | '/admin/exports'
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
@@ -398,6 +421,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/admin/upload-answer/$queryId'
+    | '/docs/architecture/print'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -423,6 +447,7 @@ export interface RootRouteChildren {
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminExportsRoute: typeof AdminExportsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminProfileRoute: typeof AdminProfileRoute
   AdminSuperRoute: typeof AdminSuperRoute
@@ -432,6 +457,7 @@ export interface RootRouteChildren {
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
+  DocsArchitecturePrintRoute: typeof DocsArchitecturePrintRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -632,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/exports': {
+      id: '/admin/exports'
+      path: '/admin/exports'
+      fullPath: '/admin/exports'
+      preLoaderRoute: typeof AdminExportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/dashboard': {
       id: '/admin/dashboard'
       path: '/admin/dashboard'
@@ -644,6 +677,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/apply'
       fullPath: '/admin/apply'
       preLoaderRoute: typeof AdminApplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/architecture/print': {
+      id: '/docs/architecture/print'
+      path: '/docs/architecture/print'
+      fullPath: '/docs/architecture/print'
+      preLoaderRoute: typeof DocsArchitecturePrintRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/upload-answer/$queryId': {
@@ -679,6 +719,7 @@ const rootRouteChildren: RootRouteChildren = {
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminExportsRoute: AdminExportsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminProfileRoute: AdminProfileRoute,
   AdminSuperRoute: AdminSuperRoute,
@@ -688,17 +729,8 @@ const rootRouteChildren: RootRouteChildren = {
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
+  DocsArchitecturePrintRoute: DocsArchitecturePrintRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

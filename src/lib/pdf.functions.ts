@@ -331,3 +331,122 @@ async function maybeWarnQuota() {
     console.warn("[pdf] quota check failed:", e);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// ARCHITECTURE ENCYCLOPEDIA PDF (admin-gated, static doc)
+// ─────────────────────────────────────────────────────────────────
+
+import { DOC_VERSION, architecturePdfFilename } from "@/lib/doc-version";
+
+export const generateArchitecturePdf = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const startedAt = Date.now();
+    const today = todayIST();
+    const cache_key = `architecture_v${DOC_VERSION}_${today}`;
+    const filename = architecturePdfFilename();
+    const objectPath = `${cache_key}.pdf`;
+
+    // 1. Cache check.
+    try {
+      const since = new Date(Date.now() - CACHE_TTL_SEC * 1000).toISOString();
+      const { data: cachedRow } = await supabaseAdmin
+        .from("pdf_generation_log")
+        .select("created_at")
+        .eq("cache_key", cache_key)
+        .eq("success", true)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cachedRow) {
+        const { data: signed } = await supabaseAdmin.storage
+          .from(BUCKET)
+          .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+        if (signed?.signedUrl) {
+          return { ok: true as const, url: signed.signedUrl, filename, cache_hit: true };
+        }
+      }
+    } catch (e) {
+      console.warn("[pdf-arch] cache lookup failed (non-fatal):", e);
+    }
+
+    // 2. Build print URL (public route, no token needed).
+    const origin = originFromRequest();
+    const printUrl = `${origin}/docs/architecture/print`;
+
+    // 3. Browserless call.
+    const browserlessToken = process.env.BROWSERLESS_TOKEN;
+    if (!browserlessToken) {
+      throw new Error("PDF service is not configured. Please contact support.");
+    }
+
+    let pdfBytes: ArrayBuffer;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS);
+      const res = await fetch(
+        `https://chrome.browserless.io/pdf?token=${encodeURIComponent(browserlessToken)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            url: printUrl,
+            gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+            waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+            options: {
+              format: "A4",
+              printBackground: true,
+              preferCSSPageSize: true,
+              displayHeaderFooter: false,
+              margin: { top: "0", bottom: "0", left: "0", right: "0" },
+            },
+          }),
+        },
+      );
+      clearTimeout(timer);
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Browserless HTTP ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      pdfBytes = await res.arrayBuffer();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`PDF generation failed: ${msg}`);
+    }
+
+    // 4. Upload + sign.
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .upload(objectPath, new Uint8Array(pdfBytes), {
+        contentType: "application/pdf",
+        upsert: true,
+        cacheControl: `${CACHE_TTL_SEC}`,
+      });
+    if (uploadErr) throw new Error(`PDF upload failed: ${uploadErr.message}`);
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+    if (signErr || !signed?.signedUrl) throw new Error("Could not create download URL for PDF");
+
+    // 5. Log success.
+    try {
+      await supabaseAdmin.from("pdf_generation_log").insert({
+        symbol: "__ARCH__",
+        horizon: "long-term",
+        include_news: false,
+        as_of_date: today,
+        cache_key,
+        duration_ms: Date.now() - startedAt,
+        success: true,
+        cache_hit: false,
+        user_id: context.userId,
+      });
+    } catch (e) {
+      console.warn("[pdf-arch] log insert failed:", e);
+    }
+
+    return { ok: true as const, url: signed.signedUrl, filename, cache_hit: false };
+  });
