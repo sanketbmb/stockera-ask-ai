@@ -1046,6 +1046,48 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
 // Small composed components & prose generators
 // ─────────────────────────────────────────────────────────────────
 
+function MethodologyChip({ tier, weights }: { tier: QueryType; weights: Record<string, number> }) {
+  const rows: Array<{ key: keyof typeof PILLAR_METHODOLOGY; label: string }> = [
+    { key: "technical",   label: "Technical" },
+    { key: "fundamental", label: "Fundamental" },
+    { key: "risk",        label: "Risk" },
+    { key: "momentum",    label: "Momentum" },
+    { key: "sentiment",   label: "Sentiment" },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/60 hover:text-foreground">
+        <Info className="h-3 w-3" /> How this is calculated
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[340px] text-xs leading-snug">
+        <p className="mb-2 font-display text-sm text-foreground">Stockera Score methodology</p>
+        <p className="mb-3 text-muted-foreground">
+          Each pillar is scored 0–100 by a deterministic compute module. The composite is a
+          tier-weighted average — weights below are tuned for the <span className="font-semibold text-foreground">{TIER_LABEL[tier].toLowerCase()}</span>.
+        </p>
+        <ul className="space-y-2">
+          {rows.map((r) => {
+            const w = weights[r.key] ?? 0;
+            return (
+              <li key={r.key} className="flex gap-2">
+                <span className="mt-0.5 inline-block w-20 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {r.label}
+                  <span className="ml-1 text-foreground/70">{Math.round(w * 100)}%</span>
+                </span>
+                <span className="text-muted-foreground">{PILLAR_METHODOLOGY[r.key]}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-3 border-t border-border pt-2 text-[10px] text-muted-foreground">
+          Final action (Buy / Hold / Watchlist / Reduce / Avoid) layers tier guardrails on top of the composite.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+
 function TriadCard({ icon: Icon, eyebrow, value, sub }: { icon: React.ComponentType<{ className?: string }>; eyebrow: string; value: React.ReactNode; sub: string }) {
   return (
     <motion.div
