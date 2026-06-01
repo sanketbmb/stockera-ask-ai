@@ -176,7 +176,7 @@ function TierShapedReportContent({
         topBanner={topBannerNode}
         addendum={phase2Addendum}
         suppressFreshTab={isPhase2}
-        defaultActionTab={isPhase2 ? "holding" : undefined}
+        defaultActionTab={defaultActionTab}
       />
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
