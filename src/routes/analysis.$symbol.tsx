@@ -36,7 +36,7 @@ function AnalysisPage() {
   const includeNews = search.news !== false;
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<StockAnalysisPayload>({
-    queryKey: ["stock-analysis", symbol, horizon, includeNews],
+    queryKey: ["stock-analysis", "v2", symbol, horizon, includeNews],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("generate-stock-analysis", {
         body: { symbol, query_type: horizon, include_news: includeNews },
@@ -45,7 +45,7 @@ function AnalysisPage() {
       if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
       return data as StockAnalysisPayload;
     },
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
   return (
