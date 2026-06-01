@@ -1373,6 +1373,7 @@ function LevelCell({ label, value, tone, reason, methodTip, footer }: { label: s
         <>
           <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
           {methodTip}
+          {footer}
         </>
       )}
     </motion.div>
