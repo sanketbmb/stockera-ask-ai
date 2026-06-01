@@ -15,7 +15,6 @@ import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
@@ -23,6 +22,13 @@ import { buildInterpretation } from "@/lib/query-intake-parser";
 import { freezeOrReadReport } from "@/lib/freeze-report.functions";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
+import { composePositionContext } from "@/lib/position-context";
+import { isMfOrPortfolioQuestion } from "@/lib/position-copy";
+import { ProfitReviewAddendum } from "@/components/report/ProfitReviewAddendum";
+import { LossReviewAddendum } from "@/components/report/LossReviewAddendum";
+import { AveragingDisciplineAddendum } from "@/components/report/AveragingDisciplineAddendum";
+import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
+import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
