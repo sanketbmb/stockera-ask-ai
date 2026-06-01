@@ -495,26 +495,114 @@ Deno.serve(async (req) => {
 
     // Annualized volatility (for nudge)
     let vol1y: number | null = null;
+    let avgTurnoverCr: number | null = null;
     if (riskRes) {
       const v = (riskRes.volatility ?? {}) as Record<string, unknown>;
       vol1y = finite(v.annualized_pct);
+      const liq = (riskRes.liquidity ?? {}) as Record<string, unknown>;
+      avgTurnoverCr = finite(liq.avg_daily_turnover_cr);
     }
 
-    // Momentum positive signal (for long-term T2 gate)
+    // Momentum positive signal (legacy gate, kept for non-long-term contexts) + 12m return
     let momentumPositive = false;
+    let stockReturn12mPct: number | null = null;
     if (momRes) {
       const cls = String(momRes.classification ?? "").toUpperCase();
       momentumPositive = cls.includes("STRONG") || cls.includes("POSITIVE") || cls.includes("UP");
+      const rets = (momRes.returns ?? {}) as Record<string, unknown>;
+      stockReturn12mPct = finite(rets["12m"]);
+    }
+
+    // ── 2b. Long-term fallback inputs ──
+    let targetsMeta: Record<string, unknown> | null = null;
+    let t1Resolved: TargetResolution | null = null;
+    let t2Resolved: TargetResolution | null = null;
+    let ltGuardrail: string | null = null;
+
+    if (queryType === "long-term") {
+      // Hard guardrails first — if violated, no targets at all.
+      if (avgTurnoverCr != null && avgTurnoverCr < LT_LIQUIDITY_MIN_CR) {
+        ltGuardrail = `insufficient_liquidity: avg daily turnover ₹${avgTurnoverCr.toFixed(2)}cr < ₹${LT_LIQUIDITY_MIN_CR}cr threshold`;
+      } else if (vol1y != null && vol1y > LT_VOL_MAX_PCT) {
+        ltGuardrail = `excessive_volatility: annualized vol ${vol1y.toFixed(1)}% > ${LT_VOL_MAX_PCT}% threshold`;
+      }
+
+      let sectorName: string | null = null;
+      let peRatio: number | null = null;
+      let trailingEps: number | null = null;
+      if (fundRes) {
+        const co = (fundRes.company ?? {}) as Record<string, unknown>;
+        sectorName = (co.sector as string | null) ?? null;
+        const val = (fundRes.valuation ?? {}) as Record<string, unknown>;
+        peRatio = finite(val.pe);
+        if (peRatio != null && peRatio > 0 && spot > 0) trailingEps = spot / peRatio;
+      }
+
+      const sectorAgg = await fetchSectorAggregate(sectorName);
+      const sectorMissing = sectorAgg == null || sectorAgg.name === "__default__"
+        ? (sectorAgg == null ? "sector_aggregate_missing" : null)
+        : null;
+
+      const ctx: LongTermContext = {
+        spot,
+        dcfFairValue: dcfDegenerate ? null : dcfPerShare,
+        dcfDegenerate,
+        sectorPeMedian: sectorAgg?.pe_median ?? null,
+        sectorReturn12mPct: sectorAgg?.return_12m_median_pct ?? null,
+        sectorName,
+        peRatio,
+        trailingEps,
+        stockReturn12mPct,
+        annVolPct: vol1y,
+      };
+
+      if (ltGuardrail) {
+        t1Resolved = { value: null, method: "none", reason: ltGuardrail, inputs: {}, attempts: [] };
+        t2Resolved = { value: null, method: "none", reason: ltGuardrail, inputs: {}, attempts: [] };
+      } else {
+        t1Resolved = resolveLongTermT1(ctx);
+        t2Resolved = resolveLongTermT2(ctx, t1Resolved);
+      }
+
+      targetsMeta = {
+        tier: "long-term",
+        t1: { value: t1Resolved.value, method: t1Resolved.method, reason: t1Resolved.reason, inputs: t1Resolved.inputs, attempts: t1Resolved.attempts },
+        t2: { value: t2Resolved.value, method: t2Resolved.method, reason: t2Resolved.reason, inputs: t2Resolved.inputs, attempts: t2Resolved.attempts },
+        guardrails: {
+          liquidity_ok: !(avgTurnoverCr != null && avgTurnoverCr < LT_LIQUIDITY_MIN_CR),
+          volatility_ok: !(vol1y != null && vol1y > LT_VOL_MAX_PCT),
+          avg_daily_turnover_cr: avgTurnoverCr,
+          ann_vol_pct: vol1y,
+          guardrail_breach: ltGuardrail,
+        },
+        sector_used: sectorAgg?.name ?? null,
+        sector_missing_reason: sectorMissing,
+      };
     }
 
     // ── 3. Per-tier raw plan ──
     let raw: Levels;
     if (queryType === "intraday")          raw = intradayPlan(spot, atrV, prevDay);
-    else if (queryType === "long-term")    raw = longTermPlan(spot, dma200, w52H, w52L, dcfDegenerate ? null : dcfPerShare, momentumPositive);
+    else if (queryType === "long-term")    raw = longTermPlan(spot, dma200, w52H, w52L, t1Resolved?.value ?? null, t2Resolved?.value ?? null);
     else                                   raw = mediumPlan(spot, atrV, swingHighs, swingLows);
 
     // ── 4. Validate ──
     const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);
+
+    // For long-term: if R:R validation drops a target that the resolver computed,
+    // surface the reason in targets_meta too so the UI can explain it.
+    if (queryType === "long-term" && targetsMeta) {
+      const t1Dropped = omissions.find((o) => o.level === "target_1");
+      const t2Dropped = omissions.find((o) => o.level === "target_2");
+      if (t1Dropped && (targetsMeta.t1 as Record<string, unknown>).value != null) {
+        (targetsMeta.t1 as Record<string, unknown>).reason = `dropped_by_validation: ${t1Dropped.reason}`;
+        (targetsMeta.t1 as Record<string, unknown>).value = null;
+      }
+      if (t2Dropped && (targetsMeta.t2 as Record<string, unknown>).value != null) {
+        (targetsMeta.t2 as Record<string, unknown>).reason = `dropped_by_validation: ${t2Dropped.reason}`;
+        (targetsMeta.t2 as Record<string, unknown>).value = null;
+      }
+    }
 
     // ── 5. Round ──
     const levels: Levels = {
@@ -537,6 +625,7 @@ Deno.serve(async (req) => {
       vol_1y: vol1y,
       levels,
       validation: omissions,
+      targets_meta: targetsMeta,
       inputs_summary: {
         bars: candles.length,
         prev_day: prevDay?.date ?? null,
@@ -548,6 +637,7 @@ Deno.serve(async (req) => {
         dcf_intrinsic: r2(dcfPerShare),
         dcf_degenerate: dcfDegenerate,
         momentum_positive: momentumPositive,
+        avg_daily_turnover_cr: avgTurnoverCr,
       },
       formula_version: FORMULA_VERSION,
       computed_at: new Date().toISOString(),
