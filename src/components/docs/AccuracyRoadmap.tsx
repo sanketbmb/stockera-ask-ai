@@ -638,9 +638,10 @@ function Section10() {
         <p className="ae-mono" style={{ marginTop: "1mm" }}>
           {FIRM.legalName}<br />
           SEBI {FIRM.sebiRegNumber}<br />
-          BSE Enlistment {FIRM.bseEnlistmentNumber}<br />
+          BSE Enlistment {FIRM.bseEnlistment}<br />
           {FIRM.address}
         </p>
+
       </div>
     </Page>
   );
