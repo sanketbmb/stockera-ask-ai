@@ -897,17 +897,38 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
-            {tradePlanFromEngine && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="cursor-help border-emerald-500/40 bg-emerald-500/5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
-                    <ShieldCheck className="mr-1 h-3 w-3" /> Validated by Stockera Engine
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>Trade plan validated by tier-aware engine with mandatory R:R, ATR and structural checks.</TooltipContent>
-              </Tooltip>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <HowTargetsComputedChip />
+              {tradePlanFromEngine && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="cursor-help border-emerald-500/40 bg-emerald-500/5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
+                      <ShieldCheck className="mr-1 h-3 w-3" /> Validated by Stockera Engine
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>Trade plan validated by tier-aware engine with mandatory R:R, ATR and structural checks.</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           </div>
+          {targetsMeta?.sector_aggregate_source === "default_fallback" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="mt-3 inline-flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-xs leading-relaxed text-amber-900 transition-colors hover:bg-amber-500/15">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>Sector benchmarks unavailable — targets use generic defaults. Click to learn more.</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="max-w-sm text-xs leading-relaxed">
+                <p className="font-semibold text-foreground">Why generic defaults?</p>
+                <p className="mt-1 text-muted-foreground">
+                  We could not match this stock's sector ("{targetsMeta.sector_used ?? "unknown"}") to our peer-group benchmark table.
+                  Targets fall back to a market-average P/E ({"PE 22, PB 3"}) which is less precise than a true sector comp.
+                </p>
+                <p className="mt-2 text-muted-foreground">Interpret T1/T2 as directional, not precise.</p>
+              </PopoverContent>
+            </Popover>
+          )}
           {targetsMeta && (targetsMeta.t1.method !== "dcf" || targetsMeta.t2.method !== "dcf") && (targetsMeta.t1.value != null || targetsMeta.t2.value != null) && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs leading-relaxed text-sky-900">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -930,9 +951,9 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
             <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
-            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} />
-            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" />} />
-            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" />} />
+            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
+            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
+            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
             <LevelCell label="Support 1" value={levels.support_1} reason={tradePlanReasons.support_1} />
             <LevelCell label="Support 2" value={levels.support_2} reason={tradePlanReasons.support_2} />
             <LevelCell label="Resistance 1" value={levels.resistance_1} reason={tradePlanReasons.resistance_1} />
