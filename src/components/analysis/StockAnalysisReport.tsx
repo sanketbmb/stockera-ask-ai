@@ -169,11 +169,13 @@ function behavioralNudge(action: VerdictAction, tier: QueryType, riskLabel: stri
   return null;
 }
 
-// Default action-zone tab based on tier
-const TIER_DEFAULT_TAB: Record<QueryType, "holding" | "fresh" | "exploring"> = {
-  "intraday": "fresh",
-  "medium-term": "holding",
-  "long-term": "exploring",
+// Modules that are not relevant for a given tier — hidden from the audit
+// footer module strip. The underlying source_trace (PDF JSON, DB audit) is
+// untouched; this is a presentation-only filter.
+const TIER_IRRELEVANT_MODULES: Record<QueryType, string[]> = {
+  "intraday":    ["compute-long-term-quality"],
+  "medium-term": ["compute-intraday-microstructure"],
+  "long-term":   ["compute-intraday-microstructure"],
 };
 
 // ─────────────────────────────────────────────────────────────────
