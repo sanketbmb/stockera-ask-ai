@@ -666,6 +666,7 @@ export type Database = {
           query_type: string | null
           regenerated_from_uuid: string | null
           report_artifact_status: string | null
+          router_meta: Json | null
           status: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol: string | null
@@ -698,6 +699,7 @@ export type Database = {
           query_type?: string | null
           regenerated_from_uuid?: string | null
           report_artifact_status?: string | null
+          router_meta?: Json | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name: string
           stock_symbol?: string | null
@@ -730,6 +732,7 @@ export type Database = {
           query_type?: string | null
           regenerated_from_uuid?: string | null
           report_artifact_status?: string | null
+          router_meta?: Json | null
           status?: Database["public"]["Enums"]["query_status"] | null
           stock_name?: string
           stock_symbol?: string | null

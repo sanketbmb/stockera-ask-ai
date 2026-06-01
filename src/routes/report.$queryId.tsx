@@ -29,6 +29,7 @@ import { LossReviewAddendum } from "@/components/report/LossReviewAddendum";
 import { AveragingDisciplineAddendum } from "@/components/report/AveragingDisciplineAddendum";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
+import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -327,7 +328,7 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta")
         .eq("id", queryId)
         .single();
       if (error) throw error;
@@ -343,11 +344,13 @@ function ReportContent() {
       return { ...data, analyst };
     },
     // For v1 records, the row is created instantly with status="ai_answered" — no need to poll.
+    // For "other" / routed rows, no AI report will ever land — don't poll.
     // For legacy records, the legacy generator may still be working; keep polling until ai_report lands.
     refetchInterval: (q) => {
-      const d = q.state.data as { engine_version?: string | null; ai_report?: unknown } | undefined;
+      const d = q.state.data as { engine_version?: string | null; ai_report?: unknown; query_type?: string | null } | undefined;
       if (!d) return 1500;
       if (d.engine_version === "v1_tier_shaped") return false;
+      if (d.query_type === "other" || d.query_type === "sector_view" || d.query_type === "educational") return false;
       return d.ai_report ? false : 1500;
     },
   });
@@ -364,6 +367,16 @@ function ReportContent() {
         </div>
       </div>
     );
+  }
+
+  // Phase 3A — routed-to-analyst placeholder for non-AI question types.
+  const qt = (data.query_type ?? "") as string;
+  if (qt === "other" || qt === "sector_view" || qt === "educational") {
+    const rawQuestion = (data.query_text ?? data.custom_question ?? "").toString();
+    const routerMeta = (data as { router_meta?: unknown }).router_meta as
+      | import("@/lib/intent-router-schema").RouterOutput
+      | null;
+    return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
   }
 
   // v1 tier-shaped: branch into the analysis renderer.

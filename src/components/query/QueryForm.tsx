@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -16,12 +16,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServerFn } from "@tanstack/react-start";
 import { generateAiReport } from "@/lib/report.functions";
+import { classifyIntentRouter } from "@/lib/intent-router.functions";
 import { normalizeHorizon } from "@/lib/query-intake-parser";
 import {
   ENABLE_PHASE3_QUERY_TYPES,
+  ENABLE_FREE_TEXT_ROUTER,
   isLiveIntent,
+  isRoutableIntent,
   type AnyIntent,
 } from "@/lib/feature-flags";
+import {
+  type RouterOutput,
+  toFormIntent,
+  routerHorizonToFormHorizon,
+  confidenceBand,
+} from "@/lib/intent-router-schema";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -42,48 +51,43 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; routerOnly?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
   { id: "educational", emoji: "📚", label: "Educational", phase3: true },
   { id: "sector_view", emoji: "🏭", label: "Sector View", phase3: true },
-  { id: "other", emoji: "❓", label: "Other", phase3: true },
+  // "Other" is exposed when the free-text router is live (Phase 3A). It is
+  // a deliberate escape hatch for questions that don't map to a LIVE chip.
+  { id: "other", emoji: "❓", label: "Other", routerOnly: true },
 ];
 
-const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => ENABLE_PHASE3_QUERY_TYPES || !t.phase3);
+const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
+  if (t.phase3) return ENABLE_PHASE3_QUERY_TYPES;
+  if (t.routerOnly) return ENABLE_FREE_TEXT_ROUTER;
+  return true;
+});
 
 
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
 const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
 const LANG_OPTIONS = ["English", "Hindi", "Other"];
 
-function classifyIntent(text: string): Intent {
+// Phase 3A — the heuristic classifier is retained only as an offline
+// fallback when the router is disabled. When ENABLE_FREE_TEXT_ROUTER is
+// true, classification happens server-side via classifyIntentRouter.
+function heuristicClassify(text: string): Intent {
   const t = text.toLowerCase();
   if (/\b(average|averaging|buy more|double down)\b/.test(t)) return "should_average";
   if (/\b(should i buy|fresh entry|entry point|invest in)\b/.test(t) && !/\b(stuck|loss|holding)\b/.test(t)) return "buy_decision";
   if (/\b(sell|exit|stuck|loss|hold|book profit)\b/.test(t)) return "stuck_position";
-  if (/\b(explain|what is|how does|teach)\b/.test(t)) return "educational";
-  if (/\b(sector|industry|best stocks in)\b/.test(t)) return "sector_view";
   return "other";
-}
-
-function extractFields(text: string): { stock?: string; buyPrice?: number; holding?: string } {
-  const out: { stock?: string; buyPrice?: number; holding?: string } = {};
-  const priceMatch = text.match(/(?:at|@|bought|entry)\s*(?:₹|rs\.?|inr)?\s*(\d{2,6}(?:\.\d{1,2})?)/i);
-  if (priceMatch) out.buyPrice = parseFloat(priceMatch[1]);
-  if (/\byear/i.test(text)) out.holding = "1+ year";
-  else if (/\bmonth/i.test(text)) out.holding = "1-3 months";
-  else if (/\bweek/i.test(text)) out.holding = "1-4 weeks";
-  // Stock name extraction — simple capitalized-words heuristic
-  const stockMatch = text.match(/\b(?:bought|in|stuck in|own|holding)\s+([A-Z][A-Za-z&\s]{2,30}?)(?:\s+at|\s+for|,|\.|$)/);
-  if (stockMatch) out.stock = stockMatch[1].trim();
-  return out;
 }
 
 export function QueryForm() {
   const navigate = useNavigate();
   const runGenerateAiReport = useServerFn(generateAiReport);
+  const runIntentRouter = useServerFn(classifyIntentRouter);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -91,6 +95,10 @@ export function QueryForm() {
   // Step 1
   const [queryText, setQueryText] = useState("");
   const [intent, setIntent] = useState<Intent>("other");
+  const [chipManuallyPicked, setChipManuallyPicked] = useState(false);
+  const [routerMeta, setRouterMeta] = useState<RouterOutput | null>(null);
+  const [routerLoading, setRouterLoading] = useState(false);
+  const [routerNotice, setRouterNotice] = useState<string | null>(null);
   const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; holding?: string }>({});
 
   // Step 2
@@ -110,17 +118,58 @@ export function QueryForm() {
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
 
-  // Live intent + field detection on Step 1
-  useEffect(() => {
-    if (queryText.length < 10) return;
-    const detected = classifyIntent(queryText);
-    if (detected !== "other") setIntent(detected);
-    const ex = extractFields(queryText);
-    setAutoDetected(ex);
-    if (ex.stock && !stockName) setStockName(ex.stock);
-    if (ex.buyPrice && !buyPrice) setBuyPrice(String(ex.buyPrice));
-    if (ex.holding && !holding) setHolding(ex.holding);
-  }, [queryText]); // eslint-disable-line
+  // Phase 3A — apply a router classification to the form state.
+  function applyRouterResult(r: RouterOutput) {
+    setRouterMeta(r);
+    const formIntent = toFormIntent(r.interpreted_type);
+    const band = confidenceBand(r.confidence_score);
+
+    // Manual-chip-wins logic: if the user picked a chip BEFORE we
+    // classified, only override on a clear high-confidence mismatch.
+    const userChip = chipManuallyPicked ? intent : null;
+    let nextIntent: Intent = intent;
+    if (userChip == null) {
+      nextIntent = formIntent;
+    } else if (userChip !== formIntent && band === "high") {
+      nextIntent = formIntent;
+      const newLabel = QUERY_TYPES.find((q) => q.id === formIntent)?.label ?? formIntent;
+      toast.message(`Updated question type to “${newLabel}” based on your wording.`);
+    }
+    setIntent(nextIntent);
+
+    if (band === "low") {
+      setRouterNotice("We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.");
+      // Force "other" only if we had no chip pick and no high confidence.
+      if (userChip == null) setIntent("other");
+      return; // No prefill on low confidence — never fabricate.
+    }
+
+    if (band === "medium") {
+      const label = QUERY_TYPES.find((q) => q.id === nextIntent)?.label ?? nextIntent;
+      setRouterNotice(`Looks like “${label}”. Confirm or adjust the chip below before continuing.`);
+    } else {
+      setRouterNotice(null);
+    }
+
+    // Prefill — never invent values. Only set fields the router actually returned.
+    const detected: { stock?: string; buyPrice?: number; holding?: string } = {};
+    if (r.symbol && !stockName) {
+      setStockName(r.symbol);
+      setStockSymbol(r.symbol);
+      detected.stock = r.symbol;
+    }
+    if (r.entry_price != null && r.entry_price > 0) {
+      if (!entryPrice) setEntryPrice(String(r.entry_price));
+      if (!buyPrice) setBuyPrice(String(r.entry_price));
+      detected.buyPrice = r.entry_price;
+    }
+    if (r.qty != null && r.qty > 0 && !qty) {
+      setQty(String(r.qty));
+    }
+    const mappedHorizon = routerHorizonToFormHorizon(r.horizon);
+    if (mappedHorizon && !horizon) setHorizon(mappedHorizon);
+    if (Object.keys(detected).length) setAutoDetected(detected);
+  }
 
   const { data: analysts = [] } = useQuery({
     queryKey: ["available-analysts"],
@@ -142,6 +191,8 @@ export function QueryForm() {
   const showPhase2Fields = isExistingPosition || isAveraging;
   // Phase 2 — these intents now route into the v1 tier-shaped engine, same as Fresh Entry.
   const usesV1Engine = intent === "buy_decision" || isExistingPosition || isAveraging;
+  // Phase 3A — "other" intent skips the v1 engine and lands in the routed-pending placeholder.
+  const isOther = intent === "other";
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -150,13 +201,39 @@ export function QueryForm() {
   const qtyValid = !isAveraging || (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isInteger(qtyNum));
   const anythingElseValid = anythingElse.length <= 500;
 
-  const goNext = () => {
+  const goNext = async () => {
     if (step === 0) {
       if (queryText.trim().length < 15) { toast.error("Add at least 15 characters describing your question"); return; }
+      // Phase 3A — call the free-text router before leaving Step 0 (unless
+      // already called or feature is off). Fail open: if it errors, fall
+      // back to the cheap local heuristic so the user is never blocked.
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading) {
+        setRouterLoading(true);
+        try {
+          const result = await runIntentRouter({ data: { text: queryText.trim() } });
+          applyRouterResult(result);
+          // On medium confidence we keep the user on Step 0 to confirm.
+          if (confidenceBand(result.confidence_score) === "medium" && !chipManuallyPicked) {
+            setRouterLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.warn("[QueryForm] router failed:", (err as Error).message);
+          if (!chipManuallyPicked) setIntent(heuristicClassify(queryText));
+        } finally {
+          setRouterLoading(false);
+        }
+      } else if (!ENABLE_FREE_TEXT_ROUTER && !chipManuallyPicked) {
+        // Router disabled — use the legacy heuristic only.
+        const detected = heuristicClassify(queryText);
+        if (detected !== "other") setIntent(detected);
+      }
       setStep(1);
       return;
     }
     if (step === 1) {
+      // Phase 3A — "other" skips stock/entry fields entirely.
+      if (isOther) { setStep(2); return; }
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
       if (showPhase2Fields) {
         if (!entryPrice) { toast.error("Please enter your entry price"); return; }
@@ -179,9 +256,8 @@ export function QueryForm() {
   const handleSubmit = async () => {
     if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
-    // Phase 2.1 — defense in depth: refuse to insert a query whose intent is
-    // gated behind ENABLE_PHASE3_QUERY_TYPES. UI already hides these chips.
-    if (!isLiveIntent(intent)) { toast.error("Unsupported query type"); return; }
+    // Phase 3A — accept LIVE intents + "other" (when the router is live).
+    if (!isRoutableIntent(intent)) { toast.error("Unsupported query type"); return; }
 
     setSubmitting(true);
     setGenStage("creating");
@@ -196,6 +272,7 @@ export function QueryForm() {
         current_price: currentPrice ? Number(currentPrice) : null,
         query_text: queryText,
         assigned_analyst_id: analystId,
+        ...(routerMeta ? { router_meta: routerMeta as unknown as Record<string, unknown> } : {}),
       };
 
       const v1QueryType = intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
@@ -215,6 +292,16 @@ export function QueryForm() {
             ...(showPhase2Fields && entryPrice ? { entry_price: Number(entryPrice) } : {}),
             ...(isAveraging && qty ? { qty: Number(qty) } : {}),
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
+          }
+        : isOther
+        ? {
+            // Phase 3A — "other" lands in the routed-pending placeholder.
+            // No Brain call, no v1 engine, no charge. Analyst-routed.
+            ...baseInsert,
+            status: "pending" as const,
+            query_type: "other" as const,
+            engine_version: "router_v1",
+            engine_source: "free_text_router",
           }
         : {
             ...baseInsert,
@@ -239,13 +326,19 @@ export function QueryForm() {
           has_entry_price: !!entryPrice,
           has_qty: !!qty,
           custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine ? "v1_tier_shaped" : "v0_legacy",
-          engine_source: usesV1Engine ? "post_query" : "legacy_post_query",
+          engine_version: usesV1Engine ? "v1_tier_shaped" : isOther ? "router_v1" : "v0_legacy",
+          engine_source: usesV1Engine ? "post_query" : isOther ? "free_text_router" : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
+          router_version: routerMeta?.router_version ?? null,
+          router_interpreted_type: routerMeta?.interpreted_type ?? null,
+          router_confidence: routerMeta?.confidence_score ?? null,
+          router_clarification_needed: routerMeta?.clarification_needed ?? null,
+          router_language_hint: routerMeta?.language_hint ?? null,
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (usesV1Engine) {
+      if (usesV1Engine || isOther) {
+        // Both v1 engine and "other" navigate immediately — neither needs the legacy generator.
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
@@ -344,13 +437,31 @@ export function QueryForm() {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Question type</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {QUERY_TYPES.map((t) => (
-                <button key={t.id} type="button" onClick={() => setIntent(t.id)}
+                <button key={t.id} type="button" onClick={() => { setIntent(t.id); setChipManuallyPicked(true); }}
                   className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
                   <span className="mr-1.5">{t.emoji}</span>{t.label}
                 </button>
               ))}
             </div>
           </div>
+
+          {routerLoading && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              <span>Understanding your question…</span>
+            </div>
+          )}
+          {!routerLoading && routerNotice && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              {routerNotice}
+            </div>
+          )}
+          {!routerLoading && routerMeta && !routerNotice && confidenceBand(routerMeta.confidence_score) === "high" && (
+            <p className="text-[11px] text-muted-foreground italic">
+              Auto-routed via free-text router · confidence: high
+              {routerMeta.symbol ? <> · <span className="font-mono not-italic">{routerMeta.symbol}</span></> : null}
+            </p>
+          )}
         </div>
       )}
 

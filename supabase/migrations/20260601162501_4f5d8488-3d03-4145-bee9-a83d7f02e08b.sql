@@ -1,0 +1,1 @@
+ALTER TABLE public.queries ADD COLUMN IF NOT EXISTS router_meta jsonb;
