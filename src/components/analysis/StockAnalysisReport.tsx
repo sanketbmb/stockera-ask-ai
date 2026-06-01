@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2,
-  Compass, Eye, Flame, Gauge, HelpCircle, LineChart, Newspaper,
+  Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
   ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
@@ -18,6 +18,8 @@ import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
+import { omissionCopy } from "@/lib/trade-plan-copy";
+import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
 import {
   pageContainer, sectionFadeUp, verdictScale, tierBadgeSlide,
   gridContainer, cardItem, innerStaggerContainer, innerStaggerItem,
