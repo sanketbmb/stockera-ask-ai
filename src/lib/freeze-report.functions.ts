@@ -129,7 +129,8 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     const { error: updErr } = await supabaseAdmin
       .from("queries")
       .update({
-        ai_report: persistPayload as unknown as Record<string, unknown>,
+        // Supabase Json type is structural; orchestrator payload is JSON-serializable.
+        ai_report: JSON.parse(JSON.stringify(persistPayload)),
         frozen_at: frozenAt,
         report_artifact_status: artifactStatus,
       })
