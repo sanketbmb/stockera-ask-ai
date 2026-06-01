@@ -455,16 +455,36 @@ function longTermPlanWithSl(spot: number, dma200: number, w52H: number, w52L: nu
 }
 
 
-async function fetchSectorAggregate(sector: string | null): Promise<{ name: string; pe_median: number; return_12m_median_pct: number | null } | null> {
-  const tryNames = [sector, "__default__"].filter(Boolean) as string[];
-  for (const name of tryNames) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,pe_median,return_12m_median_pct&sector=eq.${encodeURIComponent(name)}`, {
-      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-    }).catch(() => null);
+async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
+  display: string; canonical: string; pe_median: number; return_12m_median_pct: number | null;
+  data_source: "computed" | "bootstrap" | "default_fallback"; method_version: string | null; bootstrap_ref: string | null;
+} | null> {
+  const canonical = resolveSectorCanonical(sectorRaw);
+  const candidates = [canonical, "__default__"].filter(Boolean) as string[];
+  for (const c of candidates) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/sector_aggregates?select=sector,sector_canonical,sector_display,pe_median,return_12m_median_pct,source,method_version,bootstrap_source_reference&sector_canonical=eq.${encodeURIComponent(c)}`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } },
+    ).catch(() => null);
     if (!res || !res.ok) continue;
-    const rows = await res.json().catch(() => []) as Array<{ sector: string; pe_median: number; return_12m_median_pct: number | null }>;
+    const rows = await res.json().catch(() => []) as Array<{
+      sector: string; sector_canonical: string; sector_display: string | null; pe_median: number;
+      return_12m_median_pct: number | null; source: string | null; method_version: string | null; bootstrap_source_reference: string | null;
+    }>;
     if (rows.length > 0) {
-      return { name: rows[0].sector, pe_median: Number(rows[0].pe_median), return_12m_median_pct: rows[0].return_12m_median_pct != null ? Number(rows[0].return_12m_median_pct) : null };
+      const r = rows[0];
+      const src = r.sector_canonical === "__default__"
+        ? "default_fallback"
+        : (r.source === "computed" ? "computed" : "bootstrap");
+      return {
+        display: r.sector_display ?? r.sector,
+        canonical: r.sector_canonical,
+        pe_median: Number(r.pe_median),
+        return_12m_median_pct: r.return_12m_median_pct != null ? Number(r.return_12m_median_pct) : null,
+        data_source: src as "computed" | "bootstrap" | "default_fallback",
+        method_version: r.method_version,
+        bootstrap_ref: r.bootstrap_source_reference,
+      };
     }
   }
   return null;
