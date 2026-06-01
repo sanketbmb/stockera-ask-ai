@@ -316,7 +316,7 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty")
         .eq("id", queryId)
         .single();
       if (error) throw error;
@@ -380,6 +380,10 @@ function ReportContent() {
         symbol={symbol}
         horizon={horizon}
         rawQuestion={rawQuestion}
+        queryType={(data.query_type ?? "fresh_entry") as string}
+        entryPrice={(data.entry_price as number | null) ?? null}
+        qty={(data.qty as number | null) ?? null}
+        customQuestion={(data.custom_question as string | null) ?? null}
       />
     );
   }
