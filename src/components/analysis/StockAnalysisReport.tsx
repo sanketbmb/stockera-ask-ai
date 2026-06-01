@@ -582,8 +582,16 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
         <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <TriadCard icon={Gauge} eyebrow="Confidence" value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>} sub="Model conviction" />
-          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score || DASH}`} />
-          <TriadCard icon={Target} eyebrow="Reward potential" value={rr != null ? `${rr.toFixed(2)} : 1 R:R` : DASH} sub={rr != null ? "Entry → T1 vs Stop" : "Insufficient levels"} />
+          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score ?? DASH}`} />
+          <TriadCard
+            icon={Target}
+            eyebrow="Reward potential"
+            value={rr != null ? `${rr.toFixed(2)} : 1 R:R` : DASH}
+            sub={rr != null && riskRupee != null && rewardRupee != null
+              ? `Risk ₹${riskRupee.toLocaleString("en-IN")} / Reward ₹${rewardRupee.toLocaleString("en-IN")} per share`
+              : "Insufficient levels — entry, stop loss or target unavailable"}
+          />
+
         </motion.section>
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
