@@ -654,7 +654,7 @@ Deno.serve(async (req) => {
       query_context: { query_type: queryType, language, include_news: includeNews },
       final_verdict: {
         action: verdict.action,
-        confidence_pct: verdict.confidence_pct,
+        confidence_pct: confidence.confidence_pct,
         overall_score: verdict.overall_score,
         risk_label: riskLabel(scores.risk),
         time_horizon: timeHorizonLabel(queryType),
