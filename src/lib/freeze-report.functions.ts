@@ -79,7 +79,7 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
 
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
-      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id")
+      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question")
       .eq("id", data.queryId)
       .single();
     if (readErr || !row) throw new Error(`Query not found: ${readErr?.message ?? data.queryId}`);
@@ -95,9 +95,22 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
       ? (horizonRaw as QueryType)
       : "medium-term";
 
+    // Phase 2 — read user-supplied position context (additive columns).
+    const rowExtra = row as unknown as {
+      entry_price?: number | null;
+      qty?: number | null;
+      query_type?: string | null;
+      custom_question?: string | null;
+    };
+    const queryType = rowExtra.query_type ?? "fresh_entry";
+
     const reportPath: ReportPath =
       row.engine_source === "regenerated_from_legacy"
         ? "legacy_regenerate"
+        : queryType === "existing_position"
+        ? "post_query_existing_position"
+        : queryType === "averaging"
+        ? "post_query_averaging"
         : "post_query_fresh_entry";
 
     // ─── Cache hit ───
@@ -126,18 +139,35 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
       artifactStatus,
     });
 
+    // Phase 2 — compute profit_loss_pct + position_state additively.
+    const entryPrice = rowExtra.entry_price != null ? Number(rowExtra.entry_price) : null;
+    const currentPrice = fresh.price_context?.current_price ?? null;
+    const plPct = entryPrice && entryPrice > 0 && currentPrice != null
+      ? ((currentPrice - entryPrice) / entryPrice) * 100
+      : null;
+    const positionState =
+      queryType === "averaging"
+        ? "averaging"
+        : plPct == null
+        ? null
+        : plPct >= 5
+        ? "profit_review"
+        : plPct <= -5
+        ? "loss_review"
+        : "neutral_review";
+
     const { error: updErr } = await supabaseAdmin
       .from("queries")
       .update({
-        // Supabase Json type is structural; orchestrator payload is JSON-serializable.
         ai_report: JSON.parse(JSON.stringify(persistPayload)),
         frozen_at: frozenAt,
         report_artifact_status: artifactStatus,
-      })
+        ...(plPct != null ? { profit_loss_pct: plPct } : {}),
+        ...(positionState ? { position_state: positionState, addendum_used: positionState } : {}),
+      } as never)
       .eq("id", row.id);
     if (updErr) console.warn("[freezeOrReadReport] persist failed (non-fatal):", updErr);
 
-    // Audit (best-effort)
     await supabaseAdmin.from("audit_events").insert({
       event_type: data.forceRefresh ? "report_refreshed" : "report_frozen",
       actor_id: userId,
@@ -151,16 +181,18 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
         metering_mode: decision.metering_mode,
         credit_action: decision.credit_action,
         report_path: reportPath,
+        query_type: queryType,
+        position_state: positionState,
+        profit_loss_pct: plPct,
+        entry_price_input: entryPrice,
+        qty_input: rowExtra.qty ?? null,
+        custom_question_present: !!rowExtra.custom_question,
       },
     }).then(({ error }) => { if (error) console.warn("[freezeOrReadReport] audit failed:", error); });
 
     return persistPayload;
   });
 
-/**
- * Discoverable constant for documentation tests — guarantees `analysis_direct`
- * never participates in the freeze flow.
- */
 export const FREEZE_FLOW_EXCLUDES_DIRECT_ANALYSIS = {
   metering_mode: METERING_MODE,
   excluded_paths: ["analysis_direct"] as const,

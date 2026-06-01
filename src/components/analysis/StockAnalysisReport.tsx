@@ -528,6 +528,8 @@ export function StockAnalysisReport({
   printMode = false,
   topBanner,
   addendum,
+  suppressFreshTab = false,
+  defaultActionTab,
 }: {
   data: StockAnalysisPayload;
   printMode?: boolean;
@@ -537,6 +539,10 @@ export function StockAnalysisReport({
   // (behavioral nudge). Both must be PDF-safe — no motion dependence.
   topBanner?: React.ReactNode;
   addendum?: React.ReactNode;
+  // Phase 2 — Existing Position / Averaging flows hide the Fresh entry tab
+  // and force the holding default. PDF-safe; nothing else changes.
+  suppressFreshTab?: boolean;
+  defaultActionTab?: "holding" | "fresh" | "exploring";
 }) {
   const {
     stock, query_context, final_verdict, score_breakdown, price_context,
@@ -563,7 +569,8 @@ export function StockAnalysisReport({
   const highVol = (audit_meta.trade_plan_vol_1y ?? risk_snapshot.volatility_1y ?? 0) > 35;
   const targetsMeta = audit_meta.targets_meta ?? null;
 
-  const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
+  const initialTab = defaultActionTab ?? (suppressFreshTab ? "holding" : TIER_DEFAULT_TAB[tier]);
+  const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(initialTab);
 
   // R:R from levels (ratio + rupee breakdown for the dual-format display).
   const { rr, riskRupee, rewardRupee } = useMemo(() => {
@@ -805,9 +812,9 @@ export function StockAnalysisReport({
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <SectionTitle eyebrow="Action zone" title="What to do now" icon={Compass} />
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className={`grid w-full ${suppressFreshTab ? "grid-cols-2" : "grid-cols-3"}`}>
               <TabsTrigger value="holding">I'm holding</TabsTrigger>
-              <TabsTrigger value="fresh">Fresh entry</TabsTrigger>
+              {!suppressFreshTab && <TabsTrigger value="fresh">Fresh entry</TabsTrigger>}
               <TabsTrigger value="exploring">Just exploring</TabsTrigger>
             </TabsList>
             <div className="mt-5">

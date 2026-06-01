@@ -7,7 +7,7 @@ import { Reveal } from "./motion-helpers";
 
 const badges = [
   { icon: ShieldCheck, text: "SEBI Registered Analysts" },
-  { icon: Lock, text: "100% Confidential" },
+  { icon: Lock, text: "Private & Secure" },
   { icon: Zap, text: "AI Report in 30 sec" },
   { icon: Video, text: "Video Answer in 2 hrs" },
   { icon: Wallet, text: "First 2 queries FREE" },

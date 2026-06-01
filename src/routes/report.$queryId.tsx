@@ -15,7 +15,6 @@ import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
@@ -23,6 +22,13 @@ import { buildInterpretation } from "@/lib/query-intake-parser";
 import { freezeOrReadReport } from "@/lib/freeze-report.functions";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
+import { composePositionContext } from "@/lib/position-context";
+import { isMfOrPortfolioQuestion } from "@/lib/position-copy";
+import { ProfitReviewAddendum } from "@/components/report/ProfitReviewAddendum";
+import { LossReviewAddendum } from "@/components/report/LossReviewAddendum";
+import { AveragingDisciplineAddendum } from "@/components/report/AveragingDisciplineAddendum";
+import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
+import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -57,18 +63,21 @@ function LoadingScreen() {
 
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
+  queryType, entryPrice, qty, customQuestion,
 }: {
   queryId: string;
   symbol: string;
   horizon: QueryType;
   rawQuestion: string;
+  queryType: string;
+  entryPrice: number | null;
+  qty: number | null;
+  customQuestion: string | null;
 }) {
   const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
-    // Cache key includes queryId so each frozen artifact gets its own slot.
     queryKey: ["stock-analysis", "v1", "frozen", queryId],
     queryFn: () => freezeOrRead({ data: { queryId } }),
-    // Frozen artifacts never change client-side. Long stale so we don't re-fetch.
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -93,7 +102,6 @@ function TierShapedReportContent({
     if (!validationReasons[o.level]) validationReasons[o.level] = o.reason;
   }
 
-  // Phase 1.1 — read freezing metadata stamped by freezeOrReadReport.
   const auditExtras = data.audit_meta as typeof data.audit_meta & {
     frozen_at?: string;
     served_from_cache?: boolean;
@@ -103,12 +111,49 @@ function TierShapedReportContent({
   const frozenAge = frozenAt ? Date.now() - new Date(frozenAt).getTime() : 0;
   const isStale = frozenAt ? frozenAge > 24 * 60 * 60 * 1000 : false;
 
+  // ── Phase 2 — pick the right addendum and suppress Fresh entry tab ──
+  const isPhase2 = (queryType === "existing_position" || queryType === "averaging") && entryPrice != null;
+  const phase2Ctx = isPhase2 && entryPrice != null
+    ? composePositionContext({
+        payload: data,
+        entry_price: entryPrice,
+        qty,
+        query_type: queryType === "averaging" ? "averaging" : "existing_position",
+      })
+    : null;
+
+  const mfRejected = isMfOrPortfolioQuestion(customQuestion);
+
+  const phase2Addendum = phase2Ctx ? (
+    <div className="space-y-6">
+      <AnalystCtaCard queryId={queryId} />
+      {phase2Ctx.position_state === "profit_review" && <ProfitReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
+      {(phase2Ctx.position_state === "loss_review" || phase2Ctx.position_state === "neutral_review") && (
+        <LossReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />
+      )}
+      {phase2Ctx.position_state === "averaging" && <AveragingDisciplineAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
+    </div>
+  ) : (
+    <FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />
+  );
+
+  const topBannerNode = (
+    <div className="mx-auto w-full max-w-5xl px-4 pt-6 md:px-6 space-y-4">
+      <ReflectiveBanner
+        interpretation={interpretation}
+        extras={{ entry_price: entryPrice, qty, custom_question: customQuestion }}
+      />
+      {mfRejected && <MfPortfolioRejectionPanel />}
+    </div>
+  );
+
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
       <Navbar />
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Tier-shaped report · {horizon.replace("-", " ")}
+          {phase2Ctx ? <> · {phase2Ctx.position_state.replace("_", " ")}</> : null}
         </span>
         {frozenAt && <FrozenBadge frozenAt={frozenAt} isStale={isStale} />}
         <div className="ml-auto">
@@ -117,10 +162,12 @@ function TierShapedReportContent({
       </div>
       <StockAnalysisReport
         data={data}
-        topBanner={<div className="mx-auto w-full max-w-5xl px-4 pt-6 md:px-6"><ReflectiveBanner interpretation={interpretation} /></div>}
-        addendum={<FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />}
+        topBanner={topBannerNode}
+        addendum={phase2Addendum}
+        suppressFreshTab={isPhase2}
+        defaultActionTab={isPhase2 ? "holding" : undefined}
       />
-      <main className="px-4 sm:px-6 lg:px-8 pb-12">
+      <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
       {/* Phase 1.1 — when frozen >24h, mute live-price chips and explain why. */}
