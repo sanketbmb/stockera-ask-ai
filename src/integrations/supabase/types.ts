@@ -279,6 +279,33 @@ export type Database = {
         }
         Relationships: []
       }
+      cron_run_log: {
+        Row: {
+          details: Json | null
+          id: number
+          job_name: string
+          rows_affected: number
+          run_at: string
+          status: string
+        }
+        Insert: {
+          details?: Json | null
+          id?: number
+          job_name: string
+          rows_affected?: number
+          run_at?: string
+          status?: string
+        }
+        Update: {
+          details?: Json | null
+          id?: number
+          job_name?: string
+          rows_affected?: number
+          run_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
       grievances: {
         Row: {
           against_analyst_id: string | null
@@ -355,6 +382,30 @@ export type Database = {
         Update: {
           fetched_at?: string
           ltp?: number
+          source?: string
+          symbol?: string
+        }
+        Relationships: []
+      }
+      ltp_history: {
+        Row: {
+          id: number
+          ltp: number
+          recorded_at: string
+          source: string
+          symbol: string
+        }
+        Insert: {
+          id?: number
+          ltp: number
+          recorded_at?: string
+          source?: string
+          symbol: string
+        }
+        Update: {
+          id?: number
+          ltp?: number
+          recorded_at?: string
           source?: string
           symbol?: string
         }
@@ -953,6 +1004,7 @@ export type Database = {
         Args: { _amount: number; _reason: string; _target_user_id: string }
         Returns: Json
       }
+      cleanup_ltp_history: { Args: never; Returns: undefined }
       deduct_wallet_balance: {
         Args: {
           _amount: number
