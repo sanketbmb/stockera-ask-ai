@@ -20,8 +20,21 @@ const VERDICT_MODEL_VERSION = "tiered-verdict-1.0";
 const MODULE_TIMEOUT_MS = 25_000;
 const TRADE_PLAN_SOURCE = (Deno.env.get("TRADE_PLAN_SOURCE") ?? "new").toLowerCase() === "legacy" ? "legacy" : "new";
 
+import {
+  WEIGHTING_PROFILES,
+  profileIdForTier,
+  type PillarWeights,
+} from "../_shared/weighting-profiles.ts";
+import {
+  ACTION_BUCKETS,
+  ACTIVE_ACTION_BUCKET,
+  actionFromScore as actionFromScoreShared,
+  type Action as BucketAction,
+} from "../_shared/action-buckets.ts";
+import { findBaseline } from "../_shared/regression-baseline.ts";
+
 type QueryType = "intraday" | "medium-term" | "long-term";
-type Action = "BUY" | "HOLD" | "SELL" | "AVOID" | "WATCHLIST";
+type Action = BucketAction;
 
 interface ModuleTrace {
   module: string;
