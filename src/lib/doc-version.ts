@@ -20,3 +20,11 @@ export function architecturePdfFilename(): string {
   const stamp = todayISO().replace(/-/g, "");
   return `Stockera_Architecture_Encyclopedia_v${DOC_VERSION}_${stamp}.pdf`;
 }
+
+export const ACCURACY_ROADMAP_VERSION = "1.0";
+
+export function accuracyRoadmapPdfFilename(): string {
+  const stamp = todayISO().replace(/-/g, "");
+  return `Stockera_Accuracy_Roadmap_v${ACCURACY_ROADMAP_VERSION}_${stamp}.pdf`;
+}
+
