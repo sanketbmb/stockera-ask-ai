@@ -181,6 +181,9 @@ export interface LongTermQualityDiagnostic {
   symbol: string;
   banking_override_applied: boolean;
   null_reasons: Record<string, string>;
+}
+
+
 
 export interface IntradayMicrostructureSnapshot {
   atr_14: number | null;
