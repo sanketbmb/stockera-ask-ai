@@ -798,86 +798,9 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           </motion.section>
         )}
 
-        {/* ═══ 6. TIER-SHAPED METRIC GRID (B.2) ═══ */}
-        {FEATURE_FLAGS.tier_shaped_grid_v1 && (
-          <TierShapedGrid data={data} />
-        )}
+        {/* ═══ 6. TIER-SHAPED METRIC GRID ═══ */}
+        <TierShapedGrid data={data} />
 
-        {/* ═══ 6-LEGACY. 4-CARD METRIC GRID (kept behind flag for rollback; removed in B.3) ═══ */}
-        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
-        <motion.section
-          variants={gridContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.15 }}
-          className="grid gap-4 md:grid-cols-2"
-        >
-          {SECTION_ORDER[tier].map((kind) => {
-            if (kind === "technical") {
-              return (
-                <DimensionCard key={kind} eyebrow="Trend & technicals" title="Technical pulse" icon={LineChart} score={score_breakdown.technical_score}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="RSI(14)" value={<AnimatedNumber value={technical_snapshot.rsi} decimals={2} duration={700} />} tone={technical_snapshot.rsi != null && (technical_snapshot.rsi > 70 || technical_snapshot.rsi < 30) ? "text-amber-700" : ""} />
-                    <Metric label="MACD" value={labelize(technical_snapshot.macd_signal)} />
-                    <Metric label="ADX" value={<AnimatedNumber value={technical_snapshot.adx} decimals={2} duration={700} />} />
-                    <Metric label="Trend" value={labelize(technical_snapshot.trend_label)} />
-                    <Metric label="EMA stack" value={labelize(technical_snapshot.ema_stack)} />
-                    <Metric label="Bollinger" value={labelize(technical_snapshot.bollinger_position)} />
-                  </motion.div>
-                  <CardFootline tone={score_breakdown.technical_score} dim="technicals" />
-                </DimensionCard>
-              );
-            }
-            if (kind === "momentum") {
-              return (
-                <DimensionCard key={kind} eyebrow="Momentum" title="Momentum & strength" icon={Activity} score={score_breakdown.momentum_score}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="RS vs NIFTY" value={momentum_snapshot.relative_strength_vs_nifty != null ? <AnimatedNumber value={momentum_snapshot.relative_strength_vs_nifty} decimals={2} suffix="%" signed duration={700} /> : DASH} />
-                    <Metric label="Trend strength" value={labelize(momentum_snapshot.trend_strength)} />
-                    <Metric label="Regime" value={labelize(momentum_snapshot.momentum_label)} />
-                    {momentum_snapshot.volume_confirmation && (
-                      <Metric label="Volume" value={labelize(momentum_snapshot.volume_confirmation)} />
-                    )}
-                  </motion.div>
-                  <CardFootline tone={score_breakdown.momentum_score} dim="momentum" />
-                </DimensionCard>
-              );
-            }
-            if (kind === "fundamental") {
-              return (
-                <DimensionCard key={kind} eyebrow="Fundamentals" title="Quality & valuation" icon={Building2} score={score_breakdown.fundamental_score} muted={flags.banking_override_applied && (fundamental_snapshot.altman_z_score == null)}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="P/E" value={<AnimatedNumber value={fundamental_snapshot.pe_ratio} decimals={2} duration={700} />} />
-                    <Metric label="ROE" value={fundamental_snapshot.roe != null ? <AnimatedNumber value={fundamental_snapshot.roe} decimals={2} suffix="%" duration={700} /> : DASH} />
-                    <Metric label="F-Score" value={fundamental_snapshot.piotroski_f_score != null ? `${fundamental_snapshot.piotroski_f_score}/9` : DASH} />
-                    <Metric label="Altman Z" value={<AnimatedNumber value={fundamental_snapshot.altman_z_score} decimals={2} duration={700} />} hint={flags.banking_override_applied ? "Banks use regulatory CAR; Altman Z is not meaningful for financials." : undefined} />
-                    <Metric label="DCF upside" value={fundamental_snapshot.dcf_upside_pct != null && fundamental_snapshot.dcf_upside_pct > -95 ? <AnimatedNumber value={fundamental_snapshot.dcf_upside_pct} decimals={1} suffix="%" signed duration={700} /> : DASH} />
-                    <Metric label="Valuation" value={labelize(fundamental_snapshot.valuation_label)} />
-                  </motion.div>
-                  {flags.banking_override_applied && (
-                    <p className="mt-3 text-[11px] italic text-muted-foreground">Banking sector — Altman Z & DCF de-emphasized; regulatory frameworks govern solvency.</p>
-                  )}
-                  <CardFootline tone={score_breakdown.fundamental_score} dim="fundamentals" />
-                </DimensionCard>
-              );
-            }
-            // risk
-            return (
-              <DimensionCard key={kind} eyebrow="Risk" title="Risk character" icon={ShieldCheck} score={score_breakdown.risk_score}>
-                <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                  <Metric label="Beta" value={<AnimatedNumber value={risk_snapshot.beta} decimals={2} duration={700} />} tone={riskTone("beta", risk_snapshot.beta)} />
-                  <Metric label="Vol (1Y)" value={risk_snapshot.volatility_1y != null ? <AnimatedNumber value={risk_snapshot.volatility_1y} decimals={1} suffix="%" duration={700} /> : DASH} tone={riskTone("vol", risk_snapshot.volatility_1y)} />
-                  <Metric label="Sharpe" value={<AnimatedNumber value={risk_snapshot.sharpe_ratio} decimals={2} duration={700} />} tone={riskTone("sharpe", risk_snapshot.sharpe_ratio)} />
-                  <Metric label="Sortino" value={<AnimatedNumber value={risk_snapshot.sortino_ratio} decimals={2} duration={700} />} tone={riskTone("sortino", risk_snapshot.sortino_ratio)} />
-                  <Metric label="Max DD" value={risk_snapshot.max_drawdown != null ? <AnimatedNumber value={risk_snapshot.max_drawdown} decimals={1} suffix="%" signed duration={700} /> : DASH} tone={riskTone("dd", risk_snapshot.max_drawdown)} />
-                  <Metric label="Liquidity" value={labelize(risk_snapshot.liquidity_label)} />
-                </motion.div>
-                <CardFootline tone={score_breakdown.risk_score} dim="risk" />
-              </DimensionCard>
-            );
-          })}
-        </motion.section>
-        )}
 
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
