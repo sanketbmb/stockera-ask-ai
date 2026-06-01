@@ -46,8 +46,8 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 async function signPrintToken(payload: object): Promise<string> {
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!secret) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY for PDF token signing");
+  const secret = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("Missing SB_SERVICE_ROLE_KEY for PDF token signing");
   const json = JSON.stringify(payload);
   const key = await hmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(json));
@@ -57,7 +57,7 @@ async function verifyPrintToken<T>(token: string): Promise<T | null> {
   try {
     const [bodyB64, sigB64] = token.split(".");
     if (!bodyB64 || !sigB64) return null;
-    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const secret = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!secret) return null;
     const key = await hmacKey(secret);
     const bodyBytes = b64urlDecode(bodyB64);
@@ -105,7 +105,7 @@ function originFromRequest(): string {
 }
 async function callOrchestrator(symbol: string, horizon: QueryType, includeNews: boolean): Promise<StockAnalysisPayload> {
   const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) throw new Error("Missing Supabase server env for orchestrator call");
   const res = await fetch(`${url}/functions/v1/generate-stock-analysis`, {
     method: "POST",

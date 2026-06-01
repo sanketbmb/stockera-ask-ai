@@ -58,6 +58,7 @@ function bindRuntimeEnv(env: unknown) {
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "SB_SERVICE_ROLE_KEY",
   ]) {
     const value = bindings[key];
     if (!process.env[key] && typeof value === "string" && value.length > 0) {
