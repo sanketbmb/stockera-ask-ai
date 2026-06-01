@@ -487,14 +487,21 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
 
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
 
-  // R:R from levels
-  const rr = useMemo(() => {
+  // R:R from levels (ratio + rupee breakdown for the dual-format display).
+  const { rr, riskRupee, rewardRupee } = useMemo(() => {
     const e = levels.entry_zone, sl = levels.stop_loss, t = levels.target_1;
-    if (e == null || sl == null || t == null) return null;
+    if (e == null || sl == null || t == null) return { rr: null, riskRupee: null, rewardRupee: null };
     const risk = Math.abs(e - sl), reward = Math.abs(t - e);
-    if (risk === 0) return null;
-    return reward / risk;
+    if (risk === 0) return { rr: null, riskRupee: null, rewardRupee: null };
+    return { rr: reward / risk, riskRupee: Math.round(risk), rewardRupee: Math.round(reward) };
   }, [levels]);
+
+  // Presentation-only verdict label. PDF (printMode) always shows the raw
+  // orchestrator action verbatim so SEBI audit trails stay unchanged.
+  const displayVerdict = printMode
+    ? verdictRawLabel(final_verdict.action)
+    : verdictUILabel(final_verdict.action);
+
 
   // Print mode: disable all motion deterministically. MotionConfig forces
   // useReducedMotion()=true throughout the tree, snapping initial states
