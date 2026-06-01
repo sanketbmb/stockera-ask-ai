@@ -614,7 +614,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                     <motion.div key={k} variants={innerStaggerItem}>
                       <ScoreBar
                         label={m.label}
-                        value={s || null}
+                        value={s ?? null}
                         weighted={(weights[k] ?? 0) >= 0.25}
                         pulse={pulsePillars.has(k)}
                       />
@@ -622,7 +622,18 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                   );
                 })}
                 <motion.div variants={innerStaggerItem}>
-                  <ScoreBar label="Sentiment" value={score_breakdown.sentiment_score || null} weighted={(weights.sentiment ?? 0) >= 0.15} />
+                  <ScoreBar
+                    label="Sentiment"
+                    value={score_breakdown.sentiment_score ?? null}
+                    weighted={(weights.sentiment ?? 0) >= 0.15}
+                    note={
+                      score_breakdown.sentiment_score == null
+                        ? (query_context.include_news
+                            ? "Sentiment data unavailable for this stock"
+                            : "Sentiment not included in this view")
+                        : undefined
+                    }
+                  />
                 </motion.div>
                 <p className="pt-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   <span className="inline-block h-1 w-1 rounded-full bg-accent align-middle" /> tier-weighted pillar for {TIER_LABEL[tier].toLowerCase()}
