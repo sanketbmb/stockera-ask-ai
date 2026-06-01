@@ -350,7 +350,7 @@ export function QueryForm() {
             </div>
           )}
 
-          {showStockFields && (
+          {showStockFields && !showPhase2Fields && (
             <div className="grid sm:grid-cols-2 gap-3 items-start">
               {showBuyPrice && (
                 <div className="space-y-1.5">
@@ -389,6 +389,47 @@ export function QueryForm() {
                   </Select>
                 </div>
               )}
+            </div>
+          )}
+
+          {showPhase2Fields && (
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-3 items-start">
+                <div className="space-y-1.5">
+                  <Label htmlFor="entry" className="flex items-center gap-1 h-5 leading-5">
+                    <span>Entry Price *</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
+                      <TooltipContent className="text-xs max-w-[220px]">Your average buy price for this position. Used to compute unrealized P/L.</TooltipContent>
+                    </Tooltip>
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                    <Input id="entry" className="pl-7 h-10" type="number" inputMode="decimal" step="0.01" min="0" placeholder="3668.00"
+                      value={entryPrice} onChange={(e) => setEntryPrice(e.target.value)} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="qty" className="flex items-center gap-1 h-5 leading-5">
+                    <span>Quantity {isAveraging ? "*" : "(optional)"}</span>
+                  </Label>
+                  <Input id="qty" className="h-10" type="number" inputMode="numeric" step="1" min="1" placeholder="e.g. 25"
+                    value={qty} onChange={(e) => setQty(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <Label>Investment horizon *</Label>
+                <Select value={horizon} onValueChange={setHorizon}>
+                  <SelectTrigger><SelectValue placeholder="How long do you plan to hold?" /></SelectTrigger>
+                  <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="extra" className="flex items-center h-5 leading-5">Anything else? (optional)</Label>
+                <Textarea id="extra" rows={3} maxLength={500} placeholder="Any extra context — preserved verbatim, never sent to AI."
+                  value={anythingElse} onChange={(e) => setAnythingElse(e.target.value)} className="mt-1.5" />
+                <p className="text-[11px] text-muted-foreground mt-1 text-right">{anythingElse.length}/500</p>
+              </div>
             </div>
           )}
 
