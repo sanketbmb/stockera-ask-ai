@@ -14,6 +14,7 @@ import { FreshEntryAddendum } from "@/components/report/FreshEntryAddendum";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";

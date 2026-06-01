@@ -56,7 +56,8 @@ export const regenerateFromLegacy = createServerFn({ method: "POST" })
       throw new Error(`Failed to create regenerated record: ${insErr?.message}`);
     }
 
-    // Audit (best effort, non-fatal)
+    // Audit (best effort, non-fatal) — uses centralized credit-metering module.
+    const decision = meteringFor("legacy_regenerate");
     await supabase.from("audit_events").insert({
       event_type: "report_regenerated_from_legacy",
       actor_id: userId,
@@ -66,9 +67,10 @@ export const regenerateFromLegacy = createServerFn({ method: "POST" })
         legacy_query_id: legacy.id,
         symbol: legacy.stock_symbol,
         horizon,
-        credit_action: "skipped_free_regeneration",
         engine_version: "v1_tier_shaped",
         engine_source: "regenerated_from_legacy",
+        metering_mode: decision.metering_mode,
+        credit_action: decision.credit_action,
       },
     });
 
