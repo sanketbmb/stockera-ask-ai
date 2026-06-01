@@ -5,22 +5,28 @@
 
 import { useMemo } from "react";
 import {
-  Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2,
-  Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
-  ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp,
+  Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
+  Clock, Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
+  ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp, Waves,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
 import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown, AuditMeta,
+  IntradayMicrostructureSnapshot, LongTermQualitySnapshot,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
 import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { METRIC_COPY, type MetricCopy } from "@/lib/metric-copy";
+import { getUpcomingCorporateActions, type UpcomingCorporateAction } from "@/lib/corporate-actions.functions";
 import {
   pageContainer, sectionFadeUp, verdictScale, tierBadgeSlide,
   gridContainer, cardItem, innerStaggerContainer, innerStaggerItem,
