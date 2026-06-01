@@ -1310,7 +1310,7 @@ const SL_METHOD_COPY: Record<string, string> = {
   min_distance_floor: "Floored at 10% from spot (avoids noise stops)",
 };
 
-function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string }) {
+function TargetMethodTip({ targetMeta, label, sectorSource, sectorMethodVersion }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string; sectorSource?: string | null; sectorMethodVersion?: string | null }) {
   if (!targetMeta || targetMeta.method === "none" || targetMeta.value == null) return null;
   const copy = TARGET_METHOD_COPY[targetMeta.method] ?? TARGET_METHOD_COPY.none;
   const inputs = Object.entries(targetMeta.inputs ?? {}).filter(([, v]) => v != null);
@@ -1334,12 +1334,17 @@ function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditM
             ))}
           </div>
         )}
+        {sectorSource && (
+          <p className="mt-2 border-t border-border/40 pt-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Sector data: <span className="normal-case text-foreground/70">{sectorSource}{sectorMethodVersion ? ` (${sectorMethodVersion})` : ""}</span>
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function LevelCell({ label, value, tone, reason, methodTip }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode }) {
+function LevelCell({ label, value, tone, reason, methodTip, footer }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode; footer?: React.ReactNode }) {
   const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
