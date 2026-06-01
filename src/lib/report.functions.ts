@@ -42,6 +42,16 @@ export const generateAiReport = createServerFn({ method: "POST" })
       "should_average",
     ]);
     const qt = (query as { query_type?: string | null }).query_type ?? "";
+    // Phase 3A — "other" is intentionally NOT in the allowlist for the v0
+    // legacy generator. We return a controlled "not yet available" instead
+    // of throwing "Unsupported query type" so the UI can degrade gracefully.
+    if (qt === "other" || qt === "sector_view" || qt === "educational") {
+      return {
+        ok: false,
+        message: "AI report not yet available for this question type — a SEBI analyst will respond.",
+        code: "ROUTED_TO_ANALYST",
+      } as const;
+    }
     if (qt && !ALLOWED_QUERY_TYPES.has(qt)) {
       throw new Error("Unsupported query type");
     }
