@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2,
-  Compass, Eye, Flame, Gauge, HelpCircle, LineChart, Newspaper,
+  Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
   ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
@@ -18,6 +18,8 @@ import type {
   StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
+import { omissionCopy } from "@/lib/trade-plan-copy";
+import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
 import {
   pageContainer, sectionFadeUp, verdictScale, tierBadgeSlide,
   gridContainer, cardItem, innerStaggerContainer, innerStaggerItem,
@@ -176,10 +178,11 @@ function Metric({ label, value, tone = "", hint }: { label: string; value: React
 }
 
 // Animated score bar — width fills from 0 to target on view; tier-weighted pulses once.
-function ScoreBar({ label, value, weighted, pulse }: { label: string; value: number | null; weighted: boolean; pulse?: boolean }) {
+function ScoreBar({ label, value, weighted, pulse, note }: { label: string; value: number | null; weighted: boolean; pulse?: boolean; note?: string }) {
   const v = value ?? 0;
   const tone = SCORE_TONE(value);
-  const isMissing = value == null || value === 0;
+  // Only null/undefined count as missing. A literal 0 is a legitimate score.
+  const isMissing = value == null;
   const reduce = useReducedMotion();
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
@@ -187,7 +190,7 @@ function ScoreBar({ label, value, weighted, pulse }: { label: string; value: num
   const { text: countText } = useCountUp({ value: isMissing ? null : v, duration: 700, decimals: 0 });
 
   return (
-    <div ref={ref} className={isMissing ? "opacity-50" : ""}>
+    <div ref={ref} className={isMissing ? "opacity-60" : ""}>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="flex items-center gap-1.5 text-muted-foreground">
           {label}
@@ -199,6 +202,14 @@ function ScoreBar({ label, value, weighted, pulse }: { label: string; value: num
               transition={{ duration: 0.45, ease: ease.standard, delay: 0.4 }}
             />
           )}
+          {note && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 cursor-help text-muted-foreground/60" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">{note}</TooltipContent>
+            </Tooltip>
+          )}
         </span>
         <span className={`font-mono tabular-nums font-semibold ${tone.color}`}>
           {isMissing ? DASH : countText}
@@ -207,7 +218,7 @@ function ScoreBar({ label, value, weighted, pulse }: { label: string; value: num
       <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
         <motion.div
-          className="h-full origin-left rounded-full bg-gradient-to-r from-primary to-accent"
+          className={`h-full origin-left rounded-full ${isMissing ? "bg-muted-foreground/30" : "bg-gradient-to-r from-primary to-accent"}`}
           style={{ width: `${width}%` }}
           initial={reduce ? { scaleX: 1 } : { scaleX: 0 }}
           animate={inView ? (pulse && !reduce
@@ -242,16 +253,24 @@ function ReturnChip({ label, value }: { label: string; value: number | null }) {
 }
 
 // Score ring (SVG) — animated arc fill + count-up center.
-function ScoreRing({ score, action }: { score: number; action: VerdictAction }) {
+// Binds to `final_verdict.overall_score`. When score is null/undefined, the
+// stroke stays at 0 and the centre renders the universal DASH; a literal 0
+// still renders as "0" so we never silently fabricate a non-zero reading.
+function ScoreRing({ score, action }: { score: number | null | undefined; action: VerdictAction }) {
   const r = 64, c = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(100, score));
+  const isMissing = score == null || !Number.isFinite(score);
+  const pct = isMissing ? 0 : Math.max(0, Math.min(100, score as number));
   const dash = (pct / 100) * c;
-  const stroke = ringStroke(pct, action);
+  const stroke = isMissing ? "hsl(var(--muted-foreground))" : ringStroke(pct, action);
   const reduce = useReducedMotion();
   const ref = useRef<SVGSVGElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-  const { text: scoreText } = useCountUp({ value: score, duration: 800, decimals: 0 });
-  const isBuy = action === "BUY";
+  const { text: scoreText } = useCountUp({
+    value: isMissing ? null : (score as number),
+    duration: 800,
+    decimals: 0,
+  });
+  const isBuy = action === "BUY" && !isMissing;
 
   return (
     <div className="relative inline-flex flex-col items-center">
@@ -266,82 +285,168 @@ function ScoreRing({ score, action }: { score: number; action: VerdictAction }) 
       )}
       <svg ref={ref} width="160" height="160" viewBox="0 0 160 160" className="-rotate-90">
         <circle cx="80" cy="80" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="10" />
-        <motion.circle
-          cx="80" cy="80" r={r} fill="none" stroke={stroke} strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={c}
-          initial={reduce ? { strokeDashoffset: c - dash } : { strokeDashoffset: c }}
-          animate={inView ? { strokeDashoffset: c - dash } : undefined}
-          transition={{ duration: duration.cinematic, ease: ease.standard }}
-        />
+        {!isMissing && (
+          <motion.circle
+            cx="80" cy="80" r={r} fill="none" stroke={stroke} strokeWidth="10" strokeLinecap="round"
+            strokeDasharray={c}
+            initial={reduce ? { strokeDashoffset: c - dash } : { strokeDashoffset: c }}
+            animate={inView ? { strokeDashoffset: c - dash } : undefined}
+            transition={{ duration: duration.cinematic, ease: ease.standard }}
+          />
+        )}
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-display text-4xl tabular-nums text-foreground">{scoreText}</span>
+        <span className="font-display text-4xl tabular-nums text-foreground">
+          {isMissing ? DASH : scoreText}
+        </span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Stockera Score</span>
       </div>
     </div>
   );
 }
 
+
+
 // Price band visual for trade levels — line draws first, markers stagger in by priority.
+// Collision system:
+//   1. Exact-value markers are merged into a single label (e.g. "ENTRY / LTP ₹1,321.90").
+//   2. Markers within MIN_GAP_PCT of one another are pushed alternately above/below
+//      the band — when stacked on the same side, a second tier is offset further
+//      with a subtle leader line so labels never overlap.
+//   3. All positions are static (no hover-only state) so PDF capture is identical
+//      to the on-screen render. Tap-to-expand is unnecessary because every label
+//      is permanently visible.
 function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]; current: number | null }) {
-  // Marker priority order per spec: Entry, SL, T1, T2, S1/S2, R1/R2 — LTP between.
-  const priorityIndex: Record<string, number> = {
-    Entry: 0, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7, LTP: 0.5,
-  };
-  const points = [
-    { v: levels.support_2,    label: "S2",    color: "bg-rose-500" },
-    { v: levels.support_1,    label: "S1",    color: "bg-rose-400" },
-    { v: levels.stop_loss,    label: "SL",    color: "bg-red-700" },
-    { v: levels.entry_zone,   label: "Entry", color: "bg-primary" },
-    { v: current,             label: "LTP",   color: "bg-foreground" },
-    { v: levels.resistance_1, label: "R1",    color: "bg-emerald-400" },
-    { v: levels.target_1,     label: "T1",    color: "bg-emerald-500" },
-    { v: levels.resistance_2, label: "R2",    color: "bg-emerald-600" },
-    { v: levels.target_2,     label: "T2",    color: "bg-emerald-700" },
-  ].filter((p) => p.v != null) as Array<{ v: number; label: string; color: string }>;
-  if (points.length < 2) {
-    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
-  }
-  const min = Math.min(...points.map((p) => p.v));
-  const max = Math.max(...points.map((p) => p.v));
-  const span = max - min || 1;
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
-  const highlightLabels = new Set(["SL", "T1", "T2"]);
+
+  const priorityIndex: Record<string, number> = {
+    Entry: 0, LTP: 0.5, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7,
+  };
+  const dotColor: Record<string, string> = {
+    S2: "bg-rose-500", S1: "bg-rose-400", SL: "bg-red-700",
+    Entry: "bg-primary", LTP: "bg-foreground",
+    R1: "bg-emerald-400", T1: "bg-emerald-500",
+    R2: "bg-emerald-600", T2: "bg-emerald-700",
+  };
+  const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
+
+  const rawPoints = [
+    { v: levels.support_2,    label: "S2" },
+    { v: levels.support_1,    label: "S1" },
+    { v: levels.stop_loss,    label: "SL" },
+    { v: levels.entry_zone,   label: "Entry" },
+    { v: current,             label: "LTP" },
+    { v: levels.resistance_1, label: "R1" },
+    { v: levels.target_1,     label: "T1" },
+    { v: levels.resistance_2, label: "R2" },
+    { v: levels.target_2,     label: "T2" },
+  ].filter((p) => p.v != null) as Array<{ v: number; label: string }>;
+
+  // 1) Merge exact-value collisions (rounded to paise so 1321.9 ≡ 1321.90).
+  const merged = new Map<string, { v: number; labels: string[] }>();
+  for (const p of rawPoints) {
+    const key = p.v.toFixed(2);
+    const slot = merged.get(key);
+    if (slot) slot.labels.push(p.label);
+    else merged.set(key, { v: p.v, labels: [p.label] });
+  }
+  // Sort each merged group's labels by priority for stable display order.
+  const points = Array.from(merged.values())
+    .map((g) => {
+      g.labels.sort((a, b) => (priorityIndex[a] ?? 9) - (priorityIndex[b] ?? 9));
+      return g;
+    })
+    .sort((a, b) => a.v - b.v);
+
+  if (points.length < 2) {
+    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
+  }
+
+  const min = points[0].v;
+  const max = points[points.length - 1].v;
+  const span = max - min || 1;
+
+  // 2) Magnetic spacing → vertical stagger fallback.
+  // Compute side (above/below) and an extra tier offset for each label.
+  const MIN_GAP_PCT = 9; // empirically large enough for 5-char "₹1,321"
+  type Slot = { v: number; labels: string[]; x: number; side: "top" | "bottom"; tier: 0 | 1 };
+  const slots: Slot[] = points.map((p, i) => ({
+    v: p.v,
+    labels: p.labels,
+    x: ((p.v - min) / span) * 100,
+    side: i % 2 === 0 ? "top" : "bottom",
+    tier: 0,
+  }));
+  // Walk neighbours within MIN_GAP_PCT and push the second one to the opposite
+  // side. If still colliding on the SAME side as the previous-previous, escalate
+  // to tier 1 (further offset + leader line).
+  for (let i = 1; i < slots.length; i++) {
+    const prev = slots[i - 1];
+    const cur = slots[i];
+    if (Math.abs(cur.x - prev.x) < MIN_GAP_PCT && cur.side === prev.side) {
+      cur.side = prev.side === "top" ? "bottom" : "top";
+    }
+    if (i >= 2) {
+      const prev2 = slots[i - 2];
+      if (cur.side === prev2.side && Math.abs(cur.x - prev2.x) < MIN_GAP_PCT) {
+        cur.tier = 1;
+      }
+    }
+  }
 
   return (
-    <div ref={ref} className="relative my-6 h-16">
+    <div ref={ref} className="relative my-6 h-24 print:h-24">
       <motion.div
         className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
-      {points.map((p, i) => {
-        const x = ((p.v - min) / span) * 100;
-        const flip = i % 2 === 0;
-        const order = priorityIndex[p.label] ?? 9;
+      {slots.map((s, i) => {
+        const primary = s.labels[0];
+        const order = priorityIndex[primary] ?? 9;
         const delay = reduce ? 0 : 0.35 + order * 0.04;
-        const emphasized = highlightLabels.has(p.label);
+        const emphasized = s.labels.some((l) => highlightLabels.has(l));
+        const colorCls = dotColor[primary] ?? "bg-foreground";
+        const labelText = s.labels.join(" / ");
+        const isTop = s.side === "top";
+        // Label vertical offset: tier 0 sits close to the band, tier 1 is pushed
+        // further away with a subtle leader line.
+        const topPx = isTop ? (s.tier === 0 ? -2 : -22) : (s.tier === 0 ? 50 : 70);
+        const showLeader = s.tier === 1;
         return (
           <motion.div
-            key={p.label}
+            key={`${primary}-${i}`}
             className="absolute -translate-x-1/2"
-            style={{ left: `${x}%`, top: 0 }}
+            style={{ left: `${s.x}%`, top: 0 }}
             initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
             animate={inView ? { opacity: 1, y: 0 } : undefined}
             transition={{ duration: duration.fast, ease: ease.entrance, delay }}
           >
             <motion.div
-              className={`mx-auto h-3 w-3 rounded-full ${p.color} ring-2 ring-background`}
-              style={{ marginTop: "26px" }}
+              className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+              style={{ marginTop: "38px" }}
               whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
               transition={{ duration: duration.fast, ease: ease.standard }}
             />
-            <div className={`absolute left-1/2 ${flip ? "-top-1" : "top-12"} -translate-x-1/2 whitespace-nowrap text-center`}>
-              <div className="font-mono text-[10px] uppercase text-muted-foreground">{p.label}</div>
-              <div className="font-display text-xs tabular-nums">{fmtPrice(p.v)}</div>
+            {showLeader && (
+              <div
+                className="absolute left-1/2 w-px bg-border"
+                style={{
+                  top: isTop ? `${topPx + 28}px` : "44px",
+                  height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
+                }}
+                aria-hidden
+              />
+            )}
+            <div
+              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
+              style={{ top: `${topPx}px` }}
+            >
+              <div className="font-mono text-[10px] uppercase text-muted-foreground">{labelText}</div>
+              <div className="font-display text-xs tabular-nums">{fmtPrice(s.v)}</div>
             </div>
           </motion.div>
         );
@@ -349,6 +454,7 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────
 // Main component
@@ -381,14 +487,21 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
 
   const [activeTab, setActiveTab] = useState<"holding" | "fresh" | "exploring">(TIER_DEFAULT_TAB[tier]);
 
-  // R:R from levels
-  const rr = useMemo(() => {
+  // R:R from levels (ratio + rupee breakdown for the dual-format display).
+  const { rr, riskRupee, rewardRupee } = useMemo(() => {
     const e = levels.entry_zone, sl = levels.stop_loss, t = levels.target_1;
-    if (e == null || sl == null || t == null) return null;
+    if (e == null || sl == null || t == null) return { rr: null, riskRupee: null, rewardRupee: null };
     const risk = Math.abs(e - sl), reward = Math.abs(t - e);
-    if (risk === 0) return null;
-    return reward / risk;
+    if (risk === 0) return { rr: null, riskRupee: null, rewardRupee: null };
+    return { rr: reward / risk, riskRupee: Math.round(risk), rewardRupee: Math.round(reward) };
   }, [levels]);
+
+  // Presentation-only verdict label. PDF (printMode) always shows the raw
+  // orchestrator action verbatim so SEBI audit trails stay unchanged.
+  const displayVerdict = printMode
+    ? verdictRawLabel(final_verdict.action)
+    : verdictUILabel(final_verdict.action);
+
 
   // Print mode: disable all motion deterministically. MotionConfig forces
   // useReducedMotion()=true throughout the tree, snapping initial states
@@ -445,7 +558,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                   animate="visible"
                   className={`font-display text-5xl md:text-6xl ${verdictStyle.accent}`}
                 >
-                  {verdictStyle.label.toUpperCase()}
+                  {displayVerdict}
                 </motion.h2>
                 <motion.div variants={tierBadgeSlide} initial="hidden" animate="visible">
                   <Badge variant="outline" className={`text-xs ${verdictStyle.chip}`}>{TIER_LABEL[tier]}</Badge>
@@ -469,8 +582,16 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
         <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <TriadCard icon={Gauge} eyebrow="Confidence" value={<><AnimatedNumber value={final_verdict.confidence_pct} decimals={0} duration={800} />%</>} sub="Model conviction" />
-          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score || DASH}`} />
-          <TriadCard icon={Target} eyebrow="Reward potential" value={rr != null ? `${rr.toFixed(2)} : 1 R:R` : DASH} sub={rr != null ? "Entry → T1 vs Stop" : "Insufficient levels"} />
+          <TriadCard icon={ShieldCheck} eyebrow="Risk profile" value={labelize(final_verdict.risk_label)} sub={`Score ${score_breakdown.risk_score ?? DASH}`} />
+          <TriadCard
+            icon={Target}
+            eyebrow="Reward potential"
+            value={rr != null ? `${rr.toFixed(2)} : 1 R:R` : DASH}
+            sub={rr != null && riskRupee != null && rewardRupee != null
+              ? `Risk ₹${riskRupee.toLocaleString("en-IN")} / Reward ₹${rewardRupee.toLocaleString("en-IN")} per share`
+              : "Insufficient levels — entry, stop loss or target unavailable"}
+          />
+
         </motion.section>
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
@@ -493,7 +614,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                     <motion.div key={k} variants={innerStaggerItem}>
                       <ScoreBar
                         label={m.label}
-                        value={s || null}
+                        value={s ?? null}
                         weighted={(weights[k] ?? 0) >= 0.25}
                         pulse={pulsePillars.has(k)}
                       />
@@ -501,7 +622,18 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
                   );
                 })}
                 <motion.div variants={innerStaggerItem}>
-                  <ScoreBar label="Sentiment" value={score_breakdown.sentiment_score || null} weighted={(weights.sentiment ?? 0) >= 0.15} />
+                  <ScoreBar
+                    label="Sentiment"
+                    value={score_breakdown.sentiment_score ?? null}
+                    weighted={(weights.sentiment ?? 0) >= 0.15}
+                    note={
+                      score_breakdown.sentiment_score == null
+                        ? (query_context.include_news
+                            ? "Sentiment data unavailable for this stock"
+                            : "Sentiment not included in this view")
+                        : undefined
+                    }
+                  />
                 </motion.div>
                 <p className="pt-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   <span className="inline-block h-1 w-1 rounded-full bg-accent align-middle" /> tier-weighted pillar for {TIER_LABEL[tier].toLowerCase()}
@@ -802,7 +934,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">In summary</p>
           <h2 className="mt-1 font-display text-2xl">Analyst-style recap</h2>
           <ol className="mt-4 max-w-3xl space-y-2 text-[15px] leading-relaxed text-white/95">
-            <li><span className="font-mono text-white/60">01 ·</span> Final view: <strong>{verdictStyle.label}</strong> with {final_verdict.confidence_pct}% confidence on a {final_verdict.time_horizon.toLowerCase()} horizon.</li>
+            <li><span className="font-mono text-white/60">01 ·</span> Final view: <strong>{displayVerdict}</strong> with {final_verdict.confidence_pct}% confidence on a {final_verdict.time_horizon.toLowerCase()} horizon.</li>
             <li><span className="font-mono text-white/60">02 ·</span> {recapDriverLine(score_breakdown, tier)}</li>
             <li><span className="font-mono text-white/60">03 ·</span> Risk profile is <strong>{labelize(final_verdict.risk_label)}</strong>{rr != null ? ` — current setup offers ${rr.toFixed(2)}:1 reward-to-risk` : ""}.</li>
           </ol>
@@ -914,6 +1046,7 @@ function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
 }
 
 function LevelCell({ label, value, tone, reason }: { label: string; value: number | null; tone?: string; reason?: string }) {
+  const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
       variants={innerStaggerItem}
@@ -922,11 +1055,19 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
       className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 transition-colors hover:border-accent/50"
     >
       <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</p>
-      {value == null ? (
+      {value == null && copy ? (
         <Tooltip>
-          <TooltipTrigger asChild><p className="font-display text-lg cursor-help text-muted-foreground">{DASH}</p></TooltipTrigger>
+          <TooltipTrigger asChild>
+            <p className="flex cursor-help items-center gap-1 font-display text-lg text-muted-foreground decoration-dotted underline-offset-4 hover:underline">
+              {DASH}
+              <Info className="h-3 w-3 opacity-60" aria-hidden />
+            </p>
+          </TooltipTrigger>
           <TooltipContent className="max-w-xs text-xs">
-            {reason ? `Omitted — ${reason}` : "Level not derivable from current data window."}
+            <p className="leading-snug">{copy.friendly}</p>
+            <p className="mt-1.5 border-t border-border/40 pt-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              Why? <span className="normal-case text-foreground/70">{copy.raw}</span>
+            </p>
           </TooltipContent>
         </Tooltip>
       ) : (
@@ -935,6 +1076,7 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
     </motion.div>
   );
 }
+
 
 function ActionPanel({ action, mode, tier, levels }: {
   action: VerdictAction; mode: "holding" | "fresh" | "exploring"; tier: QueryType; levels: StockAnalysisPayload["levels"];
