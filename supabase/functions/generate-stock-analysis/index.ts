@@ -730,6 +730,14 @@ Deno.serve(async (req) => {
         targets_meta: (tpRes.data?.targets_meta as Record<string, unknown> | null | undefined) ?? null,
         confidence_breakdown: confidence.breakdown,
         confidence_band: confidence.band,
+        modules_invoked: settled.filter((s) => s.trace.ok).map((s) => s.trace.module),
+        tier_modules_added_version: "tier_shaped_v1",
+        intraday_microstructure_diagnostic:
+          ((imRes.data?.audit_meta as Record<string, unknown> | undefined)?.intraday_microstructure_diagnostic
+            as Record<string, unknown> | undefined) ?? null,
+        long_term_quality_diagnostic:
+          ((lqRes.data?.audit_meta as Record<string, unknown> | undefined)?.long_term_quality_diagnostic
+            as Record<string, unknown> | undefined) ?? null,
       },
       user_context: body.user_context ?? null,
     };
