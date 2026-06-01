@@ -20,8 +20,21 @@ const VERDICT_MODEL_VERSION = "tiered-verdict-1.0";
 const MODULE_TIMEOUT_MS = 25_000;
 const TRADE_PLAN_SOURCE = (Deno.env.get("TRADE_PLAN_SOURCE") ?? "new").toLowerCase() === "legacy" ? "legacy" : "new";
 
+import {
+  WEIGHTING_PROFILES,
+  profileIdForTier,
+  type PillarWeights,
+} from "../_shared/weighting-profiles.ts";
+import {
+  ACTION_BUCKETS,
+  ACTIVE_ACTION_BUCKET,
+  actionFromScore as actionFromScoreShared,
+  type Action as BucketAction,
+} from "../_shared/action-buckets.ts";
+import { findBaseline } from "../_shared/regression-baseline.ts";
+
 type QueryType = "intraday" | "medium-term" | "long-term";
-type Action = "BUY" | "HOLD" | "SELL" | "AVOID" | "WATCHLIST";
+type Action = BucketAction;
 
 interface ModuleTrace {
   module: string;
@@ -211,16 +224,37 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
   const pe = num(val.pe);
   const dcfPerShare = num(q.dcf_intrinsic_value);
   const price = num(company.price);
-  const dcfUpside = dcfPerShare != null && price != null && price > 0 ? r2(((dcfPerShare - price) / price) * 100) : null;
+  let dcfUpside = dcfPerShare != null && price != null && price > 0
+    ? r2(((dcfPerShare - price) / price) * 100)
+    : null;
+  // Fix 3: clamp DCF upside to [-50, +200] when present.
+  if (dcfUpside != null) {
+    dcfUpside = Math.max(-50, Math.min(200, dcfUpside));
+  }
 
   // Valuation label
   let valuationLabel = "";
   if (pe != null) {
     valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
   }
+
+  // Fix 4: prefer upstream banking_override flag when present; fall back to legacy detection.
+  const upstreamBankingApplied = q.banking_override_applied === true;
+  const upstreamBankingReason  = typeof q.banking_override_reason === "string" ? q.banking_override_reason : null;
   const isBanking = (sector ?? "").toLowerCase().includes("bank") || (sector ?? "").toLowerCase().includes("financial");
-  const altmanZ = num(q.altman_z_score);
-  const bankingOverride = isBanking && altmanZ == null;
+  let altmanZ = num(q.altman_z_score);
+  const bankingOverride = upstreamBankingApplied || (isBanking && altmanZ == null);
+  const bankingReason = upstreamBankingReason
+    ?? (bankingOverride ? "legacy_sector_or_missing_altman" : null);
+  if (bankingOverride) altmanZ = null;
+
+  // Fix 3: surface DCF status / method from upstream (compute-fundamentals) with safe fallbacks.
+  const dcfStatus = typeof q.dcf_status === "string"
+    ? q.dcf_status
+    : (dcfPerShare == null ? "DCF_UNAVAILABLE" : "DCF_OK");
+  const dcfMethod = typeof q.dcf_method_used === "string"
+    ? q.dcf_method_used
+    : (dcfPerShare == null ? "DCF_SKIPPED" : "DCF_FCFF");
 
   return {
     snapshot: {
@@ -228,12 +262,15 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
       roe: num(prof.roe_latest),
       piotroski_f_score: num(q.piotroski_f_score),
       altman_z_score: altmanZ,
-      dcf_upside_pct: dcfUpside,
+      dcf_upside_pct: bankingOverride ? null : dcfUpside,
       valuation_label: valuationLabel,
     },
     score: num(d.fundamental_score),
     as_of: String(d.computed_at ?? ""),
     banking_override: bankingOverride,
+    banking_override_reason: bankingReason,
+    dcf_status: bankingOverride ? "DCF_SKIPPED" : dcfStatus,
+    dcf_method_used: bankingOverride ? "DCF_SKIPPED" : dcfMethod,
   };
 }
 
@@ -277,11 +314,21 @@ function normalizeMomentum(d: Record<string, unknown> | null) {
   else if (pctAbove50 != null && pctAbove50 > 5) trendStrength = "UP";
   else if (pctAbove50 != null && pctAbove50 < -5) trendStrength = "DOWN";
 
+  // Fix 5: volume_confirmation is computed upstream in compute-momentum.
+  // Fallback to "NEUTRAL" when missing; never emit empty string.
+  const vol = (d.volume_signal ?? {}) as Record<string, unknown>;
+  const volConfRaw = typeof vol.label === "string" && vol.label.length > 0
+    ? vol.label
+    : "NEUTRAL";
+  const volConfMethod = typeof vol.method === "string" && vol.method.length > 0
+    ? vol.method
+    : "volume_ratio_20d_v1";
+
   return {
     snapshot: {
       relative_strength_vs_nifty: r2(rs["3m"]),
       trend_strength: trendStrength,
-      volume_confirmation: "",
+      volume_confirmation: volConfRaw,
       momentum_label: String(d.classification ?? ""),
     },
     returns: {
@@ -294,6 +341,9 @@ function normalizeMomentum(d: Record<string, unknown> | null) {
     },
     score: num(d.momentum_score),
     as_of: String(d.as_of_date ?? ((d.metadata ?? {}) as Record<string, unknown>).computed_at ?? ""),
+    volume_confirmation: volConfRaw,
+    volume_confirmation_method: volConfMethod,
+    volume_confirmation_reason: typeof vol.reason === "string" ? vol.reason : null,
   };
 }
 
@@ -318,18 +368,18 @@ function normalizeSentiment(d: Record<string, unknown> | null) {
 }
 
 // ─── Verdict logic ───
-const WEIGHT_PRESETS: Record<QueryType, { technical: number; fundamental: number; risk: number; momentum: number; sentiment: number }> = {
-  "intraday":    { technical: 0.45, fundamental: 0.00, risk: 0.20, momentum: 0.30, sentiment: 0.05 },
-  "medium-term": { technical: 0.25, fundamental: 0.25, risk: 0.20, momentum: 0.20, sentiment: 0.10 },
-  "long-term":   { technical: 0.15, fundamental: 0.40, risk: 0.20, momentum: 0.15, sentiment: 0.10 },
+// ─── Verdict logic ───
+// Weights live in _shared/weighting-profiles.ts (frozen as *_v1).
+// Action buckets live in _shared/action-buckets.ts (frozen as bucket_v1).
+// Helpers below preserve the legacy call sites without changing values.
+const WEIGHT_PRESETS: Record<QueryType, PillarWeights> = {
+  "intraday":    WEIGHTING_PROFILES.intraday_v1.weights,
+  "medium-term": WEIGHTING_PROFILES.medium_v1.weights,
+  "long-term":   WEIGHTING_PROFILES.long_v1.weights,
 };
 
 function actionFromScore(s: number): Action {
-  if (s >= 75) return "BUY";
-  if (s >= 60) return "HOLD";
-  if (s >= 45) return "WATCHLIST";
-  if (s >= 30) return "SELL";
-  return "AVOID";
+  return actionFromScoreShared(s, ACTIVE_ACTION_BUCKET);
 }
 function demote(a: Action, steps = 1): Action {
   const order: Action[] = ["AVOID", "SELL", "WATCHLIST", "HOLD", "BUY"];
@@ -692,7 +742,7 @@ Deno.serve(async (req) => {
         beta: null, volatility_1y: null, sharpe_ratio: null, sortino_ratio: null, max_drawdown: null, var_95: null, liquidity_label: "",
       },
       momentum_snapshot: mom?.snapshot ?? {
-        relative_strength_vs_nifty: null, trend_strength: "", volume_confirmation: "", momentum_label: "",
+        relative_strength_vs_nifty: null, trend_strength: "", volume_confirmation: "NEUTRAL", momentum_label: "",
       },
       sentiment_snapshot: sent?.snapshot ?? {
         news_sentiment_score: null, sentiment_label: "", article_count: 0, top_news_driver: "",
@@ -714,6 +764,10 @@ Deno.serve(async (req) => {
         verdict_model_version: VERDICT_MODEL_VERSION,
         tier_applied: queryType,
         tier_weights: WEIGHT_PRESETS[queryType],
+        // Fix 1 + 2: versioned profile / bucket references.
+        weighting_profile_id: profileIdForTier(queryType),
+        action_bucket_version: ACTIVE_ACTION_BUCKET,
+        action_bucket_thresholds: ACTION_BUCKETS[ACTIVE_ACTION_BUCKET].thresholds,
         tier_guardrails: verdict.guardrailNotes,
         technical_as_of:   tech?.as_of ?? null,
         fundamental_as_of: fund?.as_of ?? null,
@@ -732,6 +786,36 @@ Deno.serve(async (req) => {
         confidence_band: confidence.band,
         modules_invoked: settled.filter((s) => s.trace.ok).map((s) => s.trace.module),
         tier_modules_added_version: "tier_shaped_v1",
+        // Fix 3 + 4: DCF and banking-override audit surface (from normalizer).
+        dcf_status: fund?.dcf_status ?? "DCF_UNAVAILABLE",
+        dcf_method_used: fund?.dcf_method_used ?? "DCF_SKIPPED",
+        banking_override_applied: fund?.banking_override ?? false,
+        banking_override_reason: fund?.banking_override_reason ?? null,
+        // Fix 5: volume_confirmation method (never empty).
+        volume_confirmation: mom?.volume_confirmation ?? "NEUTRAL",
+        volume_confirmation_method: mom?.volume_confirmation_method ?? "volume_ratio_20d_v1",
+        volume_confirmation_reason: mom?.volume_confirmation_reason ?? null,
+        // Step E.0: regression baseline echo (only for the 4 reference cases).
+        regression_baseline: (() => {
+          const b = findBaseline(sym, queryType);
+          return b ? { symbol: b.symbol, tier: b.tier, final_verdict: b.final_verdict, score_breakdown: b.score_breakdown, captured_at: b.captured_at } : null;
+        })(),
+        regression_drift: (() => {
+          const b = findBaseline(sym, queryType);
+          if (!b || !b.final_verdict) return null;
+          const drift: Record<string, unknown> = {};
+          if (b.final_verdict.action !== verdict.action) {
+            drift.action = { baseline: b.final_verdict.action, current: verdict.action };
+          }
+          const scoreDelta = Math.abs((b.final_verdict.overall_score ?? 0) - (verdict.overall_score ?? 0));
+          if (scoreDelta > 1) {
+            drift.overall_score = { baseline: b.final_verdict.overall_score, current: verdict.overall_score, delta: scoreDelta };
+          }
+          if (b.final_verdict.confidence_pct !== confidence.confidence_pct) {
+            drift.confidence_pct = { baseline: b.final_verdict.confidence_pct, current: confidence.confidence_pct };
+          }
+          return Object.keys(drift).length === 0 ? null : drift;
+        })(),
         intraday_microstructure_diagnostic:
           ((imRes.data?.audit_meta as Record<string, unknown> | undefined)
             ?.intraday_microstructure_diagnostic ?? null) as Record<string, unknown> | null,
