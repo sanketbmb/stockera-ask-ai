@@ -595,6 +595,8 @@ export function StockAnalysisReport({
       >
 
 
+        {topBanner}
+
         {/* ═══ 1. HEADER STRIP ═══ */}
         <motion.header variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-5 shadow-card">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -904,6 +906,8 @@ export function StockAnalysisReport({
 
 
 
+
+        {addendum}
 
         {/* ═══ 15. BEHAVIORAL FINANCE ALERT ═══ */}
         {nudge && (
