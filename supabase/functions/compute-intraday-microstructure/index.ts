@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
       nullReasons.opening_range_15m_high = "intraday_feed_unavailable";
       nullReasons.opening_range_15m_low  = "intraday_feed_unavailable";
 
-      data_freshness = freshnessFromDate(String(last.date ?? last.Date ?? ""));
+      data_freshness = freshnessFromDate(String(last.quote_date ?? last.date ?? ""));
     } else {
       nullReasons.session_high = "no_daily_quotes";
       nullReasons.session_low  = "no_daily_quotes";
