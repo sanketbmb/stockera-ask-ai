@@ -467,10 +467,9 @@ async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
       { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } },
     ).catch(() => null);
     if (!res || !res.ok) continue;
-    const rows = await res.json().catch(() => []) as Array<{
-      sector: string; sector_canonical: string; sector_display: string | null; pe_median: number;
-      return_12m_median_pct: number | null; source: string | null; method_version: string | null; bootstrap_source_reference: string | null;
-    }>;
+    type Row = { sector: string; sector_canonical: string; sector_display: string | null; pe_median: number; return_12m_median_pct: number | null; source: string | null; method_version: string | null; bootstrap_source_reference: string | null };
+    let rows: Row[] = [];
+    try { rows = (await res.json()) as Row[]; } catch { rows = []; }
     if (rows.length > 0) {
       const r = rows[0];
       const src = r.sector_canonical === "__default__"
