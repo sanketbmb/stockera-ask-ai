@@ -308,65 +308,145 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
 
 
 // Price band visual for trade levels — line draws first, markers stagger in by priority.
+// Collision system:
+//   1. Exact-value markers are merged into a single label (e.g. "ENTRY / LTP ₹1,321.90").
+//   2. Markers within MIN_GAP_PCT of one another are pushed alternately above/below
+//      the band — when stacked on the same side, a second tier is offset further
+//      with a subtle leader line so labels never overlap.
+//   3. All positions are static (no hover-only state) so PDF capture is identical
+//      to the on-screen render. Tap-to-expand is unnecessary because every label
+//      is permanently visible.
 function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]; current: number | null }) {
-  // Marker priority order per spec: Entry, SL, T1, T2, S1/S2, R1/R2 — LTP between.
-  const priorityIndex: Record<string, number> = {
-    Entry: 0, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7, LTP: 0.5,
-  };
-  const points = [
-    { v: levels.support_2,    label: "S2",    color: "bg-rose-500" },
-    { v: levels.support_1,    label: "S1",    color: "bg-rose-400" },
-    { v: levels.stop_loss,    label: "SL",    color: "bg-red-700" },
-    { v: levels.entry_zone,   label: "Entry", color: "bg-primary" },
-    { v: current,             label: "LTP",   color: "bg-foreground" },
-    { v: levels.resistance_1, label: "R1",    color: "bg-emerald-400" },
-    { v: levels.target_1,     label: "T1",    color: "bg-emerald-500" },
-    { v: levels.resistance_2, label: "R2",    color: "bg-emerald-600" },
-    { v: levels.target_2,     label: "T2",    color: "bg-emerald-700" },
-  ].filter((p) => p.v != null) as Array<{ v: number; label: string; color: string }>;
-  if (points.length < 2) {
-    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
-  }
-  const min = Math.min(...points.map((p) => p.v));
-  const max = Math.max(...points.map((p) => p.v));
-  const span = max - min || 1;
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
-  const highlightLabels = new Set(["SL", "T1", "T2"]);
+
+  const priorityIndex: Record<string, number> = {
+    Entry: 0, LTP: 0.5, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7,
+  };
+  const dotColor: Record<string, string> = {
+    S2: "bg-rose-500", S1: "bg-rose-400", SL: "bg-red-700",
+    Entry: "bg-primary", LTP: "bg-foreground",
+    R1: "bg-emerald-400", T1: "bg-emerald-500",
+    R2: "bg-emerald-600", T2: "bg-emerald-700",
+  };
+  const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
+
+  const rawPoints = [
+    { v: levels.support_2,    label: "S2" },
+    { v: levels.support_1,    label: "S1" },
+    { v: levels.stop_loss,    label: "SL" },
+    { v: levels.entry_zone,   label: "Entry" },
+    { v: current,             label: "LTP" },
+    { v: levels.resistance_1, label: "R1" },
+    { v: levels.target_1,     label: "T1" },
+    { v: levels.resistance_2, label: "R2" },
+    { v: levels.target_2,     label: "T2" },
+  ].filter((p) => p.v != null) as Array<{ v: number; label: string }>;
+
+  // 1) Merge exact-value collisions (rounded to paise so 1321.9 ≡ 1321.90).
+  const merged = new Map<string, { v: number; labels: string[] }>();
+  for (const p of rawPoints) {
+    const key = p.v.toFixed(2);
+    const slot = merged.get(key);
+    if (slot) slot.labels.push(p.label);
+    else merged.set(key, { v: p.v, labels: [p.label] });
+  }
+  // Sort each merged group's labels by priority for stable display order.
+  const points = Array.from(merged.values())
+    .map((g) => {
+      g.labels.sort((a, b) => (priorityIndex[a] ?? 9) - (priorityIndex[b] ?? 9));
+      return g;
+    })
+    .sort((a, b) => a.v - b.v);
+
+  if (points.length < 2) {
+    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
+  }
+
+  const min = points[0].v;
+  const max = points[points.length - 1].v;
+  const span = max - min || 1;
+
+  // 2) Magnetic spacing → vertical stagger fallback.
+  // Compute side (above/below) and an extra tier offset for each label.
+  const MIN_GAP_PCT = 9; // empirically large enough for 5-char "₹1,321"
+  type Slot = { v: number; labels: string[]; x: number; side: "top" | "bottom"; tier: 0 | 1 };
+  const slots: Slot[] = points.map((p, i) => ({
+    v: p.v,
+    labels: p.labels,
+    x: ((p.v - min) / span) * 100,
+    side: i % 2 === 0 ? "top" : "bottom",
+    tier: 0,
+  }));
+  // Walk neighbours within MIN_GAP_PCT and push the second one to the opposite
+  // side. If still colliding on the SAME side as the previous-previous, escalate
+  // to tier 1 (further offset + leader line).
+  for (let i = 1; i < slots.length; i++) {
+    const prev = slots[i - 1];
+    const cur = slots[i];
+    if (Math.abs(cur.x - prev.x) < MIN_GAP_PCT && cur.side === prev.side) {
+      cur.side = prev.side === "top" ? "bottom" : "top";
+    }
+    if (i >= 2) {
+      const prev2 = slots[i - 2];
+      if (cur.side === prev2.side && Math.abs(cur.x - prev2.x) < MIN_GAP_PCT) {
+        cur.tier = 1;
+      }
+    }
+  }
 
   return (
-    <div ref={ref} className="relative my-6 h-16">
+    <div ref={ref} className="relative my-6 h-24 print:h-24">
       <motion.div
         className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
-      {points.map((p, i) => {
-        const x = ((p.v - min) / span) * 100;
-        const flip = i % 2 === 0;
-        const order = priorityIndex[p.label] ?? 9;
+      {slots.map((s, i) => {
+        const primary = s.labels[0];
+        const order = priorityIndex[primary] ?? 9;
         const delay = reduce ? 0 : 0.35 + order * 0.04;
-        const emphasized = highlightLabels.has(p.label);
+        const emphasized = s.labels.some((l) => highlightLabels.has(l));
+        const colorCls = dotColor[primary] ?? "bg-foreground";
+        const labelText = s.labels.join(" / ");
+        const isTop = s.side === "top";
+        // Label vertical offset: tier 0 sits close to the band, tier 1 is pushed
+        // further away with a subtle leader line.
+        const topPx = isTop ? (s.tier === 0 ? -2 : -22) : (s.tier === 0 ? 50 : 70);
+        const showLeader = s.tier === 1;
         return (
           <motion.div
-            key={p.label}
+            key={`${primary}-${i}`}
             className="absolute -translate-x-1/2"
-            style={{ left: `${x}%`, top: 0 }}
+            style={{ left: `${s.x}%`, top: 0 }}
             initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
             animate={inView ? { opacity: 1, y: 0 } : undefined}
             transition={{ duration: duration.fast, ease: ease.entrance, delay }}
           >
             <motion.div
-              className={`mx-auto h-3 w-3 rounded-full ${p.color} ring-2 ring-background`}
-              style={{ marginTop: "26px" }}
+              className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+              style={{ marginTop: "38px" }}
               whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
               transition={{ duration: duration.fast, ease: ease.standard }}
             />
-            <div className={`absolute left-1/2 ${flip ? "-top-1" : "top-12"} -translate-x-1/2 whitespace-nowrap text-center`}>
-              <div className="font-mono text-[10px] uppercase text-muted-foreground">{p.label}</div>
-              <div className="font-display text-xs tabular-nums">{fmtPrice(p.v)}</div>
+            {showLeader && (
+              <div
+                className="absolute left-1/2 w-px bg-border"
+                style={{
+                  top: isTop ? `${topPx + 28}px` : "44px",
+                  height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
+                }}
+                aria-hidden
+              />
+            )}
+            <div
+              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
+              style={{ top: `${topPx}px` }}
+            >
+              <div className="font-mono text-[10px] uppercase text-muted-foreground">{labelText}</div>
+              <div className="font-display text-xs tabular-nums">{fmtPrice(s.v)}</div>
             </div>
           </motion.div>
         );
@@ -374,6 +454,7 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────
 // Main component
