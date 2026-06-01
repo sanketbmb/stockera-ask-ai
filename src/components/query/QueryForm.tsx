@@ -16,12 +16,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServerFn } from "@tanstack/react-start";
 import { generateAiReport } from "@/lib/report.functions";
+import { classifyIntentRouter } from "@/lib/intent-router.functions";
 import { normalizeHorizon } from "@/lib/query-intake-parser";
 import {
   ENABLE_PHASE3_QUERY_TYPES,
+  ENABLE_FREE_TEXT_ROUTER,
   isLiveIntent,
+  isRoutableIntent,
   type AnyIntent,
 } from "@/lib/feature-flags";
+import {
+  type RouterOutput,
+  toFormIntent,
+  routerHorizonToFormHorizon,
+  confidenceBand,
+} from "@/lib/intent-router-schema";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -42,16 +51,22 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; routerOnly?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
   { id: "educational", emoji: "📚", label: "Educational", phase3: true },
   { id: "sector_view", emoji: "🏭", label: "Sector View", phase3: true },
-  { id: "other", emoji: "❓", label: "Other", phase3: true },
+  // "Other" is exposed when the free-text router is live (Phase 3A). It is
+  // a deliberate escape hatch for questions that don't map to a LIVE chip.
+  { id: "other", emoji: "❓", label: "Other", routerOnly: true },
 ];
 
-const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => ENABLE_PHASE3_QUERY_TYPES || !t.phase3);
+const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
+  if (t.phase3) return ENABLE_PHASE3_QUERY_TYPES;
+  if (t.routerOnly) return ENABLE_FREE_TEXT_ROUTER;
+  return true;
+});
 
 
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
