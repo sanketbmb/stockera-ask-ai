@@ -295,7 +295,7 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
   const reduce = useReducedMotion();
   const ref = useRef<SVGSVGElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-  const { text: scoreText } = useCountUp({
+  const { ref: countRef, text: scoreText } = useCountUp({
     value: isMissing ? null : (score as number),
     duration: 800,
     decimals: 0,
