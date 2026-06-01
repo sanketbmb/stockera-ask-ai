@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
-  StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown,
+  StockAnalysisPayload, VerdictAction, QueryType, ScoreBreakdown, AuditMeta,
 } from "@/types/stock-analysis";
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
