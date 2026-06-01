@@ -380,6 +380,10 @@ function ReportContent() {
         symbol={symbol}
         horizon={horizon}
         rawQuestion={rawQuestion}
+        queryType={(data.query_type ?? "fresh_entry") as string}
+        entryPrice={(data.entry_price as number | null) ?? null}
+        qty={(data.qty as number | null) ?? null}
+        customQuestion={(data.custom_question as string | null) ?? null}
       />
     );
   }
