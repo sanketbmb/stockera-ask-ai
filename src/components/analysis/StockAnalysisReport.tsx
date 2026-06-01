@@ -523,7 +523,21 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
 // Main component
 // ─────────────────────────────────────────────────────────────────
 
-export function StockAnalysisReport({ data, printMode = false }: { data: StockAnalysisPayload; printMode?: boolean }) {
+export function StockAnalysisReport({
+  data,
+  printMode = false,
+  topBanner,
+  addendum,
+}: {
+  data: StockAnalysisPayload;
+  printMode?: boolean;
+  // Phase 1 slot props (Mission 1.5). All optional, render contract unchanged
+  // when undefined. `topBanner` mounts above the header strip, `addendum`
+  // mounts between section 14 (trade levels / what to do) and section 15
+  // (behavioral nudge). Both must be PDF-safe — no motion dependence.
+  topBanner?: React.ReactNode;
+  addendum?: React.ReactNode;
+}) {
   const {
     stock, query_context, final_verdict, score_breakdown, price_context,
     levels, returns_snapshot, technical_snapshot, fundamental_snapshot,
