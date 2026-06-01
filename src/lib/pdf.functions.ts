@@ -46,8 +46,8 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 async function signPrintToken(payload: object): Promise<string> {
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!secret) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY for PDF token signing");
+  const secret = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("Missing SB_SERVICE_ROLE_KEY for PDF token signing");
   const json = JSON.stringify(payload);
   const key = await hmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(json));
