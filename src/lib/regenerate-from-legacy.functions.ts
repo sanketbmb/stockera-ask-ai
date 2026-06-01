@@ -6,6 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { meteringFor } from "@/lib/credit-metering";
 
 const Input = z.object({ legacyQueryId: z.string().uuid() });
 
