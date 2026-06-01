@@ -742,7 +742,7 @@ Deno.serve(async (req) => {
         beta: null, volatility_1y: null, sharpe_ratio: null, sortino_ratio: null, max_drawdown: null, var_95: null, liquidity_label: "",
       },
       momentum_snapshot: mom?.snapshot ?? {
-        relative_strength_vs_nifty: null, trend_strength: "", volume_confirmation: "", momentum_label: "",
+        relative_strength_vs_nifty: null, trend_strength: "", volume_confirmation: "NEUTRAL", momentum_label: "",
       },
       sentiment_snapshot: sent?.snapshot ?? {
         news_sentiment_score: null, sentiment_label: "", article_count: 0, top_news_driver: "",
@@ -764,6 +764,10 @@ Deno.serve(async (req) => {
         verdict_model_version: VERDICT_MODEL_VERSION,
         tier_applied: queryType,
         tier_weights: WEIGHT_PRESETS[queryType],
+        // Fix 1 + 2: versioned profile / bucket references.
+        weighting_profile_id: profileIdForTier(queryType),
+        action_bucket_version: ACTIVE_ACTION_BUCKET,
+        action_bucket_thresholds: ACTION_BUCKETS[ACTIVE_ACTION_BUCKET].thresholds,
         tier_guardrails: verdict.guardrailNotes,
         technical_as_of:   tech?.as_of ?? null,
         fundamental_as_of: fund?.as_of ?? null,
@@ -782,6 +786,36 @@ Deno.serve(async (req) => {
         confidence_band: confidence.band,
         modules_invoked: settled.filter((s) => s.trace.ok).map((s) => s.trace.module),
         tier_modules_added_version: "tier_shaped_v1",
+        // Fix 3 + 4: DCF and banking-override audit surface (from normalizer).
+        dcf_status: fund?.dcf_status ?? "DCF_UNAVAILABLE",
+        dcf_method_used: fund?.dcf_method_used ?? "DCF_SKIPPED",
+        banking_override_applied: fund?.banking_override ?? false,
+        banking_override_reason: fund?.banking_override_reason ?? null,
+        // Fix 5: volume_confirmation method (never empty).
+        volume_confirmation: mom?.volume_confirmation ?? "NEUTRAL",
+        volume_confirmation_method: mom?.volume_confirmation_method ?? "volume_ratio_20d_v1",
+        volume_confirmation_reason: mom?.volume_confirmation_reason ?? null,
+        // Step E.0: regression baseline echo (only for the 4 reference cases).
+        regression_baseline: (() => {
+          const b = findBaseline(sym, queryType);
+          return b ? { symbol: b.symbol, tier: b.tier, final_verdict: b.final_verdict, score_breakdown: b.score_breakdown, captured_at: b.captured_at } : null;
+        })(),
+        regression_drift: (() => {
+          const b = findBaseline(sym, queryType);
+          if (!b || !b.final_verdict) return null;
+          const drift: Record<string, unknown> = {};
+          if (b.final_verdict.action !== verdict.action) {
+            drift.action = { baseline: b.final_verdict.action, current: verdict.action };
+          }
+          const scoreDelta = Math.abs((b.final_verdict.overall_score ?? 0) - (verdict.overall_score ?? 0));
+          if (scoreDelta > 1) {
+            drift.overall_score = { baseline: b.final_verdict.overall_score, current: verdict.overall_score, delta: scoreDelta };
+          }
+          if (b.final_verdict.confidence_pct !== confidence.confidence_pct) {
+            drift.confidence_pct = { baseline: b.final_verdict.confidence_pct, current: confidence.confidence_pct };
+          }
+          return Object.keys(drift).length === 0 ? null : drift;
+        })(),
         intraday_microstructure_diagnostic:
           ((imRes.data?.audit_meta as Record<string, unknown> | undefined)
             ?.intraday_microstructure_diagnostic ?? null) as Record<string, unknown> | null,
