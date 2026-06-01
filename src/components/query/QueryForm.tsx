@@ -73,32 +73,21 @@ const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ 
 const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
 const LANG_OPTIONS = ["English", "Hindi", "Other"];
 
-function classifyIntent(text: string): Intent {
+// Phase 3A — the heuristic classifier is retained only as an offline
+// fallback when the router is disabled. When ENABLE_FREE_TEXT_ROUTER is
+// true, classification happens server-side via classifyIntentRouter.
+function heuristicClassify(text: string): Intent {
   const t = text.toLowerCase();
   if (/\b(average|averaging|buy more|double down)\b/.test(t)) return "should_average";
   if (/\b(should i buy|fresh entry|entry point|invest in)\b/.test(t) && !/\b(stuck|loss|holding)\b/.test(t)) return "buy_decision";
   if (/\b(sell|exit|stuck|loss|hold|book profit)\b/.test(t)) return "stuck_position";
-  if (/\b(explain|what is|how does|teach)\b/.test(t)) return "educational";
-  if (/\b(sector|industry|best stocks in)\b/.test(t)) return "sector_view";
   return "other";
-}
-
-function extractFields(text: string): { stock?: string; buyPrice?: number; holding?: string } {
-  const out: { stock?: string; buyPrice?: number; holding?: string } = {};
-  const priceMatch = text.match(/(?:at|@|bought|entry)\s*(?:₹|rs\.?|inr)?\s*(\d{2,6}(?:\.\d{1,2})?)/i);
-  if (priceMatch) out.buyPrice = parseFloat(priceMatch[1]);
-  if (/\byear/i.test(text)) out.holding = "1+ year";
-  else if (/\bmonth/i.test(text)) out.holding = "1-3 months";
-  else if (/\bweek/i.test(text)) out.holding = "1-4 weeks";
-  // Stock name extraction — simple capitalized-words heuristic
-  const stockMatch = text.match(/\b(?:bought|in|stuck in|own|holding)\s+([A-Z][A-Za-z&\s]{2,30}?)(?:\s+at|\s+for|,|\.|$)/);
-  if (stockMatch) out.stock = stockMatch[1].trim();
-  return out;
 }
 
 export function QueryForm() {
   const navigate = useNavigate();
   const runGenerateAiReport = useServerFn(generateAiReport);
+  const runIntentRouter = useServerFn(classifyIntentRouter);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -106,6 +95,10 @@ export function QueryForm() {
   // Step 1
   const [queryText, setQueryText] = useState("");
   const [intent, setIntent] = useState<Intent>("other");
+  const [chipManuallyPicked, setChipManuallyPicked] = useState(false);
+  const [routerMeta, setRouterMeta] = useState<RouterOutput | null>(null);
+  const [routerLoading, setRouterLoading] = useState(false);
+  const [routerNotice, setRouterNotice] = useState<string | null>(null);
   const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; holding?: string }>({});
 
   // Step 2
