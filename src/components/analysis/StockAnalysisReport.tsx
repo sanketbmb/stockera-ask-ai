@@ -981,6 +981,9 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         </motion.section>
 
 
+        {/* ═══ 9–14. LEGACY DEEP-DIVE SECTIONS (gated behind flag; removed in B.3) ═══ */}
+        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
+        <>
         {/* ═══ 9. RETURNS SNAPSHOT ═══ */}
         {report_modules.show_returns_strip && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
