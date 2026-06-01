@@ -322,8 +322,17 @@ export function QueryForm() {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {QUESTION_EXAMPLES.map((q) => (
-                <button key={q} type="button" onClick={() => setQueryText(q)}
-                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs">{q}</button>
+                <button
+                  key={q.text}
+                  type="button"
+                  onClick={() => {
+                    setQueryText(q.text);
+                    if (isLiveIntent(q.intent)) setIntent(q.intent);
+                  }}
+                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
+                >
+                  {q.text}
+                </button>
               ))}
             </div>
           </div>
