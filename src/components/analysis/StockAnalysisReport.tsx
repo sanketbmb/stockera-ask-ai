@@ -87,6 +87,15 @@ const TIER_LABEL: Record<QueryType, string> = {
   "long-term": "Long-term view",
 };
 
+// Plain-English, deterministic methodology copy for each pillar (0–100 scale).
+const PILLAR_METHODOLOGY = {
+  technical:   "RSI, MACD, moving-average stack, ADX, Bollinger position and VWAP signal blended into a single trend/strength reading.",
+  fundamental: "Valuation (PE, DCF upside), profitability (ROE), and quality scores (Piotroski F, Altman Z) combined with a banking-aware override.",
+  risk:        "Beta, 1-year volatility, Sharpe/Sortino ratios, max drawdown, VaR-95 and liquidity classification — higher score means lower realised risk.",
+  momentum:    "1-week / 1-month / 3-month returns, relative strength vs Nifty, moving-average cross status and volume confirmation.",
+  sentiment:   "News-flow sentiment score from recent headlines; null when news is disabled or no coverage is available.",
+} as const;
+
 const SCORE_TONE = (s: number | null | undefined): { color: string; label: string } => {
   if (s == null) return { color: "text-muted-foreground", label: "no data" };
   if (s >= 70) return { color: "text-emerald-700", label: "strong" };
