@@ -180,7 +180,7 @@ export function QueryForm() {
           };
 
       const { data: inserted, error: qErr } = await supabase
-        .from("queries").insert(insertPayload).select("id").single();
+        .from("queries").insert(insertPayload as never).select("id").single();
       if (qErr || !inserted) throw qErr ?? new Error("Failed to create query");
 
       const queryId = inserted.id as string;
