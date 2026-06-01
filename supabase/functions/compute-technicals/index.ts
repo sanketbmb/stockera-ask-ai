@@ -256,6 +256,77 @@ async function fetchCandles(symbol: string, auth: string | null): Promise<Candle
   return candles;
 }
 
+// ────────────────── live LTP resolution ──────────────────
+// Cache (≤60s) → live Dhan → finedge EOD (lastClose). Returns the chosen
+// price plus a source label and an ISO timestamp so the UI can render
+// "Dhan live · 14:32 IST" vs "finedge EOD · 31 May".
+interface LtpResolution { price: number; source: string; timestamp: string }
+
+async function resolveLtp(symbol: string, eodClose: number, eodDate: string): Promise<LtpResolution> {
+  const eodIso = (() => {
+    // eodDate is YYYY-MM-DD from finedge; mark it as end-of-session in IST.
+    try { return new Date(`${eodDate}T15:30:00+05:30`).toISOString(); }
+    catch { return new Date().toISOString(); }
+  })();
+  const eodFallback: LtpResolution = { price: eodClose, source: "finedge_eod", timestamp: eodIso };
+
+  // 1) Cache lookup (≤60s)
+  try {
+    const cacheRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/ltp_cache?symbol=eq.${encodeURIComponent(symbol)}&select=ltp,fetched_at,source`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } },
+    );
+    if (cacheRes.ok) {
+      const rows = await cacheRes.json() as Array<{ ltp: number; fetched_at: string; source: string }>;
+      const row = rows?.[0];
+      if (row && Number.isFinite(Number(row.ltp))) {
+        const ageMs = Date.now() - new Date(row.fetched_at).getTime();
+        if (ageMs <= 60_000) {
+          return { price: Number(row.ltp), source: `${row.source}_cache`, timestamp: row.fetched_at };
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // 2) Live Dhan
+  try {
+    const masterRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/stock_master?symbol=eq.${encodeURIComponent(symbol)}&select=dhan_security_id,segment`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } },
+    );
+    if (masterRes.ok) {
+      const masters = await masterRes.json() as Array<{ dhan_security_id: string; segment: string | null }>;
+      const m = masters?.[0];
+      if (m?.dhan_security_id) {
+        const seg = m.segment === "BSE_EQ" ? "BSE_EQ" : "NSE_EQ";
+        const dRes = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+          body: JSON.stringify({ endpoint: "ltp", securityId: m.dhan_security_id, exchangeSegment: seg }),
+        });
+        const dTxt = await dRes.text();
+        let dBody: Record<string, unknown> = {};
+        try { dBody = dTxt ? JSON.parse(dTxt) : {}; } catch { /* */ }
+        if (dRes.ok && dBody.success === true) {
+          const data = dBody.data as Record<string, unknown> | undefined;
+          const inner = data?.data as Record<string, unknown> | undefined;
+          const segNode = inner?.[seg] as Record<string, unknown> | undefined;
+          const node = segNode?.[m.dhan_security_id] as Record<string, unknown> | undefined;
+          const ltpRaw = node?.last_price ?? node?.ltp ?? node?.lastPrice;
+          const ltp = typeof ltpRaw === "number" ? ltpRaw : Number(ltpRaw);
+          if (Number.isFinite(ltp) && ltp > 0) {
+            return { price: ltp, source: "dhan_live", timestamp: new Date().toISOString() };
+          }
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // 3) EOD close
+  return eodFallback;
+}
+
+
 // ────────────────── main handler ──────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
