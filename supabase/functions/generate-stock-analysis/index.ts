@@ -314,11 +314,21 @@ function normalizeMomentum(d: Record<string, unknown> | null) {
   else if (pctAbove50 != null && pctAbove50 > 5) trendStrength = "UP";
   else if (pctAbove50 != null && pctAbove50 < -5) trendStrength = "DOWN";
 
+  // Fix 5: volume_confirmation is computed upstream in compute-momentum.
+  // Fallback to "NEUTRAL" when missing; never emit empty string.
+  const vol = (d.volume_signal ?? {}) as Record<string, unknown>;
+  const volConfRaw = typeof vol.label === "string" && vol.label.length > 0
+    ? vol.label
+    : "NEUTRAL";
+  const volConfMethod = typeof vol.method === "string" && vol.method.length > 0
+    ? vol.method
+    : "volume_ratio_20d_v1";
+
   return {
     snapshot: {
       relative_strength_vs_nifty: r2(rs["3m"]),
       trend_strength: trendStrength,
-      volume_confirmation: "",
+      volume_confirmation: volConfRaw,
       momentum_label: String(d.classification ?? ""),
     },
     returns: {
@@ -331,6 +341,9 @@ function normalizeMomentum(d: Record<string, unknown> | null) {
     },
     score: num(d.momentum_score),
     as_of: String(d.as_of_date ?? ((d.metadata ?? {}) as Record<string, unknown>).computed_at ?? ""),
+    volume_confirmation: volConfRaw,
+    volume_confirmation_method: volConfMethod,
+    volume_confirmation_reason: typeof vol.reason === "string" ? vol.reason : null,
   };
 }
 
