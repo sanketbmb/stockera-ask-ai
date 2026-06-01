@@ -233,7 +233,7 @@ export const generateAnalysisPdf = createServerFn({ method: "POST" })
     let pdfBytes: ArrayBuffer;
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS);
+      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
       const browserlessRes = await fetch(
         `https://chrome.browserless.io/pdf?token=${encodeURIComponent(browserlessToken)}`,
         {
@@ -403,7 +403,7 @@ export const generateArchitecturePdf = createServerFn({ method: "POST" })
     let pdfBytes: ArrayBuffer;
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS);
+      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
       const res = await fetch(
         `https://chrome.browserless.io/pdf?token=${encodeURIComponent(browserlessToken)}`,
         {
@@ -520,7 +520,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
     let pdfBytes: ArrayBuffer;
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS);
+      const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
       const res = await fetch(
         `https://chrome.browserless.io/pdf?token=${encodeURIComponent(browserlessToken)}`,
         {
