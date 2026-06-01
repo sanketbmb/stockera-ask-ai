@@ -69,9 +69,11 @@ Deno.serve(async (req) => {
   const nullReasons = diagnostic.null_reasons as Record<string, string>;
 
   // ── 1. Fundamentals + supporting raw FinEdge calls ──
-  const [fundR, shareR] = await Promise.all([
+  const [fundR, shareR, ratiosR, profileR] = await Promise.all([
     callFn("compute-fundamentals", { symbol }),
     callFn("finedge-fetch", { endpoint: "shareholdings/ownership-history", symbol }),
+    callFn("finedge-fetch", { endpoint: "ratios", symbol, params: { statement_type: "c", ratio_type: "pr" } }),
+    callFn("finedge-fetch", { endpoint: "company-profile", symbol }),
   ]);
 
   if (!fundR) nullReasons.compute_fundamentals = "module_failed_or_insufficient_history";
@@ -83,16 +85,33 @@ Deno.serve(async (req) => {
   const company = (fundR?.company         ?? {}) as Record<string, unknown>;
 
   // 5y proxies — compute-fundamentals exposes 3y avg ROE; treat as 5y proxy.
-  const roe_5y_avg  = r2(prof.roe_3yr_avg ?? prof.roe_latest);
-  const roce_5y_avg = r2(prof.roce);
-  const debt_to_equity_current = r2(health.debt_equity);
+  let roe_5y_avg  = r2(prof.roe_3yr_avg ?? prof.roe_latest);
+  let roce_5y_avg = r2(prof.roce);
+  let debt_to_equity_current = r2(health.debt_equity);
   const piotroski_f_score = num(qual.piotroski_f_score);
   const eps_cagr_5y = r2(growth.profit_cagr_5y);
+
+  // Direct FinEdge `ratios` fallback when compute-fundamentals failed
+  // (e.g. INSUFFICIENT_HISTORY for newly-listed names like BANDHANBNK).
+  if (roe_5y_avg == null || roce_5y_avg == null || debt_to_equity_current == null) {
+    try {
+      const inner = ((ratiosR?.data as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+      const rows = (inner.ratios ?? []) as Array<Record<string, unknown>>;
+      if (Array.isArray(rows) && rows.length > 0) {
+        const last = rows[rows.length - 1];
+        const pickPct = (k: string) => { const v = num(last[k]); return v != null ? r2(v * 100) : null; };
+        if (roe_5y_avg == null)  roe_5y_avg  = pickPct("returnOnEquity");
+        if (roce_5y_avg == null) roce_5y_avg = pickPct("returnOnCapitalEmployed") ?? pickPct("roce");
+        if (debt_to_equity_current == null) debt_to_equity_current = r2(num(last.debtEquityRatio ?? last.debtToEquity));
+      }
+    } catch { /* swallow */ }
+  }
 
   if (roe_5y_avg == null)  nullReasons.roe_5y_avg = "fundamentals_missing_roe";
   if (roce_5y_avg == null) nullReasons.roce_5y_avg = "fundamentals_missing_roce";
   if (debt_to_equity_current == null) nullReasons.debt_to_equity_current = "fundamentals_missing_de";
   if (piotroski_f_score == null) nullReasons.piotroski_f_score = "fundamentals_missing_piotroski";
+
 
   // FCF yield ≈ DCF-input fcf0 not exposed directly; derive from market cap & dcf intrinsic if possible.
   // Conservative: leave null unless we have a clear basis.
