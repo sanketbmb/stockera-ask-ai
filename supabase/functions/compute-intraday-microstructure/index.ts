@@ -98,24 +98,26 @@ Deno.serve(async (req) => {
     const dq = await callFn("finedge-fetch", { endpoint: "daily-quotes", symbol });
     const d = (dq?.data as Record<string, unknown> | undefined) ?? {};
     const inner = (d.data ?? d) as Record<string, unknown>;
-    const rows = (inner.quotes ?? inner.dailyQuotes ?? inner.daily_quotes ?? []) as Array<Record<string, unknown>>;
+    const rows = (inner.price ?? inner.quotes ?? inner.data ?? []) as Array<Record<string, unknown>>;
     if (Array.isArray(rows) && rows.length >= 2) {
-      const sorted = [...rows].sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")));
+      const sorted = [...rows].sort((a, b) =>
+        String(a.quote_date ?? a.date ?? "").localeCompare(String(b.quote_date ?? b.date ?? "")),
+      );
       const N = sorted.length;
       const last = sorted[N - 1];
       const prev = sorted[N - 2];
 
-      session_high = r2(last.high ?? last.High);
-      session_low  = r2(last.low  ?? last.Low);
-      const lastClose = num(last.close ?? last.Close);
-      const lastOpen  = num(last.open  ?? last.Open);
-      const lastVol   = num(last.volume ?? last.Volume);
-      const prevClose = num(prev.close ?? prev.Close);
+      session_high = r2(last.high_price ?? last.high);
+      session_low  = r2(last.low_price  ?? last.low);
+      const lastClose = num(last.close_price ?? last.close);
+      const lastOpen  = num(last.open_price  ?? last.open);
+      const lastVol   = num(last.volume);
+      const prevClose = num(prev.close_price ?? prev.close);
 
       // ATR-14 (Wilder's true range mean over last 14 bars)
-      const highs  = sorted.map((r) => num(r.high  ?? r.High));
-      const lows   = sorted.map((r) => num(r.low   ?? r.Low));
-      const closes = sorted.map((r) => num(r.close ?? r.Close));
+      const highs  = sorted.map((r) => num(r.high_price  ?? r.high));
+      const lows   = sorted.map((r) => num(r.low_price   ?? r.low));
+      const closes = sorted.map((r) => num(r.close_price ?? r.close));
       if (N >= 15) {
         const trs: number[] = [];
         for (let i = N - 14; i < N; i++) {
