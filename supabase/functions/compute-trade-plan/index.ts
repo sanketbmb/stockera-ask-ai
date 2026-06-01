@@ -592,6 +592,16 @@ Deno.serve(async (req) => {
         peRatio = finite(val.pe);
         if (peRatio != null && peRatio > 0 && spot > 0) trailingEps = spot / peRatio;
       }
+      // Fallback: fetch company-profile directly when fundamentals failed
+      // (e.g. INSUFFICIENT_HISTORY for newly-listed names). The sector string
+      // alone is enough to drive sector-multiple targets.
+      if (!sectorName) {
+        const profRes = await callJSON("finedge-fetch", { endpoint: "company-profile", symbol });
+        const inner = (profRes?.data ?? {}) as Record<string, unknown>;
+        const s = (inner.sector as string | null) ?? (inner.sub_industry as string | null) ?? (inner.industry as string | null) ?? null;
+        if (s) sectorName = s;
+      }
+
 
       const sectorAgg = await fetchSectorAggregate(sectorName);
       const sectorMissing = sectorAgg == null
