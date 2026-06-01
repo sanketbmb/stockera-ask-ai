@@ -1046,6 +1046,7 @@ function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
 }
 
 function LevelCell({ label, value, tone, reason }: { label: string; value: number | null; tone?: string; reason?: string }) {
+  const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
       variants={innerStaggerItem}
@@ -1054,11 +1055,19 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
       className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 transition-colors hover:border-accent/50"
     >
       <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</p>
-      {value == null ? (
+      {value == null && copy ? (
         <Tooltip>
-          <TooltipTrigger asChild><p className="font-display text-lg cursor-help text-muted-foreground">{DASH}</p></TooltipTrigger>
+          <TooltipTrigger asChild>
+            <p className="flex cursor-help items-center gap-1 font-display text-lg text-muted-foreground decoration-dotted underline-offset-4 hover:underline">
+              {DASH}
+              <Info className="h-3 w-3 opacity-60" aria-hidden />
+            </p>
+          </TooltipTrigger>
           <TooltipContent className="max-w-xs text-xs">
-            {reason ? `Omitted — ${reason}` : "Level not derivable from current data window."}
+            <p className="leading-snug">{copy.friendly}</p>
+            <p className="mt-1.5 border-t border-border/40 pt-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              Why? <span className="normal-case text-foreground/70">{copy.raw}</span>
+            </p>
           </TooltipContent>
         </Tooltip>
       ) : (
@@ -1067,6 +1076,7 @@ function LevelCell({ label, value, tone, reason }: { label: string; value: numbe
     </motion.div>
   );
 }
+
 
 function ActionPanel({ action, mode, tier, levels }: {
   action: VerdictAction; mode: "holding" | "fresh" | "exploring"; tier: QueryType; levels: StockAnalysisPayload["levels"];
