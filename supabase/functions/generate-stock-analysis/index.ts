@@ -697,6 +697,10 @@ Deno.serve(async (req) => {
       sentiment_snapshot: sent?.snapshot ?? {
         news_sentiment_score: null, sentiment_label: "", article_count: 0, top_news_driver: "",
       },
+      intraday_microstructure_snapshot:
+        (imRes.data?.intraday_microstructure_snapshot as Record<string, unknown> | undefined) ?? null,
+      long_term_quality_snapshot:
+        (lqRes.data?.long_term_quality_snapshot as Record<string, unknown> | undefined) ?? null,
       flags,
       report_modules: {
         show_score_ring: true,
