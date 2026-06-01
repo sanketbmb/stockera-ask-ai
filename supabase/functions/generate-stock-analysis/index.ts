@@ -331,18 +331,18 @@ function normalizeSentiment(d: Record<string, unknown> | null) {
 }
 
 // ─── Verdict logic ───
-const WEIGHT_PRESETS: Record<QueryType, { technical: number; fundamental: number; risk: number; momentum: number; sentiment: number }> = {
-  "intraday":    { technical: 0.45, fundamental: 0.00, risk: 0.20, momentum: 0.30, sentiment: 0.05 },
-  "medium-term": { technical: 0.25, fundamental: 0.25, risk: 0.20, momentum: 0.20, sentiment: 0.10 },
-  "long-term":   { technical: 0.15, fundamental: 0.40, risk: 0.20, momentum: 0.15, sentiment: 0.10 },
+// ─── Verdict logic ───
+// Weights live in _shared/weighting-profiles.ts (frozen as *_v1).
+// Action buckets live in _shared/action-buckets.ts (frozen as bucket_v1).
+// Helpers below preserve the legacy call sites without changing values.
+const WEIGHT_PRESETS: Record<QueryType, PillarWeights> = {
+  "intraday":    WEIGHTING_PROFILES.intraday_v1.weights,
+  "medium-term": WEIGHTING_PROFILES.medium_v1.weights,
+  "long-term":   WEIGHTING_PROFILES.long_v1.weights,
 };
 
 function actionFromScore(s: number): Action {
-  if (s >= 75) return "BUY";
-  if (s >= 60) return "HOLD";
-  if (s >= 45) return "WATCHLIST";
-  if (s >= 30) return "SELL";
-  return "AVOID";
+  return actionFromScoreShared(s, ACTIVE_ACTION_BUCKET);
 }
 function demote(a: Action, steps = 1): Action {
   const order: Action[] = ["AVOID", "SELL", "WATCHLIST", "HOLD", "BUY"];
