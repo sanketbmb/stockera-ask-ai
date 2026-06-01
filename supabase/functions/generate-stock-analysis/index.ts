@@ -579,6 +579,9 @@ Deno.serve(async (req) => {
     const { sector, industry } = await fetchSectorIndustry(sym, auth);
 
     // 2. Fan-out to all modules in parallel
+    const skipTrace = (module: string, code: string): ModuleTrace => ({
+      module, ok: false, http_status: null, latency_ms: 0, error: code, code,
+    });
     const moduleCalls: Promise<{ trace: ModuleTrace; data: Record<string, unknown> | null }>[] = [
       callModule("compute-technicals",   { symbol: sym }, auth),
       callModule("compute-fundamentals", { symbol: sym }, auth),
@@ -586,19 +589,19 @@ Deno.serve(async (req) => {
       callModule("compute-momentum",     { symbol: sym, sector }, auth),
       includeNews
         ? callModule("compute-sentiment", { symbol: sym }, auth)
-        : Promise.resolve({
-            trace: { module: "compute-sentiment", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_BY_REQUEST", code: "SKIPPED" } as ModuleTrace,
-            data: null,
-          }),
+        : Promise.resolve({ trace: skipTrace("compute-sentiment", "SKIPPED_BY_REQUEST"), data: null }),
       TRADE_PLAN_SOURCE === "new"
         ? callModule("compute-trade-plan", { symbol: sym, query_type: queryType }, auth)
-        : Promise.resolve({
-            trace: { module: "compute-trade-plan", ok: false, http_status: null, latency_ms: 0, error: "SKIPPED_FLAG_LEGACY", code: "SKIPPED" } as ModuleTrace,
-            data: null,
-          }),
+        : Promise.resolve({ trace: skipTrace("compute-trade-plan", "SKIPPED_FLAG_LEGACY"), data: null }),
+      queryType === "intraday"
+        ? callModule("compute-intraday-microstructure", { symbol: sym }, auth)
+        : Promise.resolve({ trace: skipTrace("compute-intraday-microstructure", "SKIPPED_TIER"), data: null }),
+      queryType === "long-term"
+        ? callModule("compute-long-term-quality", { symbol: sym, sector }, auth)
+        : Promise.resolve({ trace: skipTrace("compute-long-term-quality", "SKIPPED_TIER"), data: null }),
     ];
     const settled = await Promise.all(moduleCalls);
-    const [tRes, fRes, rRes, mRes, sRes, tpRes] = settled;
+    const [tRes, fRes, rRes, mRes, sRes, tpRes, imRes, lqRes] = settled;
 
     // 3. Normalize
     const tech = normalizeTechnical(tRes.data);
