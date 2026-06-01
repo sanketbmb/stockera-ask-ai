@@ -1103,6 +1103,10 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
             </div>
           )}
         </motion.section>
+        </>
+        )}
+
+
 
         {/* ═══ 15. BEHAVIORAL FINANCE ALERT ═══ */}
         {nudge && (
