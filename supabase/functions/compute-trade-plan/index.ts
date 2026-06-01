@@ -10,6 +10,7 @@
 // Validation always runs. Any rule failure → that level is null and a reason
 // is appended to `validation`. Compute errors → null with explicit reason
 // (never silently substitute defaults).
+import { resolveSectorCanonical } from "../_shared/sector-aliases.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -419,22 +420,40 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
 }
 
 
-function longTermPlan(spot: number, dma200: number, w52H: number, w52L: number, t1: number | null, t2: number | null): Levels {
-  const slPct = spot * 0.85;
-  const sl = (Number.isFinite(dma200) && dma200 < spot)
-    ? Math.max(slPct, dma200 * 0.92)
-    : slPct;
+type SlMethod = "vol_adaptive" | "dma200_anchor" | "max_distance_cap" | "min_distance_floor";
+
+function longTermPlanWithSl(spot: number, dma200: number, w52H: number, w52L: number, annVolPct: number | null, t1: number | null, t2: number | null): { levels: Levels; slMethod: SlMethod } {
+  // Adaptive long-term SL — bounded by [10%, 20%] from spot.
+  const volFrac = annVolPct != null && Number.isFinite(annVolPct) ? annVolPct / 100 : 0.20;
+  const volFactor = Math.max(0.10, Math.min(0.20, 1.5 * volFrac));
+  const slVol = spot * (1 - volFactor);
+  const slDma = Number.isFinite(dma200) && dma200 < spot ? dma200 * 0.92 : -Infinity;
+  let sl = Math.max(slVol, slDma); // pick the tighter (higher) anchor
+  let slMethod: SlMethod = slDma > slVol ? "dma200_anchor" : "vol_adaptive";
+
+  // Hard cap: SL cannot be more than 20% from spot (floor on price)
+  const maxDistance = spot * 0.80;
+  if (sl < maxDistance) { sl = maxDistance; slMethod = "max_distance_cap"; }
+
+  // Tightness floor: for low-vol stocks, never tighter than 10% from spot
+  const minDistance = spot * 0.90;
+  if (sl > minDistance) { sl = minDistance; slMethod = "min_distance_floor"; }
+
   return {
-    entry_zone: spot,
-    stop_loss: sl,
-    target_1: t1,
-    target_2: t2,
-    support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
-    support_2: w52L < spot ? w52L : null,
-    resistance_1: w52H > spot ? w52H : null,
-    resistance_2: null,
+    levels: {
+      entry_zone: spot,
+      stop_loss: sl,
+      target_1: t1,
+      target_2: t2,
+      support_1: Number.isFinite(dma200) && dma200 < spot ? dma200 : null,
+      support_2: w52L < spot ? w52L : null,
+      resistance_1: w52H > spot ? w52H : null,
+      resistance_2: null,
+    },
+    slMethod,
   };
 }
+
 
 async function fetchSectorAggregate(sector: string | null): Promise<{ name: string; pe_median: number; return_12m_median_pct: number | null } | null> {
   const tryNames = [sector, "__default__"].filter(Boolean) as string[];
