@@ -550,11 +550,12 @@ Deno.serve(async (req) => {
         summary_reason: summaryReason(scores, queryType),
       },
       score_breakdown: {
-        technical_score:   scores.technical   ?? 0,
-        fundamental_score: scores.fundamental ?? 0,
-        risk_score:        scores.risk        ?? 0,
-        momentum_score:    scores.momentum    ?? 0,
-        sentiment_score:   scores.sentiment   ?? 0,
+        // Preserve null so the UI can render "—" instead of fabricating a 0.
+        technical_score:   scores.technical,
+        fundamental_score: scores.fundamental,
+        risk_score:        scores.risk,
+        momentum_score:    scores.momentum,
+        sentiment_score:   scores.sentiment,
       },
       price_context: tech?.price ?? { current_price: null, price_source: "", as_of: "" },
       levels: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
