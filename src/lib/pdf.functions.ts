@@ -80,8 +80,10 @@ function todayIST(): string {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" });
   return fmt.format(new Date());
 }
+// Bump when the print template layout changes — invalidates stale cached PDFs.
+const ANALYSIS_PDF_TEMPLATE_VERSION = "v2";
 function cacheKeyFor(symbol: string, horizon: QueryType, includeNews: boolean): string {
-  return `${symbol}_${horizon}_n${includeNews ? 1 : 0}_${todayIST()}`;
+  return `${symbol}_${horizon}_n${includeNews ? 1 : 0}_${ANALYSIS_PDF_TEMPLATE_VERSION}_${todayIST()}`;
 }
 // Browserless runs on the public internet, so the print URL must be a
 // publicly-reachable origin. In preview/dev the incoming request host is

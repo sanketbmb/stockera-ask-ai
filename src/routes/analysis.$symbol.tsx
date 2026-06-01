@@ -1,8 +1,8 @@
-import { createFileRoute, useParams, useSearch, Link } from "@tanstack/react-router";
+import { createFileRoute, useParams, useSearch, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, LogIn } from "lucide-react";
 import { z } from "zod";
 import { Navbar } from "@/components/layout/Navbar";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { supabase } from "@/integrations/supabase/client";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
@@ -119,9 +120,36 @@ function DownloadPdfButton({
   symbol, horizon, includeNews, disabled,
 }: { symbol: string; horizon: QueryType; includeNews: boolean; disabled?: boolean }) {
   const generate = useServerFn(generateAnalysisPdf);
+  const { user, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+
+  if (!authLoading && !user) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          toast.info("Sign in to download the PDF report");
+          navigate({ to: "/login" });
+        }}
+        className="gap-1.5"
+      >
+        <LogIn className="h-3.5 w-3.5" />
+        <span className="text-xs">Sign in to download</span>
+      </Button>
+    );
+  }
+
   const handleClick = async () => {
     if (busy || disabled) return;
+    // Defensive: re-check session right before calling the protected server fn
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      toast.error("Your session expired. Please sign in again.");
+      navigate({ to: "/login" });
+      return;
+    }
     setBusy(true);
     const t = toast.loading("Preparing PDF…");
     try {
@@ -129,13 +157,17 @@ function DownloadPdfButton({
       window.open(res.url, "_blank", "noopener,noreferrer");
       toast.success(res.cache_hit ? "Loaded cached PDF" : "PDF ready", { id: t });
     } catch (err) {
-      toast.error((err as Error).message || "Could not generate PDF", { id: t });
+      const msg = (err as Error).message || "Could not generate PDF";
+      const friendly = /unauthorized/i.test(msg)
+        ? "Please sign in again to download the PDF."
+        : msg;
+      toast.error(friendly, { id: t });
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || disabled} className="gap-1.5">
+    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || disabled || authLoading} className="gap-1.5">
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
       <span className="text-xs">{busy ? "Generating…" : "Download PDF"}</span>
     </Button>
