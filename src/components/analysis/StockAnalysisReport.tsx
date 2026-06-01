@@ -1299,8 +1299,15 @@ const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
   dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
   sector_multiple:     { short: "Sector-multiple fair value", long: "Trailing EPS multiplied by the peer-group median P/E for the company's sector." },
   historical_multiple: { short: "Historical multiple",     long: "Trailing EPS multiplied by the stock's own 5-year average P/E." },
-  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to a 6–18% sector-aware band)." },
+  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to an 18–24% sector-aware band)." },
   none:                { short: "No method available",     long: "Every fallback in the hierarchy failed; target omitted." },
+};
+
+const SL_METHOD_COPY: Record<string, string> = {
+  vol_adaptive: "Tightened to match this stock's volatility",
+  dma200_anchor: "Anchored 8% below the 200-day moving average",
+  max_distance_cap: "Capped at 20% from spot (max long-term loss tolerance)",
+  min_distance_floor: "Floored at 10% from spot (avoids noise stops)",
 };
 
 function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string }) {
