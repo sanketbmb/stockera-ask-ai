@@ -640,7 +640,7 @@ Deno.serve(async (req) => {
       };
     }
 
-    }
+
 
     // ── 3. Per-tier raw plan ──
     let raw: Levels;
