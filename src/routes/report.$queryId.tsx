@@ -1,5 +1,6 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { Navbar } from "@/components/layout/Navbar";
@@ -7,8 +8,19 @@ import { Logo } from "@/components/common/Logo";
 import { Progress } from "@/components/ui/progress";
 import { AIReportCardV2, type AIReportV2, type ReportMetaV2 } from "@/components/report/AIReportCardV2";
 import { ExpertAnswerSection } from "@/components/report/ExpertAnswerSection";
+import { HybridRegenerateBanner } from "@/components/report/HybridRegenerateBanner";
+import { ReflectiveBanner } from "@/components/report/ReflectiveBanner";
+import { FreshEntryAddendum } from "@/components/report/FreshEntryAddendum";
+import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Download, Loader2, LogIn } from "lucide-react";
+import { toast } from "sonner";
+import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import { buildInterpretation } from "@/lib/query-intake-parser";
+import { generateAnalysisPdf } from "@/lib/pdf.functions";
+import { useAuth } from "@/contexts/AuthContext";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -39,6 +51,170 @@ function LoadingScreen() {
   );
 }
 
+// ──────────────── Tier-shaped (v1) renderer ────────────────
+
+function TierShapedReportContent({
+  queryId, symbol, horizon, rawQuestion,
+}: {
+  queryId: string;
+  symbol: string;
+  horizon: QueryType;
+  rawQuestion: string;
+}) {
+  const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
+    queryKey: ["stock-analysis", "v2", "report", queryId, symbol, horizon],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("generate-stock-analysis", {
+        body: { symbol, query_type: horizon, include_news: true },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
+      return data as StockAnalysisPayload;
+    },
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return <LoadingScreen />;
+  if (error || !data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
+          <p className="font-display text-2xl">Couldn't load this report</p>
+          <p className="text-muted-foreground mt-2 text-sm">{(error as Error)?.message ?? "Unknown error"}</p>
+          <Button className="mt-4" onClick={() => refetch()}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const interpretation = buildInterpretation({ rawQuestion, symbol, horizonTier: horizon });
+  const validationReasons: Partial<Record<keyof typeof data.levels, string>> = {};
+  for (const o of data.audit_meta.trade_plan_validation ?? []) {
+    if (!validationReasons[o.level]) validationReasons[o.level] = o.reason;
+  }
+
+  return (
+    <div className="min-h-screen bg-mesh">
+      <Navbar />
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Tier-shaped report · {horizon.replace("-", " ")}
+        </span>
+        <div className="ml-auto">
+          <DownloadPdfButton symbol={symbol} horizon={horizon} />
+        </div>
+      </div>
+      <StockAnalysisReport
+        data={data}
+        topBanner={<div className="mx-auto w-full max-w-5xl px-4 pt-6 md:px-6"><ReflectiveBanner interpretation={interpretation} /></div>}
+        addendum={<FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />}
+      />
+      <main className="px-4 sm:px-6 lg:px-8 pb-12">
+        <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={new Date().toISOString()} />
+      </main>
+    </div>
+  );
+}
+
+function DownloadPdfButton({ symbol, horizon }: { symbol: string; horizon: QueryType }) {
+  const generate = useServerFn(generateAnalysisPdf);
+  const { user, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  if (!authLoading && !user) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => navigate({ to: "/login" })} className="gap-1.5">
+        <LogIn className="h-3.5 w-3.5" /><span className="text-xs">Sign in to download</span>
+      </Button>
+    );
+  }
+
+  const handleClick = async () => {
+    if (busy) return;
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      toast.error("Your session expired. Please sign in again.");
+      navigate({ to: "/login" });
+      return;
+    }
+    setBusy(true);
+    const t = toast.loading("Preparing PDF…");
+    try {
+      const res = await generate({ data: { symbol, horizon, include_news: true } });
+      window.open(res.url, "_blank", "noopener,noreferrer");
+      toast.success(res.cache_hit ? "Loaded cached PDF" : "PDF ready", { id: t });
+    } catch (err) {
+      toast.error((err as Error).message || "Could not generate PDF", { id: t });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || authLoading} className="gap-1.5">
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      <span className="text-xs">{busy ? "Generating…" : "Download PDF"}</span>
+    </Button>
+  );
+}
+
+// ──────────────── Legacy renderer ────────────────
+
+function LegacyReportContent({
+  data,
+}: { data: Record<string, unknown> & { id: string; ai_report: Record<string, unknown> | null } }) {
+  const meta: ReportMetaV2 = {
+    id: data.id,
+    createdAt: data.created_at as string,
+    stockName: data.stock_name as string,
+    stockSymbol: (data.stock_symbol as string | null) ?? null,
+    buyPrice: data.buy_price as number | null,
+    currentPrice: data.current_price as number | null,
+    analystName: (data as { analyst?: { display_name: string } | null }).analyst?.display_name ?? null,
+    analystSebi: (data as { analyst?: { sebi_reg_number: string } | null }).analyst?.sebi_reg_number ?? null,
+    analystAvatar: (data as { analyst?: { avatar_url: string | null } | null }).analyst?.avatar_url ?? null,
+  };
+
+  const rawReport = (data.ai_report ?? {}) as Record<string, unknown>;
+  const LEGACY_KEYS = [
+    "verdict", "verdictColor", "tagline", "target1", "target2", "stopLoss", "stop_loss",
+    "supportZone", "resistanceZone", "support_zone", "resistance_zone",
+    "averagingZone", "freshEntryZone", "freshEntryTrigger", "ifHoldingAction",
+    "ifAveragingRecommended", "closingInsight", "expertQuote", "pnlContext",
+    "confidence", "riskScore", "rewardPotential", "momentum", "trend",
+    "fundamentalPoints", "technicalPoints", "whatCanGoWrong", "behavioralReminder",
+    "fundamentals", "technical", "risk", "timeHorizon",
+  ];
+  const isLegacy = LEGACY_KEYS.some((k) => k in rawReport);
+  const safeReport: Record<string, unknown> = { ...rawReport };
+  for (const k of LEGACY_KEYS) delete safeReport[k];
+
+  return (
+    <div className="min-h-screen bg-mesh">
+      <Navbar />
+      <main className="px-4 sm:px-6 lg:px-8 py-8 print:py-0">
+        <HybridRegenerateBanner legacyQueryId={data.id} />
+        {isLegacy && (
+          <div className="mx-auto max-w-4xl mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <strong>Legacy report:</strong> this query was generated by an older AI pipeline that included
+            target / stop-loss / verdict fields. Those fields have been retired for SEBI compliance and are
+            hidden. Use Regenerate Free above to get the new tier-shaped report.
+          </div>
+        )}
+        <AIReportCardV2 report={safeReport as unknown as AIReportV2} meta={meta} />
+        <ExpertAnswerSection
+          queryId={data.id}
+          assignedAnalystId={(data as { assigned_analyst_id?: string | null }).assigned_analyst_id ?? null}
+          queryCreatedAt={data.created_at as string}
+        />
+      </main>
+    </div>
+  );
+}
+
+// ──────────────── Route dispatcher ────────────────
+
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
   const { data, isLoading, error } = useQuery({
@@ -46,7 +222,7 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text")
         .eq("id", queryId)
         .single();
       if (error) throw error;
@@ -61,10 +237,17 @@ function ReportContent() {
       }
       return { ...data, analyst };
     },
-    refetchInterval: (q) => (q.state.data?.ai_report ? false : 1500),
+    // For v1 records, the row is created instantly with status="ai_answered" — no need to poll.
+    // For legacy records, the legacy generator may still be working; keep polling until ai_report lands.
+    refetchInterval: (q) => {
+      const d = q.state.data as { engine_version?: string | null; ai_report?: unknown } | undefined;
+      if (!d) return 1500;
+      if (d.engine_version === "v1_tier_shaped") return false;
+      return d.ai_report ? false : 1500;
+    },
   });
 
-  if (isLoading || !data || !data.ai_report) return <LoadingScreen />;
+  if (isLoading || !data) return <LoadingScreen />;
 
   if (error) {
     return (
@@ -78,52 +261,38 @@ function ReportContent() {
     );
   }
 
-  const meta: ReportMetaV2 = {
-    id: data.id as string,
-    createdAt: data.created_at as string,
-    stockName: data.stock_name as string,
-    stockSymbol: (data.stock_symbol as string | null) ?? null,
-    buyPrice: data.buy_price as number | null,
-    currentPrice: data.current_price as number | null,
-    analystName: data.analyst?.display_name ?? null,
-    analystSebi: data.analyst?.sebi_reg_number ?? null,
-    analystAvatar: data.analyst?.avatar_url ?? null,
-  };
-
-  const rawReport = data.ai_report as Record<string, unknown>;
-  const LEGACY_KEYS = [
-    "verdict", "verdictColor", "tagline", "target1", "target2", "stopLoss", "stop_loss",
-    "supportZone", "resistanceZone", "support_zone", "resistance_zone",
-    "averagingZone", "freshEntryZone", "freshEntryTrigger", "ifHoldingAction",
-    "ifAveragingRecommended", "closingInsight", "expertQuote", "pnlContext",
-    "confidence", "riskScore", "rewardPotential", "momentum", "trend",
-    "fundamentalPoints", "technicalPoints", "whatCanGoWrong", "behavioralReminder",
-    "fundamentals", "technical", "risk", "timeHorizon",
-  ];
-  const isLegacy = LEGACY_KEYS.some((k) => k in (rawReport ?? {}));
-  const safeReport: Record<string, unknown> = { ...rawReport };
-  for (const k of LEGACY_KEYS) delete safeReport[k];
-
-  return (
-    <div className="min-h-screen bg-mesh">
-      <Navbar />
-      <main className="px-4 sm:px-6 lg:px-8 py-8 print:py-0">
-        {isLegacy && (
-          <div className="mx-auto max-w-4xl mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-            <strong>Legacy report:</strong> this query was generated by an older AI pipeline that included
-            target / stop-loss / verdict fields. Those fields have been retired for SEBI compliance and are
-            hidden. Please post a fresh query to get the new educational-context report.
+  // v1 tier-shaped: branch into the analysis renderer.
+  if (data.engine_version === "v1_tier_shaped") {
+    const symbol = (data.stock_symbol ?? data.stock_name ?? "").toString().toUpperCase();
+    const horizonRaw = (data.horizon ?? "medium-term") as string;
+    const horizon: QueryType = (["intraday", "medium-term", "long-term"] as const).includes(horizonRaw as QueryType)
+      ? (horizonRaw as QueryType)
+      : "medium-term";
+    const rawQuestion = (data.custom_question ?? data.query_text ?? "").toString();
+    if (!symbol) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="text-center max-w-md">
+            <p className="font-display text-2xl">Missing stock symbol</p>
+            <p className="text-muted-foreground mt-2 text-sm">This v1 report has no symbol attached. Please re-post the query.</p>
+            <Button asChild className="mt-4"><Link to="/post-query">Post a new query</Link></Button>
           </div>
-        )}
-        <AIReportCardV2 report={safeReport as unknown as AIReportV2} meta={meta} />
-        <ExpertAnswerSection
-          queryId={data.id as string}
-          assignedAnalystId={(data.assigned_analyst_id as string | null) ?? null}
-          queryCreatedAt={data.created_at as string}
-        />
-      </main>
-    </div>
-  );
+        </div>
+      );
+    }
+    return (
+      <TierShapedReportContent
+        queryId={data.id as string}
+        symbol={symbol}
+        horizon={horizon}
+        rawQuestion={rawQuestion}
+      />
+    );
+  }
+
+  // Legacy path: poll for ai_report and then render.
+  if (!data.ai_report) return <LoadingScreen />;
+  return <LegacyReportContent data={data as Parameters<typeof LegacyReportContent>[0]["data"]} />;
 }
 
 export const Route = createFileRoute("/report/$queryId")({
