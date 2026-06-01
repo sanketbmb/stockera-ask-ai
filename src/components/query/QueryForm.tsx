@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServerFn } from "@tanstack/react-start";
 import { generateAiReport } from "@/lib/report.functions";
+import { normalizeHorizon } from "@/lib/query-intake-parser";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -143,37 +144,75 @@ export function QueryForm() {
     setSubmitting(true);
     setGenStage("creating");
     let createdQueryId: string | null = null;
+
+    // Mission 1.5 Phase 1 — Fresh Entry routes to the tier-shaped engine.
+    // All other intents preserve the legacy generate-ai-report flow.
+    const isFreshEntry = intent === "buy_decision";
+
     try {
+      const baseInsert = {
+        user_id: user.id,
+        stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
+        stock_symbol: stockSymbol || null,
+        buy_price: buyPrice ? Number(buyPrice) : null,
+        current_price: currentPrice ? Number(currentPrice) : null,
+        query_text: queryText,
+        assigned_analyst_id: analystId,
+      };
+
+      const insertPayload = isFreshEntry
+        ? {
+            ...baseInsert,
+            // For v1 fresh-entry records, the orchestrator IS the answer —
+            // mark "ai_answered" so /report/<uuid> renders immediately and
+            // doesn't poll for a legacy ai_report JSONB that never arrives.
+            status: "ai_answered" as const,
+            query_type: "fresh_entry",
+            engine_version: "v1_tier_shaped",
+            engine_source: "post_query",
+            horizon: normalizeHorizon(horizon),
+            custom_question: queryText,
+          }
+        : {
+            ...baseInsert,
+            status: "pending" as const,
+            query_type: intent,
+          };
+
       const { data: inserted, error: qErr } = await supabase
-        .from("queries").insert({
-          user_id: user.id,
-          stock_name: stockName || (intent === "educational" ? "Educational Query" : "Sector Query"),
-          stock_symbol: stockSymbol || null,
-          buy_price: buyPrice ? Number(buyPrice) : null,
-          current_price: currentPrice ? Number(currentPrice) : null,
-          query_text: queryText,
-          query_type: intent,
-          assigned_analyst_id: analystId,
-          status: "pending",
-        }).select("id").single();
+        .from("queries").insert(insertPayload).select("id").single();
       if (qErr || !inserted) throw qErr ?? new Error("Failed to create query");
 
       const queryId = inserted.id as string;
       createdQueryId = queryId;
 
-      // Audit: query submitted (non-fatal)
+      // Audit (non-fatal)
       supabase.from("audit_events").insert({
         event_type: "query_submitted", actor_id: user.id,
         resource_type: "query", resource_id: queryId,
-        payload: { intent, has_stock: !!stockSymbol },
+        payload: {
+          intent,
+          has_stock: !!stockSymbol,
+          engine_version: isFreshEntry ? "v1_tier_shaped" : "v0_legacy",
+          engine_source: isFreshEntry ? "post_query" : "legacy_post_query",
+          credit_action: "skipped_no_charge_path",
+        },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
+
+      if (isFreshEntry) {
+        // No legacy generator call — /report/<uuid> will invoke
+        // generate-stock-analysis on render via TanStack Query.
+        setGenStage("redirecting");
+        await refresh();
+        navigate({ to: "/report/$queryId", params: { queryId } });
+        return;
+      }
 
       setGenStage("generating");
       try {
         await runGenerateAiReport({ data: { queryId } });
         toast.success("AI context report ready · Analyst video within 24h");
       } catch (genErr) {
-        // TanStack Start serializes server errors as plain objects, not Error instances
         const extractMsg = (e: unknown): string => {
           if (e instanceof Error) return e.message;
           if (e && typeof e === "object") {
