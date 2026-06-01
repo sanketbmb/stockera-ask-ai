@@ -132,12 +132,39 @@ Deno.serve(async (req) => {
       if (upserts.length > 0) {
         const { error: upErr } = await supabase.from("ltp_cache").upsert(upserts, { onConflict: "symbol" });
         if (upErr) console.error("ltp_cache upsert error:", upErr.message);
+
+        // Append to ltp_history (7-day retention, cleaned by cleanup-ltp-history-daily cron)
+        const historyRows = upserts.map((u) => ({
+          symbol: u.symbol, ltp: u.ltp, source: u.source, recorded_at: u.fetched_at,
+        }));
+        const { error: histErr } = await supabase.from("ltp_history").insert(historyRows);
+        if (histErr) console.error("ltp_history insert error:", histErr.message);
       }
     }
+
+    // Audit log
+    const { error: logErr } = await supabase.from("cron_run_log").insert({
+      job_name: "refresh-ltp-every-minute",
+      status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
+      rows_affected: ok,
+      details: { failed: fail, total: rows.length, symbols_considered: symbols.length },
+    });
+    if (logErr) console.error("cron_run_log insert error:", logErr.message);
 
     return json({ success: true, refreshed: ok, failed: fail, total: rows.length });
   } catch (e) {
     console.error("refresh-ltp error:", e);
+    try {
+      const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      await supabase.from("cron_run_log").insert({
+        job_name: "refresh-ltp-every-minute",
+        status: "error",
+        rows_affected: 0,
+        details: { error: String(e) },
+      });
+    } catch { /* swallow */ }
     return json({ success: false, error: String(e) }, 500);
   }
 });

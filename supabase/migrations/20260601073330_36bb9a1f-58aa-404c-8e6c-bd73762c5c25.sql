@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.cleanup_ltp_history() FROM PUBLIC, anon, authenticated;
