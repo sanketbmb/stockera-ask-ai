@@ -1331,6 +1331,47 @@ const SL_METHOD_COPY: Record<string, string> = {
   min_distance_floor: "Floored at 10% from spot (avoids noise stops)",
 };
 
+function SlMethodFooter({ method }: { method: string | null }) {
+  if (!method) return null;
+  const copy = SL_METHOD_COPY[method];
+  if (!copy) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="mt-1 inline-flex cursor-help items-center gap-1 rounded border border-border/60 bg-background/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          {method.replace(/_/g, " ")} <Info className="h-2.5 w-2.5 opacity-60" aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-xs">
+        <p className="font-semibold">SL method: {method}</p>
+        <p className="mt-1 leading-snug text-muted-foreground">{copy}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function HowTargetsComputedChip() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="inline-flex cursor-help items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground">
+          <Info className="h-3 w-3" /> How targets are computed
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="max-w-sm text-xs leading-relaxed">
+        <p className="font-semibold text-foreground">4-tier fallback hierarchy</p>
+        <ol className="mt-2 space-y-1.5 text-muted-foreground">
+          <li><span className="font-mono text-foreground">1. DCF</span> — preferred when fair value is within ±60% of spot.</li>
+          <li><span className="font-mono text-foreground">2. Sector multiple</span> — trailing EPS × peer-group median P/E.</li>
+          <li><span className="font-mono text-foreground">3. Historical multiple</span> — EPS × stock's 5-yr avg P/E (when available).</li>
+          <li><span className="font-mono text-foreground">4. Volatility band</span> — spot × (1 + expected 12-month drift, 18–24%).</li>
+        </ol>
+        <p className="mt-2 text-muted-foreground">T2 falls back to <em>T1 + 5%</em> as a final guard. Every target is then validated for R:R ≥ 1.5 (T1) / 2.0 (T2).</p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function TargetMethodTip({ targetMeta, label, sectorSource, sectorMethodVersion }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string; sectorSource?: string | null; sectorMethodVersion?: string | null }) {
   if (!targetMeta || targetMeta.method === "none" || targetMeta.value == null) return null;
   const copy = TARGET_METHOD_COPY[targetMeta.method] ?? TARGET_METHOD_COPY.none;
