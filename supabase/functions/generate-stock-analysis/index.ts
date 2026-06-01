@@ -627,6 +627,16 @@ Deno.serve(async (req) => {
       incomplete_data: verdict.missingCount >= 2,
     };
 
+    // 5b. Confidence engine (new — replaces legacy verdict.confidence_pct)
+    const confidence = computeConfidence(
+      scores,
+      risk?.snapshot ?? null,
+      { news_data_limited: flags.news_data_limited, benchmark_fallback_used: flags.benchmark_fallback_used },
+      sent?.snapshot.article_count ?? null,
+      queryType,
+      WEIGHT_PRESETS[queryType],
+    );
+
     // 6. Assemble payload
     const asOfDate = tech?.as_of || fund?.as_of || risk?.as_of || mom?.as_of || sent?.as_of || new Date().toISOString();
     const sourceTrace: ModuleTrace[] = settled.map((s) => s.trace);
