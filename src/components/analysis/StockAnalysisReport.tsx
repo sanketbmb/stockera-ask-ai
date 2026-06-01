@@ -930,7 +930,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         {/* ═══ 9. RETURNS SNAPSHOT ═══ */}
         {report_modules.show_returns_strip && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-            <SectionTitle eyebrow="Performance" title="Returns snapshot" icon={TrendingUp} />
+            <SectionTitle eyebrow="Performance" title="Returns snapshot" icon={TrendingUp} info={<InfoTip title="Returns snapshot" body={<><p>Trailing total-return % over 1W / 1M / 3M / 1Y, plus relative performance vs NIFTY for 1M and 3M.</p><p className="italic">Computed from adjusted close prices.</p></>} />} />
             <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-2 md:grid-cols-6">
               <ReturnChip label="1W" value={returns_snapshot.one_week} />
               <ReturnChip label="1M" value={returns_snapshot.one_month} />
