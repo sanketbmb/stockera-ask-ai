@@ -51,6 +51,24 @@ const fmtDateShort = (s: string | null | undefined): string => {
   try { return new Date(s).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }); }
   catch { return s; }
 };
+const fmtTimeIST = (s: string | null | undefined): string => {
+  if (!s) return DASH;
+  try { return new Date(s).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); }
+  catch { return s; }
+};
+// Friendly label for a price_context.price_source value coming from compute-technicals.
+const PRICE_SOURCE_LABEL: Record<string, string> = {
+  dhan_live: "Dhan live",
+  dhan_cache: "Dhan live",
+  finedge_eod: "finedge EOD",
+  finedge: "finedge EOD",
+};
+const formatPriceSource = (raw: string | null | undefined): { label: string; isLive: boolean } => {
+  const key = (raw ?? "").toLowerCase();
+  if (!key) return { label: "live feed", isLive: false };
+  const live = key.startsWith("dhan");
+  return { label: PRICE_SOURCE_LABEL[key] ?? key.replace(/_/g, " "), isLive: live };
+};
 const labelize = (s: string | null | undefined): string =>
   !s ? DASH : s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
