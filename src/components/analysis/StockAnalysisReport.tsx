@@ -897,17 +897,38 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
-            {tradePlanFromEngine && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" className="cursor-help border-emerald-500/40 bg-emerald-500/5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
-                    <ShieldCheck className="mr-1 h-3 w-3" /> Validated by Stockera Engine
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>Trade plan validated by tier-aware engine with mandatory R:R, ATR and structural checks.</TooltipContent>
-              </Tooltip>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <HowTargetsComputedChip />
+              {tradePlanFromEngine && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="cursor-help border-emerald-500/40 bg-emerald-500/5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
+                      <ShieldCheck className="mr-1 h-3 w-3" /> Validated by Stockera Engine
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>Trade plan validated by tier-aware engine with mandatory R:R, ATR and structural checks.</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           </div>
+          {targetsMeta?.sector_aggregate_source === "default_fallback" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="mt-3 inline-flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-xs leading-relaxed text-amber-900 transition-colors hover:bg-amber-500/15">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>Sector benchmarks unavailable — targets use generic defaults. Click to learn more.</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="max-w-sm text-xs leading-relaxed">
+                <p className="font-semibold text-foreground">Why generic defaults?</p>
+                <p className="mt-1 text-muted-foreground">
+                  We could not match this stock's sector ("{targetsMeta.sector_used ?? "unknown"}") to our peer-group benchmark table.
+                  Targets fall back to a market-average P/E ({"PE 22, PB 3"}) which is less precise than a true sector comp.
+                </p>
+                <p className="mt-2 text-muted-foreground">Interpret T1/T2 as directional, not precise.</p>
+              </PopoverContent>
+            </Popover>
+          )}
           {targetsMeta && (targetsMeta.t1.method !== "dcf" || targetsMeta.t2.method !== "dcf") && (targetsMeta.t1.value != null || targetsMeta.t2.value != null) && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs leading-relaxed text-sky-900">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -930,9 +951,9 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
             <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
-            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} />
-            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" />} />
-            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" />} />
+            <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
+            <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
+            <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
             <LevelCell label="Support 1" value={levels.support_1} reason={tradePlanReasons.support_1} />
             <LevelCell label="Support 2" value={levels.support_2} reason={tradePlanReasons.support_2} />
             <LevelCell label="Resistance 1" value={levels.resistance_1} reason={tradePlanReasons.resistance_1} />
@@ -1299,11 +1320,59 @@ const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
   dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
   sector_multiple:     { short: "Sector-multiple fair value", long: "Trailing EPS multiplied by the peer-group median P/E for the company's sector." },
   historical_multiple: { short: "Historical multiple",     long: "Trailing EPS multiplied by the stock's own 5-year average P/E." },
-  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to a 6–18% sector-aware band)." },
+  vol_band:            { short: "Volatility-band drift",   long: "Spot multiplied by an expected 12-month drift (clamped to an 18–24% sector-aware band)." },
   none:                { short: "No method available",     long: "Every fallback in the hierarchy failed; target omitted." },
 };
 
-function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string }) {
+const SL_METHOD_COPY: Record<string, string> = {
+  vol_adaptive: "Tightened to match this stock's volatility",
+  dma200_anchor: "Anchored 8% below the 200-day moving average",
+  max_distance_cap: "Capped at 20% from spot (max long-term loss tolerance)",
+  min_distance_floor: "Floored at 10% from spot (avoids noise stops)",
+};
+
+function SlMethodFooter({ method }: { method: string | null }) {
+  if (!method) return null;
+  const copy = SL_METHOD_COPY[method];
+  if (!copy) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="mt-1 inline-flex cursor-help items-center gap-1 rounded border border-border/60 bg-background/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          {method.replace(/_/g, " ")} <Info className="h-2.5 w-2.5 opacity-60" aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-xs">
+        <p className="font-semibold">SL method: {method}</p>
+        <p className="mt-1 leading-snug text-muted-foreground">{copy}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function HowTargetsComputedChip() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="inline-flex cursor-help items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground">
+          <Info className="h-3 w-3" /> How targets are computed
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="max-w-sm text-xs leading-relaxed">
+        <p className="font-semibold text-foreground">4-tier fallback hierarchy</p>
+        <ol className="mt-2 space-y-1.5 text-muted-foreground">
+          <li><span className="font-mono text-foreground">1. DCF</span> — preferred when fair value is within ±60% of spot.</li>
+          <li><span className="font-mono text-foreground">2. Sector multiple</span> — trailing EPS × peer-group median P/E.</li>
+          <li><span className="font-mono text-foreground">3. Historical multiple</span> — EPS × stock's 5-yr avg P/E (when available).</li>
+          <li><span className="font-mono text-foreground">4. Volatility band</span> — spot × (1 + expected 12-month drift, 18–24%).</li>
+        </ol>
+        <p className="mt-2 text-muted-foreground">T2 falls back to <em>T1 + 5%</em> as a final guard. Every target is then validated for R:R ≥ 1.5 (T1) / 2.0 (T2).</p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TargetMethodTip({ targetMeta, label, sectorSource, sectorMethodVersion }: { targetMeta: NonNullable<AuditMeta["targets_meta"]>["t1"] | NonNullable<AuditMeta["targets_meta"]>["t2"] | null; label: string; sectorSource?: string | null; sectorMethodVersion?: string | null }) {
   if (!targetMeta || targetMeta.method === "none" || targetMeta.value == null) return null;
   const copy = TARGET_METHOD_COPY[targetMeta.method] ?? TARGET_METHOD_COPY.none;
   const inputs = Object.entries(targetMeta.inputs ?? {}).filter(([, v]) => v != null);
@@ -1327,12 +1396,17 @@ function TargetMethodTip({ targetMeta, label }: { targetMeta: NonNullable<AuditM
             ))}
           </div>
         )}
+        {sectorSource && (
+          <p className="mt-2 border-t border-border/40 pt-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Sector data: <span className="normal-case text-foreground/70">{sectorSource}{sectorMethodVersion ? ` (${sectorMethodVersion})` : ""}</span>
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function LevelCell({ label, value, tone, reason, methodTip }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode }) {
+function LevelCell({ label, value, tone, reason, methodTip, footer }: { label: string; value: number | null; tone?: string; reason?: string; methodTip?: React.ReactNode; footer?: React.ReactNode }) {
   const copy = value == null ? omissionCopy(reason) : null;
   return (
     <motion.div
@@ -1361,6 +1435,7 @@ function LevelCell({ label, value, tone, reason, methodTip }: { label: string; v
         <>
           <p className={`font-display text-lg tabular-nums ${tone || "text-foreground"}`}>{fmtPrice(value)}</p>
           {methodTip}
+          {footer}
         </>
       )}
     </motion.div>

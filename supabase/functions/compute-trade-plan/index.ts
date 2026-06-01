@@ -348,8 +348,8 @@ function resolveLongTermT1(ctx: LongTermContext): TargetResolution {
   // 4. Volatility / sector-momentum band: spot × (1 + clamp(0.16..0.22, sector_return_12m))
   // Floor 0.16 ensures long-term T1 sits ≥16% above spot, large enough to clear RR≥1.5 against a 10–20% SL.
   const drift12m = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.18, 0.24)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.18, 0.24) : 0.18);
   const v = spot * (1 + drift12m);
   if (withinLongTermBand(spot, v)) {
     return {
@@ -399,8 +399,8 @@ function resolveLongTermT2(ctx: LongTermContext, t1: TargetResolution): TargetRe
 
   // 4. Vol-band stretch: spot × (1 + 1.5 × drift); drift uses long-term floor 0.16
   const drift = ctx.sectorReturn12mPct != null
-    ? clamp(ctx.sectorReturn12mPct / 100, 0.16, 0.22)
-    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.16, 0.22) : 0.16);
+    ? clamp(ctx.sectorReturn12mPct / 100, 0.18, 0.24)
+    : (ctx.stockReturn12mPct != null ? clamp(ctx.stockReturn12mPct / 100, 0.18, 0.24) : 0.18);
   const r = tryVal(spot * (1 + 1.5 * drift), "vol_band", "vol_band_stretch", { drift_12m_pct: drift * 100 });
   if (r) return r;
 
