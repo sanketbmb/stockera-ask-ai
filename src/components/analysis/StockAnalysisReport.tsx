@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
-  Clock, Compass, Eye, Flame, Gauge, HelpCircle, Info, LineChart, Newspaper,
+  Clock, Compass, Eye, Gauge, HelpCircle, Info, LineChart, Newspaper,
   ShieldCheck, Sparkles, Target, TrendingDown, TrendingUp, Waves,
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
@@ -24,7 +24,7 @@ import type {
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
 import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
-import { FEATURE_FLAGS } from "@/lib/feature-flags";
+
 import { METRIC_COPY, type MetricCopy } from "@/lib/metric-copy";
 import { getUpcomingCorporateActions, type UpcomingCorporateAction } from "@/lib/corporate-actions.functions";
 import {
@@ -314,23 +314,6 @@ function ScoreBar({ label, value, weighted, pulse, note, methodology }: { label:
   );
 }
 
-function ReturnChip({ label, value }: { label: string; value: number | null }) {
-  const isMissing = value == null;
-  const pos = value != null && value >= 0;
-  return (
-    <motion.div
-      variants={innerStaggerItem}
-      whileHover={{ y: -1 }}
-      transition={{ duration: duration.fast, ease: ease.standard }}
-      className="flex flex-col items-start rounded-md border border-border/60 bg-card px-3 py-2 hover:border-accent/40"
-    >
-      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
-      <span className={`font-display text-base tabular-nums ${isMissing ? "text-muted-foreground" : pos ? "text-emerald-700" : "text-rose-700"}`}>
-        {isMissing ? DASH : <AnimatedNumber value={value} decimals={2} suffix="%" signed duration={700} />}
-      </span>
-    </motion.div>
-  );
-}
 
 // Score ring (SVG) — animated arc fill + count-up center.
 // Binds to `final_verdict.overall_score`. When score is null/undefined, the
@@ -798,86 +781,9 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
           </motion.section>
         )}
 
-        {/* ═══ 6. TIER-SHAPED METRIC GRID (B.2) ═══ */}
-        {FEATURE_FLAGS.tier_shaped_grid_v1 && (
-          <TierShapedGrid data={data} />
-        )}
+        {/* ═══ 6. TIER-SHAPED METRIC GRID ═══ */}
+        <TierShapedGrid data={data} />
 
-        {/* ═══ 6-LEGACY. 4-CARD METRIC GRID (kept behind flag for rollback; removed in B.3) ═══ */}
-        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
-        <motion.section
-          variants={gridContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.15 }}
-          className="grid gap-4 md:grid-cols-2"
-        >
-          {SECTION_ORDER[tier].map((kind) => {
-            if (kind === "technical") {
-              return (
-                <DimensionCard key={kind} eyebrow="Trend & technicals" title="Technical pulse" icon={LineChart} score={score_breakdown.technical_score}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="RSI(14)" value={<AnimatedNumber value={technical_snapshot.rsi} decimals={2} duration={700} />} tone={technical_snapshot.rsi != null && (technical_snapshot.rsi > 70 || technical_snapshot.rsi < 30) ? "text-amber-700" : ""} />
-                    <Metric label="MACD" value={labelize(technical_snapshot.macd_signal)} />
-                    <Metric label="ADX" value={<AnimatedNumber value={technical_snapshot.adx} decimals={2} duration={700} />} />
-                    <Metric label="Trend" value={labelize(technical_snapshot.trend_label)} />
-                    <Metric label="EMA stack" value={labelize(technical_snapshot.ema_stack)} />
-                    <Metric label="Bollinger" value={labelize(technical_snapshot.bollinger_position)} />
-                  </motion.div>
-                  <CardFootline tone={score_breakdown.technical_score} dim="technicals" />
-                </DimensionCard>
-              );
-            }
-            if (kind === "momentum") {
-              return (
-                <DimensionCard key={kind} eyebrow="Momentum" title="Momentum & strength" icon={Activity} score={score_breakdown.momentum_score}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="RS vs NIFTY" value={momentum_snapshot.relative_strength_vs_nifty != null ? <AnimatedNumber value={momentum_snapshot.relative_strength_vs_nifty} decimals={2} suffix="%" signed duration={700} /> : DASH} />
-                    <Metric label="Trend strength" value={labelize(momentum_snapshot.trend_strength)} />
-                    <Metric label="Regime" value={labelize(momentum_snapshot.momentum_label)} />
-                    {momentum_snapshot.volume_confirmation && (
-                      <Metric label="Volume" value={labelize(momentum_snapshot.volume_confirmation)} />
-                    )}
-                  </motion.div>
-                  <CardFootline tone={score_breakdown.momentum_score} dim="momentum" />
-                </DimensionCard>
-              );
-            }
-            if (kind === "fundamental") {
-              return (
-                <DimensionCard key={kind} eyebrow="Fundamentals" title="Quality & valuation" icon={Building2} score={score_breakdown.fundamental_score} muted={flags.banking_override_applied && (fundamental_snapshot.altman_z_score == null)}>
-                  <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                    <Metric label="P/E" value={<AnimatedNumber value={fundamental_snapshot.pe_ratio} decimals={2} duration={700} />} />
-                    <Metric label="ROE" value={fundamental_snapshot.roe != null ? <AnimatedNumber value={fundamental_snapshot.roe} decimals={2} suffix="%" duration={700} /> : DASH} />
-                    <Metric label="F-Score" value={fundamental_snapshot.piotroski_f_score != null ? `${fundamental_snapshot.piotroski_f_score}/9` : DASH} />
-                    <Metric label="Altman Z" value={<AnimatedNumber value={fundamental_snapshot.altman_z_score} decimals={2} duration={700} />} hint={flags.banking_override_applied ? "Banks use regulatory CAR; Altman Z is not meaningful for financials." : undefined} />
-                    <Metric label="DCF upside" value={fundamental_snapshot.dcf_upside_pct != null && fundamental_snapshot.dcf_upside_pct > -95 ? <AnimatedNumber value={fundamental_snapshot.dcf_upside_pct} decimals={1} suffix="%" signed duration={700} /> : DASH} />
-                    <Metric label="Valuation" value={labelize(fundamental_snapshot.valuation_label)} />
-                  </motion.div>
-                  {flags.banking_override_applied && (
-                    <p className="mt-3 text-[11px] italic text-muted-foreground">Banking sector — Altman Z & DCF de-emphasized; regulatory frameworks govern solvency.</p>
-                  )}
-                  <CardFootline tone={score_breakdown.fundamental_score} dim="fundamentals" />
-                </DimensionCard>
-              );
-            }
-            // risk
-            return (
-              <DimensionCard key={kind} eyebrow="Risk" title="Risk character" icon={ShieldCheck} score={score_breakdown.risk_score}>
-                <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-3 gap-3">
-                  <Metric label="Beta" value={<AnimatedNumber value={risk_snapshot.beta} decimals={2} duration={700} />} tone={riskTone("beta", risk_snapshot.beta)} />
-                  <Metric label="Vol (1Y)" value={risk_snapshot.volatility_1y != null ? <AnimatedNumber value={risk_snapshot.volatility_1y} decimals={1} suffix="%" duration={700} /> : DASH} tone={riskTone("vol", risk_snapshot.volatility_1y)} />
-                  <Metric label="Sharpe" value={<AnimatedNumber value={risk_snapshot.sharpe_ratio} decimals={2} duration={700} />} tone={riskTone("sharpe", risk_snapshot.sharpe_ratio)} />
-                  <Metric label="Sortino" value={<AnimatedNumber value={risk_snapshot.sortino_ratio} decimals={2} duration={700} />} tone={riskTone("sortino", risk_snapshot.sortino_ratio)} />
-                  <Metric label="Max DD" value={risk_snapshot.max_drawdown != null ? <AnimatedNumber value={risk_snapshot.max_drawdown} decimals={1} suffix="%" signed duration={700} /> : DASH} tone={riskTone("dd", risk_snapshot.max_drawdown)} />
-                  <Metric label="Liquidity" value={labelize(risk_snapshot.liquidity_label)} />
-                </motion.div>
-                <CardFootline tone={score_breakdown.risk_score} dim="risk" />
-              </DimensionCard>
-            );
-          })}
-        </motion.section>
-        )}
 
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
@@ -981,130 +887,7 @@ export function StockAnalysisReport({ data, printMode = false }: { data: StockAn
         </motion.section>
 
 
-        {/* ═══ 9–14. LEGACY DEEP-DIVE SECTIONS (gated behind flag; removed in B.3) ═══ */}
-        {!FEATURE_FLAGS.tier_shaped_grid_v1 && (
-        <>
-        {/* ═══ 9. RETURNS SNAPSHOT ═══ */}
-        {report_modules.show_returns_strip && (
-          <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-            <SectionTitle eyebrow="Performance" title="Returns snapshot" icon={TrendingUp} info={<InfoTip title="Returns snapshot" body={<><p>Trailing total-return % over 1W / 1M / 3M / 1Y, plus relative performance vs NIFTY for 1M and 3M.</p><p className="italic">Computed from adjusted close prices.</p></>} />} />
-            <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-2 md:grid-cols-6">
-              <ReturnChip label="1W" value={returns_snapshot.one_week} />
-              <ReturnChip label="1M" value={returns_snapshot.one_month} />
-              <ReturnChip label="3M" value={returns_snapshot.three_month} />
-              <ReturnChip label="1Y" value={returns_snapshot.one_year} />
-              <ReturnChip label="vs NIFTY 1M" value={returns_snapshot.vs_nifty_one_month} />
-              <ReturnChip label="vs NIFTY 3M" value={returns_snapshot.vs_nifty_three_month} />
-            </motion.div>
-          </motion.section>
-        )}
 
-        {/* ═══ 10. FUNDAMENTAL DEEP-DIVE ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="Fundamental analysis" title="Quality of business & valuation" icon={Building2} />
-          <p className="mb-5 max-w-3xl leading-relaxed text-foreground/85">
-            {fundamentalProse(fundamental_snapshot, flags.banking_override_applied)}
-          </p>
-          <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
-            <Metric label="P/E ratio" value={<AnimatedNumber value={fundamental_snapshot.pe_ratio} decimals={2} duration={700} />} hint="Price relative to earnings; sector context matters." />
-            <Metric label="Return on equity" value={fundamental_snapshot.roe != null ? <AnimatedNumber value={fundamental_snapshot.roe} decimals={2} suffix="%" duration={700} /> : DASH} />
-            <Metric label="Piotroski F-Score" value={fundamental_snapshot.piotroski_f_score != null ? `${fundamental_snapshot.piotroski_f_score} / 9` : DASH} hint="0–9 quality score: 7+ is strong, 3 or less is weak." />
-            <Metric label="Altman Z-Score" value={<AnimatedNumber value={fundamental_snapshot.altman_z_score} decimals={2} duration={700} />} hint="Bankruptcy risk: >2.99 safe, 1.81–2.99 grey, <1.81 distress. Not meaningful for banks." />
-            <Metric label="DCF upside" value={fundamental_snapshot.dcf_upside_pct != null && fundamental_snapshot.dcf_upside_pct > -95 ? <AnimatedNumber value={fundamental_snapshot.dcf_upside_pct} decimals={1} suffix="%" signed duration={700} /> : DASH} hint="Discounted-cash-flow intrinsic value vs current price." />
-            <Metric label="Valuation tag" value={labelize(fundamental_snapshot.valuation_label)} />
-          </motion.div>
-          {flags.banking_override_applied && (
-            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-900">
-              Banking-sector override: solvency assessed via regulatory CAR rather than Altman Z, and DCF is replaced by dividend-discount frameworks in deeper analyst review.
-            </div>
-          )}
-        </motion.section>
-
-        {/* ═══ 11. TECHNICAL DEEP-DIVE ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="Technical analysis" title="Trend, momentum & structure" icon={LineChart} />
-          <p className="mb-5 max-w-3xl leading-relaxed text-foreground/85">
-            {technicalProse(technical_snapshot)}
-          </p>
-          <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
-            <Metric label="RSI (14)" value={<AnimatedNumber value={technical_snapshot.rsi} decimals={2} duration={700} />} hint="Overbought >70, oversold <30." />
-            <Metric label="MACD signal" value={labelize(technical_snapshot.macd_signal)} />
-            <Metric label="ADX (trend strength)" value={<AnimatedNumber value={technical_snapshot.adx} decimals={2} duration={700} />} hint=">25 indicates a trending market." />
-            <Metric label="Trend direction" value={labelize(technical_snapshot.trend_label)} />
-            <Metric label="EMA stack" value={labelize(technical_snapshot.ema_stack)} hint="Stacked EMAs (20>50>200) signal trend alignment." />
-            <Metric label="Bollinger band" value={labelize(technical_snapshot.bollinger_position)} />
-          </motion.div>
-        </motion.section>
-
-        {/* ═══ 12. RISK RADAR ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="Risk radar" title="What could go wrong" icon={AlertTriangle} />
-          <p className="mb-5 max-w-3xl leading-relaxed text-foreground/85">
-            {riskProse(risk_snapshot)}
-          </p>
-          <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
-            <Metric label="Beta" value={<AnimatedNumber value={risk_snapshot.beta} decimals={2} duration={700} />} tone={riskTone("beta", risk_snapshot.beta)} hint="Sensitivity to NIFTY; >1 amplifies market moves." />
-            <Metric label="Annualized volatility" value={risk_snapshot.volatility_1y != null ? <AnimatedNumber value={risk_snapshot.volatility_1y} decimals={1} suffix="%" duration={700} /> : DASH} tone={riskTone("vol", risk_snapshot.volatility_1y)} />
-            <Metric label="Sharpe ratio" value={<AnimatedNumber value={risk_snapshot.sharpe_ratio} decimals={2} duration={700} />} tone={riskTone("sharpe", risk_snapshot.sharpe_ratio)} hint="Risk-adjusted return vs risk-free rate." />
-            <Metric label="Sortino ratio" value={<AnimatedNumber value={risk_snapshot.sortino_ratio} decimals={2} duration={700} />} tone={riskTone("sortino", risk_snapshot.sortino_ratio)} hint="Penalises only downside volatility." />
-            <Metric label="Max drawdown" value={risk_snapshot.max_drawdown != null ? <AnimatedNumber value={risk_snapshot.max_drawdown} decimals={1} suffix="%" signed duration={700} /> : DASH} tone={riskTone("dd", risk_snapshot.max_drawdown)} />
-            <Metric label="VaR 95%" value={risk_snapshot.var_95 != null ? <AnimatedNumber value={risk_snapshot.var_95} decimals={2} suffix="%" signed duration={700} /> : DASH} tone={riskTone("var", risk_snapshot.var_95)} hint="Daily loss not expected to exceed in 95% of cases." />
-          </motion.div>
-          {flags.benchmark_fallback_used && (
-            <p className="mt-4 text-[11px] italic text-muted-foreground">Benchmark fallback was applied for relative measures — interpret beta and RS with care.</p>
-          )}
-        </motion.section>
-
-        {/* ═══ 13. MOMENTUM ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="Momentum" title="Relative strength & regime" icon={Flame} />
-          <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
-            <Metric label="RS vs NIFTY (3M)" value={momentum_snapshot.relative_strength_vs_nifty != null ? <AnimatedNumber value={momentum_snapshot.relative_strength_vs_nifty} decimals={2} suffix="%" signed duration={700} /> : DASH} />
-            <Metric label="Trend strength" value={labelize(momentum_snapshot.trend_strength)} />
-            <Metric label="Regime" value={labelize(momentum_snapshot.momentum_label)} />
-            {momentum_snapshot.volume_confirmation
-              ? <Metric label="Volume" value={labelize(momentum_snapshot.volume_confirmation)} />
-              : <Metric label="Volume" value={DASH} hint="Volume confirmation not available for this period." />}
-          </motion.div>
-        </motion.section>
-
-        {/* ═══ 14. NEWS & SENTIMENT ═══ */}
-        <motion.section variants={sectionFadeUp} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }} className="rounded-2xl border border-border bg-card px-6 py-7">
-          <SectionTitle eyebrow="News & sentiment" title="Narrative pulse" icon={Newspaper} />
-          {report_modules.show_news_widget && sentiment_snapshot.news_sentiment_score != null ? (
-            <div className="grid items-start gap-6 md:grid-cols-[auto_1fr]">
-              <div className="rounded-xl border border-border bg-background/60 px-5 py-4 text-center">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Sentiment</p>
-                <p className="mt-1 font-display text-3xl tabular-nums">
-                  <AnimatedNumber value={sentiment_snapshot.news_sentiment_score} decimals={0} duration={800} />
-                </p>
-                <Badge variant="outline" className="mt-2 text-[10px]">{labelize(sentiment_snapshot.sentiment_label)}</Badge>
-              </div>
-              <div className="space-y-3">
-                <Metric label="Articles (30d)" value={<AnimatedNumber value={sentiment_snapshot.article_count} decimals={0} duration={700} />} />
-                {sentiment_snapshot.top_news_driver && (
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Top driver</p>
-                    <p className="mt-1 text-sm italic text-foreground/85">"{sentiment_snapshot.top_news_driver}"</p>
-                  </div>
-                )}
-                {flags.news_data_limited && (
-                  <p className="text-[11px] italic text-muted-foreground">News coverage is sparse for this window — treat sentiment as directional, not decisive.</p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-5 py-4">
-              <Eye className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium text-foreground">News & sentiment not included in this view</p>
-                <p className="text-[11px] text-muted-foreground">{query_context.include_news ? "Insufficient recent coverage to compute a sentiment score." : "Sentiment was excluded at request time."}</p>
-              </div>
-            </div>
-          )}
-        </motion.section>
-        </>
-        )}
 
 
 
@@ -1295,46 +1078,8 @@ function ConfidenceInfo({ audit }: { audit: StockAnalysisPayload["audit_meta"] }
   );
 }
 
-function DimensionCard({
-  eyebrow, title, icon: Icon, score, muted, children,
-}: { eyebrow: string; title: string; icon: React.ComponentType<{ className?: string }>; score: number | null; muted?: boolean; children: React.ReactNode }) {
-  const tone = SCORE_TONE(score);
-  return (
-    <motion.div
-      variants={cardItem}
-      whileHover={{ y: -2, scale: 1.003 }}
-      transition={{ duration: duration.fast, ease: ease.standard }}
-      className={`rounded-2xl border border-border bg-card px-5 py-5 transition-colors hover:border-accent/50 ${muted ? "opacity-90" : ""}`}
-    >
-      <div className="mb-4 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-accent" />
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
-            <h3 className="font-display text-lg text-foreground leading-tight">{title}</h3>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className={`font-display text-2xl tabular-nums ${tone.color}`}>
-            {score == null ? DASH : <AnimatedNumber value={score} decimals={0} duration={700} />}
-          </p>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{tone.label}</p>
-        </div>
-      </div>
-      {children}
-    </motion.div>
-  );
-}
 
-function CardFootline({ tone, dim }: { tone: number | null; dim: string }) {
-  const t = SCORE_TONE(tone);
-  return (
-    <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
-      <span className={`inline-block h-1.5 w-1.5 rounded-full ${t.color === "text-emerald-700" ? "bg-emerald-500" : t.color === "text-amber-700" ? "bg-amber-500" : t.color === "text-rose-700" ? "bg-rose-500" : "bg-muted-foreground"} align-middle`} />{" "}
-      {t.label === "no data" ? `Insufficient data on ${dim}.` : `${t.label[0].toUpperCase() + t.label.slice(1)} ${dim} reading.`}
-    </p>
-  );
-}
+
 
 const TARGET_METHOD_COPY: Record<string, { short: string; long: string }> = {
   dcf:                 { short: "DCF fair value",          long: "Discounted cash-flow intrinsic value per share." },
