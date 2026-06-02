@@ -21,6 +21,7 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { MotionConfig } from "framer-motion";
 
 const LOADING_STEPS = [
   "Looking up the concept…",
@@ -176,7 +177,7 @@ export function EducationalReportBody({
   printMode: boolean;
   queryId?: string;
 }) {
-  return (
+  const body = (
     <main className="mx-auto max-w-4xl px-4 md:px-6 py-6 space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
@@ -220,4 +221,5 @@ export function EducationalReportBody({
       {printMode && <div id="print-ready" />}
     </main>
   );
+  return printMode ? <MotionConfig reducedMotion="always">{body}</MotionConfig> : body;
 }

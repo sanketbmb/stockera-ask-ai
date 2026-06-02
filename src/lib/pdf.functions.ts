@@ -13,7 +13,7 @@ const SYMBOL_RE = /^[A-Z0-9._-]{1,20}$/;
 const BUCKET = "pdf-cache";
 const CACHE_TTL_SEC = 60 * 60; // 1 hour
 const SIGNED_URL_TTL_SEC = 60 * 60;
-const BROWSERLESS_TIMEOUT_MS = 60_000;
+const BROWSERLESS_TIMEOUT_MS = 90_000;
 const PRINT_READY_SELECTOR = "#print-ready, #print-error";
 const TOKEN_TTL_SEC = 5 * 60;
 const QUOTA_WARN_THRESHOLD = 800;
@@ -249,7 +249,7 @@ export const generateAnalysisPdf = createServerFn({ method: "POST" })
           signal: ctrl.signal,
           body: JSON.stringify({
             url: printUrl,
-            gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+            gotoOptions: { waitUntil: "domcontentloaded", timeout: BROWSERLESS_TIMEOUT_MS },
             waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
@@ -419,7 +419,7 @@ export const generateArchitecturePdf = createServerFn({ method: "POST" })
           signal: ctrl.signal,
           body: JSON.stringify({
             url: printUrl,
-            gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+            gotoOptions: { waitUntil: "domcontentloaded", timeout: BROWSERLESS_TIMEOUT_MS },
             waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
@@ -536,7 +536,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
           signal: ctrl.signal,
           body: JSON.stringify({
             url: printUrl,
-            gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+            gotoOptions: { waitUntil: "domcontentloaded", timeout: BROWSERLESS_TIMEOUT_MS },
             waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
@@ -644,7 +644,7 @@ async function callBrowserlessForUrl(printUrl: string, label: string): Promise<A
         signal: ctrl.signal,
         body: JSON.stringify({
           url: printUrl,
-          gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+          gotoOptions: { waitUntil: "domcontentloaded", timeout: BROWSERLESS_TIMEOUT_MS },
           waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
           options: {
             format: "A4",

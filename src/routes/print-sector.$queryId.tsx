@@ -5,7 +5,7 @@
 import { createFileRoute, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { getPrintSectorPayload } from "@/lib/pdf.functions";
 import { SectorReportBody } from "@/components/report/SectorViewReport";
@@ -32,6 +32,14 @@ function PrintSectorPage() {
     staleTime: Infinity,
   });
 
+  const [slowTimeout, setSlowTimeout] = useState(false);
+  useEffect(() => {
+    if (!isLoading) return;
+    const t = setTimeout(() => setSlowTimeout(true), 5000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
+
   useEffect(() => {
     const html = document.documentElement;
     const prev = html.style.overflow;
@@ -39,13 +47,15 @@ function PrintSectorPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading) return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
-  if (error || !data) {
+  if (isLoading && !slowTimeout) return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
+  if (error || !data || slowTimeout) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{(error as Error | null)?.message ?? "Unknown error"}</p>
-        <div id="print-error" className="hidden" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          {slowTimeout ? "Report failed to load within 5s." : (error as Error | null)?.message ?? "Unknown error"}
+        </p>
+        <div id="print-error" />
       </div>
     );
   }
