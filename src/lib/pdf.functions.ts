@@ -605,6 +605,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
 
 const SECTOR_PDF_TEMPLATE_VERSION = "v1";
 const EDUCATIONAL_PDF_TEMPLATE_VERSION = "v1";
+const STOCK_UNIFIED_PDF_TEMPLATE_VERSION = "v1";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cacheKeyForSector(queryId: string): string {
@@ -613,9 +614,12 @@ function cacheKeyForSector(queryId: string): string {
 function cacheKeyForEducational(queryId: string): string {
   return `edu_${queryId}_${EDUCATIONAL_PDF_TEMPLATE_VERSION}_${todayIST()}`;
 }
+function cacheKeyForUnifiedStock(queryId: string, horizon: QueryType): string {
+  return `stk_q_${queryId}_${horizon}_${STOCK_UNIFIED_PDF_TEMPLATE_VERSION}_${todayIST()}`;
+}
 
 const KindedTokenSchema = z.object({
-  kind: z.enum(["sector", "educational"]),
+  kind: z.enum(["sector", "educational", "stock_unified"]),
   queryId: z.string().regex(UUID_RE),
   exp: z.number(),
 });
@@ -623,7 +627,7 @@ export type KindedPrintToken = z.infer<typeof KindedTokenSchema>;
 
 export async function verifyKindedPrintToken(
   token: string,
-  expectedKind: "sector" | "educational",
+  expectedKind: "sector" | "educational" | "stock_unified",
   expectedQueryId: string,
 ): Promise<boolean> {
   const v = await verifyPrintToken<KindedPrintToken>(token);
@@ -632,6 +636,7 @@ export async function verifyKindedPrintToken(
   if (v.queryId !== expectedQueryId) return false;
   return true;
 }
+
 
 async function callBrowserlessForUrl(printUrl: string, label: string): Promise<ArrayBuffer> {
   const browserlessToken = process.env.BROWSERLESS_TOKEN;
