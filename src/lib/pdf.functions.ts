@@ -2,7 +2,7 @@
 // Single source of truth for SEBI firm details (see FIRM in src/lib/firm-details.ts).
 
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeader } from "@tanstack/react-start/server";
+// (request-header helper removed — print origin no longer comes from the request host)
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
