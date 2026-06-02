@@ -17,6 +17,11 @@ export const ENABLE_FREE_TEXT_ROUTER = true;
 // while Sector View ships against the sector_aggregates baseline.
 export const ENABLE_SECTOR_VIEW = true;
 
+// Phase 3C — turn the Educational chip + dedicated EducationalReport on.
+// Glossary-first, deterministic, no LLM at request time. Independent of
+// the broader Phase 3 unlock. "Other" stays gated to RoutedPendingPanel.
+export const ENABLE_EDUCATIONAL = true;
+
 // Canonical list of intents whose end-to-end Brain flow is wired in production.
 // Intake (form, server functions) MUST reject anything outside this allowlist
 // when ENABLE_PHASE3_QUERY_TYPES is false.
@@ -43,22 +48,23 @@ export function isLiveIntent(value: string): value is LiveIntent {
 /**
  * Intents the server + form accept on submit. Phase 3A widens the
  * allowlist to include "other"; Phase 3B additionally accepts
- * "sector_view" when ENABLE_SECTOR_VIEW is on.
+ * "sector_view" when ENABLE_SECTOR_VIEW is on; Phase 3C accepts
+ * "educational" when ENABLE_EDUCATIONAL is on.
  */
 export function isRoutableIntent(
   value: string,
-): value is LiveIntent | "other" | "sector_view" {
+): value is LiveIntent | "other" | "sector_view" | "educational" {
   if (isLiveIntent(value)) return true;
   if (ENABLE_FREE_TEXT_ROUTER && value === "other") return true;
   if ((ENABLE_SECTOR_VIEW || ENABLE_PHASE3_QUERY_TYPES) && value === "sector_view") return true;
+  if ((ENABLE_EDUCATIONAL || ENABLE_PHASE3_QUERY_TYPES) && value === "educational") return true;
   return false;
 }
 
 /**
  * Visible intents in the current build. Phase 2.1 returned LIVE only.
  * Phase 3A additionally exposes "other"; Phase 3B additionally exposes
- * "sector_view" when its flag is on. Educational stays hidden until the
- * full Phase 3 unlock.
+ * "sector_view"; Phase 3C additionally exposes "educational".
  */
 export function visibleIntents(): readonly AnyIntent[] {
   if (ENABLE_PHASE3_QUERY_TYPES) {
@@ -66,6 +72,7 @@ export function visibleIntents(): readonly AnyIntent[] {
   }
   const extras: Phase3Intent[] = [];
   if (ENABLE_SECTOR_VIEW) extras.push("sector_view");
+  if (ENABLE_EDUCATIONAL) extras.push("educational");
   if (ENABLE_FREE_TEXT_ROUTER) extras.push("other");
   return [...LIVE_INTENTS, ...extras];
 }

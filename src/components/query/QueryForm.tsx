@@ -22,6 +22,7 @@ import {
   ENABLE_PHASE3_QUERY_TYPES,
   ENABLE_FREE_TEXT_ROUTER,
   ENABLE_SECTOR_VIEW,
+  ENABLE_EDUCATIONAL,
   isLiveIntent,
   isRoutableIntent,
   type AnyIntent,
@@ -33,6 +34,7 @@ import {
   confidenceBand,
 } from "@/lib/intent-router-schema";
 import { resolveSector } from "@/lib/sector-alias-map";
+import { resolveConcept } from "@/lib/concept-alias-map";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -53,11 +55,12 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; sectorOnly?: boolean; routerOnly?: boolean }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; sectorOnly?: boolean; educationalOnly?: boolean; routerOnly?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
-  { id: "educational", emoji: "📚", label: "Educational", phase3: true },
+  // Phase 3C — Educational ships independently of the broader phase 3 unlock.
+  { id: "educational", emoji: "📚", label: "Educational", educationalOnly: true },
   // Phase 3B — Sector View ships independently of the broader phase 3 unlock.
   { id: "sector_view", emoji: "🏭", label: "Sector View", sectorOnly: true },
   // "Other" is exposed when the free-text router is live (Phase 3A). It is
@@ -68,6 +71,7 @@ const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: bool
 const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
   if (t.phase3) return ENABLE_PHASE3_QUERY_TYPES;
   if (t.sectorOnly) return ENABLE_SECTOR_VIEW || ENABLE_PHASE3_QUERY_TYPES;
+  if (t.educationalOnly) return ENABLE_EDUCATIONAL || ENABLE_PHASE3_QUERY_TYPES;
   if (t.routerOnly) return ENABLE_FREE_TEXT_ROUTER;
   return true;
 });
@@ -199,11 +203,15 @@ export function QueryForm() {
   const isOther = intent === "other";
   // Phase 3B — "sector_view" has its own freeze fn + report variant.
   const isSector = intent === "sector_view";
+  // Phase 3C — "educational" has its own freeze fn + report variant.
+  const isEducational = intent === "educational";
 
   // Phase 3B — resolve sector from router-supplied hint OR the question text.
   const resolvedSector = isSector
     ? resolveSector(routerMeta?.sector ?? queryText)
     : null;
+  // Phase 3C — resolve concept from question text.
+  const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -214,16 +222,22 @@ export function QueryForm() {
 
   const goNext = async () => {
     if (step === 0) {
-      // Phase 3B — sector chip allows shorter input ("IT" / "Energy").
-      const minChars = isSector ? 2 : 15;
+      // Phase 3B/3C — sector + educational chips allow shorter input ("IT", "RSI").
+      const minChars = (isSector || isEducational) ? 2 : 15;
       if (queryText.trim().length < minChars) {
-        toast.error(isSector ? "Enter a sector name (e.g. Private Banks, IT, Energy)" : "Add at least 15 characters describing your question");
+        toast.error(
+          isSector
+            ? "Enter a sector name (e.g. Private Banks, IT, Energy)"
+            : isEducational
+              ? "Enter a concept like RSI, MACD, DCF, Beta, or Piotroski F-Score"
+              : "Add at least 15 characters describing your question",
+        );
         return;
       }
       // Phase 3A — call the free-text router before leaving Step 0 (unless
       // already called, or feature is off, or user explicitly picked the
-      // sector chip — in which case we resolve via alias map only).
-      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector) {
+      // sector / educational chip — in which case we resolve via alias map only).
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector && !isEducational) {
         setRouterLoading(true);
         try {
           const result = await runIntentRouter({ data: { text: queryText.trim() } });
@@ -254,6 +268,17 @@ export function QueryForm() {
       if (isSector) {
         if (!resolvedSector) {
           toast.error("Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.");
+          return;
+        }
+        setStep(2);
+        return;
+      }
+      // Phase 3C — educational requires a resolvable concept; the report itself
+      // will degrade gracefully via ConceptNotFoundPanel if we miss here, but
+      // we warn early so the user can fix their wording before submission.
+      if (isEducational) {
+        if (!resolvedConcept) {
+          toast.error("Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.");
           return;
         }
         setStep(2);
@@ -291,7 +316,11 @@ export function QueryForm() {
     try {
       const baseInsert = {
         user_id: user.id,
-        stock_name: isSector && resolvedSector ? `Sector: ${resolvedSector.display}` : (stockName || "Stock Query"),
+        stock_name: isSector && resolvedSector
+          ? `Sector: ${resolvedSector.display}`
+          : isEducational && resolvedConcept
+            ? `Concept: ${resolvedConcept.canonical}`
+            : (stockName || "Stock Query"),
         stock_symbol: stockSymbol || null,
         buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
@@ -330,6 +359,17 @@ export function QueryForm() {
             horizon: normalizeHorizon(horizon || "Medium-term (3-12mo)"),
             sector_canonical: resolvedSector?.canonical ?? null,
           }
+        : isEducational
+        ? {
+            // Phase 3C — educational. EducationalReport's server fn freezes
+            // the composed glossary payload on first read; no LLM call here.
+            ...baseInsert,
+            status: "ai_answered" as const,
+            query_type: "educational" as const,
+            engine_version: "v1_educational",
+            engine_source: "glossary_library",
+            concept_canonical: resolvedConcept?.canonical ?? null,
+          }
         : isOther
         ? {
             // Phase 3A — "other" lands in the routed-pending placeholder.
@@ -363,10 +403,21 @@ export function QueryForm() {
           has_entry_price: !!entryPrice,
           has_qty: !!qty,
           custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine ? "v1_tier_shaped" : isSector ? "v1_sector_view" : isOther ? "router_v1" : "v0_legacy",
-          engine_source: usesV1Engine ? "post_query" : isSector ? "sector_aggregates" : isOther ? "free_text_router" : "legacy_post_query",
+          engine_version: usesV1Engine
+            ? "v1_tier_shaped"
+            : isSector ? "v1_sector_view"
+            : isEducational ? "v1_educational"
+            : isOther ? "router_v1"
+            : "v0_legacy",
+          engine_source: usesV1Engine
+            ? "post_query"
+            : isSector ? "sector_aggregates"
+            : isEducational ? "glossary_library"
+            : isOther ? "free_text_router"
+            : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
           sector_canonical: isSector ? resolvedSector?.canonical ?? null : null,
+          concept_canonical: isEducational ? resolvedConcept?.canonical ?? null : null,
           router_version: routerMeta?.router_version ?? null,
           router_interpreted_type: routerMeta?.interpreted_type ?? null,
           router_confidence: routerMeta?.confidence_score ?? null,
@@ -375,9 +426,9 @@ export function QueryForm() {
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (usesV1Engine || isOther || isSector) {
-        // v1 engine, sector view, and "other" all navigate immediately —
-        // none need the legacy generator.
+      if (usesV1Engine || isOther || isSector || isEducational) {
+        // v1 engine, sector view, educational, and "other" all navigate
+        // immediately — none need the legacy generator.
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
@@ -447,15 +498,30 @@ export function QueryForm() {
         <div className="space-y-5">
           <div>
             <Label htmlFor="qtext" className="text-base">
-              {isSector ? "Which sector? *" : "What's your question? *"}
+              {isSector
+                ? "Which sector? *"
+                : isEducational
+                  ? "Which concept? *"
+                  : "What's your question? *"}
             </Label>
-            <Textarea id="qtext" autoFocus rows={isSector ? 2 : 5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
-              placeholder={isSector
-                ? "Enter a sector like Private Banks, IT, Energy, Pharma"
-                : "e.g. I bought Siemens at 3668 a year back, should I sell now?"}
-              className="mt-2 text-base" />
+            <Textarea
+              id="qtext"
+              autoFocus
+              rows={(isSector || isEducational) ? 2 : 5}
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder={
+                isSector
+                  ? "Enter a sector like Private Banks, IT, Energy, Pharma"
+                  : isEducational
+                    ? "Ask about a concept like RSI, MACD, DCF, Beta, or Relative Strength"
+                    : "e.g. I bought Siemens at 3668 a year back, should I sell now?"
+              }
+              className="mt-2 text-base"
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
           </div>
+
 
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
@@ -643,22 +709,26 @@ export function QueryForm() {
             </div>
           )}
 
-          {intent === "educational" && (
-            <div>
-              <Label className="flex items-center gap-1">
-                Related stock (optional)
-                <Tooltip>
-                  <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                  <TooltipContent className="text-xs max-w-[220px]">Optional — pick a stock to anchor the educational context.</TooltipContent>
-                </Tooltip>
-              </Label>
-              <StockAutocomplete
-                value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
-                onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
-                onClear={() => { setStockName(""); setStockSymbol(""); }}
-              />
+          {isEducational && (
+            <div
+              className={`rounded-xl border px-4 py-3 ${
+                resolvedConcept
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-amber-500/40 bg-amber-500/5"
+              }`}
+            >
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Concept recognized</p>
+              <p className="mt-0.5 text-sm font-semibold">
+                {resolvedConcept
+                  ? resolvedConcept.canonical
+                  : "Not recognized — try RSI, MACD, DCF, Beta, or Piotroski F-Score"}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground italic">
+                Educational reports are explanatory, glossary-backed, and contain no buy/sell verdicts.
+              </p>
             </div>
           )}
+
 
           <div>
             <Label>Choose analyst (optional)</Label>

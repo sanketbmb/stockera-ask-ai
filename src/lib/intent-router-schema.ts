@@ -57,8 +57,8 @@ export function buildRouterFallback(rawText: string): RouterOutput {
 }
 
 /** Collapse canonical router type -> form intent. Phase 3B unlocks
- *  sector_view as a first-class form intent (its own report variant exists).
- *  Educational + other still collapse to "other" until Phase 3C ships. */
+ *  sector_view as a first-class form intent. Phase 3C unlocks
+ *  educational. "other" remains the catch-all. */
 export function toFormIntent(t: RouterIntent): AnyIntent {
   switch (t) {
     case "fresh_entry":
@@ -70,6 +70,7 @@ export function toFormIntent(t: RouterIntent): AnyIntent {
     case "sector_view":
       return "sector_view";
     case "educational":
+      return "educational";
     case "other":
     default:
       return "other";

@@ -16,6 +16,7 @@ export type ReportPath =
   | "post_query_existing_position"
   | "post_query_averaging"
   | "post_query_sector_view"
+  | "post_query_educational"
   | "analysis_direct"
   | "legacy_regenerate";
 
@@ -25,7 +26,8 @@ export type CreditAction =
   | "noop_dev_mode_legacy_regenerate"
   | "noop_dev_mode_existing_position"
   | "noop_dev_mode_averaging"
-  | "noop_dev_mode_sector_view";
+  | "noop_dev_mode_sector_view"
+  | "noop_dev_mode_educational";
 
 export interface MeteringDecision {
   metering_mode: MeteringMode;
@@ -39,6 +41,7 @@ const ACTION_BY_PATH: Record<ReportPath, CreditAction> = {
   post_query_existing_position: "noop_dev_mode_existing_position",
   post_query_averaging: "noop_dev_mode_averaging",
   post_query_sector_view: "noop_dev_mode_sector_view",
+  post_query_educational: "noop_dev_mode_educational",
   analysis_direct: "noop_dev_mode_direct",
   legacy_regenerate: "noop_dev_mode_legacy_regenerate",
 };
