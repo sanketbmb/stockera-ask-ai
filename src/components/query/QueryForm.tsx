@@ -446,9 +446,13 @@ export function QueryForm() {
       {step === 0 && (
         <div className="space-y-5">
           <div>
-            <Label htmlFor="qtext" className="text-base">What's your question? *</Label>
-            <Textarea id="qtext" autoFocus rows={5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
-              placeholder="e.g. I bought Siemens at 3668 a year back, should I sell now?"
+            <Label htmlFor="qtext" className="text-base">
+              {isSector ? "Which sector? *" : "What's your question? *"}
+            </Label>
+            <Textarea id="qtext" autoFocus rows={isSector ? 2 : 5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
+              placeholder={isSector
+                ? "Enter a sector like Private Banks, IT, Energy, Pharma"
+                : "e.g. I bought Siemens at 3668 a year back, should I sell now?"}
               className="mt-2 text-base" />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
           </div>
