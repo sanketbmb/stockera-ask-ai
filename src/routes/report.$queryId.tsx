@@ -32,6 +32,7 @@ import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioReject
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
 import { EducationalReport } from "@/components/report/EducationalReport";
+import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
