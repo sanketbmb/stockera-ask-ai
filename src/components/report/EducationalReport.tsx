@@ -20,6 +20,7 @@ import { SEBIDisclaimerInline } from "@/components/common/SEBIDisclaimer";
 import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
+import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
 
 const LOADING_STEPS = [
   "Looking up the concept…",
@@ -147,30 +148,56 @@ export function EducationalReport({
     return <ConceptNotFoundPanel rawQuestion={rawQuestion} suggestions={data.suggestions} />;
   }
 
-  const payload = data.payload;
-
   return (
     <div className="min-h-screen bg-mesh">
       <Navbar />
-      <main className="mx-auto max-w-4xl px-4 md:px-6 py-6 space-y-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
-            <BookOpen className="h-3 w-3" />
-            Stockera Learning Library · concept brief
-          </span>
-        </div>
+      <EducationalReportBody
+        payload={data.payload}
+        rawQuestion={rawQuestion}
+        routerMeta={routerMeta}
+        printMode={false}
+        queryId={queryId}
+      />
+    </div>
+  );
+}
 
-        <ReflectiveEducationalBanner
-          rawQuestion={rawQuestion}
-          conceptName={payload.concept_short_name}
-          routerMeta={routerMeta}
-        />
+// Presentational body — also rendered by /print-educational/$queryId.
+export function EducationalReportBody({
+  payload,
+  rawQuestion,
+  routerMeta,
+  printMode,
+  queryId,
+}: {
+  payload: EducationalReportPayload;
+  rawQuestion: string;
+  routerMeta: RouterOutput | null;
+  printMode: boolean;
+  queryId?: string;
+}) {
+  return (
+    <main className="mx-auto max-w-4xl px-4 md:px-6 py-6 space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+          <BookOpen className="h-3 w-3" />
+          Stockera Learning Library · concept brief
+        </span>
+        {!printMode && queryId && (
+          <div className="ml-auto"><DownloadPdfButton kind="educational" queryId={queryId} /></div>
+        )}
+      </div>
 
-        <EducationalHero payload={payload} />
+      <ReflectiveEducationalBanner
+        rawQuestion={rawQuestion}
+        conceptName={payload.concept_short_name}
+        routerMeta={routerMeta}
+      />
 
-        <ConceptBrief payload={payload} />
+      <EducationalHero payload={payload} />
+      <ConceptBrief payload={payload} />
 
-        {/* Softened CTA — not analyst escalation */}
+      {!printMode && (
         <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
@@ -186,10 +213,11 @@ export function EducationalReport({
             </Button>
           </div>
         </section>
+      )}
 
-        <SEBIDisclaimerInline />
-        <AuditFooter payload={payload} rawQuestion={rawQuestion} />
-      </main>
-    </div>
+      <SEBIDisclaimerInline />
+      <AuditFooter payload={payload} rawQuestion={rawQuestion} />
+      {printMode && <div id="print-ready" />}
+    </main>
   );
 }

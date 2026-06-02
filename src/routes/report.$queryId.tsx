@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
@@ -15,13 +15,9 @@ import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Download, Loader2, LogIn } from "lucide-react";
-import { toast } from "sonner";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { buildInterpretation } from "@/lib/query-intake-parser";
 import { freezeOrReadReport } from "@/lib/freeze-report.functions";
-import { generateAnalysisPdf } from "@/lib/pdf.functions";
-import { useAuth } from "@/contexts/AuthContext";
 import { composePositionContext } from "@/lib/position-context";
 import { isMfOrPortfolioQuestion } from "@/lib/position-copy";
 import { ProfitReviewAddendum } from "@/components/report/ProfitReviewAddendum";
@@ -32,6 +28,7 @@ import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioReject
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
 import { EducationalReport } from "@/components/report/EducationalReport";
+import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -224,47 +221,12 @@ function FrozenBadge({ frozenAt, isStale }: { frozenAt: string; isStale: boolean
   );
 }
 
+// Stock-report download button wrapper — delegates to the shared
+// DownloadPdfButton. Kept as a thin wrapper so the existing call site
+// (`<DownloadPdfButton symbol={symbol} horizon={horizon} />`) keeps working
+// without leaking the `kind` prop into the call site.
 function DownloadPdfButton({ symbol, horizon }: { symbol: string; horizon: QueryType }) {
-  const generate = useServerFn(generateAnalysisPdf);
-  const { user, isLoading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-
-  if (!authLoading && !user) {
-    return (
-      <Button size="sm" variant="outline" onClick={() => navigate({ to: "/login" })} className="gap-1.5">
-        <LogIn className="h-3.5 w-3.5" /><span className="text-xs">Sign in to download</span>
-      </Button>
-    );
-  }
-
-  const handleClick = async () => {
-    if (busy) return;
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      toast.error("Your session expired. Please sign in again.");
-      navigate({ to: "/login" });
-      return;
-    }
-    setBusy(true);
-    const t = toast.loading("Preparing PDF…");
-    try {
-      const res = await generate({ data: { symbol, horizon, include_news: true } });
-      window.open(res.url, "_blank", "noopener,noreferrer");
-      toast.success(res.cache_hit ? "Loaded cached PDF" : "PDF ready", { id: t });
-    } catch (err) {
-      toast.error((err as Error).message || "Could not generate PDF", { id: t });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || authLoading} className="gap-1.5">
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-      <span className="text-xs">{busy ? "Generating…" : "Download PDF"}</span>
-    </Button>
-  );
+  return <SharedDownloadPdfButton kind="stock" symbol={symbol} horizon={horizon} includeNews />;
 }
 
 // ──────────────── Legacy renderer ────────────────
