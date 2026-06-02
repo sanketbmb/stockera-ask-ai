@@ -19,6 +19,7 @@ import { SUPPORTED_SECTOR_CHIPS } from "@/lib/sector-alias-map";
 import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
+import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
 
 const LOADING_STEPS = [
   "Resolving sector…",
