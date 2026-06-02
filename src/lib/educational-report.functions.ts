@@ -14,6 +14,7 @@ import {
 } from "@/lib/educational-context";
 import { resolveConcept, suggestConcepts } from "@/lib/concept-alias-map";
 import { meteringFor } from "@/lib/credit-metering";
+import { ensureSecondaryAnswers, type SecondaryAnswer } from "@/lib/mixed-query.server";
 
 const Input = z.object({
   queryId: z.string().uuid(),
