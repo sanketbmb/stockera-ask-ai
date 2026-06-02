@@ -93,23 +93,57 @@ function cacheKeyFor(symbol: string, horizon: QueryType, includeNews: boolean): 
   // (`sec_*`) or educational (`edu_*`) keys.
   return `stk_${symbol}_${horizon}_n${includeNews ? 1 : 0}_${ANALYSIS_PDF_TEMPLATE_VERSION}_${todayIST()}`;
 }
-// Browserless runs on the public internet, so the print URL must be a
-// publicly-reachable origin. In preview/dev the incoming request host is
-// `localhost:8080`, which Browserless cannot navigate to (Chrome loads its
-// own loopback → "Navigating frame was detached"). Prefer an explicit env
-// override, then a non-local request host, and finally the stable preview URL.
-const PUBLIC_PRINT_FALLBACK = `https://id-preview--ade3c248-761c-43a7-a732-1638e82a3239.lovable.app`;
+// Browserless runs on the public internet — the print URL MUST be a
+// publicly-reachable origin that doesn't require Lovable auth.
+//
+// The `id-preview--{id}.lovable.app` and `{id}.lovableproject.com` hosts
+// are gated by the Lovable auth-bridge (302 → /auth-bridge) for any project
+// that hasn't been published. Browserless can't pass that gate, so it sees
+// a login page and times out waiting for #print-ready.
+//
+// The only reliably public host for a Lovable project is the published
+// production URL: `project--{id}.lovable.app`. We prefer that. An explicit
+// PUBLIC_PRINT_ORIGIN env var (set to any reachable URL) overrides.
+const LOVABLE_PROJECT_ID = "ade3c248-761c-43a7-a732-1638e82a3239";
+const PUBLIC_PRINT_FALLBACK = `https://project--${LOVABLE_PROJECT_ID}.lovable.app`;
 
 function originFromRequest(): string {
   const envOrigin = process.env.PUBLIC_PRINT_ORIGIN;
   if (envOrigin) return envOrigin.replace(/\/$/, "");
-
-  const host = getRequestHeader("host") ?? "";
-  const proto = getRequestHeader("x-forwarded-proto") ?? "https";
-  const isLocal = /^(localhost|127\.|0\.0\.0\.0|\[?::1)/i.test(host);
-  if (host && !isLocal) return `${proto}://${host}`;
-
+  // Always use the stable published host — the request host (preview /
+  // lovableproject) is auth-gated and unreachable to Browserless.
   return PUBLIC_PRINT_FALLBACK;
+}
+
+// Preflight: a HEAD request to the print URL with redirect:manual. If we
+// see a 302 to lovable.dev/auth-bridge, the project is not published and
+// Browserless cannot render it. Throw a clear, actionable error instead of
+// waiting 55 seconds for an inevitable timeout.
+async function ensurePrintUrlIsPublic(printUrl: string): Promise<void> {
+  try {
+    const res = await fetch(printUrl, { method: "GET", redirect: "manual" });
+    const status = res.status;
+    const location = res.headers.get("location") ?? "";
+    if (status >= 300 && status < 400 && /lovable\.dev\/auth-bridge/i.test(location)) {
+      throw new Error(
+        "Preview is private. Publish the project (Publish button, top right) so the PDF service can reach your report. After publishing, click Download PDF again.",
+      );
+    }
+    if (status === 403 || status === 401) {
+      throw new Error(
+        "Preview is not publicly accessible. Publish the project (Publish button, top right) so the PDF service can reach your report.",
+      );
+    }
+    if (status === 404) {
+      throw new Error(
+        "Print page returned 404. Publish the project so the latest preview is deployed, then try again.",
+      );
+    }
+  } catch (err) {
+    // Network errors on preflight are non-fatal — let Browserless try.
+    if (err instanceof Error && /^Preview is|^Print page/i.test(err.message)) throw err;
+    console.warn("[pdf] preflight check failed (non-fatal):", err);
+  }
 }
 async function callOrchestrator(symbol: string, horizon: QueryType, includeNews: boolean): Promise<StockAnalysisPayload> {
   const url = process.env.SUPABASE_URL;
