@@ -1,53 +1,49 @@
-// SSR-loader print route for the direct /analysis/$symbol live stock view.
-// Browserless renders this URL; the loader runs the orchestrator
+// SSR-loader print route for unified stock reports (queries.ai_report).
+// Browserless renders this URL; the loader resolves the frozen payload
 // server-side so #print-ready (or #print-error) is in the initial HTML.
 
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
-import { getPrintAnalysisPayload } from "@/lib/pdf.functions";
+import { getPrintUnifiedStockPayload } from "@/lib/pdf.functions";
 import { FIRM } from "@/lib/firm-details";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 
-const searchSchema = z.object({
-  horizon: z.enum(["intraday", "medium-term", "long-term"]),
-  news: z.coerce.number().min(0).max(1),
-  token: z.string().min(10).max(4000),
-});
+const searchSchema = z.object({ token: z.string().min(10).max(4000) });
 
 type LoaderData =
-  | { ok: true; payload: StockAnalysisPayload }
+  | { ok: true; payload: StockAnalysisPayload; symbol: string; horizon: QueryType }
   | { ok: false; message: string };
 
-export const Route = createFileRoute("/print/$symbol")({
+export const Route = createFileRoute("/print-stock/$queryId")({
   validateSearch: searchSchema,
-  loaderDeps: ({ search: { horizon, news, token } }) => ({ horizon, news, token }),
+  loaderDeps: ({ search: { token } }) => ({ token }),
   loader: async ({ params, deps }): Promise<LoaderData> => {
     try {
-      const res = await getPrintAnalysisPayload({
-        data: {
-          symbol: params.symbol,
-          horizon: deps.horizon as QueryType,
-          include_news: deps.news === 1,
-          token: deps.token,
-        },
+      const res = await getPrintUnifiedStockPayload({
+        data: { queryId: params.queryId, token: deps.token },
       });
-      return { ok: true, payload: res as StockAnalysisPayload };
+      return {
+        ok: true,
+        payload: res.payload as unknown as StockAnalysisPayload,
+        symbol: res.symbol,
+        horizon: res.horizon as QueryType,
+      };
     } catch (err) {
       return { ok: false, message: (err as Error).message || "Failed to load print payload" };
     }
   },
   head: ({ params }) => ({
     meta: [
-      { title: `Stockera Analysis — ${params.symbol} (Print)` },
+      { title: `Stockera Analysis — ${params.queryId.slice(0, 8)} (Print)` },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
-  component: PrintPage,
+  component: PrintUnifiedStockPage,
 });
 
-function PrintPage() {
+function PrintUnifiedStockPage() {
   const data = Route.useLoaderData() as LoaderData;
 
   useEffect(() => {

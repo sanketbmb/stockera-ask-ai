@@ -13,10 +13,13 @@ const SYMBOL_RE = /^[A-Z0-9._-]{1,20}$/;
 const BUCKET = "pdf-cache";
 const CACHE_TTL_SEC = 60 * 60; // 1 hour
 const SIGNED_URL_TTL_SEC = 60 * 60;
-const BROWSERLESS_TIMEOUT_MS = 90_000;
+// Browserless plans cap individual /pdf calls around 60s. Keep our wait
+// budget comfortably under that so we never trip an upstream 408.
+const BROWSERLESS_TIMEOUT_MS = 55_000;
 const PRINT_READY_SELECTOR = "#print-ready, #print-error";
-const TOKEN_TTL_SEC = 5 * 60;
+const TOKEN_TTL_SEC = 10 * 60;
 const QUOTA_WARN_THRESHOLD = 800;
+
 
 // ─────────────────────────────────────────────────────────────────
 // HMAC token (Web Crypto) — protects the public print route.
@@ -602,6 +605,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
 
 const SECTOR_PDF_TEMPLATE_VERSION = "v1";
 const EDUCATIONAL_PDF_TEMPLATE_VERSION = "v1";
+const STOCK_UNIFIED_PDF_TEMPLATE_VERSION = "v1";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cacheKeyForSector(queryId: string): string {
@@ -610,9 +614,12 @@ function cacheKeyForSector(queryId: string): string {
 function cacheKeyForEducational(queryId: string): string {
   return `edu_${queryId}_${EDUCATIONAL_PDF_TEMPLATE_VERSION}_${todayIST()}`;
 }
+function cacheKeyForUnifiedStock(queryId: string, horizon: QueryType): string {
+  return `stk_q_${queryId}_${horizon}_${STOCK_UNIFIED_PDF_TEMPLATE_VERSION}_${todayIST()}`;
+}
 
 const KindedTokenSchema = z.object({
-  kind: z.enum(["sector", "educational"]),
+  kind: z.enum(["sector", "educational", "stock_unified"]),
   queryId: z.string().regex(UUID_RE),
   exp: z.number(),
 });
@@ -620,7 +627,7 @@ export type KindedPrintToken = z.infer<typeof KindedTokenSchema>;
 
 export async function verifyKindedPrintToken(
   token: string,
-  expectedKind: "sector" | "educational",
+  expectedKind: "sector" | "educational" | "stock_unified",
   expectedQueryId: string,
 ): Promise<boolean> {
   const v = await verifyPrintToken<KindedPrintToken>(token);
@@ -629,6 +636,7 @@ export async function verifyKindedPrintToken(
   if (v.queryId !== expectedQueryId) return false;
   return true;
 }
+
 
 async function callBrowserlessForUrl(printUrl: string, label: string): Promise<ArrayBuffer> {
   const browserlessToken = process.env.BROWSERLESS_TOKEN;
@@ -904,4 +912,120 @@ export const getPrintEducationalPayload = createServerFn({ method: "POST" })
       rawQuestion: (row.query_text ?? row.custom_question ?? "") as string,
     };
   });
+
+// ─────────────────────────────────────────────────────────────────
+// UNIFIED STOCK (frozen artifact) — used by /report/$queryId stock PDFs.
+// Reads queries.ai_report directly; never calls the live orchestrator.
+// ─────────────────────────────────────────────────────────────────
+
+export const generateUnifiedStockPdf = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ queryId: z.string().regex(UUID_RE) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const startedAt = Date.now();
+
+    const { data: row, error: rowErr } = await supabaseAdmin
+      .from("queries")
+      .select("user_id, query_type, engine_version, ai_report, stock_symbol, stock_name, horizon")
+      .eq("id", data.queryId)
+      .single();
+    if (rowErr || !row) throw new Error("Query not found");
+    if (row.user_id !== context.userId) throw new Error("Not authorized");
+    if (row.engine_version !== "v1_tier_shaped" || !row.ai_report) {
+      throw new Error("Stock report is not frozen yet");
+    }
+
+    const symbol = (row.stock_symbol ?? row.stock_name ?? "STOCK").toString().toUpperCase();
+    const horizonRaw = (row.horizon ?? "medium-term") as string;
+    const horizon: QueryType = (HORIZONS as readonly string[]).includes(horizonRaw)
+      ? (horizonRaw as QueryType)
+      : "medium-term";
+
+    const key = cacheKeyForUnifiedStock(data.queryId, horizon);
+    const filename = `Stockera_Analysis_${symbol}_${horizon}_${todayIST()}.pdf`;
+    const objectPath = `${key}.pdf`;
+
+    const cachedUrl = await lookupKindedCache(key, objectPath, filename);
+    if (cachedUrl) {
+      await logKindedAttempt(key, symbol, startedAt, true, true, null, context.userId);
+      return { ok: true as const, url: cachedUrl, filename, cache_hit: true };
+    }
+
+    const token = await signPrintToken({
+      kind: "stock_unified",
+      queryId: data.queryId,
+      exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC,
+    });
+    const origin = originFromRequest();
+    const printUrl = `${origin}/print-stock/${encodeURIComponent(data.queryId)}?token=${encodeURIComponent(token)}`;
+    console.log(`[pdf-stock-unified] queryId=${data.queryId} symbol=${symbol} horizon=${horizon} print=${printUrl.replace(/token=[^&]+/, "token=***")}`);
+
+    let pdfBytes: ArrayBuffer;
+    try {
+      pdfBytes = await callBrowserlessForUrl(printUrl, `Stockera Analysis — ${symbol}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await logKindedAttempt(key, symbol, startedAt, false, false, msg, context.userId);
+      throw new Error(`PDF generation failed: ${msg}`);
+    }
+
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .upload(objectPath, new Uint8Array(pdfBytes), {
+        contentType: "application/pdf",
+        upsert: true,
+        cacheControl: `${CACHE_TTL_SEC}`,
+      });
+    if (uploadErr) {
+      await logKindedAttempt(key, symbol, startedAt, false, false, `Upload: ${uploadErr.message}`, context.userId);
+      throw new Error(`PDF upload failed: ${uploadErr.message}`);
+    }
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+    if (signErr || !signed?.signedUrl) {
+      await logKindedAttempt(key, symbol, startedAt, false, false, "Sign URL failed", context.userId);
+      throw new Error("Could not create download URL for PDF");
+    }
+
+    await logKindedAttempt(key, symbol, startedAt, true, false, null, context.userId);
+    await maybeWarnQuota();
+    const dur = Date.now() - startedAt;
+    console.log(`[pdf-stock-unified] success queryId=${data.queryId} duration_ms=${dur}`);
+    return { ok: true as const, url: signed.signedUrl, filename, cache_hit: false };
+  });
+
+export const getPrintUnifiedStockPayload = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      queryId: z.string().regex(UUID_RE),
+      token: z.string().min(10).max(4000),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const ok = await verifyKindedPrintToken(data.token, "stock_unified", data.queryId);
+    if (!ok) throw new Error("Invalid or expired print token");
+    const { data: row, error } = await supabaseAdmin
+      .from("queries")
+      .select("ai_report, query_text, custom_question, engine_version, stock_symbol, stock_name, horizon")
+      .eq("id", data.queryId)
+      .single();
+    if (error || !row) throw new Error("Query not found");
+    if (row.engine_version !== "v1_tier_shaped" || !row.ai_report) {
+      throw new Error("Stock report is not frozen yet");
+    }
+    const symbol = (row.stock_symbol ?? row.stock_name ?? "STOCK").toString().toUpperCase();
+    const horizonRaw = (row.horizon ?? "medium-term") as string;
+    const horizon: QueryType = (HORIZONS as readonly string[]).includes(horizonRaw)
+      ? (horizonRaw as QueryType)
+      : "medium-term";
+    return {
+      payload: row.ai_report,
+      rawQuestion: (row.custom_question ?? row.query_text ?? "") as string,
+      symbol,
+      horizon,
+    };
+  });
+
 

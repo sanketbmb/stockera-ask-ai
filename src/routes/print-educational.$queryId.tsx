@@ -1,10 +1,9 @@
-// Public, token-gated print route for the Educational concept brief.
-// Consumed by Browserless to render the PDF — do NOT add chrome here.
+// SSR-loader print route for the Educational concept brief. Browserless
+// renders this URL; the loader resolves the frozen payload server-side
+// so #print-ready (or #print-error) is in the initial HTML.
 
-import { createFileRoute, useParams, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { z } from "zod";
 import { getPrintEducationalPayload } from "@/lib/pdf.functions";
 import { EducationalReportBody } from "@/components/report/EducationalReport";
@@ -13,30 +12,33 @@ import { FIRM } from "@/lib/firm-details";
 
 const searchSchema = z.object({ token: z.string().min(10).max(4000) });
 
+type LoaderData =
+  | { ok: true; payload: EducationalReportPayload; rawQuestion: string }
+  | { ok: false; message: string };
+
 export const Route = createFileRoute("/print-educational/$queryId")({
   validateSearch: searchSchema,
+  loaderDeps: ({ search: { token } }) => ({ token }),
+  loader: async ({ params, deps }): Promise<LoaderData> => {
+    try {
+      const res = await getPrintEducationalPayload({
+        data: { queryId: params.queryId, token: deps.token },
+      });
+      return {
+        ok: true,
+        payload: res.payload as unknown as EducationalReportPayload,
+        rawQuestion: res.rawQuestion,
+      };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message || "Failed to load print payload" };
+    }
+  },
   head: () => ({ meta: [{ title: "Stockera Concept Brief (Print)" }, { name: "robots", content: "noindex, nofollow" }] }),
   component: PrintEducationalPage,
 });
 
 function PrintEducationalPage() {
-  const { queryId } = useParams({ from: "/print-educational/$queryId" });
-  const { token } = useSearch({ from: "/print-educational/$queryId" });
-  const fetchPayload = useServerFn(getPrintEducationalPayload);
-
-  const { data, error, isLoading } = useQuery({
-    queryKey: ["print-educational", queryId, token],
-    queryFn: () => fetchPayload({ data: { queryId, token } }),
-    retry: false,
-    staleTime: Infinity,
-  });
-
-  const [slowTimeout, setSlowTimeout] = useState(false);
-  useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setSlowTimeout(true), 5000);
-    return () => clearTimeout(t);
-  }, [isLoading]);
+  const data = Route.useLoaderData() as LoaderData;
 
   useEffect(() => {
     const html = document.documentElement;
@@ -45,14 +47,11 @@ function PrintEducationalPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading && !slowTimeout) return <div className="p-10 text-sm text-muted-foreground">Preparing concept brief…</div>;
-  if (error || !data || slowTimeout) {
+  if (!data.ok) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {slowTimeout ? "Report failed to load within 5s." : (error as Error | null)?.message ?? "Unknown error"}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{data.message}</p>
         <div id="print-error" />
       </div>
     );
@@ -77,7 +76,7 @@ function PrintEducationalPage() {
       </header>
 
       <EducationalReportBody
-        payload={data.payload as unknown as EducationalReportPayload}
+        payload={data.payload}
         rawQuestion={data.rawQuestion}
         routerMeta={null}
         printMode
