@@ -76,6 +76,7 @@ function PrintPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <div id="print-ready" data-print-ready="ssr" style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <header className="mx-auto max-w-5xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>
