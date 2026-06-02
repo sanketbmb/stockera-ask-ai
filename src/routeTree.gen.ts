@@ -33,6 +33,7 @@ import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
 import { Route as PrintSymbolRouteImport } from './routes/print.$symbol'
 import { Route as PrintSectorQueryIdRouteImport } from './routes/print-sector.$queryId'
+import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educational.$queryId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
@@ -165,6 +166,11 @@ const PrintSectorQueryIdRoute = PrintSectorQueryIdRouteImport.update({
   path: '/print-sector/$queryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrintEducationalQueryIdRoute = PrintEducationalQueryIdRouteImport.update({
+  id: '/print-educational/$queryId',
+  path: '/print-educational/$queryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -252,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
@@ -289,6 +296,7 @@ export interface FileRoutesByTo {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
@@ -327,6 +335,7 @@ export interface FileRoutesById {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
@@ -366,6 +375,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
@@ -403,6 +413,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
@@ -440,6 +451,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
@@ -478,6 +490,7 @@ export interface RootRouteChildren {
   AdminSuperRoute: typeof AdminSuperRoute
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  PrintEducationalQueryIdRoute: typeof PrintEducationalQueryIdRoute
   PrintSectorQueryIdRoute: typeof PrintSectorQueryIdRoute
   PrintSymbolRoute: typeof PrintSymbolRoute
   RQueryIdRoute: typeof RQueryIdRoute
@@ -657,6 +670,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrintSectorQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/print-educational/$queryId': {
+      id: '/print-educational/$queryId'
+      path: '/print-educational/$queryId'
+      fullPath: '/print-educational/$queryId'
+      preLoaderRoute: typeof PrintEducationalQueryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -766,6 +786,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminSuperRoute: AdminSuperRoute,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  PrintEducationalQueryIdRoute: PrintEducationalQueryIdRoute,
   PrintSectorQueryIdRoute: PrintSectorQueryIdRoute,
   PrintSymbolRoute: PrintSymbolRoute,
   RQueryIdRoute: RQueryIdRoute,
@@ -777,3 +798,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
