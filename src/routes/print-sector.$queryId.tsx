@@ -45,6 +45,7 @@ function PrintSectorPage() {
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
         <p className="mt-2 text-sm text-muted-foreground">{(error as Error | null)?.message ?? "Unknown error"}</p>
+        <div id="print-error" className="hidden" />
       </div>
     );
   }
