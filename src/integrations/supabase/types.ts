@@ -647,9 +647,11 @@ export type Database = {
           ai_report: Json | null
           assigned_analyst_id: string | null
           buy_price: number | null
+          concept_canonical: string | null
           created_at: string | null
           current_price: number | null
           custom_question: string | null
+          educational_difficulty: string | null
           engine_source: string | null
           engine_version: string | null
           entry_price: number | null
@@ -682,9 +684,11 @@ export type Database = {
           ai_report?: Json | null
           assigned_analyst_id?: string | null
           buy_price?: number | null
+          concept_canonical?: string | null
           created_at?: string | null
           current_price?: number | null
           custom_question?: string | null
+          educational_difficulty?: string | null
           engine_source?: string | null
           engine_version?: string | null
           entry_price?: number | null
@@ -717,9 +721,11 @@ export type Database = {
           ai_report?: Json | null
           assigned_analyst_id?: string | null
           buy_price?: number | null
+          concept_canonical?: string | null
           created_at?: string | null
           current_price?: number | null
           custom_question?: string | null
+          educational_difficulty?: string | null
           engine_source?: string | null
           engine_version?: string | null
           entry_price?: number | null
