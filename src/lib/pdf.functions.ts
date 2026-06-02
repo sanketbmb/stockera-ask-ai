@@ -675,6 +675,8 @@ export async function verifyKindedPrintToken(
 async function callBrowserlessForUrl(printUrl: string, label: string): Promise<ArrayBuffer> {
   const browserlessToken = process.env.BROWSERLESS_TOKEN;
   if (!browserlessToken) throw new Error("PDF service is not configured. Please contact support.");
+  // Preflight — fail fast with a clear error if the preview is auth-gated.
+  await ensurePrintUrlIsPublic(printUrl);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
   try {
