@@ -47,13 +47,15 @@ function PrintSectorPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading) return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
-  if (error || !data) {
+  if (isLoading && !slowTimeout) return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
+  if (error || !data || slowTimeout) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{(error as Error | null)?.message ?? "Unknown error"}</p>
-        <div id="print-error" className="hidden" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          {slowTimeout ? "Report failed to load within 5s." : (error as Error | null)?.message ?? "Unknown error"}
+        </p>
+        <div id="print-error" />
       </div>
     );
   }
