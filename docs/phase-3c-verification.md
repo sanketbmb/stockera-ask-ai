@@ -106,3 +106,12 @@ $ node scripts/check-forbidden-vocab.mjs
 
 None for "Other" graduation — explicitly out of scope; "other" remains routed to RoutedPendingPanel.
 PDF QA on the Browserless side is design-verified but not yet exercised end-to-end against an Educational query — recommend a smoke test before public launch.
+
+## PDF export (post-stabilization)
+
+| # | Case | Expected |
+|---|------|----------|
+| C-PDF-1 | Educational report → Download PDF → first call same IST day | `generateEducationalPdf` cache miss → Browserless 200 → upload → signed URL opens. `cache_hit=false`. |
+| C-PDF-2 | Educational report → Download PDF → second call same IST day | Cache hit, no Browserless call. `cache_hit=true`. |
+| C-PDF-3 | Reuse a sector token on `/print-educational/:queryId` | `verifyKindedPrintToken` rejects with "Invalid or expired print token". |
+| C-PDF-4 | Cache keys | All educational PDF objects in `pdf-cache/` are `edu_<queryId>_v1_<IST-date>.pdf` — distinct from `stk_*` and `sec_*`. |

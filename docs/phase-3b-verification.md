@@ -60,3 +60,13 @@
 
 ## Blockers before Phase 3C
 None. Server-side sector PDF generation (separate cache key namespace) is queued as Phase 3B.1 — browser print is functional in the interim.
+
+## PDF export (post-stabilization)
+
+| # | Case | Expected |
+|---|------|----------|
+| B-PDF-1 | Sector report → Download PDF → first call same IST day | `generateSectorPdf` cache miss → Browserless 200 → upload → signed URL opens in new tab. `pdf_generation_log.success=true, cache_hit=false`. |
+| B-PDF-2 | Sector report → Download PDF → second call same IST day | `generateSectorPdf` cache hit → no Browserless call. `cache_hit=true`. |
+| B-PDF-3 | Reuse a stock-print token on `/print-sector/:queryId` | `verifyKindedPrintToken` rejects with "Invalid or expired print token". |
+| B-PDF-4 | Open `/print-sector/:queryId` with no `token` query | TanStack `validateSearch` 4xx; nothing leaks. |
+| B-PDF-5 | Cache keys | All sector PDF objects in `pdf-cache/` are `sec_<queryId>_v1_<IST-date>.pdf` — distinct from `stk_*`. |
