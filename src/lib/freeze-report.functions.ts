@@ -200,7 +200,16 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
       },
     }).then(({ error }) => { if (error) console.warn("[freezeOrReadReport] audit failed:", error); });
 
-    return persistPayload;
+    const { answers: secondaryAnswers } = await ensureSecondaryAnswers({
+      row: row as never,
+      reportKind: "stock",
+      primaryPayload: persistPayload as unknown as Record<string, unknown>,
+      actorId: userId,
+    });
+
+    return { ...persistPayload, secondary_answers: secondaryAnswers } as StockAnalysisPayload & {
+      secondary_answers: typeof secondaryAnswers;
+    };
   });
 
 export const FREEZE_FLOW_EXCLUDES_DIRECT_ANALYSIS = {
