@@ -58,11 +58,18 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as SectorReportPayload;
       if (cached?.schema_version === "v1_sector_view") {
+        const { answers } = await ensureSecondaryAnswers({
+          row: row as never,
+          reportKind: "sector",
+          primaryPayload: cached as unknown as Record<string, unknown>,
+          actorId: userId,
+        });
         return {
           ok: true,
           payload: cached,
           served_from_cache: true,
           frozen_at: row.frozen_at as string,
+          secondary_answers: answers,
         };
       }
     }
