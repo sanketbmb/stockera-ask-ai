@@ -10,7 +10,7 @@ import { EducationalReportBody } from "@/components/report/EducationalReport";
 import type { EducationalReportPayload } from "@/lib/educational-context";
 import { FIRM } from "@/lib/firm-details";
 
-const searchSchema = z.object({ token: z.string().min(10).max(4000) });
+const searchSchema = z.object({ token: z.string().min(1).max(4000).optional().default("") });
 
 type LoaderData =
   | { ok: true; payload: EducationalReportPayload; rawQuestion: string }
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/print-educational/$queryId")({
   validateSearch: searchSchema,
   loaderDeps: ({ search: { token } }) => ({ token }),
   loader: async ({ params, deps }): Promise<LoaderData> => {
+    if (!deps.token) return { ok: false, message: "Missing print token" };
     try {
       const res = await getPrintEducationalPayload({
         data: { queryId: params.queryId, token: deps.token },
@@ -34,6 +35,13 @@ export const Route = createFileRoute("/print-educational/$queryId")({
     }
   },
   head: () => ({ meta: [{ title: "Stockera Concept Brief (Print)" }, { name: "robots", content: "noindex, nofollow" }] }),
+  errorComponent: ({ error }) => (
+    <div className="p-10">
+      <h1 className="font-display text-xl">Print route error</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div id="print-error" />
+    </div>
+  ),
   component: PrintEducationalPage,
 });
 
@@ -59,6 +67,9 @@ function PrintEducationalPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Marker-first: emit #print-ready immediately in the SSR HTML so
+          Browserless can capture as soon as the first paint settles. */}
+      <div id="print-ready" data-print-ready="ssr" style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <header className="mx-auto max-w-4xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>
