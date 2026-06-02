@@ -180,6 +180,9 @@ function TierShapedReportContent({
         suppressFreshTab={isPhase2}
         defaultActionTab={defaultActionTab}
       />
+      <YouAlsoAskedSection
+        answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
+      />
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
