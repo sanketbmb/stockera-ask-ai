@@ -593,3 +593,314 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
     return { ok: true as const, url: signed.signedUrl, filename, cache_hit: false };
   });
 
+// ─────────────────────────────────────────────────────────────────
+// SECTOR + EDUCATIONAL — kinded print tokens + PDF server fns.
+// Cache keys are namespaced (`sec_*` / `edu_*`) to avoid colliding
+// with the stock cache (`stk_*`).
+// ─────────────────────────────────────────────────────────────────
+
+const SECTOR_PDF_TEMPLATE_VERSION = "v1";
+const EDUCATIONAL_PDF_TEMPLATE_VERSION = "v1";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function cacheKeyForSector(queryId: string): string {
+  return `sec_${queryId}_${SECTOR_PDF_TEMPLATE_VERSION}_${todayIST()}`;
+}
+function cacheKeyForEducational(queryId: string): string {
+  return `edu_${queryId}_${EDUCATIONAL_PDF_TEMPLATE_VERSION}_${todayIST()}`;
+}
+
+const KindedTokenSchema = z.object({
+  kind: z.enum(["sector", "educational"]),
+  queryId: z.string().regex(UUID_RE),
+  exp: z.number(),
+});
+export type KindedPrintToken = z.infer<typeof KindedTokenSchema>;
+
+export async function verifyKindedPrintToken(
+  token: string,
+  expectedKind: "sector" | "educational",
+  expectedQueryId: string,
+): Promise<boolean> {
+  const v = await verifyPrintToken<KindedPrintToken>(token);
+  if (!v) return false;
+  if (v.kind !== expectedKind) return false;
+  if (v.queryId !== expectedQueryId) return false;
+  return true;
+}
+
+async function callBrowserlessForUrl(printUrl: string, label: string): Promise<ArrayBuffer> {
+  const browserlessToken = process.env.BROWSERLESS_TOKEN;
+  if (!browserlessToken) throw new Error("PDF service is not configured. Please contact support.");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
+  try {
+    const res = await fetch(
+      `https://chrome.browserless.io/pdf?token=${encodeURIComponent(browserlessToken)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          url: printUrl,
+          gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
+          waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+          options: {
+            format: "A4",
+            printBackground: true,
+            preferCSSPageSize: false,
+            displayHeaderFooter: true,
+            margin: { top: "18mm", bottom: "18mm", left: "12mm", right: "12mm" },
+            headerTemplate: `<div style="font-size:8px;color:#888;width:100%;padding:0 12mm;display:flex;justify-content:space-between;"><span>${label}</span><span>${todayIST()}</span></div>`,
+            footerTemplate: `<div style="font-size:8px;color:#888;width:100%;padding:0 12mm;display:flex;justify-content:space-between;"><span>Educational only — not SEBI investment advice.</span><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Browserless HTTP ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    return await res.arrayBuffer();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function logKindedAttempt(
+  cache_key: string,
+  symbolLabel: string,
+  startedAt: number,
+  success: boolean,
+  cache_hit: boolean,
+  error_message: string | null,
+  user_id: string | null,
+) {
+  try {
+    await supabaseAdmin.from("pdf_generation_log").insert({
+      symbol: symbolLabel,
+      horizon: "long-term",
+      include_news: false,
+      as_of_date: todayIST(),
+      cache_key,
+      duration_ms: Date.now() - startedAt,
+      success,
+      cache_hit,
+      error_message,
+      user_id,
+    });
+  } catch (e) {
+    console.error("[pdf-kinded] log insert failed:", e);
+  }
+}
+
+async function lookupKindedCache(cache_key: string, objectPath: string, filename: string) {
+  try {
+    const since = new Date(Date.now() - CACHE_TTL_SEC * 1000).toISOString();
+    const { data: cachedRow } = await supabaseAdmin
+      .from("pdf_generation_log")
+      .select("created_at")
+      .eq("cache_key", cache_key)
+      .eq("success", true)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!cachedRow) return null;
+    const { data: signed } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+    return signed?.signedUrl ?? null;
+  } catch (e) {
+    console.warn("[pdf-kinded] cache lookup failed (non-fatal):", e);
+    return null;
+  }
+}
+
+export const generateSectorPdf = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ queryId: z.string().regex(UUID_RE) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const startedAt = Date.now();
+    const key = cacheKeyForSector(data.queryId);
+    const filename = `Stockera_Sector_${data.queryId.slice(0, 8)}_${todayIST()}.pdf`;
+    const objectPath = `${key}.pdf`;
+
+    // Authz — the requesting user must own this query.
+    const { data: row, error: rowErr } = await supabaseAdmin
+      .from("queries")
+      .select("user_id, query_type")
+      .eq("id", data.queryId)
+      .single();
+    if (rowErr || !row) throw new Error("Query not found");
+    if (row.user_id !== context.userId) throw new Error("Not authorized");
+    if (row.query_type !== "sector_view") throw new Error("Not a sector_view query");
+
+    const cachedUrl = await lookupKindedCache(key, objectPath, filename);
+    if (cachedUrl) {
+      await logKindedAttempt(key, "__SECTOR__", startedAt, true, true, null, context.userId);
+      return { ok: true as const, url: cachedUrl, filename, cache_hit: true };
+    }
+
+    const token = await signPrintToken({
+      kind: "sector",
+      queryId: data.queryId,
+      exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC,
+    });
+    const origin = originFromRequest();
+    const printUrl = `${origin}/print-sector/${encodeURIComponent(data.queryId)}?token=${encodeURIComponent(token)}`;
+
+    let pdfBytes: ArrayBuffer;
+    try {
+      pdfBytes = await callBrowserlessForUrl(printUrl, "Stockera Sector View");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await logKindedAttempt(key, "__SECTOR__", startedAt, false, false, msg, context.userId);
+      throw new Error(`PDF generation failed: ${msg}`);
+    }
+
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .upload(objectPath, new Uint8Array(pdfBytes), {
+        contentType: "application/pdf",
+        upsert: true,
+        cacheControl: `${CACHE_TTL_SEC}`,
+      });
+    if (uploadErr) {
+      await logKindedAttempt(key, "__SECTOR__", startedAt, false, false, `Upload: ${uploadErr.message}`, context.userId);
+      throw new Error(`PDF upload failed: ${uploadErr.message}`);
+    }
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+    if (signErr || !signed?.signedUrl) {
+      await logKindedAttempt(key, "__SECTOR__", startedAt, false, false, "Sign URL failed", context.userId);
+      throw new Error("Could not create download URL for PDF");
+    }
+
+    await logKindedAttempt(key, "__SECTOR__", startedAt, true, false, null, context.userId);
+    await maybeWarnQuota();
+    return { ok: true as const, url: signed.signedUrl, filename, cache_hit: false };
+  });
+
+export const generateEducationalPdf = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ queryId: z.string().regex(UUID_RE) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const startedAt = Date.now();
+    const key = cacheKeyForEducational(data.queryId);
+    const filename = `Stockera_Concept_${data.queryId.slice(0, 8)}_${todayIST()}.pdf`;
+    const objectPath = `${key}.pdf`;
+
+    const { data: row, error: rowErr } = await supabaseAdmin
+      .from("queries")
+      .select("user_id, query_type")
+      .eq("id", data.queryId)
+      .single();
+    if (rowErr || !row) throw new Error("Query not found");
+    if (row.user_id !== context.userId) throw new Error("Not authorized");
+    if (row.query_type !== "educational") throw new Error("Not an educational query");
+
+    const cachedUrl = await lookupKindedCache(key, objectPath, filename);
+    if (cachedUrl) {
+      await logKindedAttempt(key, "__EDUCATIONAL__", startedAt, true, true, null, context.userId);
+      return { ok: true as const, url: cachedUrl, filename, cache_hit: true };
+    }
+
+    const token = await signPrintToken({
+      kind: "educational",
+      queryId: data.queryId,
+      exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC,
+    });
+    const origin = originFromRequest();
+    const printUrl = `${origin}/print-educational/${encodeURIComponent(data.queryId)}?token=${encodeURIComponent(token)}`;
+
+    let pdfBytes: ArrayBuffer;
+    try {
+      pdfBytes = await callBrowserlessForUrl(printUrl, "Stockera Concept Brief");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await logKindedAttempt(key, "__EDUCATIONAL__", startedAt, false, false, msg, context.userId);
+      throw new Error(`PDF generation failed: ${msg}`);
+    }
+
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .upload(objectPath, new Uint8Array(pdfBytes), {
+        contentType: "application/pdf",
+        upsert: true,
+        cacheControl: `${CACHE_TTL_SEC}`,
+      });
+    if (uploadErr) {
+      await logKindedAttempt(key, "__EDUCATIONAL__", startedAt, false, false, `Upload: ${uploadErr.message}`, context.userId);
+      throw new Error(`PDF upload failed: ${uploadErr.message}`);
+    }
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(objectPath, SIGNED_URL_TTL_SEC, { download: filename });
+    if (signErr || !signed?.signedUrl) {
+      await logKindedAttempt(key, "__EDUCATIONAL__", startedAt, false, false, "Sign URL failed", context.userId);
+      throw new Error("Could not create download URL for PDF");
+    }
+
+    await logKindedAttempt(key, "__EDUCATIONAL__", startedAt, true, false, null, context.userId);
+    await maybeWarnQuota();
+    return { ok: true as const, url: signed.signedUrl, filename, cache_hit: false };
+  });
+
+// Public, token-gated payload fetchers used by the print routes.
+// These do NOT require user auth — Browserless calls them anonymously
+// using the short-lived HMAC token signed by the PDF generators above.
+
+export const getPrintSectorPayload = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      queryId: z.string().regex(UUID_RE),
+      token: z.string().min(10).max(4000),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const ok = await verifyKindedPrintToken(data.token, "sector", data.queryId);
+    if (!ok) throw new Error("Invalid or expired print token");
+    const { data: row, error } = await supabaseAdmin
+      .from("queries")
+      .select("ai_report, query_text, custom_question, engine_version")
+      .eq("id", data.queryId)
+      .single();
+    if (error || !row) throw new Error("Query not found");
+    if (row.engine_version !== "v1_sector_view" || !row.ai_report) {
+      throw new Error("Sector report is not frozen yet");
+    }
+    return {
+      payload: row.ai_report,
+      rawQuestion: (row.query_text ?? row.custom_question ?? "") as string,
+    };
+  });
+
+export const getPrintEducationalPayload = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      queryId: z.string().regex(UUID_RE),
+      token: z.string().min(10).max(4000),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const ok = await verifyKindedPrintToken(data.token, "educational", data.queryId);
+    if (!ok) throw new Error("Invalid or expired print token");
+    const { data: row, error } = await supabaseAdmin
+      .from("queries")
+      .select("ai_report, query_text, custom_question, engine_version")
+      .eq("id", data.queryId)
+      .single();
+    if (error || !row) throw new Error("Query not found");
+    if (row.engine_version !== "v1_educational" || !row.ai_report) {
+      throw new Error("Educational report is not frozen yet");
+    }
+    return {
+      payload: row.ai_report,
+      rawQuestion: (row.query_text ?? row.custom_question ?? "") as string,
+    };
+  });
+
