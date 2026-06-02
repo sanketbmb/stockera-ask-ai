@@ -224,47 +224,12 @@ function FrozenBadge({ frozenAt, isStale }: { frozenAt: string; isStale: boolean
   );
 }
 
+// Stock-report download button wrapper — delegates to the shared
+// DownloadPdfButton. Kept as a thin wrapper so the existing call site
+// (`<DownloadPdfButton symbol={symbol} horizon={horizon} />`) keeps working
+// without leaking the `kind` prop into the call site.
 function DownloadPdfButton({ symbol, horizon }: { symbol: string; horizon: QueryType }) {
-  const generate = useServerFn(generateAnalysisPdf);
-  const { user, isLoading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-
-  if (!authLoading && !user) {
-    return (
-      <Button size="sm" variant="outline" onClick={() => navigate({ to: "/login" })} className="gap-1.5">
-        <LogIn className="h-3.5 w-3.5" /><span className="text-xs">Sign in to download</span>
-      </Button>
-    );
-  }
-
-  const handleClick = async () => {
-    if (busy) return;
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      toast.error("Your session expired. Please sign in again.");
-      navigate({ to: "/login" });
-      return;
-    }
-    setBusy(true);
-    const t = toast.loading("Preparing PDF…");
-    try {
-      const res = await generate({ data: { symbol, horizon, include_news: true } });
-      window.open(res.url, "_blank", "noopener,noreferrer");
-      toast.success(res.cache_hit ? "Loaded cached PDF" : "PDF ready", { id: t });
-    } catch (err) {
-      toast.error((err as Error).message || "Could not generate PDF", { id: t });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Button size="sm" variant="outline" onClick={handleClick} disabled={busy || authLoading} className="gap-1.5">
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-      <span className="text-xs">{busy ? "Generating…" : "Download PDF"}</span>
-    </Button>
-  );
+  return <SharedDownloadPdfButton kind="stock" symbol={symbol} horizon={horizon} includeNews />;
 }
 
 // ──────────────── Legacy renderer ────────────────
