@@ -21,6 +21,7 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { MotionConfig } from "framer-motion";
 
 const LOADING_STEPS = [
   "Looking up the concept…",
