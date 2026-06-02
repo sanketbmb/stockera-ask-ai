@@ -291,7 +291,7 @@ export function QueryForm() {
     try {
       const baseInsert = {
         user_id: user.id,
-        stock_name: stockName || "Stock Query",
+        stock_name: isSector && resolvedSector ? `Sector: ${resolvedSector.display}` : (stockName || "Stock Query"),
         stock_symbol: stockSymbol || null,
         buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
@@ -317,6 +317,18 @@ export function QueryForm() {
             ...(showPhase2Fields && entryPrice ? { entry_price: Number(entryPrice) } : {}),
             ...(isAveraging && qty ? { qty: Number(qty) } : {}),
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
+          }
+        : isSector
+        ? {
+            // Phase 3B — sector view. SectorViewReport's server fn freezes
+            // the composed payload on first read; no Brain call here.
+            ...baseInsert,
+            status: "ai_answered" as const,
+            query_type: "sector_view" as const,
+            engine_version: "v1_sector_view",
+            engine_source: "sector_aggregates",
+            horizon: normalizeHorizon(horizon || "Medium-term (3-12mo)"),
+            sector_canonical: resolvedSector?.canonical ?? null,
           }
         : isOther
         ? {
@@ -351,9 +363,10 @@ export function QueryForm() {
           has_entry_price: !!entryPrice,
           has_qty: !!qty,
           custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine ? "v1_tier_shaped" : isOther ? "router_v1" : "v0_legacy",
-          engine_source: usesV1Engine ? "post_query" : isOther ? "free_text_router" : "legacy_post_query",
+          engine_version: usesV1Engine ? "v1_tier_shaped" : isSector ? "v1_sector_view" : isOther ? "router_v1" : "v0_legacy",
+          engine_source: usesV1Engine ? "post_query" : isSector ? "sector_aggregates" : isOther ? "free_text_router" : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
+          sector_canonical: isSector ? resolvedSector?.canonical ?? null : null,
           router_version: routerMeta?.router_version ?? null,
           router_interpreted_type: routerMeta?.interpreted_type ?? null,
           router_confidence: routerMeta?.confidence_score ?? null,
@@ -362,8 +375,9 @@ export function QueryForm() {
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (usesV1Engine || isOther) {
-        // Both v1 engine and "other" navigate immediately — neither needs the legacy generator.
+      if (usesV1Engine || isOther || isSector) {
+        // v1 engine, sector view, and "other" all navigate immediately —
+        // none need the legacy generator.
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
