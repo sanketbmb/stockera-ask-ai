@@ -44,6 +44,13 @@ export const Route = createFileRoute("/print/$symbol")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
+  errorComponent: ({ error }) => (
+    <div className="p-10">
+      <h1 className="font-display text-xl">Print route error</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div id="print-error" />
+    </div>
+  ),
   component: PrintPage,
 });
 
@@ -69,6 +76,7 @@ function PrintPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <div id="print-ready" data-print-ready="ssr" style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <header className="mx-auto max-w-5xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>

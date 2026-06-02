@@ -10,7 +10,7 @@ import { SectorReportBody } from "@/components/report/SectorViewReport";
 import type { SectorReportPayload } from "@/lib/sector-context";
 import { FIRM } from "@/lib/firm-details";
 
-const searchSchema = z.object({ token: z.string().min(10).max(4000) });
+const searchSchema = z.object({ token: z.string().min(1).max(4000).optional().default("") });
 
 type LoaderData =
   | { ok: true; payload: SectorReportPayload; rawQuestion: string }
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/print-sector/$queryId")({
   validateSearch: searchSchema,
   loaderDeps: ({ search: { token } }) => ({ token }),
   loader: async ({ params, deps }): Promise<LoaderData> => {
+    if (!deps.token) return { ok: false, message: "Missing print token" };
     try {
       const res = await getPrintSectorPayload({
         data: { queryId: params.queryId, token: deps.token },
@@ -34,6 +35,13 @@ export const Route = createFileRoute("/print-sector/$queryId")({
     }
   },
   head: () => ({ meta: [{ title: "Stockera Sector View (Print)" }, { name: "robots", content: "noindex, nofollow" }] }),
+  errorComponent: ({ error }) => (
+    <div className="p-10">
+      <h1 className="font-display text-xl">Print route error</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div id="print-error" />
+    </div>
+  ),
   component: PrintSectorPage,
 });
 
@@ -59,6 +67,7 @@ function PrintSectorPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <div id="print-ready" data-print-ready="ssr" style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <header className="mx-auto max-w-5xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>
