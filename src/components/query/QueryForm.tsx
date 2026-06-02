@@ -222,16 +222,22 @@ export function QueryForm() {
 
   const goNext = async () => {
     if (step === 0) {
-      // Phase 3B — sector chip allows shorter input ("IT" / "Energy").
-      const minChars = isSector ? 2 : 15;
+      // Phase 3B/3C — sector + educational chips allow shorter input ("IT", "RSI").
+      const minChars = (isSector || isEducational) ? 2 : 15;
       if (queryText.trim().length < minChars) {
-        toast.error(isSector ? "Enter a sector name (e.g. Private Banks, IT, Energy)" : "Add at least 15 characters describing your question");
+        toast.error(
+          isSector
+            ? "Enter a sector name (e.g. Private Banks, IT, Energy)"
+            : isEducational
+              ? "Enter a concept like RSI, MACD, DCF, Beta, or Piotroski F-Score"
+              : "Add at least 15 characters describing your question",
+        );
         return;
       }
       // Phase 3A — call the free-text router before leaving Step 0 (unless
       // already called, or feature is off, or user explicitly picked the
-      // sector chip — in which case we resolve via alias map only).
-      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector) {
+      // sector / educational chip — in which case we resolve via alias map only).
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector && !isEducational) {
         setRouterLoading(true);
         try {
           const result = await runIntentRouter({ data: { text: queryText.trim() } });
@@ -262,6 +268,17 @@ export function QueryForm() {
       if (isSector) {
         if (!resolvedSector) {
           toast.error("Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.");
+          return;
+        }
+        setStep(2);
+        return;
+      }
+      // Phase 3C — educational requires a resolvable concept; the report itself
+      // will degrade gracefully via ConceptNotFoundPanel if we miss here, but
+      // we warn early so the user can fix their wording before submission.
+      if (isEducational) {
+        if (!resolvedConcept) {
+          toast.error("Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.");
           return;
         }
         setStep(2);
