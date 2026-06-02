@@ -565,6 +565,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
 
     let pdfBytes: ArrayBuffer;
     try {
+      await ensurePrintUrlIsPublic(printUrl);
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), BROWSERLESS_TIMEOUT_MS + 5_000);
       const res = await fetch(
