@@ -31,6 +31,7 @@ import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
+import { EducationalReport } from "@/components/report/EducationalReport";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
