@@ -203,11 +203,15 @@ export function QueryForm() {
   const isOther = intent === "other";
   // Phase 3B — "sector_view" has its own freeze fn + report variant.
   const isSector = intent === "sector_view";
+  // Phase 3C — "educational" has its own freeze fn + report variant.
+  const isEducational = intent === "educational";
 
   // Phase 3B — resolve sector from router-supplied hint OR the question text.
   const resolvedSector = isSector
     ? resolveSector(routerMeta?.sector ?? queryText)
     : null;
+  // Phase 3C — resolve concept from question text.
+  const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
