@@ -143,5 +143,12 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
       },
     }).then(({ error }) => { if (error) console.warn("[freezeOrReadSectorReport] audit failed:", error); });
 
-    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt };
+    const { answers: secondaryAnswers } = await ensureSecondaryAnswers({
+      row: row as never,
+      reportKind: "sector",
+      primaryPayload: payload as unknown as Record<string, unknown>,
+      actorId: userId,
+    });
+
+    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt, secondary_answers: secondaryAnswers };
   });
