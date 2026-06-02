@@ -68,7 +68,7 @@ function PrintSectorPage() {
       </header>
 
       <SectorReportBody
-        payload={data.payload as SectorReportPayload}
+        payload={data.payload as unknown as SectorReportPayload}
         rawQuestion={data.rawQuestion}
         routerMeta={null}
         printMode
