@@ -16,6 +16,7 @@ import {
 import { resolveSector } from "@/lib/sector-alias-map";
 import { meteringFor } from "@/lib/credit-metering";
 import type { QueryType } from "@/types/stock-analysis";
+import { ensureSecondaryAnswers, type SecondaryAnswer } from "@/lib/mixed-query.server";
 
 const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
 
