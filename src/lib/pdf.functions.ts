@@ -250,7 +250,7 @@ export const generateAnalysisPdf = createServerFn({ method: "POST" })
           body: JSON.stringify({
             url: printUrl,
             gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
-            waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+            waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
               printBackground: true,
@@ -420,7 +420,7 @@ export const generateArchitecturePdf = createServerFn({ method: "POST" })
           body: JSON.stringify({
             url: printUrl,
             gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
-            waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+            waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
               printBackground: true,
@@ -537,7 +537,7 @@ export const generateAccuracyRoadmapPdf = createServerFn({ method: "POST" })
           body: JSON.stringify({
             url: printUrl,
             gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
-            waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+            waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
             options: {
               format: "A4",
               printBackground: true,
@@ -645,7 +645,7 @@ async function callBrowserlessForUrl(printUrl: string, label: string): Promise<A
         body: JSON.stringify({
           url: printUrl,
           gotoOptions: { waitUntil: "networkidle0", timeout: BROWSERLESS_TIMEOUT_MS },
-          waitForSelector: { selector: "#print-ready", timeout: BROWSERLESS_TIMEOUT_MS },
+          waitForSelector: { selector: PRINT_READY_SELECTOR, timeout: BROWSERLESS_TIMEOUT_MS },
           options: {
             format: "A4",
             printBackground: true,
