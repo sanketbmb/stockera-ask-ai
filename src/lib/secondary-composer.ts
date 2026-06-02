@@ -6,7 +6,7 @@
 
 import type { SecondaryAsk } from "@/lib/secondary-asks-parser";
 import { GLOSSARY } from "@/content/educational-glossary";
-import { LIBRARY_VERSION } from "@/lib/educational-context";
+const LIBRARY_VERSION = "v1.0";
 
 export type ReportKind = "stock" | "sector" | "educational" | "other";
 
