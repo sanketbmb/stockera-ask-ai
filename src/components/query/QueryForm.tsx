@@ -21,6 +21,7 @@ import { normalizeHorizon } from "@/lib/query-intake-parser";
 import {
   ENABLE_PHASE3_QUERY_TYPES,
   ENABLE_FREE_TEXT_ROUTER,
+  ENABLE_SECTOR_VIEW,
   isLiveIntent,
   isRoutableIntent,
   type AnyIntent,
@@ -31,6 +32,7 @@ import {
   routerHorizonToFormHorizon,
   confidenceBand,
 } from "@/lib/intent-router-schema";
+import { resolveSector } from "@/lib/sector-alias-map";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -51,12 +53,13 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; routerOnly?: boolean }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; sectorOnly?: boolean; routerOnly?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
   { id: "educational", emoji: "📚", label: "Educational", phase3: true },
-  { id: "sector_view", emoji: "🏭", label: "Sector View", phase3: true },
+  // Phase 3B — Sector View ships independently of the broader phase 3 unlock.
+  { id: "sector_view", emoji: "🏭", label: "Sector View", sectorOnly: true },
   // "Other" is exposed when the free-text router is live (Phase 3A). It is
   // a deliberate escape hatch for questions that don't map to a LIVE chip.
   { id: "other", emoji: "❓", label: "Other", routerOnly: true },
@@ -64,6 +67,7 @@ const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: bool
 
 const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
   if (t.phase3) return ENABLE_PHASE3_QUERY_TYPES;
+  if (t.sectorOnly) return ENABLE_SECTOR_VIEW || ENABLE_PHASE3_QUERY_TYPES;
   if (t.routerOnly) return ENABLE_FREE_TEXT_ROUTER;
   return true;
 });
