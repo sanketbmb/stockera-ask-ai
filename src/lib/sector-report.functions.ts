@@ -39,7 +39,7 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
       .select(
-        "id, user_id, query_type, engine_version, ai_report, frozen_at, horizon, query_text, custom_question, sector_canonical, router_meta"
+        "id, user_id, query_type, engine_version, ai_report, frozen_at, horizon, query_text, custom_question, sector_canonical, router_meta, secondary_asks, secondary_answers, mixed_query_meta"
       )
       .eq("id", data.queryId)
       .single();
