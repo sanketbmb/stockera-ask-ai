@@ -5,7 +5,7 @@
 import { createFileRoute, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { getPrintSectorPayload } from "@/lib/pdf.functions";
 import { SectorReportBody } from "@/components/report/SectorViewReport";
