@@ -45,7 +45,7 @@ export const freezeOrReadEducationalReport = createServerFn({ method: "POST" })
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
       .select(
-        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta",
+        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta, secondary_asks, secondary_answers, mixed_query_meta",
       )
       .eq("id", data.queryId)
       .single();
