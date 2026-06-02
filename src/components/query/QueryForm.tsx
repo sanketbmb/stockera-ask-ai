@@ -622,7 +622,28 @@ export function QueryForm() {
             </div>
           )}
 
-          {(intent === "educational" || intent === "sector_view") && (
+          {isSector && (
+            <div className="space-y-4">
+              <div className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Sector recognized</p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  {resolvedSector ? resolvedSector.display : "Not recognized — try Private Banks, IT, Energy, Pharma, FMCG"}
+                </p>
+              </div>
+              <div>
+                <Label>Horizon (optional)</Label>
+                <Select value={horizon} onValueChange={setHorizon}>
+                  <SelectTrigger><SelectValue placeholder="Framing only — sector view doesn't change by horizon yet" /></SelectTrigger>
+                  <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                  Sector View uses one composed snapshot; horizon affects framing copy only.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {intent === "educational" && (
             <div>
               <Label className="flex items-center gap-1">
                 Related stock (optional)
