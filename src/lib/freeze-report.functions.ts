@@ -15,6 +15,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
+import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 
 const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
 
