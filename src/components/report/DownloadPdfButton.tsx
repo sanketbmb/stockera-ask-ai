@@ -13,13 +13,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   generateAnalysisPdf,
+  generateUnifiedStockPdf,
   generateSectorPdf,
   generateEducationalPdf,
 } from "@/lib/pdf.functions";
 import type { QueryType } from "@/types/stock-analysis";
 
 type Props =
+  // Direct /analysis live stock (no queryId yet) — slower path.
   | { kind: "stock"; symbol: string; horizon: QueryType; includeNews?: boolean }
+  // Unified /report/$queryId stock — uses frozen queries.ai_report.
+  | { kind: "stock_unified"; queryId: string }
   | { kind: "sector"; queryId: string }
   | { kind: "educational"; queryId: string };
 
@@ -29,6 +33,7 @@ export function DownloadPdfButton(props: Props) {
   const [busy, setBusy] = useState(false);
 
   const genStock = useServerFn(generateAnalysisPdf);
+  const genStockUnified = useServerFn(generateUnifiedStockPdf);
   const genSector = useServerFn(generateSectorPdf);
   const genEdu = useServerFn(generateEducationalPdf);
 
@@ -66,6 +71,8 @@ export function DownloadPdfButton(props: Props) {
             include_news: props.includeNews ?? true,
           },
         });
+      } else if (props.kind === "stock_unified") {
+        res = await genStockUnified({ data: { queryId: props.queryId } });
       } else if (props.kind === "sector") {
         res = await genSector({ data: { queryId: props.queryId } });
       } else {
@@ -79,6 +86,7 @@ export function DownloadPdfButton(props: Props) {
       setBusy(false);
     }
   };
+
 
   return (
     <Button
