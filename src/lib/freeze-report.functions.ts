@@ -117,13 +117,22 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     // ─── Cache hit ───
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
-      return enrichAuditMeta(cached, {
+      const enriched = enrichAuditMeta(cached, {
         frozenAt: row.frozen_at as string,
         servedFromCache: true,
         reportPath,
         orchestratorResponseId: (row.orchestrator_response_id as string | null) ?? null,
         artifactStatus: (row.report_artifact_status as "frozen" | "regenerated") ?? "frozen",
       });
+      const { answers } = await ensureSecondaryAnswers({
+        row: row as never,
+        reportKind: "stock",
+        primaryPayload: enriched as unknown as Record<string, unknown>,
+        actorId: userId,
+      });
+      return { ...enriched, secondary_answers: answers } as StockAnalysisPayload & {
+        secondary_answers: typeof answers;
+      };
     }
 
     // ─── First generation (or forced refresh) ───
