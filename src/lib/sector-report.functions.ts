@@ -16,6 +16,7 @@ import {
 import { resolveSector } from "@/lib/sector-alias-map";
 import { meteringFor } from "@/lib/credit-metering";
 import type { QueryType } from "@/types/stock-analysis";
+import { ensureSecondaryAnswers, type SecondaryAnswer } from "@/lib/mixed-query.server";
 
 const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
 
@@ -25,7 +26,7 @@ const Input = z.object({
 });
 
 export type SectorFreezeResult =
-  | { ok: true; payload: SectorReportPayload; served_from_cache: boolean; frozen_at: string }
+  | { ok: true; payload: SectorReportPayload; served_from_cache: boolean; frozen_at: string; secondary_answers: SecondaryAnswer[] }
   | { ok: false; code: "SECTOR_NOT_RESOLVED"; raw_sector: string | null }
   | { ok: false; code: "SECTOR_NOT_COVERED"; canonical: string; display: string };
 
@@ -38,7 +39,7 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
       .select(
-        "id, user_id, query_type, engine_version, ai_report, frozen_at, horizon, query_text, custom_question, sector_canonical, router_meta"
+        "id, user_id, query_type, engine_version, ai_report, frozen_at, horizon, query_text, custom_question, sector_canonical, router_meta, secondary_asks, secondary_answers, mixed_query_meta"
       )
       .eq("id", data.queryId)
       .single();
@@ -57,11 +58,18 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as SectorReportPayload;
       if (cached?.schema_version === "v1_sector_view") {
+        const { answers } = await ensureSecondaryAnswers({
+          row: row as never,
+          reportKind: "sector",
+          primaryPayload: cached as unknown as Record<string, unknown>,
+          actorId: userId,
+        });
         return {
           ok: true,
           payload: cached,
           served_from_cache: true,
           frozen_at: row.frozen_at as string,
+          secondary_answers: answers,
         };
       }
     }
@@ -135,5 +143,12 @@ export const freezeOrReadSectorReport = createServerFn({ method: "POST" })
       },
     }).then(({ error }) => { if (error) console.warn("[freezeOrReadSectorReport] audit failed:", error); });
 
-    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt };
+    const { answers: secondaryAnswers } = await ensureSecondaryAnswers({
+      row: row as never,
+      reportKind: "sector",
+      primaryPayload: payload as unknown as Record<string, unknown>,
+      actorId: userId,
+    });
+
+    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt, secondary_answers: secondaryAnswers };
   });

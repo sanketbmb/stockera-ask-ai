@@ -21,6 +21,8 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
 
 const LOADING_STEPS = [
@@ -158,6 +160,7 @@ export function EducationalReport({
         routerMeta={routerMeta}
         printMode={false}
         queryId={queryId}
+        secondaryAnswers={data.secondary_answers}
       />
     </div>
   );
@@ -170,12 +173,14 @@ export function EducationalReportBody({
   routerMeta,
   printMode,
   queryId,
+  secondaryAnswers,
 }: {
   payload: EducationalReportPayload;
   rawQuestion: string;
   routerMeta: RouterOutput | null;
   printMode: boolean;
   queryId?: string;
+  secondaryAnswers?: SecondaryAnswer[] | null;
 }) {
   const body = (
     <main className="mx-auto max-w-4xl px-4 md:px-6 py-6 space-y-5">
@@ -197,6 +202,8 @@ export function EducationalReportBody({
 
       <EducationalHero payload={payload} />
       <ConceptBrief payload={payload} />
+
+      {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
 
       {!printMode && (
         <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5">

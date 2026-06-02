@@ -14,6 +14,7 @@ import {
 } from "@/lib/educational-context";
 import { resolveConcept, suggestConcepts } from "@/lib/concept-alias-map";
 import { meteringFor } from "@/lib/credit-metering";
+import { ensureSecondaryAnswers, type SecondaryAnswer } from "@/lib/mixed-query.server";
 
 const Input = z.object({
   queryId: z.string().uuid(),
@@ -26,6 +27,7 @@ export type EducationalFreezeResult =
       payload: EducationalReportPayload;
       served_from_cache: boolean;
       frozen_at: string;
+      secondary_answers: SecondaryAnswer[];
     }
   | {
       ok: false;
@@ -43,7 +45,7 @@ export const freezeOrReadEducationalReport = createServerFn({ method: "POST" })
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
       .select(
-        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta",
+        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta, secondary_asks, secondary_answers, mixed_query_meta",
       )
       .eq("id", data.queryId)
       .single();
@@ -57,11 +59,18 @@ export const freezeOrReadEducationalReport = createServerFn({ method: "POST" })
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as EducationalReportPayload;
       if (cached?.schema_version === "v1_educational") {
+        const { answers } = await ensureSecondaryAnswers({
+          row: row as never,
+          reportKind: "educational",
+          primaryPayload: cached as unknown as Record<string, unknown>,
+          actorId: userId,
+        });
         return {
           ok: true,
           payload: cached,
           served_from_cache: true,
           frozen_at: row.frozen_at as string,
+          secondary_answers: answers,
         };
       }
     }
@@ -133,5 +142,12 @@ export const freezeOrReadEducationalReport = createServerFn({ method: "POST" })
         if (error) console.warn("[freezeOrReadEducationalReport] audit failed:", error);
       });
 
-    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt };
+    const { answers: secondaryAnswers } = await ensureSecondaryAnswers({
+      row: row as never,
+      reportKind: "educational",
+      primaryPayload: payload as unknown as Record<string, unknown>,
+      actorId: userId,
+    });
+
+    return { ok: true, payload, served_from_cache: false, frozen_at: frozenAt, secondary_answers: secondaryAnswers };
   });

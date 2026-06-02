@@ -15,6 +15,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
+import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 
 const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
 
@@ -79,7 +80,7 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
 
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
-      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question")
+      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question, query_text, secondary_asks, secondary_answers, mixed_query_meta")
       .eq("id", data.queryId)
       .single();
     if (readErr || !row) throw new Error(`Query not found: ${readErr?.message ?? data.queryId}`);
@@ -116,13 +117,22 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     // ─── Cache hit ───
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
-      return enrichAuditMeta(cached, {
+      const enriched = enrichAuditMeta(cached, {
         frozenAt: row.frozen_at as string,
         servedFromCache: true,
         reportPath,
         orchestratorResponseId: (row.orchestrator_response_id as string | null) ?? null,
         artifactStatus: (row.report_artifact_status as "frozen" | "regenerated") ?? "frozen",
       });
+      const { answers } = await ensureSecondaryAnswers({
+        row: row as never,
+        reportKind: "stock",
+        primaryPayload: enriched as unknown as Record<string, unknown>,
+        actorId: userId,
+      });
+      return { ...enriched, secondary_answers: answers } as StockAnalysisPayload & {
+        secondary_answers: typeof answers;
+      };
     }
 
     // ─── First generation (or forced refresh) ───
@@ -190,7 +200,16 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
       },
     }).then(({ error }) => { if (error) console.warn("[freezeOrReadReport] audit failed:", error); });
 
-    return persistPayload;
+    const { answers: secondaryAnswers } = await ensureSecondaryAnswers({
+      row: row as never,
+      reportKind: "stock",
+      primaryPayload: persistPayload as unknown as Record<string, unknown>,
+      actorId: userId,
+    });
+
+    return { ...persistPayload, secondary_answers: secondaryAnswers } as StockAnalysisPayload & {
+      secondary_answers: typeof secondaryAnswers;
+    };
   });
 
 export const FREEZE_FLOW_EXCLUDES_DIRECT_ANALYSIS = {

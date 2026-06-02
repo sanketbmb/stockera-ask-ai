@@ -29,6 +29,8 @@ import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
 import { EducationalReport } from "@/components/report/EducationalReport";
 import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import type { SecondaryAnswer } from "@/lib/secondary-composer";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -177,6 +179,9 @@ function TierShapedReportContent({
         addendum={phase2Addendum}
         suppressFreshTab={isPhase2}
         defaultActionTab={defaultActionTab}
+      />
+      <YouAlsoAskedSection
+        answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
       />
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />

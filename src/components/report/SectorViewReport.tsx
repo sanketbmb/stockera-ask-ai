@@ -20,6 +20,8 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
 
 const LOADING_STEPS = [
@@ -214,6 +216,7 @@ export function SectorViewReport({
         routerMeta={routerMeta}
         printMode={false}
         queryId={queryId}
+        secondaryAnswers={data.secondary_answers}
       />
     </div>
   );
@@ -227,12 +230,14 @@ export function SectorReportBody({
   routerMeta,
   printMode,
   queryId,
+  secondaryAnswers,
 }: {
   payload: SectorReportPayload;
   rawQuestion: string;
   routerMeta: RouterOutput | null;
   printMode: boolean;
   queryId?: string;
+  secondaryAnswers?: SecondaryAnswer[] | null;
 }) {
   const body = (
     <main className="mx-auto max-w-5xl px-4 md:px-6 py-6 space-y-5">
@@ -269,6 +274,8 @@ export function SectorReportBody({
         <h3 className="font-display text-sm uppercase tracking-wider text-foreground">{payload.top_stocks_placeholder.title}</h3>
         <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{payload.top_stocks_placeholder.body}</p>
       </section>
+
+      {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
 
       {!printMode && (
         <section

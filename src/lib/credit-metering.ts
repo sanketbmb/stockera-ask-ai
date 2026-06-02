@@ -27,7 +27,8 @@ export type CreditAction =
   | "noop_dev_mode_existing_position"
   | "noop_dev_mode_averaging"
   | "noop_dev_mode_sector_view"
-  | "noop_dev_mode_educational";
+  | "noop_dev_mode_educational"
+  | "noop_dev_mode_mixed_query";
 
 export interface MeteringDecision {
   metering_mode: MeteringMode;
