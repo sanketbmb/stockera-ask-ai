@@ -173,12 +173,14 @@ export function EducationalReportBody({
   routerMeta,
   printMode,
   queryId,
+  secondaryAnswers,
 }: {
   payload: EducationalReportPayload;
   rawQuestion: string;
   routerMeta: RouterOutput | null;
   printMode: boolean;
   queryId?: string;
+  secondaryAnswers?: SecondaryAnswer[] | null;
 }) {
   const body = (
     <main className="mx-auto max-w-4xl px-4 md:px-6 py-6 space-y-5">
