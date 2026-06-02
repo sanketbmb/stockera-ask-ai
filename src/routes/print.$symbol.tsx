@@ -44,6 +44,19 @@ export const Route = createFileRoute("/print/$symbol")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
+  head: ({ params }) => ({
+    meta: [
+      { title: `Stockera Analysis — ${params.symbol} (Print)` },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
+  }),
+  errorComponent: ({ error }) => (
+    <div className="p-10">
+      <h1 className="font-display text-xl">Print route error</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div id="print-error" />
+    </div>
+  ),
   component: PrintPage,
 });
 
