@@ -42,6 +42,15 @@ function PrintPage() {
     staleTime: Infinity,
   });
 
+  // Orchestrator can take 20-60s for fresh stock. Cap at 75s so Browserless
+  // (90s timeout) captures an error page instead of hanging.
+  const [slowTimeout, setSlowTimeout] = useState(false);
+  useEffect(() => {
+    if (!isLoading) return;
+    const t = setTimeout(() => setSlowTimeout(true), 75_000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
   // Hide scrollbars during PDF capture; restore on unmount.
   useEffect(() => {
     const html = document.documentElement;
@@ -50,15 +59,17 @@ function PrintPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading) {
+  if (isLoading && !slowTimeout) {
     return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
   }
-  if (error || !data) {
+  if (error || !data || slowTimeout) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{(error as Error | null)?.message ?? "Unknown error"}</p>
-        <div id="print-error" className="hidden" />
+        <p className="mt-2 text-sm text-muted-foreground">
+          {slowTimeout ? "Report failed to load within 75s." : (error as Error | null)?.message ?? "Unknown error"}
+        </p>
+        <div id="print-error" />
       </div>
     );
   }
