@@ -27,6 +27,7 @@ export type EducationalFreezeResult =
       payload: EducationalReportPayload;
       served_from_cache: boolean;
       frozen_at: string;
+      secondary_answers: SecondaryAnswer[];
     }
   | {
       ok: false;
