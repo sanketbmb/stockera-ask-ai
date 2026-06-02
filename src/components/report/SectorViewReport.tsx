@@ -299,4 +299,5 @@ export function SectorReportBody({
       {printMode && <div id="print-ready" />}
     </main>
   );
+  return printMode ? <MotionConfig reducedMotion="always">{body}</MotionConfig> : body;
 }
