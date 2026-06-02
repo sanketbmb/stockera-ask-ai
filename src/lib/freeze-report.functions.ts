@@ -80,7 +80,7 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
 
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
-      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question")
+      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question, query_text, secondary_asks, secondary_answers, mixed_query_meta")
       .eq("id", data.queryId)
       .single();
     if (readErr || !row) throw new Error(`Query not found: ${readErr?.message ?? data.queryId}`);
