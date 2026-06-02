@@ -203,48 +203,72 @@ export function SectorViewReport({
     return <FallbackPanel reason="not_covered" rawQuestion={rawQuestion} unresolvedHint={data.display} />;
   }
 
-  const payload = data.payload;
-
   return (
     <div className="min-h-screen bg-mesh">
       <Navbar />
-      <main className="mx-auto max-w-5xl px-4 md:px-6 py-6 space-y-5">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            SEBI-aligned sector overview · {payload.sector_display}
-          </span>
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            {payload.coverage_note}
-          </span>
-        </div>
+      <SectorReportBody
+        payload={data.payload}
+        rawQuestion={rawQuestion}
+        routerMeta={routerMeta}
+        printMode={false}
+        queryId={queryId}
+      />
+    </div>
+  );
+}
 
-        <ReflectiveSectorBanner
-          rawQuestion={rawQuestion}
-          display={payload.sector_display}
-          horizon={payload.horizon}
-          routerMeta={routerMeta}
-        />
+// Presentational body — also rendered by /print-sector/$queryId.
+// When `printMode` is true, analyst CTA + download button are suppressed.
+export function SectorReportBody({
+  payload,
+  rawQuestion,
+  routerMeta,
+  printMode,
+  queryId,
+}: {
+  payload: SectorReportPayload;
+  rawQuestion: string;
+  routerMeta: RouterOutput | null;
+  printMode: boolean;
+  queryId?: string;
+}) {
+  return (
+    <main className="mx-auto max-w-5xl px-4 md:px-6 py-6 space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          SEBI-aligned sector overview · {payload.sector_display}
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {payload.coverage_note}
+        </span>
+        {!printMode && queryId && (
+          <div className="ml-auto"><DownloadPdfButton kind="sector" queryId={queryId} /></div>
+        )}
+      </div>
 
-        <SectorSummaryHero payload={payload} />
+      <ReflectiveSectorBanner
+        rawQuestion={rawQuestion}
+        display={payload.sector_display}
+        horizon={payload.horizon}
+        routerMeta={routerMeta}
+      />
 
-        <SectorMetricGrid payload={payload} />
+      <SectorSummaryHero payload={payload} />
+      <SectorMetricGrid payload={payload} />
 
-        {/* Action buckets */}
-        <section className="rounded-2xl border border-border bg-card/70 px-6 py-5 shadow-card">
-          <h3 className="font-display text-base text-foreground">{payload.action_buckets.title}</h3>
-          <ul className="mt-3 space-y-2 text-sm text-foreground/85 list-disc pl-5">
-            {payload.action_buckets.items.map((item, i) => <li key={i}>{item}</li>)}
-          </ul>
-        </section>
+      <section className="rounded-2xl border border-border bg-card/70 px-6 py-5 shadow-card">
+        <h3 className="font-display text-base text-foreground">{payload.action_buckets.title}</h3>
+        <ul className="mt-3 space-y-2 text-sm text-foreground/85 list-disc pl-5">
+          {payload.action_buckets.items.map((item, i) => <li key={i}>{item}</li>)}
+        </ul>
+      </section>
 
-        {/* Top stocks placeholder */}
-        <section className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-5">
-          <h3 className="font-display text-sm uppercase tracking-wider text-foreground">{payload.top_stocks_placeholder.title}</h3>
-          <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{payload.top_stocks_placeholder.body}</p>
-        </section>
+      <section className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-5">
+        <h3 className="font-display text-sm uppercase tracking-wider text-foreground">{payload.top_stocks_placeholder.title}</h3>
+        <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{payload.top_stocks_placeholder.body}</p>
+      </section>
 
-        {/* Analyst CTA (sector-appropriate copy) */}
+      {!printMode && (
         <section
           aria-label="SEBI analyst guidance"
           className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5"
@@ -266,10 +290,11 @@ export function SectorViewReport({
             </Button>
           </div>
         </section>
+      )}
 
-        <SEBIDisclaimerInline />
-        <AuditFooter payload={payload} />
-      </main>
-    </div>
+      <SEBIDisclaimerInline />
+      <AuditFooter payload={payload} />
+      {printMode && <div id="print-ready" />}
+    </main>
   );
 }
