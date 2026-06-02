@@ -234,7 +234,7 @@ export function SectorReportBody({
   printMode: boolean;
   queryId?: string;
 }) {
-  return (
+  const body = (
     <main className="mx-auto max-w-5xl px-4 md:px-6 py-6 space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
