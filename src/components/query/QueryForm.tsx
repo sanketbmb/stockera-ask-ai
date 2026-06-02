@@ -197,6 +197,13 @@ export function QueryForm() {
   const usesV1Engine = intent === "buy_decision" || isExistingPosition || isAveraging;
   // Phase 3A — "other" intent skips the v1 engine and lands in the routed-pending placeholder.
   const isOther = intent === "other";
+  // Phase 3B — "sector_view" has its own freeze fn + report variant.
+  const isSector = intent === "sector_view";
+
+  // Phase 3B — resolve sector from router-supplied hint OR the question text.
+  const resolvedSector = isSector
+    ? resolveSector(routerMeta?.sector ?? queryText)
+    : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -207,11 +214,16 @@ export function QueryForm() {
 
   const goNext = async () => {
     if (step === 0) {
-      if (queryText.trim().length < 15) { toast.error("Add at least 15 characters describing your question"); return; }
+      // Phase 3B — sector chip allows shorter input ("IT" / "Energy").
+      const minChars = isSector ? 2 : 15;
+      if (queryText.trim().length < minChars) {
+        toast.error(isSector ? "Enter a sector name (e.g. Private Banks, IT, Energy)" : "Add at least 15 characters describing your question");
+        return;
+      }
       // Phase 3A — call the free-text router before leaving Step 0 (unless
-      // already called or feature is off). Fail open: if it errors, fall
-      // back to the cheap local heuristic so the user is never blocked.
-      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading) {
+      // already called, or feature is off, or user explicitly picked the
+      // sector chip — in which case we resolve via alias map only).
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector) {
         setRouterLoading(true);
         try {
           const result = await runIntentRouter({ data: { text: queryText.trim() } });
@@ -238,6 +250,15 @@ export function QueryForm() {
     if (step === 1) {
       // Phase 3A — "other" skips stock/entry fields entirely.
       if (isOther) { setStep(2); return; }
+      // Phase 3B — sector view requires a resolvable sector but no stock/entry fields.
+      if (isSector) {
+        if (!resolvedSector) {
+          toast.error("Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.");
+          return;
+        }
+        setStep(2);
+        return;
+      }
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
       if (showPhase2Fields) {
         if (!entryPrice) { toast.error("Please enter your entry price"); return; }
