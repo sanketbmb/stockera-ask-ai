@@ -21,6 +21,7 @@ import { normalizeHorizon } from "@/lib/query-intake-parser";
 import {
   ENABLE_PHASE3_QUERY_TYPES,
   ENABLE_FREE_TEXT_ROUTER,
+  ENABLE_SECTOR_VIEW,
   isLiveIntent,
   isRoutableIntent,
   type AnyIntent,
@@ -31,6 +32,7 @@ import {
   routerHorizonToFormHorizon,
   confidenceBand,
 } from "@/lib/intent-router-schema";
+import { resolveSector } from "@/lib/sector-alias-map";
 import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
@@ -51,12 +53,13 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; routerOnly?: boolean }[] = [
+const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; sectorOnly?: boolean; routerOnly?: boolean }[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
   { id: "educational", emoji: "📚", label: "Educational", phase3: true },
-  { id: "sector_view", emoji: "🏭", label: "Sector View", phase3: true },
+  // Phase 3B — Sector View ships independently of the broader phase 3 unlock.
+  { id: "sector_view", emoji: "🏭", label: "Sector View", sectorOnly: true },
   // "Other" is exposed when the free-text router is live (Phase 3A). It is
   // a deliberate escape hatch for questions that don't map to a LIVE chip.
   { id: "other", emoji: "❓", label: "Other", routerOnly: true },
@@ -64,6 +67,7 @@ const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: bool
 
 const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
   if (t.phase3) return ENABLE_PHASE3_QUERY_TYPES;
+  if (t.sectorOnly) return ENABLE_SECTOR_VIEW || ENABLE_PHASE3_QUERY_TYPES;
   if (t.routerOnly) return ENABLE_FREE_TEXT_ROUTER;
   return true;
 });
@@ -193,6 +197,13 @@ export function QueryForm() {
   const usesV1Engine = intent === "buy_decision" || isExistingPosition || isAveraging;
   // Phase 3A — "other" intent skips the v1 engine and lands in the routed-pending placeholder.
   const isOther = intent === "other";
+  // Phase 3B — "sector_view" has its own freeze fn + report variant.
+  const isSector = intent === "sector_view";
+
+  // Phase 3B — resolve sector from router-supplied hint OR the question text.
+  const resolvedSector = isSector
+    ? resolveSector(routerMeta?.sector ?? queryText)
+    : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -203,11 +214,16 @@ export function QueryForm() {
 
   const goNext = async () => {
     if (step === 0) {
-      if (queryText.trim().length < 15) { toast.error("Add at least 15 characters describing your question"); return; }
+      // Phase 3B — sector chip allows shorter input ("IT" / "Energy").
+      const minChars = isSector ? 2 : 15;
+      if (queryText.trim().length < minChars) {
+        toast.error(isSector ? "Enter a sector name (e.g. Private Banks, IT, Energy)" : "Add at least 15 characters describing your question");
+        return;
+      }
       // Phase 3A — call the free-text router before leaving Step 0 (unless
-      // already called or feature is off). Fail open: if it errors, fall
-      // back to the cheap local heuristic so the user is never blocked.
-      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading) {
+      // already called, or feature is off, or user explicitly picked the
+      // sector chip — in which case we resolve via alias map only).
+      if (ENABLE_FREE_TEXT_ROUTER && !routerMeta && !routerLoading && !isSector) {
         setRouterLoading(true);
         try {
           const result = await runIntentRouter({ data: { text: queryText.trim() } });
@@ -234,6 +250,15 @@ export function QueryForm() {
     if (step === 1) {
       // Phase 3A — "other" skips stock/entry fields entirely.
       if (isOther) { setStep(2); return; }
+      // Phase 3B — sector view requires a resolvable sector but no stock/entry fields.
+      if (isSector) {
+        if (!resolvedSector) {
+          toast.error("Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.");
+          return;
+        }
+        setStep(2);
+        return;
+      }
       if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
       if (showPhase2Fields) {
         if (!entryPrice) { toast.error("Please enter your entry price"); return; }
@@ -266,7 +291,7 @@ export function QueryForm() {
     try {
       const baseInsert = {
         user_id: user.id,
-        stock_name: stockName || "Stock Query",
+        stock_name: isSector && resolvedSector ? `Sector: ${resolvedSector.display}` : (stockName || "Stock Query"),
         stock_symbol: stockSymbol || null,
         buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
         current_price: currentPrice ? Number(currentPrice) : null,
@@ -292,6 +317,18 @@ export function QueryForm() {
             ...(showPhase2Fields && entryPrice ? { entry_price: Number(entryPrice) } : {}),
             ...(isAveraging && qty ? { qty: Number(qty) } : {}),
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
+          }
+        : isSector
+        ? {
+            // Phase 3B — sector view. SectorViewReport's server fn freezes
+            // the composed payload on first read; no Brain call here.
+            ...baseInsert,
+            status: "ai_answered" as const,
+            query_type: "sector_view" as const,
+            engine_version: "v1_sector_view",
+            engine_source: "sector_aggregates",
+            horizon: normalizeHorizon(horizon || "Medium-term (3-12mo)"),
+            sector_canonical: resolvedSector?.canonical ?? null,
           }
         : isOther
         ? {
@@ -326,9 +363,10 @@ export function QueryForm() {
           has_entry_price: !!entryPrice,
           has_qty: !!qty,
           custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine ? "v1_tier_shaped" : isOther ? "router_v1" : "v0_legacy",
-          engine_source: usesV1Engine ? "post_query" : isOther ? "free_text_router" : "legacy_post_query",
+          engine_version: usesV1Engine ? "v1_tier_shaped" : isSector ? "v1_sector_view" : isOther ? "router_v1" : "v0_legacy",
+          engine_source: usesV1Engine ? "post_query" : isSector ? "sector_aggregates" : isOther ? "free_text_router" : "legacy_post_query",
           credit_action: "skipped_no_charge_path",
+          sector_canonical: isSector ? resolvedSector?.canonical ?? null : null,
           router_version: routerMeta?.router_version ?? null,
           router_interpreted_type: routerMeta?.interpreted_type ?? null,
           router_confidence: routerMeta?.confidence_score ?? null,
@@ -337,8 +375,9 @@ export function QueryForm() {
         },
       }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
 
-      if (usesV1Engine || isOther) {
-        // Both v1 engine and "other" navigate immediately — neither needs the legacy generator.
+      if (usesV1Engine || isOther || isSector) {
+        // v1 engine, sector view, and "other" all navigate immediately —
+        // none need the legacy generator.
         setGenStage("redirecting");
         await refresh();
         navigate({ to: "/report/$queryId", params: { queryId } });
@@ -407,9 +446,13 @@ export function QueryForm() {
       {step === 0 && (
         <div className="space-y-5">
           <div>
-            <Label htmlFor="qtext" className="text-base">What's your question? *</Label>
-            <Textarea id="qtext" autoFocus rows={5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
-              placeholder="e.g. I bought Siemens at 3668 a year back, should I sell now?"
+            <Label htmlFor="qtext" className="text-base">
+              {isSector ? "Which sector? *" : "What's your question? *"}
+            </Label>
+            <Textarea id="qtext" autoFocus rows={isSector ? 2 : 5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
+              placeholder={isSector
+                ? "Enter a sector like Private Banks, IT, Energy, Pharma"
+                : "e.g. I bought Siemens at 3668 a year back, should I sell now?"}
               className="mt-2 text-base" />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
           </div>
@@ -579,7 +622,28 @@ export function QueryForm() {
             </div>
           )}
 
-          {(intent === "educational" || intent === "sector_view") && (
+          {isSector && (
+            <div className="space-y-4">
+              <div className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Sector recognized</p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  {resolvedSector ? resolvedSector.display : "Not recognized — try Private Banks, IT, Energy, Pharma, FMCG"}
+                </p>
+              </div>
+              <div>
+                <Label>Horizon (optional)</Label>
+                <Select value={horizon} onValueChange={setHorizon}>
+                  <SelectTrigger><SelectValue placeholder="Framing only — sector view doesn't change by horizon yet" /></SelectTrigger>
+                  <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                  Sector View uses one composed snapshot; horizon affects framing copy only.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {intent === "educational" && (
             <div>
               <Label className="flex items-center gap-1">
                 Related stock (optional)

@@ -30,6 +30,7 @@ import { AveragingDisciplineAddendum } from "@/components/report/AveragingDiscip
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
+import { SectorViewReport } from "@/components/report/SectorViewReport";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -369,13 +370,17 @@ function ReportContent() {
     );
   }
 
-  // Phase 3A — routed-to-analyst placeholder for non-AI question types.
+  // Phase 3A/3B — routed question types. Sector View has its own variant;
+  // educational + other stay on the placeholder pending Phase 3C.
   const qt = (data.query_type ?? "") as string;
-  if (qt === "other" || qt === "sector_view" || qt === "educational") {
+  if (qt === "sector_view" || qt === "other" || qt === "educational") {
     const rawQuestion = (data.query_text ?? data.custom_question ?? "").toString();
     const routerMeta = (data as { router_meta?: unknown }).router_meta as
       | import("@/lib/intent-router-schema").RouterOutput
       | null;
+    if (qt === "sector_view") {
+      return <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
+    }
     return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
   }
 
