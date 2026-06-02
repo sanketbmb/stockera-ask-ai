@@ -10,7 +10,7 @@ import { getPrintUnifiedStockPayload } from "@/lib/pdf.functions";
 import { FIRM } from "@/lib/firm-details";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 
-const searchSchema = z.object({ token: z.string().min(10).max(4000) });
+const searchSchema = z.object({ token: z.string().min(1).max(4000).optional().default("") });
 
 type LoaderData =
   | { ok: true; payload: StockAnalysisPayload; symbol: string; horizon: QueryType }
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/print-stock/$queryId")({
   validateSearch: searchSchema,
   loaderDeps: ({ search: { token } }) => ({ token }),
   loader: async ({ params, deps }): Promise<LoaderData> => {
+    if (!deps.token) return { ok: false, message: "Missing print token" };
     try {
       const res = await getPrintUnifiedStockPayload({
         data: { queryId: params.queryId, token: deps.token },
@@ -40,6 +41,13 @@ export const Route = createFileRoute("/print-stock/$queryId")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
+  errorComponent: ({ error }) => (
+    <div className="p-10">
+      <h1 className="font-display text-xl">Print route error</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+      <div id="print-error" />
+    </div>
+  ),
   component: PrintUnifiedStockPage,
 });
 
@@ -65,6 +73,7 @@ function PrintUnifiedStockPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <div id="print-ready" data-print-ready="ssr" style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <header className="mx-auto max-w-5xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>
