@@ -32,6 +32,14 @@ function PrintSectorPage() {
     staleTime: Infinity,
   });
 
+  const [slowTimeout, setSlowTimeout] = useState(false);
+  useEffect(() => {
+    if (!isLoading) return;
+    const t = setTimeout(() => setSlowTimeout(true), 5000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
+
   useEffect(() => {
     const html = document.documentElement;
     const prev = html.style.overflow;
