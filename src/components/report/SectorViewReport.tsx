@@ -275,6 +275,8 @@ export function SectorReportBody({
         <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{payload.top_stocks_placeholder.body}</p>
       </section>
 
+      {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
+
       {!printMode && (
         <section
           aria-label="SEBI analyst guidance"
