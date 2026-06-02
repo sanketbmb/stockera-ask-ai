@@ -26,7 +26,7 @@ const Input = z.object({
 });
 
 export type SectorFreezeResult =
-  | { ok: true; payload: SectorReportPayload; served_from_cache: boolean; frozen_at: string }
+  | { ok: true; payload: SectorReportPayload; served_from_cache: boolean; frozen_at: string; secondary_answers: SecondaryAnswer[] }
   | { ok: false; code: "SECTOR_NOT_RESOLVED"; raw_sector: string | null }
   | { ok: false; code: "SECTOR_NOT_COVERED"; canonical: string; display: string };
 
