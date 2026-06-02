@@ -371,8 +371,8 @@ function ReportContent() {
     );
   }
 
-  // Phase 3A/3B — routed question types. Sector View has its own variant;
-  // educational + other stay on the placeholder pending Phase 3C.
+  // Phase 3A/3B/3C — routed question types. Sector View and Educational have
+  // their own report variants; "other" stays on the routed-pending panel.
   const qt = (data.query_type ?? "") as string;
   if (qt === "sector_view" || qt === "other" || qt === "educational") {
     const rawQuestion = (data.query_text ?? data.custom_question ?? "").toString();
@@ -381,6 +381,9 @@ function ReportContent() {
       | null;
     if (qt === "sector_view") {
       return <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
+    }
+    if (qt === "educational") {
+      return <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
     }
     return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
   }

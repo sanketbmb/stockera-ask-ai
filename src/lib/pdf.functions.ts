@@ -81,9 +81,13 @@ function todayIST(): string {
   return fmt.format(new Date());
 }
 // Bump when the print template layout changes — invalidates stale cached PDFs.
-const ANALYSIS_PDF_TEMPLATE_VERSION = "v2";
+// Phase 3C: bumped to v3 to invalidate Phase 2 cached PDFs alongside the
+// new educational + sector cache-key shape.
+const ANALYSIS_PDF_TEMPLATE_VERSION = "v3";
 function cacheKeyFor(symbol: string, horizon: QueryType, includeNews: boolean): string {
-  return `${symbol}_${horizon}_n${includeNews ? 1 : 0}_${ANALYSIS_PDF_TEMPLATE_VERSION}_${todayIST()}`;
+  // Stock-report cache key — namespaced so it cannot collide with sector
+  // (`sec_*`) or educational (`edu_*`) keys.
+  return `stk_${symbol}_${horizon}_n${includeNews ? 1 : 0}_${ANALYSIS_PDF_TEMPLATE_VERSION}_${todayIST()}`;
 }
 // Browserless runs on the public internet, so the print URL must be a
 // publicly-reachable origin. In preview/dev the incoming request host is
