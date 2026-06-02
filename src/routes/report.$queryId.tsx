@@ -29,6 +29,8 @@ import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
 import { EducationalReport } from "@/components/report/EducationalReport";
 import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import type { SecondaryAnswer } from "@/lib/secondary-composer";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
