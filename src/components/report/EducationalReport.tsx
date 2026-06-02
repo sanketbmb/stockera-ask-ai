@@ -160,6 +160,7 @@ export function EducationalReport({
         routerMeta={routerMeta}
         printMode={false}
         queryId={queryId}
+        secondaryAnswers={data.secondary_answers}
       />
     </div>
   );
