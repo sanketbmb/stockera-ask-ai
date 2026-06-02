@@ -99,5 +99,3 @@ export function DownloadPdfButton(props: Props) {
   );
 }
 
-// Re-export to satisfy unused-import lint when consumers only need the icon.
-export { Download };
