@@ -1,11 +1,9 @@
-// Public, token-gated print route consumed by Browserless to render the
-// motion-free PDF version of the Stock Analysis Report. Do NOT add nav,
-// footer, or any chrome here — the page must be visually identical to a
-// printed copy of the report.
+// SSR-loader print route for the direct /analysis/$symbol live stock view.
+// Browserless renders this URL; the loader runs the orchestrator
+// server-side so #print-ready (or #print-error) is in the initial HTML.
 
-import { createFileRoute, useParams, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { z } from "zod";
 import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { getPrintAnalysisPayload } from "@/lib/pdf.functions";
@@ -18,8 +16,28 @@ const searchSchema = z.object({
   token: z.string().min(10).max(4000),
 });
 
+type LoaderData =
+  | { ok: true; payload: StockAnalysisPayload }
+  | { ok: false; message: string };
+
 export const Route = createFileRoute("/print/$symbol")({
   validateSearch: searchSchema,
+  loaderDeps: ({ search: { horizon, news, token } }) => ({ horizon, news, token }),
+  loader: async ({ params, deps }): Promise<LoaderData> => {
+    try {
+      const res = await getPrintAnalysisPayload({
+        data: {
+          symbol: params.symbol,
+          horizon: deps.horizon as QueryType,
+          include_news: deps.news === 1,
+          token: deps.token,
+        },
+      });
+      return { ok: true, payload: res as StockAnalysisPayload };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message || "Failed to load print payload" };
+    }
+  },
   head: ({ params }) => ({
     meta: [
       { title: `Stockera Analysis — ${params.symbol} (Print)` },
@@ -30,28 +48,8 @@ export const Route = createFileRoute("/print/$symbol")({
 });
 
 function PrintPage() {
-  const { symbol } = useParams({ from: "/print/$symbol" });
-  const { horizon, news, token } = useSearch({ from: "/print/$symbol" });
-  const includeNews = news === 1;
+  const data = Route.useLoaderData() as LoaderData;
 
-  const { data, error, isLoading } = useQuery<StockAnalysisPayload>({
-    queryKey: ["print-analysis", symbol, horizon, includeNews, token],
-    queryFn: () =>
-      getPrintAnalysisPayload({ data: { symbol, horizon: horizon as QueryType, include_news: includeNews, token } }),
-    retry: false,
-    staleTime: Infinity,
-  });
-
-  // Orchestrator can take 20-60s for fresh stock. Cap at 75s so Browserless
-  // (90s timeout) captures an error page instead of hanging.
-  const [slowTimeout, setSlowTimeout] = useState(false);
-  useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setSlowTimeout(true), 75_000);
-    return () => clearTimeout(t);
-  }, [isLoading]);
-
-  // Hide scrollbars during PDF capture; restore on unmount.
   useEffect(() => {
     const html = document.documentElement;
     const prev = html.style.overflow;
@@ -59,16 +57,11 @@ function PrintPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading && !slowTimeout) {
-    return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
-  }
-  if (error || !data || slowTimeout) {
+  if (!data.ok) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {slowTimeout ? "Report failed to load within 75s." : (error as Error | null)?.message ?? "Unknown error"}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{data.message}</p>
         <div id="print-error" />
       </div>
     );
@@ -76,7 +69,6 @@ function PrintPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Branded print header */}
       <header className="mx-auto max-w-5xl px-4 pt-8 md:px-6">
         <div className="flex items-center justify-between">
           <div>
@@ -93,30 +85,17 @@ function PrintPage() {
         <hr className="mt-4 border-border" />
       </header>
 
-      <StockAnalysisReport data={data} printMode />
+      <StockAnalysisReport data={data.payload} printMode />
 
-      {/* SEBI compliance footer — NAMED variant, pulls from firm-details */}
       <section className="mx-auto max-w-5xl px-4 pb-10 md:px-6">
         <div className="mt-6 rounded-lg border border-border bg-muted/30 px-5 py-4 text-[10.5px] leading-relaxed text-muted-foreground">
           <p className="font-mono text-[10px] uppercase tracking-wider text-foreground">SEBI Disclosure</p>
           <p className="mt-2">
-            This report is prepared and distributed by{" "}
+            Prepared and distributed by{" "}
             <strong className="text-foreground">{FIRM.legalName}</strong>{" "}
-            (operating as <em>{FIRM.brand}</em>), a SEBI-registered{" "}
-            {FIRM.sebiType} (Reg. No. <strong>{FIRM.sebiRegNumber}</strong>;
-            validity {FIRM.validity}). Registered office: {FIRM.address}.
-            Compliance contact: {FIRM.complianceOfficer.email} ·{" "}
-            {FIRM.complianceOfficer.phone}. Grievances:{" "}
-            <a href={FIRM.scoresUrl} className="underline">SCORES</a> ·{" "}
-            <a href={FIRM.smartOdrUrl} className="underline">SMART ODR</a>.
-          </p>
-          <p className="mt-2">
-            This is an AI-generated educational analysis and is not personalised
-            SEBI investment advice. Securities investments are subject to market
-            risks; past performance does not indicate future results. Registration
-            granted by SEBI, BASL membership, and NISM certification do not
-            guarantee performance or assure returns. Read all related documents
-            carefully. You are solely responsible for your investment decisions.
+            (operating as <em>{FIRM.brand}</em>), SEBI-registered {FIRM.sebiType}
+            {" "}(Reg. <strong>{FIRM.sebiRegNumber}</strong>; validity {FIRM.validity}).
+            This is an AI-generated educational analysis and is not personalised SEBI investment advice.
           </p>
         </div>
       </section>

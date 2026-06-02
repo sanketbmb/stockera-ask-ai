@@ -32,6 +32,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
 import { Route as PrintSymbolRouteImport } from './routes/print.$symbol'
+import { Route as PrintStockQueryIdRouteImport } from './routes/print-stock.$queryId'
 import { Route as PrintSectorQueryIdRouteImport } from './routes/print-sector.$queryId'
 import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educational.$queryId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
@@ -161,6 +162,11 @@ const PrintSymbolRoute = PrintSymbolRouteImport.update({
   path: '/print/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrintStockQueryIdRoute = PrintStockQueryIdRouteImport.update({
+  id: '/print-stock/$queryId',
+  path: '/print-stock/$queryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrintSectorQueryIdRoute = PrintSectorQueryIdRouteImport.update({
   id: '/print-sector/$queryId',
   path: '/print-sector/$queryId',
@@ -260,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
+  '/print-stock/$queryId': typeof PrintStockQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -298,6 +305,7 @@ export interface FileRoutesByTo {
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
+  '/print-stock/$queryId': typeof PrintStockQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -337,6 +345,7 @@ export interface FileRoutesById {
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
+  '/print-stock/$queryId': typeof PrintStockQueryIdRoute
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/analyst/$analystId'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
+    | '/print-stock/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/analyst/$analystId'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
+    | '/print-stock/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -453,6 +464,7 @@ export interface FileRouteTypes {
     | '/analyst/$analystId'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
+    | '/print-stock/$queryId'
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
@@ -492,6 +504,7 @@ export interface RootRouteChildren {
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
   PrintEducationalQueryIdRoute: typeof PrintEducationalQueryIdRoute
   PrintSectorQueryIdRoute: typeof PrintSectorQueryIdRoute
+  PrintStockQueryIdRoute: typeof PrintStockQueryIdRoute
   PrintSymbolRoute: typeof PrintSymbolRoute
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
@@ -663,6 +676,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrintSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/print-stock/$queryId': {
+      id: '/print-stock/$queryId'
+      path: '/print-stock/$queryId'
+      fullPath: '/print-stock/$queryId'
+      preLoaderRoute: typeof PrintStockQueryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/print-sector/$queryId': {
       id: '/print-sector/$queryId'
       path: '/print-sector/$queryId'
@@ -788,6 +808,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
   PrintEducationalQueryIdRoute: PrintEducationalQueryIdRoute,
   PrintSectorQueryIdRoute: PrintSectorQueryIdRoute,
+  PrintStockQueryIdRoute: PrintStockQueryIdRoute,
   PrintSymbolRoute: PrintSymbolRoute,
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,

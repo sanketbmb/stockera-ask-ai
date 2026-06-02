@@ -1,11 +1,9 @@
-// Public, token-gated print route for the Sector View report. Consumed by
-// Browserless to render the PDF — do NOT add Navbar, footer, or any chrome
-// outside the SectorReportBody.
+// SSR-loader print route for sector reports. Browserless renders this
+// URL; the loader resolves the frozen payload server-side so
+// #print-ready (or #print-error) is in the initial HTML.
 
-import { createFileRoute, useParams, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { z } from "zod";
 import { getPrintSectorPayload } from "@/lib/pdf.functions";
 import { SectorReportBody } from "@/components/report/SectorViewReport";
@@ -14,31 +12,33 @@ import { FIRM } from "@/lib/firm-details";
 
 const searchSchema = z.object({ token: z.string().min(10).max(4000) });
 
+type LoaderData =
+  | { ok: true; payload: SectorReportPayload; rawQuestion: string }
+  | { ok: false; message: string };
+
 export const Route = createFileRoute("/print-sector/$queryId")({
   validateSearch: searchSchema,
+  loaderDeps: ({ search: { token } }) => ({ token }),
+  loader: async ({ params, deps }): Promise<LoaderData> => {
+    try {
+      const res = await getPrintSectorPayload({
+        data: { queryId: params.queryId, token: deps.token },
+      });
+      return {
+        ok: true,
+        payload: res.payload as unknown as SectorReportPayload,
+        rawQuestion: res.rawQuestion,
+      };
+    } catch (err) {
+      return { ok: false, message: (err as Error).message || "Failed to load print payload" };
+    }
+  },
   head: () => ({ meta: [{ title: "Stockera Sector View (Print)" }, { name: "robots", content: "noindex, nofollow" }] }),
   component: PrintSectorPage,
 });
 
 function PrintSectorPage() {
-  const { queryId } = useParams({ from: "/print-sector/$queryId" });
-  const { token } = useSearch({ from: "/print-sector/$queryId" });
-  const fetchPayload = useServerFn(getPrintSectorPayload);
-
-  const { data, error, isLoading } = useQuery({
-    queryKey: ["print-sector", queryId, token],
-    queryFn: () => fetchPayload({ data: { queryId, token } }),
-    retry: false,
-    staleTime: Infinity,
-  });
-
-  const [slowTimeout, setSlowTimeout] = useState(false);
-  useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setSlowTimeout(true), 5000);
-    return () => clearTimeout(t);
-  }, [isLoading]);
-
+  const data = Route.useLoaderData() as LoaderData;
 
   useEffect(() => {
     const html = document.documentElement;
@@ -47,14 +47,11 @@ function PrintSectorPage() {
     return () => { html.style.overflow = prev; };
   }, []);
 
-  if (isLoading && !slowTimeout) return <div className="p-10 text-sm text-muted-foreground">Preparing report…</div>;
-  if (error || !data || slowTimeout) {
+  if (!data.ok) {
     return (
       <div className="p-10">
         <h1 className="font-display text-xl">Could not load print payload</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {slowTimeout ? "Report failed to load within 5s." : (error as Error | null)?.message ?? "Unknown error"}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{data.message}</p>
         <div id="print-error" />
       </div>
     );
@@ -79,7 +76,7 @@ function PrintSectorPage() {
       </header>
 
       <SectorReportBody
-        payload={data.payload as unknown as SectorReportPayload}
+        payload={data.payload}
         rawQuestion={data.rawQuestion}
         routerMeta={null}
         printMode
