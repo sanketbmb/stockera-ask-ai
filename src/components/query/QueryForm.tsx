@@ -498,15 +498,30 @@ export function QueryForm() {
         <div className="space-y-5">
           <div>
             <Label htmlFor="qtext" className="text-base">
-              {isSector ? "Which sector? *" : "What's your question? *"}
+              {isSector
+                ? "Which sector? *"
+                : isEducational
+                  ? "Which concept? *"
+                  : "What's your question? *"}
             </Label>
-            <Textarea id="qtext" autoFocus rows={isSector ? 2 : 5} value={queryText} onChange={(e) => setQueryText(e.target.value)}
-              placeholder={isSector
-                ? "Enter a sector like Private Banks, IT, Energy, Pharma"
-                : "e.g. I bought Siemens at 3668 a year back, should I sell now?"}
-              className="mt-2 text-base" />
+            <Textarea
+              id="qtext"
+              autoFocus
+              rows={(isSector || isEducational) ? 2 : 5}
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder={
+                isSector
+                  ? "Enter a sector like Private Banks, IT, Energy, Pharma"
+                  : isEducational
+                    ? "Ask about a concept like RSI, MACD, DCF, Beta, or Relative Strength"
+                    : "e.g. I bought Siemens at 3668 a year back, should I sell now?"
+              }
+              className="mt-2 text-base"
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
           </div>
+
 
           <div>
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
@@ -694,22 +709,26 @@ export function QueryForm() {
             </div>
           )}
 
-          {intent === "educational" && (
-            <div>
-              <Label className="flex items-center gap-1">
-                Related stock (optional)
-                <Tooltip>
-                  <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                  <TooltipContent className="text-xs max-w-[220px]">Optional — pick a stock to anchor the educational context.</TooltipContent>
-                </Tooltip>
-              </Label>
-              <StockAutocomplete
-                value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
-                onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
-                onClear={() => { setStockName(""); setStockSymbol(""); }}
-              />
+          {isEducational && (
+            <div
+              className={`rounded-xl border px-4 py-3 ${
+                resolvedConcept
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-amber-500/40 bg-amber-500/5"
+              }`}
+            >
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Concept recognized</p>
+              <p className="mt-0.5 text-sm font-semibold">
+                {resolvedConcept
+                  ? resolvedConcept.canonical
+                  : "Not recognized — try RSI, MACD, DCF, Beta, or Piotroski F-Score"}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground italic">
+                Educational reports are explanatory, glossary-backed, and contain no buy/sell verdicts.
+              </p>
             </div>
           )}
+
 
           <div>
             <Label>Choose analyst (optional)</Label>
