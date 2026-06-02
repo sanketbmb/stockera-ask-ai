@@ -20,6 +20,8 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
 
 const LOADING_STEPS = [
