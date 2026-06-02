@@ -13,10 +13,13 @@ const SYMBOL_RE = /^[A-Z0-9._-]{1,20}$/;
 const BUCKET = "pdf-cache";
 const CACHE_TTL_SEC = 60 * 60; // 1 hour
 const SIGNED_URL_TTL_SEC = 60 * 60;
-const BROWSERLESS_TIMEOUT_MS = 90_000;
+// Browserless plans cap individual /pdf calls around 60s. Keep our wait
+// budget comfortably under that so we never trip an upstream 408.
+const BROWSERLESS_TIMEOUT_MS = 55_000;
 const PRINT_READY_SELECTOR = "#print-ready, #print-error";
-const TOKEN_TTL_SEC = 5 * 60;
+const TOKEN_TTL_SEC = 10 * 60;
 const QUOTA_WARN_THRESHOLD = 800;
+
 
 // ─────────────────────────────────────────────────────────────────
 // HMAC token (Web Crypto) — protects the public print route.
