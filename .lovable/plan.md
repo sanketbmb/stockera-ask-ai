@@ -1,125 +1,103 @@
-## Phase 3C — Educational Mode MVP
+# PDF Export God-Mode Stabilization — Diagnostic + Fix Plan
 
-### Step 0 — Glossary Audit (findings)
+## Findings
 
-**No dedicated educational glossary file exists yet.** Two approved internal sources qualify as the seed:
+### 1. The "CLICK BUG" cannot be reproduced from current code
+The button referenced in the mission (`src/components/analysis/DownloadPdfButton.tsx`) does **not exist**. The only `DownloadPdfButton` is defined inline in `src/routes/report.$queryId.tsx:227–268`. It is a plain shadcn `<Button onClick={handleClick}>` with **no `<Link>` wrapper, no `to=` prop, and no `<a href>`** — so a click cannot mutate the URL. The reported URL `/report/:queryId%20Click%20Download%20PDF` would require something to concatenate the button label into the `queryId` path param; nothing in the current tree does that.
 
-1. `src/lib/metric-copy.ts` — `METRIC_COPY` map. Per-metric `measures` / `how` / `scale?` / `interpretation?` / `formula?`. Beginner-friendly, already shipped in card tooltips.
-2. `src/content/architecture-encyclopedia.ts` — `MODULES[]` with authoritative `formulas[]`, `outputs`, `failure`, `tiers`, `references`. Authoritative, technical.
+What this likely is in practice:
+- A stale build / cached preview from an earlier broken iteration, OR
+- An external automation pasting button text into the URL bar.
 
-**Concept coverage from approved sources (no fabrication):**
+**Action**: After we add proper download buttons to Sector + Educational reports (below), if the bug still reproduces, capture the exact URL with a session replay and we'll trace the offending Link. No code on `main` produces that URL.
 
-| Concept | metric-copy | encyclopedia (formula / module map) | Mapping (Stockera card) | MVP completeness |
-|---|---|---|---|---|
-| RSI | indirect (via card_intraday_trend_levels) | ✓ formula, compute-technicals | Trend & Structure | **Compact** (def from encyclopedia, no dedicated metric-copy line) |
-| MACD | indirect | ✓ formula, compute-technicals | Trend & Structure | **Compact** |
-| EMA | indirect | ✓ (stack 20/50/200) | Trend & Structure | **Compact** |
-| ADX | indirect | ✓ formula | Trend & Structure | **Compact** |
-| Bollinger Bands | indirect | ✓ formula | Trend & Structure | **Compact** |
-| ATR | ✓ formula in card_intraday_microstructure | ✓ used in compute-trade-plan | Intraday Microstructure / Trade Levels | **Full** |
-| VWAP | ✓ m_vwap | ✓ formula | Intraday Microstructure | **Compact** (note: live feed pending) |
-| Piotroski F-Score | ✓ m_piotroski (def + scale) | ✓ formula | Light Fundamentals / Business Quality | **Full** |
-| Altman Z-Score | — | ✓ formula | Light Fundamentals | **Compact** |
-| DCF | — | ✓ formula, fallback ladder | Valuation & Fair Value | **Compact** |
-| Beta | ✓ m_beta (def + interp) | ✓ formula | Risk Profile | **Full** |
-| Sharpe Ratio | ✓ m_sharpe (def + interp) | ✓ formula | Risk Profile | **Full** |
-| Sortino Ratio | — | ✓ formula | Risk Profile | **Compact** |
-| Max Drawdown | ✓ m_max_dd | ✓ formula | Risk Profile | **Full** |
-| VaR | — | ✓ formula | Risk Profile | **Compact** |
-| Relative Strength | ✓ m_rs_vs_nifty | ✓ formula (compute-momentum) | Momentum & RS | **Full** |
-| Volume Confirmation | ✓ m_volume_profile | ✓ formula (Jegadeesh-Titman) | Momentum & RS | **Full** |
-| Promoter Holding | ✓ m_promoter_holding | — | Business Quality | **Full** |
-| PE Ratio | ✓ m_pe_ratio | — | Light Fundamentals | **Full** |
+### 2. Browserless wiring is correct, but there is NO `generate-report-pdf` edge function
+There is no Supabase Edge Function for PDFs in this project. PDF generation runs in a **TanStack server function** — `generateAnalysisPdf` in `src/lib/pdf.functions.ts:167`. It reads `process.env.BROWSERLESS_TOKEN` (line 233) inside `.handler()`, which is the correct pattern for runtime secrets. The `BROWSERLESS_TOKEN` secret is already present. Wiring is healthy for the stock path; the function calls Browserless at `https://chrome.browserless.io/pdf` and uploads to the `pdf-cache` bucket.
 
-**MVP concept allowlist (16 supported):** RSI, MACD, EMA, ADX, Bollinger Bands, ATR, VWAP, Piotroski F-Score, Altman Z-Score, DCF, Beta, Sharpe Ratio, Max Drawdown, Relative Strength, Volume Confirmation, Promoter Holding.
+The mission's reference to a `generate-report-pdf` Edge Function is incorrect for this stack — we keep everything in TanStack server functions per `server-side-modern` guidance.
 
-**Degraded (rendered "Compact" — definition + formula + Stockera mapping only, no worked example, no common-mistakes):** Sortino, VaR.
+### 3. Sector + Educational reports have no download button and no print template
+- `src/components/report/SectorViewReport.tsx` — no `DownloadPdfButton`, no print route, no `printMode` prop.
+- `src/components/report/EducationalReport.tsx` — same.
+- Only the stock report has a print route (`src/routes/print.$symbol.tsx`) and a print payload server fn (`getPrintAnalysisPayload`).
 
-**Why-it-matters / Common-mistakes / Worked-example:** Not present in approved sources for most concepts. Per the brief's deterministic-content rule, these sections will be **omitted cleanly** when source-backed content is unavailable, with a "Worked example coming in v1.1" placeholder allowed since the brief explicitly permits it.
+Browserless cannot generate sector/educational PDFs because there is nothing for it to navigate to.
 
-**Difficulty tag (deterministic, per brief):**
-- Beginner: RSI, EMA, VWAP, ATR, PE Ratio, Promoter Holding, Volume Confirmation
-- Intermediate: MACD, ADX, Bollinger Bands, Beta, Relative Strength, Max Drawdown
-- Advanced: Piotroski F-Score, Altman Z-Score, DCF, Sharpe Ratio, Sortino, VaR
+### 4. Cache keys
+`cacheKeyFor` in `pdf.functions.ts:87` already namespaces stock keys as `stk_*`. We need parallel `sec_*` / `edu_*` keyers when we add the new server fns. No collision exists today because no other PDF path exists.
 
-### Decision: bootstrap a single structured glossary file
+---
 
-Create `src/content/educational-glossary.ts` as the single, auditable system of record. Each entry composed **only** from `METRIC_COPY` + `MODULES` content already in the repo. No new prose is invented; the composer only re-arranges and labels existing approved strings. A small `common_mistake` field is allowed when it can be lifted verbatim from an existing `interpretation` string ("RSI > 70 alone is not a sell signal", etc.), otherwise the section is omitted.
+## Plan
 
-### Files
+### A. Stock download button — defensive cleanup
+- Refactor the inline `DownloadPdfButton` out of `src/routes/report.$queryId.tsx` into `src/components/report/DownloadPdfButton.tsx`, parametrized by `{ kind: "stock" | "sector" | "educational"; queryId, symbol?, horizon? }`. This is the file the mission expected to find and removes any chance of a future regression wrapping it in a `<Link>`.
 
-**New**
-- `src/content/educational-glossary.ts` — 16 entries, typed `GlossaryEntry`.
-- `src/lib/concept-alias-map.ts` — case-insensitive resolver with shorthand/typo tolerance, returns `{ canonical, confidence, suggestions[] }`.
-- `src/lib/educational-context.ts` — pure deterministic composer: takes `(canonical, rawQuestion)` → `EducationalReportArtifact`.
-- `src/lib/educational-report.functions.ts` — `freezeOrReadEducationalReport` serverFn mirroring `freezeOrReadSectorReport` (engine_version `v1_educational`, engine_source `glossary_library`, persists into `queries.ai_report`, calls credit-metering with new `post_query_educational` no-charge event under noop_dev_mode).
-- `src/components/report/EducationalReport.tsx` — outer shell (Navbar, ReflectiveBanner, EducationalHero, ConceptBrief, softened CTA, audit footer). No score ring, no trade levels, no addenda.
-- `src/components/report/EducationalHero.tsx` — concept name, one-line def, Difficulty chip, "Educational only" trust label.
-- `src/components/report/ConceptBrief.tsx` — sections A-G rendered only when source-backed; missing sections drop silently.
-- `src/components/report/ConceptNotFoundPanel.tsx` — fallback with up to 5 closest supported concepts.
-- `supabase/migrations/<ts>_educational_additive.sql` — additive: `concept_canonical TEXT NULL`, `educational_difficulty TEXT NULL` on `public.queries` (+ no policy changes; existing GRANTS untouched).
-- `docs/phase-3c-verification.md` — 8-case verification matrix.
+### B. Sector PDF pipeline
+1. **Print route** — `src/routes/print-sector.$queryId.tsx` (token-gated, no navbar/CTA, motion-free, A4-friendly). Renders an extracted presentational subset of `SectorViewReport` (hero, metric grid, action buckets, audit footer, SEBI disclaimer) plus the same branded print header/footer used in `print.$symbol.tsx`.
+2. **Split `SectorViewReport`** into `SectorReportContent` (pure presentational, accepts `payload` + `printMode` prop) and the existing `SectorViewReport` wrapper (Navbar + freeze fetcher + fallback). The new content component is shared between `/report/:queryId` and the print route. When `printMode` is true, hide CTA buttons and analyst banners.
+3. **Print payload server fn** — `getPrintSectorPayload` in `src/lib/sector-report.functions.ts`: token-gated (reuses `verifyPrintToken` from `pdf.functions.ts`), returns the frozen `SectorReportPayload` for the given queryId.
+4. **PDF server fn** — `generateSectorPdf` in `src/lib/pdf.functions.ts`:
+   - `cacheKeyForSector(queryId)` → `sec_${queryId}_${SECTOR_PDF_TEMPLATE_VERSION}_${todayIST()}`
+   - Same cache → Browserless → upload → log flow as `generateAnalysisPdf`.
+   - Signs a print token bound to `{ queryId, kind: "sector", exp }`.
+   - Object path under `pdf-cache/sec_*.pdf`.
 
-**Modified**
-- `src/lib/feature-flags.ts` — add `ENABLE_EDUCATIONAL = true`; extend `isRoutableIntent` and `visibleIntents()` to include `"educational"` when flag on. Other stays gated.
-- `src/components/query/QueryForm.tsx` — render Educational chip when flag on; when selected, swap Symbol/BuyPrice fields for a single concept text box with helper copy `"Ask about a concept like RSI, MACD, DCF, Beta, or Relative Strength"`; on submit resolve alias, insert query row with `query_type='educational'`, `concept_canonical`, `educational_difficulty`, then navigate to `/report/:id`.
-- `src/routes/report.$queryId.tsx` — branch: `if (qt === 'educational') return <EducationalReport ... />`. Keep `"other"` on `RoutedPendingPanel`. Add `educational` to non-polling list (already conditional, just confirm).
-- `src/components/report/RoutedPendingPanel.tsx` — drop educational from its handled copy (only other remains).
-- `src/lib/credit-metering.ts` — add `post_query_educational` event (no-charge under noop_dev_mode).
-- `src/lib/pdf.functions.ts` — include `query_type` + `concept_canonical` in cache key; bump `PDF_TEMPLATE_VERSION`.
-- `src/routes/print.$symbol.tsx` — no change (educational uses queryId, not symbol). If a print route is needed for educational, add `src/routes/print.educational.$queryId.tsx` reusing the same shell.
-- `src/integrations/supabase/types.ts` — regenerated after migration (automated).
+### C. Educational PDF pipeline
+Mirror image of B:
+1. `src/routes/print-educational.$queryId.tsx`.
+2. Split `EducationalReport` into `EducationalReportContent` (with `printMode`) + wrapper.
+3. `getPrintEducationalPayload` in `src/lib/educational-report.functions.ts`.
+4. `generateEducationalPdf` + `cacheKeyForEducational(queryId)` → `edu_${queryId}_${EDU_PDF_TEMPLATE_VERSION}_${todayIST()}`.
 
-### Routing & freeze flow
+### D. Wire download buttons into the new variants
+In `src/routes/report.$queryId.tsx`, the dispatcher already branches on `query_type`. Pass the right `kind` to the new `DownloadPdfButton` for sector/educational/stock, mounted in a header bar above each report variant (same visual slot used for the stock report). For "other" / RoutedPendingPanel, no PDF.
 
-```text
-/post-query
-  ├─ explicit chip "Educational" ──┐
-  └─ free-text → router → educational ┘
-            │
-            ▼ resolve alias (concept-alias-map)
-            │  ├─ resolved   → insert query (query_type='educational', concept_canonical, educational_difficulty)
-            │  └─ unresolved → insert query with concept_canonical=null
-            ▼
-       navigate /report/:queryId
-            ▼
-       EducationalReport
-         ├─ concept_canonical present → freezeOrReadEducationalReport (composes from glossary, persists ai_report on first read)
-         └─ concept_canonical null    → ConceptNotFoundPanel (no freeze, preserves query, shows 5 suggestions)
+### E. Print-token signing
+Extend the existing `signPrintToken` helper to accept `{ kind, queryId }` payloads in addition to `{ symbol, horizon, include_news }`. Validators on the new server fns must reject tokens whose `kind` doesn't match.
+
+### F. Verification
+Add a row to `docs/phase-3b-verification.md` and `docs/phase-3c-verification.md` for the PDF path:
+- happy path (cache miss → Browserless 200 → upload → signed URL → browser opens PDF)
+- cache hit (same key within IST day → no Browserless call)
+- token kind mismatch (sector token used on stock print route → 401)
+
+## Technical details
+
+### File map
+```
+src/components/report/DownloadPdfButton.tsx       (new, shared)
+src/components/report/SectorReportContent.tsx     (new, extracted)
+src/components/report/EducationalReportContent.tsx (new, extracted)
+src/routes/print-sector.$queryId.tsx              (new)
+src/routes/print-educational.$queryId.tsx        (new)
+src/lib/pdf.functions.ts                          (add generateSectorPdf, generateEducationalPdf, cache-key helpers)
+src/lib/sector-report.functions.ts                (add getPrintSectorPayload)
+src/lib/educational-report.functions.ts           (add getPrintEducationalPayload)
+src/components/report/SectorViewReport.tsx        (refactor to use SectorReportContent)
+src/components/report/EducationalReport.tsx       (refactor to use EducationalReportContent)
+src/routes/report.$queryId.tsx                    (inline DownloadPdfButton removed; uses shared one)
 ```
 
-Freeze contract identical to Sector View:
-- engine_version `v1_educational`, engine_source `glossary_library`
-- `report_artifact_status = 'frozen'`, `frozen_at = now()`
-- subsequent visits read `queries.ai_report` verbatim
+### Cache-key namespacing (final)
+```
+stk_{SYMBOL}_{horizon}_n{0|1}_{tplVer}_{IST-date}.pdf
+sec_{queryId}_{tplVer}_{IST-date}.pdf
+edu_{queryId}_{tplVer}_{IST-date}.pdf
+```
 
-### Report UX (deterministic composition)
+### Print URL shape
+```
+/print-sector/{queryId}?token=...
+/print-educational/{queryId}?token=...
+```
+Both rendered through the same `PUBLIC_PRINT_FALLBACK` origin logic Browserless already uses.
 
-Reflective banner reuses existing `ReflectiveBanner` with `interpretation = { intent: "educational", concept_name }`, and shows `Auto-routed via free-text router · confidence: <high|medium>` when `router_meta?.source === 'free_text_router'`.
+### Non-changes
+- `BROWSERLESS_TOKEN` secret — already set, do not re-add.
+- `pdf-cache` bucket — already exists, private, signed URLs.
+- Stock pipeline — no behavioral change, only the button is extracted.
 
-Hero: concept name + one-line def (from `METRIC_COPY[measures]` or first sentence of encyclopedia `outputs`), Difficulty chip, "Educational only" trust label. No verdict, no ring, no price.
+## BUILD prompt to follow
 
-ConceptBrief renders only the sections that have source-backed content:
-- **What it means** — `measures` line
-- **Why it matters** — derived from `MODULES[].purpose` (one-liner). Omitted if no mapping.
-- **How to read it** — `how` + `scale` + `interpretation` from METRIC_COPY (composed verbatim, joined with `· `)
-- **Worked example** — placeholder card `"Worked example coming in v1.1"` (brief-approved).
-- **Where it appears in Stockera** — chip list derived from `MODULES[].outputs` containing this concept's name; chips are informational only (no deep links in MVP).
-- **Common mistakes** — only when a deterministic line exists (e.g. "Beta > 1.3 means amplified market moves; < 0.7 means defensive" surfaces a common misread). For most concepts: omitted.
-- **Related concepts** — siblings from the same `MODULES[]` entry (e.g. RSI → MACD, EMA, ADX, Bollinger Bands). Cap at 5.
-
-Softened CTA: `"Try this concept on a real stock query"` linking to `/post-query`. AnalystCtaCard not reused.
-
-Audit footer: engine_version, engine_source, concept_canonical, educational_difficulty, frozen_at, educational-only disclaimer + existing SEBI line.
-
-### Forbidden-vocab compliance
-
-Glossary file passes existing `scripts/check-forbidden-vocab.mjs` (no "guaranteed/sure shot/predict/forecast/promise/definitely/100%"). All content is copy-of-existing-approved-strings, which already passed lint.
-
-### Verification matrix (`docs/phase-3c-verification.md`)
-
-8 cases per brief: 5 supported (RSI, MACD, Piotroski, Altman Z, Relative Strength), 1 unknown ("explain xyzwave"), 1 PDF render, 1 regression matrix (Fresh Entry / Existing Position / Averaging / Sector View — all unchanged).
-
-### What is intentionally NOT touched
-
-Brain modules, orchestrator, sector_aggregates, generate-stock-analysis, generate-ai-report edge fn, Fresh/Sell-Hold/Averaging/Sector report renderers, "Other" chip, multilingual, voice, paid path. No LLM call at request time anywhere in the Educational path.
+> Build the PDF stabilization per the approved plan: (1) extract a shared `DownloadPdfButton` component supporting `kind: "stock" | "sector" | "educational"`; (2) split `SectorViewReport` and `EducationalReport` into presentational `*Content` components that accept a `printMode` prop (no Navbar, no CTAs, A4-friendly); (3) add token-gated print routes `/print-sector/$queryId` and `/print-educational/$queryId`; (4) add `getPrintSectorPayload` / `getPrintEducationalPayload` server fns; (5) add `generateSectorPdf` and `generateEducationalPdf` in `pdf.functions.ts` with `sec_*` and `edu_*` cache keys mirroring the existing `stk_*` flow; (6) extend `signPrintToken` / `verifyPrintToken` to carry a `kind` claim and reject mismatches; (7) wire the shared `DownloadPdfButton` into the sector and educational headers on `/report/:queryId`; (8) update `docs/phase-3b-verification.md` and `docs/phase-3c-verification.md` with the PDF verification rows.
