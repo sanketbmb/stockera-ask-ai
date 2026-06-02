@@ -168,7 +168,7 @@ function TierShapedReportContent({
         </span>
         {frozenAt && <FrozenBadge frozenAt={frozenAt} isStale={isStale} />}
         <div className="ml-auto">
-          <DownloadPdfButton symbol={symbol} horizon={horizon} />
+          <DownloadPdfButton queryId={queryId} symbol={symbol} horizon={horizon} />
         </div>
       </div>
       <StockAnalysisReport
@@ -221,13 +221,13 @@ function FrozenBadge({ frozenAt, isStale }: { frozenAt: string; isStale: boolean
   );
 }
 
-// Stock-report download button wrapper — delegates to the shared
-// DownloadPdfButton. Kept as a thin wrapper so the existing call site
-// (`<DownloadPdfButton symbol={symbol} horizon={horizon} />`) keeps working
-// without leaking the `kind` prop into the call site.
-function DownloadPdfButton({ symbol, horizon }: { symbol: string; horizon: QueryType }) {
-  return <SharedDownloadPdfButton kind="stock" symbol={symbol} horizon={horizon} includeNews />;
+// Stock-report download button wrapper — uses the unified flow (queryId)
+// so PDF generation prints the frozen queries.ai_report artifact without
+// calling the live orchestrator.
+function DownloadPdfButton({ queryId }: { queryId: string; symbol: string; horizon: QueryType }) {
+  return <SharedDownloadPdfButton kind="stock_unified" queryId={queryId} />;
 }
+
 
 // ──────────────── Legacy renderer ────────────────
 
