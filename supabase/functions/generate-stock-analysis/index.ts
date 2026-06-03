@@ -745,7 +745,13 @@ Deno.serve(async (req) => {
       },
       price_context: tech?.price ?? { current_price: null, price_source: "", as_of: "" },
       levels: (TRADE_PLAN_SOURCE === "new" && tpRes.data?.levels)
-        ? (tpRes.data.levels as Record<string, number | null>)
+        ? {
+            ...(tpRes.data.levels as Record<string, unknown>),
+            // Phase 4D Step 0 — canonical home for entry_strategy on the report.
+            entry_strategy: (tpRes.data.entry_strategy as Record<string, unknown> | null | undefined)
+              ?? ((tpRes.data.levels as Record<string, unknown>).entry_strategy as Record<string, unknown> | null | undefined)
+              ?? null,
+          } as Record<string, unknown>
         : (tech?.levels ?? {
             entry_zone: null, stop_loss: null, target_1: null, target_2: null,
             support_1: null, support_2: null, resistance_1: null, resistance_2: null,
