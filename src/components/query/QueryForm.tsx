@@ -364,11 +364,12 @@ export function QueryForm() {
       // Phase 3B — sector view requires a resolvable sector but no stock/entry fields.
       if (isSector) {
         if (!resolvedSector) {
-          toast.error(
-            "Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.",
-          );
+          toast.error("Pick a sector from the list below to continue.");
           return;
         }
+        setStep(2);
+        return;
+      }
         setStep(2);
         return;
       }
