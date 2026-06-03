@@ -29,7 +29,7 @@ import {
   ENABLE_FREE_TEXT_ROUTER,
   ENABLE_SECTOR_VIEW,
   ENABLE_EDUCATIONAL,
-  isLiveIntent,
+  
   isRoutableIntent,
   type AnyIntent,
 } from "@/lib/feature-flags";
@@ -61,39 +61,40 @@ type Intent = AnyIntent;
 // Phase 2.1 — 2 examples per live chip. Each entry pre-selects the matching
 // visible intent so a hidden type can never be silently chosen.
 const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
-  // Fresh Entry
+  // Stock — Fresh Entry
   { text: "Should I buy ICICIBANK for the next 6 months?", intent: "buy_decision" },
-  { text: "Fresh entry in Reliance for long term — good levels?", intent: "buy_decision" },
-  // Sell or Hold
+  // Stock — Sell or Hold
   { text: "I bought HDFC Bank at 1850 last year, should I sell now?", intent: "stuck_position" },
-  {
-    text: "Currently holding Reliance, should I exit at current levels?",
-    intent: "stuck_position",
-  },
-  // Should I Average
+  // Stock — Should I Average
   { text: "I'm at a loss in Suzlon, should I average down?", intent: "should_average" },
-  { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
+  // General — Sector View
+  { text: "How will the banking sector perform in the next 12 months?", intent: "sector_view" },
+  // General — Educational
+  { text: "What is RSI and how should I use it?", intent: "educational" },
+  // General — Ask Anything (Other)
+  { text: "What is the overall market mood right now?", intent: "other" },
 ];
 
 const ALL_QUERY_TYPES: {
   id: Intent;
   label: string;
   emoji: string;
+  group: "stock" | "general";
+  description: string;
   phase3?: boolean;
   sectorOnly?: boolean;
   educationalOnly?: boolean;
   routerOnly?: boolean;
 }[] = [
-  { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
-  { id: "should_average", emoji: "📉", label: "Should I Average" },
-  { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
-  // Phase 3C — Educational ships independently of the broader phase 3 unlock.
-  { id: "educational", emoji: "📚", label: "Educational", educationalOnly: true },
+  { id: "buy_decision", emoji: "🆕", label: "Fresh Entry", group: "stock", description: "Thinking of buying a stock" },
+  { id: "stuck_position", emoji: "🤔", label: "Sell or Hold", group: "stock", description: "Already own it — exit or hold?" },
+  { id: "should_average", emoji: "📉", label: "Should I Average", group: "stock", description: "At a loss — average down?" },
   // Phase 3B — Sector View ships independently of the broader phase 3 unlock.
-  { id: "sector_view", emoji: "🏭", label: "Sector View", sectorOnly: true },
-  // "Other" is exposed when the free-text router is live (Phase 3A). It is
-  // a deliberate escape hatch for questions that don't map to a LIVE chip.
-  { id: "other", emoji: "❓", label: "Other", routerOnly: true },
+  { id: "sector_view", emoji: "🏭", label: "Sector View", group: "general", description: "How will a whole sector perform?", sectorOnly: true },
+  // Phase 3C — Educational ships independently of the broader phase 3 unlock.
+  { id: "educational", emoji: "📚", label: "Educational", group: "general", description: "Concept / indicator explainer", educationalOnly: true },
+  // Phase 3D — "Ask Anything" now generates a real AI report.
+  { id: "other", emoji: "❓", label: "Ask Anything", group: "general", description: "Any other market question", routerOnly: true },
 ];
 
 const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
@@ -196,11 +197,23 @@ export function QueryForm() {
     }
     setIntent(nextIntent);
 
+    // Phase 3D — for non-stock intents (sector / educational / other) the
+    // downstream pipeline is cheap and deterministic, so we always honor the
+    // router even on low confidence — the alternative is a useless "couldn't
+    // classify" toast on a question that should have generated a report.
     if (band === "low") {
+      const isGeneralIntent =
+        formIntent === "sector_view" ||
+        formIntent === "educational" ||
+        formIntent === "other";
+      if (isGeneralIntent && userChip == null) {
+        setIntent(formIntent);
+        setRouterNotice(null);
+        return;
+      }
       setRouterNotice(
-        "We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.",
+        "We couldn’t classify your question confidently — submitting as “Ask Anything”. You'll still get an AI overview.",
       );
-      // Force "other" only if we had no chip pick and no high confidence.
       if (userChip == null) setIntent("other");
       return; // No prefill on low confidence — never fabricate.
     }
@@ -603,20 +616,21 @@ export function QueryForm() {
                 engine_source: "glossary_library",
                 concept_canonical: resolvedConcept?.canonical ?? null,
               }
-            : isOther
-              ? {
-                  // Phase 3A — "other" lands in the routed-pending placeholder.
-                  // No Brain call, no v1 engine, no charge. Analyst-routed.
-                  ...commonInsert,
-                  stock_name: "Routed Query",
-                  stock_symbol: null,
-                  buy_price: null,
-                  current_price: null,
-                  status: "pending" as const,
-                  query_type: "other" as const,
-                  engine_version: "router_v1",
-                  engine_source: "free_text_router",
-                }
+              : isOther
+                ? {
+                    // Phase 3D — "other" now generates a Gemini-backed
+                    // analyst-style AI report. GeneralReport's freeze fn runs
+                    // on first read.
+                    ...commonInsert,
+                    stock_name: "General Query",
+                    stock_symbol: null,
+                    buy_price: null,
+                    current_price: null,
+                    status: "ai_answered" as const,
+                    query_type: "other" as const,
+                    engine_version: "v1_general",
+                    engine_source: "lovable_ai_gateway",
+                  }
               : {
                   ...commonInsert,
                   stock_name: stockName.trim() || "Stock Query",
@@ -699,9 +713,9 @@ export function QueryForm() {
                 ? "v1_sector_view"
                 : isEducational
                   ? "v1_educational"
-                  : isOther
-                    ? "router_v1"
-                    : "v0_legacy",
+                    : isOther
+                      ? "v1_general"
+                      : "v0_legacy",
             engine_source: usesV1Engine
               ? "post_query"
               : isSector
@@ -709,7 +723,7 @@ export function QueryForm() {
                 : isEducational
                   ? "glossary_library"
                   : isOther
-                    ? "free_text_router"
+                    ? "lovable_ai_gateway"
                     : "legacy_post_query",
             credit_action: "skipped_no_charge_path",
             sector_canonical: isSector ? (resolvedSector?.canonical ?? null) : null,
@@ -876,7 +890,13 @@ export function QueryForm() {
                     onClick={() => {
                       setQueryText(q.text);
                       resetRouterState();
-                      if (isLiveIntent(q.intent)) setIntent(q.intent);
+                      // Pre-select the chip for ANY routable intent (stock,
+                      // sector, educational, ask-anything) so the example
+                      // lands on the correct flow immediately.
+                      if (isRoutableIntent(q.intent)) {
+                        setIntent(q.intent);
+                        setChipManuallyPicked(true);
+                      }
                     }}
                     className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
                   >
@@ -886,27 +906,57 @@ export function QueryForm() {
               </div>
             </div>
 
-            <div>
+            <div className="space-y-4">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Question type
               </Label>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {QUERY_TYPES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setIntent(t.id);
-                      setChipManuallyPicked(true);
-                      resetRouterState();
-                    }}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}
-                  >
-                    <span className="mr-1.5">{t.emoji}</span>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              {(["stock", "general"] as const).map((group) => {
+                const chips = QUERY_TYPES.filter((t) => t.group === group);
+                if (chips.length === 0) return null;
+                const heading =
+                  group === "stock" ? "Stock questions" : "General questions";
+                return (
+                  <div key={group}>
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                      {heading}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {chips.map((t) => {
+                        const active = intent === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.description}
+                            onClick={() => {
+                              setIntent(t.id);
+                              setChipManuallyPicked(true);
+                              resetRouterState();
+                            }}
+                            className={`group rounded-xl border px-3 py-2 text-left transition min-w-[160px] ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 text-sm font-medium">
+                              <span>{t.emoji}</span>
+                              <span>{t.label}</span>
+                            </div>
+                            <p
+                              className={`text-[11px] mt-0.5 leading-snug ${
+                                active ? "text-primary/80" : "text-muted-foreground"
+                              }`}
+                            >
+                              {t.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {routerLoading && (

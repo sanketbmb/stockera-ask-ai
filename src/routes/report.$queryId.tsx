@@ -28,6 +28,7 @@ import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioReject
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
 import { EducationalReport } from "@/components/report/EducationalReport";
+import { GeneralReport } from "@/components/report/GeneralReport";
 import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
@@ -351,6 +352,11 @@ function ReportContent() {
     }
     if (qt === "educational") {
       return <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
+    }
+    // Phase 3D — every "other" query now flows through GeneralReport, which
+    // freezes a Gemini-generated analyst-style answer on first read. Idempotent.
+    if (qt === "other") {
+      return <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
     }
     return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
   }
