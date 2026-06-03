@@ -15,7 +15,7 @@
 //      score_breakdown into the matching entry below.
 //   3. Re-deploy. Drift will now be asserted automatically.
 
-export type RegressionTier = "intraday" | "medium-term" | "long-term";
+export type RegressionTier = "intraday" | "short-term" | "medium-term" | "long-term";
 
 export type RegressionBaselineEntry = {
   symbol: string;

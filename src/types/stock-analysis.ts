@@ -1,7 +1,7 @@
 // Typed contract for `generate-stock-analysis` orchestrator payload.
 // Mirrors supabase/functions/generate-stock-analysis/index.ts response shape.
 
-export type QueryType = "intraday" | "medium-term" | "long-term";
+export type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 export type VerdictAction = "BUY" | "HOLD" | "SELL" | "AVOID" | "WATCHLIST";
 
 export interface StockMeta {

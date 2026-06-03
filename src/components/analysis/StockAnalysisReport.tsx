@@ -90,6 +90,7 @@ const VERDICT_STYLES: Record<VerdictAction, { label: string; ring: string; chip:
 
 const TIER_LABEL: Record<QueryType, string> = {
   "intraday": "Intraday view",
+  "short-term": "Short-term swing view",
   "medium-term": "Medium-term view",
   "long-term": "Long-term view",
 };
@@ -137,6 +138,7 @@ const riskTone = (kind: "beta" | "vol" | "sharpe" | "sortino" | "dd" | "var", v:
 // Tier-aware section priority (lower = more emphasis at top)
 const SECTION_ORDER: Record<QueryType, Array<"technical" | "fundamental" | "risk" | "momentum">> = {
   "intraday":    ["technical", "momentum", "risk", "fundamental"],
+  "short-term":  ["technical", "momentum", "risk", "fundamental"],
   "medium-term": ["technical", "fundamental", "risk", "momentum"],
   "long-term":   ["fundamental", "risk", "technical", "momentum"],
 };
@@ -144,6 +146,7 @@ const SECTION_ORDER: Record<QueryType, Array<"technical" | "fundamental" | "risk
 // Tier-aware pulse: which pillars deserve the gentle one-shot emphasis.
 const TIER_PULSE_PILLARS: Record<QueryType, Set<"technical" | "fundamental" | "risk" | "momentum">> = {
   "intraday":    new Set(["technical", "momentum"]),
+  "short-term":  new Set(["technical", "momentum"]),
   "medium-term": new Set(),
   "long-term":   new Set(["fundamental", "risk"]),
 };
@@ -174,6 +177,7 @@ function behavioralNudge(action: VerdictAction, tier: QueryType, riskLabel: stri
 // untouched; this is a presentation-only filter.
 const TIER_IRRELEVANT_MODULES: Record<QueryType, string[]> = {
   "intraday":    ["compute-long-term-quality"],
+  "short-term":  ["compute-long-term-quality", "compute-intraday-microstructure"],
   "medium-term": ["compute-intraday-microstructure"],
   "long-term":   ["compute-intraday-microstructure"],
 };

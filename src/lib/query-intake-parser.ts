@@ -2,13 +2,16 @@
 // Translates the human-friendly form selections into the orchestrator's
 // strict horizon tier vocabulary, and produces the interpretation line
 // rendered by <ReflectiveBanner />. No LLM calls.
+//
+// Phase 4A: "Short-term (<3mo)" is now a first-class tier (short-term) and
+// no longer silently collapsed into medium-term. This is the single source of
+// truth for UI-label → tier normalization.
 
 import type { QueryType } from "@/types/stock-analysis";
 
 const HORIZON_FORM_TO_TIER: Record<string, QueryType> = {
   "Intraday": "intraday",
-  // No "short-term" tier exists in the orchestrator — collapse to medium-term.
-  "Short-term (<3mo)": "medium-term",
+  "Short-term (<3mo)": "short-term",
   "Medium-term (3-12mo)": "medium-term",
   "Long-term (1+ year)": "long-term",
 };
@@ -20,6 +23,7 @@ export function normalizeHorizon(formValue: string | null | undefined): QueryTyp
 
 const HORIZON_HUMAN_LABEL: Record<QueryType, string> = {
   intraday: "Intraday view",
+  "short-term": "Short-term swing view",
   "medium-term": "Medium-term view",
   "long-term": "Long-term view",
 };
