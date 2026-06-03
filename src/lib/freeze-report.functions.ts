@@ -17,7 +17,7 @@ import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
 import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 
-const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
+const HORIZONS = ["intraday", "short-term", "medium-term", "long-term"] as const;
 
 const Input = z.object({
   queryId: z.string().uuid(),
