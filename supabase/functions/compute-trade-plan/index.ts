@@ -1065,8 +1065,57 @@ Deno.serve(async (req) => {
       s2: raw.support_2,
       closes,
     };
-    const { strategy: rawStrategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
-    const strategy = applyZoneGuards(rawStrategy);
+
+    // Phase 4D — regime classification.
+    const dma20_20ago = smaAt(closes, 20, 20);
+    const dma50_20ago = smaAt(closes, 50, 20);
+    const dma20Slope = Number.isFinite(dma20) && Number.isFinite(dma20_20ago) && dma20_20ago !== 0
+      ? (dma20 - dma20_20ago) / dma20_20ago
+      : NaN;
+    const dma50Slope = Number.isFinite(dma50) && Number.isFinite(dma50_20ago) && dma50_20ago !== 0
+      ? (dma50 - dma50_20ago) / dma50_20ago
+      : NaN;
+    const ddFrom52wh = Number.isFinite(w52H) && w52H > 0 ? (spot - w52H) / w52H : NaN;
+    const distAboveDma200 = Number.isFinite(dma200) && dma200 > 0 ? (spot - dma200) / dma200 : NaN;
+    const regime = detectRegime(spot, dma50, dma200, dma50Slope, ddFrom52wh, distAboveDma200);
+    const regimeInputs: RegimeInputs = {
+      dma20_slope: Number.isFinite(dma20Slope) ? dma20Slope : null,
+      dma50_slope: Number.isFinite(dma50Slope) ? dma50Slope : null,
+      drawdown_from_52wh: Number.isFinite(ddFrom52wh) ? ddFrom52wh : null,
+      distance_above_dma200: Number.isFinite(distAboveDma200) ? distAboveDma200 : null,
+    };
+
+    // Base strategy (Phase 4B)
+    const baseRes = buildEntryStrategy(queryType, esInputs);
+    let strategyRaw = baseRes.strategy;
+    let sl_override = baseRes.sl_override;
+    let sl_method_override = baseRes.sl_method_override;
+    let regimeOverrode = false;
+    const forced = regimeToForcedBranch(queryType, regime, esInputs);
+    if (forced) {
+      const forcedRes = buildEntryStrategy(queryType, esInputs, forced);
+      if (forcedRes.strategy.reasoning_code !== baseRes.strategy.reasoning_code) {
+        strategyRaw = forcedRes.strategy;
+        sl_override = forcedRes.sl_override;
+        sl_method_override = forcedRes.sl_method_override;
+        regimeOverrode = true;
+      }
+    }
+    // TRENDING_UP medium-term — bias preferred_entry toward zone upper (early entry on continuation)
+    if (queryType === "medium-term" && regime === "TRENDING_UP"
+        && strategyRaw.mode === "zone" && strategyRaw.entry_zone_upper != null) {
+      strategyRaw = { ...strategyRaw, preferred_entry: strategyRaw.entry_zone_upper };
+    }
+    // Annotate reasoning with regime; suffix code only on actual override.
+    strategyRaw = {
+      ...strategyRaw,
+      reasoning_code: regimeOverrode
+        ? `${strategyRaw.reasoning_code}_REGIME_${regime}`
+        : strategyRaw.reasoning_code,
+      reasoning_text: `${strategyRaw.reasoning_text} [Regime: ${regime}${regimeOverrode ? "; branch overridden" : ""}]`,
+    };
+
+    const strategy = applyZoneGuards(strategyRaw);
     raw.entry_zone = strategy.preferred_entry;
     if (strategy.mode === "zone" && sl_override != null) {
       raw.stop_loss = sl_override;
