@@ -803,6 +803,12 @@ Deno.serve(async (req) => {
         trade_plan_flag: TRADE_PLAN_SOURCE,
         trade_plan_validation: Array.isArray(tpRes.data?.validation) ? tpRes.data!.validation : [],
         trade_plan_vol_1y: (tpRes.data?.vol_1y as number | null | undefined) ?? (risk?.snapshot.volatility_1y ?? null),
+        trade_plan_engine_version: (tpRes.data?.engine_version as string | undefined) ?? null,
+        entry_strategy: (tpRes.data?.entry_strategy as Record<string, unknown> | undefined) ?? null,
+        entry_strategy_code:
+          ((tpRes.data?.entry_strategy as Record<string, unknown> | undefined)?.reasoning_code as string | undefined) ?? null,
+        entry_anchor:
+          ((tpRes.data?.entry_strategy as Record<string, unknown> | undefined)?.entry_anchor as string | undefined) ?? null,
         targets_meta: (tpRes.data?.targets_meta as Record<string, unknown> | null | undefined) ?? null,
         confidence_breakdown: confidence.breakdown,
         confidence_band: confidence.band,
