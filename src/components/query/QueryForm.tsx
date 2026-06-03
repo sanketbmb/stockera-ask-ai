@@ -386,9 +386,46 @@ export function QueryForm() {
             query_type: intent,
           };
 
+      // Pre-flight payload validation — fail fast with precise message.
+      const requiredByIntent: string[] = ["user_id", "stock_name", "query_text"];
+      const missing = requiredByIntent.filter((k) => {
+        const v = (insertPayload as Record<string, unknown>)[k];
+        return v === undefined || v === null || v === "";
+      });
+      if (missing.length) {
+        throw new Error(`Missing field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
+      }
+      // Strip undefined values (PostgREST rejects undefined leaks as 400s).
+      for (const k of Object.keys(insertPayload as Record<string, unknown>)) {
+        if ((insertPayload as Record<string, unknown>)[k] === undefined) {
+          delete (insertPayload as Record<string, unknown>)[k];
+        }
+      }
+
+      const payloadShape = Object.keys(insertPayload as Record<string, unknown>).sort();
       const { data: inserted, error: qErr } = await supabase
         .from("queries").insert(insertPayload as never).select("id").single();
-      if (qErr || !inserted) throw qErr ?? new Error("Failed to create query");
+      if (qErr || !inserted) {
+        const pgErr = qErr as null | { code?: string; message?: string; details?: string; hint?: string };
+        console.error("[queries.insert] failed", {
+          code: pgErr?.code,
+          message: pgErr?.message,
+          details: pgErr?.details,
+          hint: pgErr?.hint,
+          payloadShape,
+          intent,
+          query_type: (insertPayload as { query_type?: string }).query_type,
+          engine_version: (insertPayload as { engine_version?: string }).engine_version,
+        });
+        const composed = pgErr
+          ? `[${pgErr.code ?? "no-code"}] ${pgErr.message ?? "no message"}${pgErr.hint ? ` — hint: ${pgErr.hint}` : ""}${pgErr.details ? ` — details: ${pgErr.details}` : ""}`
+          : "Insert returned no row";
+        const e = new Error(composed) as Error & { code?: string; details?: string; hint?: string };
+        e.code = pgErr?.code;
+        e.details = pgErr?.details;
+        e.hint = pgErr?.hint;
+        throw e;
+      }
 
       const queryId = inserted.id as string;
       createdQueryId = queryId;
