@@ -197,11 +197,23 @@ export function QueryForm() {
     }
     setIntent(nextIntent);
 
+    // Phase 3D — for non-stock intents (sector / educational / other) the
+    // downstream pipeline is cheap and deterministic, so we always honor the
+    // router even on low confidence — the alternative is a useless "couldn't
+    // classify" toast on a question that should have generated a report.
     if (band === "low") {
+      const isGeneralIntent =
+        formIntent === "sector_view" ||
+        formIntent === "educational" ||
+        formIntent === "other";
+      if (isGeneralIntent && userChip == null) {
+        setIntent(formIntent);
+        setRouterNotice(null);
+        return;
+      }
       setRouterNotice(
-        "We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.",
+        "We couldn’t classify your question confidently — submitting as “Ask Anything”. You'll still get an AI overview.",
       );
-      // Force "other" only if we had no chip pick and no high confidence.
       if (userChip == null) setIntent("other");
       return; // No prefill on low confidence — never fabricate.
     }
