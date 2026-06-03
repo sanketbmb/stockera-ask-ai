@@ -670,8 +670,14 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
   }
   if (!(lower < upper)) { const tmp = Math.min(lower, upper); upper = Math.max(lower, upper); lower = tmp - 0.01; }
   const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
-  const sl = Math.max(w52Lv * 0.95, dma * 0.85);
-  const slMethod = (w52Lv * 0.95 > dma * 0.85) ? "long_zone_52wl_anchor" : "long_zone_dma200_floor";
+  // Cap SL strictly below preferred_entry so deep-value names (entry well below
+  // DMA200) still get a usable SL instead of being dropped by Rule 9.
+  const slRaw = Math.max(w52Lv * 0.95, dma * 0.85);
+  const slCap = pref * 0.92;
+  const sl = Math.min(slRaw, slCap);
+  const slMethod = (slRaw > slCap)
+    ? "long_zone_capped_below_entry"
+    : ((w52Lv * 0.95 > dma * 0.85) ? "long_zone_52wl_anchor" : "long_zone_dma200_floor");
   const staggered = [
     { pct: 30, price: up, note: "First tranche near current level" },
     { pct: 40, price: pref, note: "Second tranche on pullback" },
