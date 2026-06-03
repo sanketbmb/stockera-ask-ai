@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -41,6 +41,7 @@ import {
 } from "@/lib/intent-router-schema";
 import { resolveSector, sectorDisplay } from "@/lib/sector-alias-map";
 import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-detector";
+import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import {
   ArrowLeft,
