@@ -1,104 +1,140 @@
-# Phase 3D — Mixed Query Intelligence
 
-Ship a deterministic secondary-ask parser + lazy composer + a "You also asked" UI block, with additive schema only. No changes to primary report shell, freeze behavior, verdict math, or metering.
+# Sector Detection — Full Fix (Option C)
 
-## 1. Migration (additive only)
+## Goal
+A user pastes any free-text query on `/post-query` (single word, sentence, or paragraph) and the system reliably (a) detects the right sector, (b) maps it to a canonical that exists in `sector_aggregates`, and (c) generates the AI report. No more "Couldn't recognize that sector" dead-ends.
 
-Single migration adding three nullable JSONB columns to `public.queries`:
+## Three-tier detection pipeline
 
-- `secondary_asks jsonb` — parsed list `[{ type, raw_span, confidence }]`, max 2
-- `secondary_answers jsonb` — composed answers `[{ type, status: "supported"|"fallback", title, body, provenance }]`
-- `mixed_query_meta jsonb` — `{ version, parser_version: "deterministic_v1", signature, unsupported_flags[], clarification_needed, composed_at }`
+```text
+User question
+    │
+    ▼
+[Tier 1] Regex keyword scan  ─── hit ──▶ canonical (instant, free)
+    │ miss
+    ▼
+[Tier 2] LLM fallback (Gemini, only if text > 8 words)
+    │ hit ──▶ canonical (~300ms, ~$0.0001)
+    │ miss
+    ▼
+[Tier 3] Show top-3 LLM guesses as chips + full 36-sector grouped picker
+```
 
-No RLS changes (existing `queries_own` policies cover new columns). No GRANT changes (queries table already granted).
+User override is **sticky**: once a chip is clicked, `userOverride=true`, auto-detection stops for the session until "Clear" is hit.
 
-## 2. New files
+## Phase 1 — Smarter regex (file: `src/lib/sector-keyword-detector.ts`)
 
-### `src/lib/secondary-asks-parser.ts` (client-safe, pure)
-Deterministic parser over `query_text + custom_question`:
+Merge the super-agent prompt's ~200-entry keyword list (it's solid) with two guards:
 
-- Regex/keyword detection for 5 ask types:
-  - `explain_metric` → matches "what is/what's/explain/define/meaning of …" + `resolveConcept()` returns canonical
-  - `key_risks` → matches "risk(s)|downside|what could go wrong|red flag"
-  - `reentry_clarification` → matches "re-?entry|re-enter|second entry|add again|when to buy back"
-  - `news_clarification` → matches "news|headline|why is it moving|catalyst"
-  - `alternatives_same_sector` → matches "alternative|similar stock|peer|other stock in (sector)"
-- Strips primary intent span (use router_meta.interpreted_type) so the primary ask isn't re-parsed.
-- Caps at 2; dedupes by type.
-- Computes a stable `signature` = `sha256(sorted_types + canonical_concept?).slice(0,16)` for cache identity.
-- Returns `{ secondary_asks, signature, unsupported_flags }`.
+1. **Forbidden bare keywords** — only match inside multi-word phrases, never alone:
+   `tech`, `technology`, `financial`, `energy`, `consumer`, `industrial`, `health`, `service`, `power`, `metal`, `media`
+   (so "tech sector" matches, but "fintech" does not pull "tech")
 
-### `src/lib/secondary-composer.ts` (server-safe, pure data in → pure data out)
-Given `{ asks, primaryPayload, queryType, frozenArtifact }`, returns `secondary_answers`. Compose rules:
+2. **Length-DESC sort + word-boundary regex** — already in place, confirm.
 
-- **explain_metric** (all report types): pull definition from `educational-glossary.ts` via `resolveConcept`. Short 2-3 sentence card with `provenance: { source: "glossary", concept_canonical, library_version }`.
-- **key_risks**:
-  - stock → assemble from `risk_snapshot`, `flags.news_data_limited`, `audit_meta.trade_plan_validation`, `sentiment_snapshot.top_news_driver` (deterministic template, no new prose).
-  - sector → macro-state-aware template using `sector_macro_state` + `risk_band_label`.
-  - educational → omit (skip silently, not a fallback card).
-- **reentry_clarification**:
-  - stock with `levels.support && resistance && intraday_microstructure_snapshot.atr_14` → deterministic re-entry framing card.
-  - else → honest fallback card.
-- **news_clarification**:
-  - stock with `sentiment_snapshot.top_news_driver` → one-line echo + "not exhaustive" disclaimer.
-  - else → fallback.
-- **alternatives_same_sector**: always fallback ("we don't surface ranked peers in this MVP").
+3. **Add the failing case**: `information technology` → canonical `it_services` (NOT `information_technology` — see Phase 3 reconciliation).
 
-Each answer carries `status: "supported" | "fallback"`, `title`, `body` (string), `provenance` (object). No fabricated tickers, prices, or headlines. All text drawn from glossary / deterministic templates → passes forbidden-vocab lint.
+## Phase 2 — LLM fallback (new file: `src/lib/sector-infer.functions.ts`)
 
-### `src/components/report/YouAlsoAskedSection.tsx`
-Renders `secondary_answers` as 1-2 cards under heading "You also asked". Skip render entirely when `secondary_answers` is empty/null. Each card: small type chip, title, body, muted provenance footer. Uses existing design tokens (no custom colors). Hidden when nothing valid.
+TanStack server function using Lovable AI Gateway (`LOVABLE_API_KEY` already configured):
 
-## 3. Composer wiring (lazy, inside existing freeze fns)
+- Model: `google/gemini-3-flash-preview` (fast, cheap)
+- System prompt: *"You classify Indian stock-market questions into one sector from this exact list of 36 canonicals: [...]. Return JSON `{canonical, confidence, alternates}`. Use null if no sector intent."*
+- The 36 canonicals are passed as plain text in the prompt (NOT as enum in tool schema — Gemini state-limit gotcha).
+- `JSON.parse` the response (skip tool calling to avoid schema-state limit).
+- In-memory LRU cache (200 entries) keyed by `sha256(question)` so the same paragraph doesn't re-call.
+- Only fires when: Tier 1 returned null AND text length > 8 words AND not already cached.
 
-Extend each freeze server fn to compose secondaries once, persist, return:
+Wire into `QueryForm.tsx`:
+- Calls `useServerFn(inferSectorFromText)` debounced 600ms on textarea blur.
+- Shows "Inferring sector…" spinner; non-blocking (user can still pick manually).
 
-- `src/lib/freeze-report.functions.ts` (stock unified)
-- `src/lib/sector-report.functions.ts`
-- `src/lib/educational-report.functions.ts`
+## Phase 3 — Canonical reconciliation (the report-generation blocker)
 
-Flow in each:
-1. After primary payload is composed/loaded from cache, check if `row.secondary_answers` exists AND `row.mixed_query_meta.signature` matches the current parser signature for `(query_text, custom_question)`.
-2. If yes → return as-is (already frozen).
-3. If no → run parser, run composer, `UPDATE queries SET secondary_asks, secondary_answers, mixed_query_meta` (single update, non-fatal if it fails — log warn). Emit `audit_events` row `event_type: "mixed_query_composed"`.
-4. Return full payload + secondaries to caller.
+Today there are 3 overlapping IT canonicals (`it_services`, `it_software`, `information_technology`) and similar overlaps elsewhere. The report fails when detection picks one but `sector_aggregates` only has the other.
 
-Cache identity: PDF cache key already hashes `query_id + frozen_at`; we additionally fold `mixed_query_meta.signature` into the hash so primary-only and mixed-query versions don't collide.
+**Action:**
+1. SQL audit: `SELECT sector_canonical FROM public.sector_aggregates ORDER BY 1;` — get the authoritative 36 list.
+2. Pick one winner per concept (e.g. IT → `it_services`).
+3. Update `src/lib/sector-alias-map.ts` with a **nearest-neighbor map** for collapses:
+   ```
+   information_technology → it_services
+   it_software           → it_services
+   software_services     → it_services
+   renewable_energy      → power
+   oil_marketing         → petroleum_products
+   ```
+4. Apply the same map in `supabase/functions/_shared/sector-aliases.ts` (keep client + edge in sync).
+5. Add a final fallback in `generate-stock-analysis`: if `sector_aggregates` row missing for detected canonical, run it through nearest-neighbor map ONE more time, then default to `__default__` with `audit_meta.sector_aggregate_source = "nearest_neighbor_fallback"`. Never crash.
 
-No-charge metering: add `noop_dev_mode_mixed_query` label to audit only; no credit path change.
+**Do NOT** alter the rows in `sector_aggregates`. Do NOT touch report engine math.
 
-## 4. Render wiring
+## Phase 4 — UI changes (`src/components/query/QueryForm.tsx`)
 
-`src/routes/report.$queryId.tsx` dispatcher: after primary report body component, before `<ExpertAnswerSection>` / analyst CTA, render `<YouAlsoAskedSection answers={query.secondary_answers} />`. Same insertion for all three report types. For `query_type === "other"` / routed, render only if a valid `explain_metric` answer resolved.
+- **Delete** the red toast "Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG" — gone forever.
+- On detection success: green inline badge "Sector detected: **Information Technology** (matched 'information technology')" with a small "Clear" button.
+- On Tier 3 (LLM also failed): neutral helper "Pick a sector below" + grouped chip picker for all 36 sectors, organized as: Banking & Finance · Tech · Consumer · Energy & Power · Industrial · Healthcare · Materials · Auto · Real Estate & Infra · Other.
+- Sticky override: clicked chip sets `userOverride=true`, disables auto-detect until Clear.
 
-No changes to report shell, hero, verdict, addenda, or PDF print routes' primary content (the print routes already read `queries.ai_report` — they will pick up secondaries if we want them in PDF, but Phase 3D scope = on-screen only; print routes untouched).
+## Phase 5 — End-to-end audit
 
-## 5. Verification
+Trace one query (*"What is your view on information technology sector of india for next 12 months"*) through all 5 hops and confirm the canonical survives:
 
-Run the mixed-query matrix:
-1. Stock + explain_metric ("Should I buy ICICIBANK? Also what is RoE?")
-2. Stock + key_risks + reentry ("Holding HDFC, key risks and when to re-enter?")
-3. Sector + explain_metric ("View on private banks, what is NIM?")
-4. Educational + key_risks (educational primary, key_risks should omit silently)
-5. Anything + alternatives_same_sector → honest fallback card
-6. Duplicate secondary = primary → skipped
-7. >2 secondaries → truncated to 2
-8. Junk-only → no "You also asked" rendered
+1. QueryForm detects → `it_services`
+2. Inserted into `queries.sector_canonical` → `it_services`
+3. `generate-stock-analysis` reads → `it_services`
+4. `sector-report.functions.ts` looks up `sector_aggregates` → row exists
+5. Report renders with IT sector metrics (PE, returns, breadth)
 
-Lint: `node scripts/check-forbidden-vocab.mjs` on composer + glossary outputs.
+Document any hop where the canonical is lost, transformed unexpectedly, or not found, and patch that hop only.
 
-## 6. Files changed (summary)
+## Test matrix (must all pass)
 
-- **migration**: 1 new file adding 3 columns
-- **new**: `src/lib/secondary-asks-parser.ts`, `src/lib/secondary-composer.ts`, `src/components/report/YouAlsoAskedSection.tsx`
-- **edited**: `src/lib/freeze-report.functions.ts`, `src/lib/sector-report.functions.ts`, `src/lib/educational-report.functions.ts`, `src/routes/report.$queryId.tsx`
-- **types regenerated**: `src/integrations/supabase/types.ts` (after migration)
+| # | Input | Tier | Expected canonical |
+|---|---|---|---|
+| 1 | "information technology sector of india for next 12 months" | 1 | it_services |
+| 2 | "How is the IT sector doing?" | 1 | it_services |
+| 3 | "Pharma sector outlook" | 1 | pharmaceuticals |
+| 4 | "PSU banks should I buy?" | 1 | public_sector_bank |
+| 5 | "Oil and gas sector" | 1 | oil_gas |
+| 6 | "I'm worried about rising fuel costs hurting logistics" | 2 (LLM) | oil_gas |
+| 7 | "Future of clean mobility in Bharat" | 2 (LLM) | automobile |
+| 8 | "What happens to lenders when RBI cuts rates?" | 2 (LLM) | private_sector_bank or financial_services |
+| 9 | "Renewable energy plays for next decade" | 2 (LLM) → nearest-neighbor | power |
+| 10 | "Energy drinks market" | none | null → Tier 3 picker (bare "energy" blocked) |
+| 11 | "hjkhjk random gibberish" | none | null → Tier 3 picker |
+| 12 | Manual chip click then new query | sticky | userOverride respected |
 
-## Out of scope (explicitly)
+## Files touched
 
-- LLM router for secondaries (deterministic_v1 only)
-- Live news fetch
-- Peer/comparable surfacing
-- PDF inclusion of secondaries
-- QueryForm submit flow changes
-- Brain math / verdict / weighting / addenda
+```text
+NEW   src/lib/sector-infer.functions.ts          (Gemini fallback server fn)
+EDIT  src/lib/sector-keyword-detector.ts         (super-agent keyword list + forbidden bare words)
+EDIT  src/lib/sector-alias-map.ts                (nearest-neighbor map)
+EDIT  src/lib/sector-aliases.ts                  (sync with edge copy)
+EDIT  supabase/functions/_shared/sector-aliases.ts  (sync)
+EDIT  supabase/functions/generate-stock-analysis/index.ts  (nearest-neighbor fallback when sector_aggregates row missing — audit first, edit only if confirmed losing the canonical)
+EDIT  src/components/query/QueryForm.tsx         (3-tier resolution, sticky override, grouped 36-sector picker, kill the red toast)
+```
+
+## What I will NOT touch
+
+- backtest engine, `run-backtest`, `compute-trade-plan`, `_shared/trade-plan-core`, `backtest_results`
+- RLS policies, admin gating, `/admin/backtest`
+- engine math, weights, regime detection, scoring formulas
+- `sector_aggregates` table data
+- the running backtest job
+
+## Report-back format
+
+1. Diff of all 7 files (with line counts)
+2. New `sector-infer.functions.ts` full content
+3. SQL audit output: `SELECT sector_canonical FROM public.sector_aggregates ORDER BY 1;`
+4. Nearest-neighbor collapse map applied
+5. End-to-end trace for query #1 showing canonical at each of 5 hops
+6. Pass/fail table for all 12 test cases (with screenshots for the visible ones)
+7. Confirmation that the red toast is GONE
+8. Confirmation that all 36 sectors are visible in Tier 3 grouped picker
+9. Any blockers
+
+Approve and I'll switch to build.
