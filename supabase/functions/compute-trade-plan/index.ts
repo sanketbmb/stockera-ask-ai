@@ -508,6 +508,56 @@ async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
   return null;
 }
 
+// ─── Phase 4D · Regime detection ───
+type Regime = "TRENDING_UP" | "TRENDING_DOWN" | "RANGE_BOUND" | "CORRECTIVE" | "UNCLASSIFIED";
+
+interface RegimeInputs {
+  dma20_slope: number | null;
+  dma50_slope: number | null;
+  drawdown_from_52wh: number | null;
+  distance_above_dma200: number | null;
+}
+
+// Forced branch tokens — share one type across tiers; each tier consumes
+// only the tokens that map to its own branches.
+type ForcedBranch =
+  // short-term
+  | "BREAKOUT_LTP" | "PULLBACK_S1" | "NO_PULLBACK" | "CORRECTIVE_LOW_CONV"
+  // medium-term
+  | "IN_ZONE" | "WAIT_PULLBACK" | "CORRECTION_S2"
+  // long-term
+  | "DMA200_ACCUM" | "WAIT_REVERSION" | "DEEP_VALUE";
+
+/** SMA of `period` values ending `idxFromEnd` bars before the most recent bar. */
+function smaAt(values: number[], period: number, idxFromEnd: number): number {
+  const end = values.length - idxFromEnd;
+  const start = end - period;
+  if (start < 0 || end > values.length || end <= 0) return NaN;
+  let s = 0;
+  for (let i = start; i < end; i++) s += values[i];
+  return s / period;
+}
+
+function detectRegime(
+  spot: number, dma50: number, dma200: number,
+  dma50Slope: number, ddFrom52wh: number, distAboveDma200: number,
+): Regime {
+  const dma50ok = Number.isFinite(dma50);
+  const dma200ok = Number.isFinite(dma200);
+  const slopeOk = Number.isFinite(dma50Slope);
+  // 1) Trending up
+  if (dma50ok && dma200ok && slopeOk && spot > dma50 && dma50 > dma200 && dma50Slope > 0.02) return "TRENDING_UP";
+  // 2) Trending down
+  if (dma50ok && dma200ok && slopeOk && spot < dma50 && dma50 < dma200 && dma50Slope < -0.02) return "TRENDING_DOWN";
+  // 3) Corrective — significant drawdown AND meaningfully below DMA200
+  if (Number.isFinite(ddFrom52wh) && Number.isFinite(distAboveDma200)
+      && ddFrom52wh < -0.15 && distAboveDma200 < -0.05) return "CORRECTIVE";
+  // 4) Range-bound — close to DMA200 and low slope
+  if (Number.isFinite(distAboveDma200) && slopeOk
+      && Math.abs(distAboveDma200) < 0.05 && Math.abs(dma50Slope) < 0.02) return "RANGE_BOUND";
+  return "UNCLASSIFIED";
+}
+
 // ─── Phase 4B · Horizon-aware Entry Strategy ───
 interface EntryStrategyInputs {
   spot: number;
@@ -525,7 +575,37 @@ interface EntryStrategyInputs {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const mid = (a: number, b: number) => round2((a + b) / 2);
 
-function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
+/**
+ * Per (tier × regime) override mapping. Returns the forced branch to apply,
+ * or null when the base Phase 4B logic should run unchanged. All overrides
+ * deterministic — every regime label maps to a fixed branch token.
+ */
+function regimeToForcedBranch(tier: QueryType, regime: Regime, x: EntryStrategyInputs): ForcedBranch | null {
+  if (tier === "intraday") return null;
+  if (tier === "short-term") {
+    if (regime === "TRENDING_UP") return "BREAKOUT_LTP";
+    if (regime === "TRENDING_DOWN") return "NO_PULLBACK";
+    if (regime === "RANGE_BOUND") {
+      const s1Reachable = x.s1 != null && x.s1 < x.spot && (x.spot - x.s1) / x.spot <= 0.06;
+      return s1Reachable ? "PULLBACK_S1" : null;
+    }
+    if (regime === "CORRECTIVE") return "CORRECTIVE_LOW_CONV";
+    return null;
+  }
+  if (tier === "medium-term") {
+    if (regime === "TRENDING_DOWN" || regime === "CORRECTIVE") return "CORRECTION_S2";
+    return null;
+  }
+  // long-term
+  if (regime === "TRENDING_DOWN" || regime === "CORRECTIVE") return "DEEP_VALUE";
+  return null;
+}
+
+function buildEntryStrategy(
+  tier: QueryType,
+  x: EntryStrategyInputs,
+  forcedBranch?: ForcedBranch,
+): {
   strategy: EntryStrategy;
   sl_override: number | null;
   sl_method_override: string | null;
@@ -538,15 +618,13 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
     return {
       strategy: {
         mode: "single",
-        entry_zone_lower: null,
-        entry_zone_upper: null,
+        entry_zone_lower: null, entry_zone_upper: null,
         entry_anchor: "LTP",
         preferred_entry: round2(spot),
         reasoning_code: "INTRADAY_LTP",
         reasoning_text: `Intraday entry at LTP ₹${round2(spot)}.`,
       },
-      sl_override: null,
-      sl_method_override: null,
+      sl_override: null, sl_method_override: null,
     };
   }
 
@@ -554,8 +632,13 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
   if (tier === "short-term") {
     const last20 = closes.slice(-21, -1);
     const last20High = last20.length ? Math.max(...last20) : NaN;
-    const breakout = Number.isFinite(dma20) && spot > dma20 && Number.isFinite(last20High) && spot >= last20High * 0.995;
-    if (breakout) {
+    const breakout = Number.isFinite(dma20) && spot > dma20
+      && Number.isFinite(last20High) && spot >= last20High * 0.995;
+    const s1Reachable = s1 != null && s1 < spot && (spot - s1) / spot <= 0.06;
+    const baseBranch: ForcedBranch = breakout ? "BREAKOUT_LTP" : (s1Reachable ? "PULLBACK_S1" : "NO_PULLBACK");
+    const branch: ForcedBranch = forcedBranch ?? baseBranch;
+
+    if (branch === "BREAKOUT_LTP") {
       return {
         strategy: {
           mode: "single",
@@ -568,7 +651,7 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
         sl_override: null, sl_method_override: null,
       };
     }
-    if (s1 != null && s1 < spot && (spot - s1) / spot <= 0.06) {
+    if (branch === "PULLBACK_S1" && s1 != null) {
       const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, spot * 0.985) : spot * 0.985;
       const lower = round2(s1);
       const upper = round2(Math.max(upperRaw, lower + 0.01));
@@ -586,6 +669,20 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
         sl_method_override: "short_zone_atr1",
       };
     }
+    if (branch === "CORRECTIVE_LOW_CONV") {
+      return {
+        strategy: {
+          mode: "single",
+          entry_zone_lower: null, entry_zone_upper: null,
+          entry_anchor: "LTP",
+          preferred_entry: round2(spot),
+          reasoning_code: "SHORT_CORRECTIVE_LOW_CONVICTION",
+          reasoning_text: `Corrective regime — short-term setup has low conviction. Trade only with tight risk near ₹${round2(spot)}.`,
+        },
+        sl_override: null, sl_method_override: null,
+      };
+    }
+    // NO_PULLBACK fallback (also catches PULLBACK_S1 when s1 unavailable, and TRENDING_DOWN short setup)
     return {
       strategy: {
         mode: "single",
@@ -593,7 +690,7 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
         entry_anchor: "LTP",
         preferred_entry: round2(spot),
         reasoning_code: "SHORT_NO_PULLBACK_AVAILABLE",
-        reasoning_text: `No clean pullback zone — enter at LTP ₹${round2(spot)} with tight risk.`,
+        reasoning_text: `No clean pullback zone — weak short-term setup. Enter at LTP ₹${round2(spot)} with tight risk only.`,
       },
       sl_override: null, sl_method_override: null,
     };
@@ -601,22 +698,33 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
 
   // ── C) MEDIUM-TERM ──
   if (tier === "medium-term") {
-    let lower: number, upper: number, code: string, text: string;
     const s1Eff = s1 ?? (Number.isFinite(dma50) ? dma50 : spot * 0.95);
 
-    if (Number.isFinite(dma50) && s1 != null && spot >= s1 && spot <= dma50) {
-      lower = Math.max(s1, dma50 * 0.97);
+    let baseBranch: ForcedBranch;
+    if (Number.isFinite(dma50) && s1 != null && spot >= s1 && spot <= dma50) baseBranch = "IN_ZONE";
+    else if (Number.isFinite(dma50) && spot > dma50) baseBranch = "WAIT_PULLBACK";
+    else baseBranch = "CORRECTION_S2";
+    const branch: ForcedBranch = forcedBranch ?? baseBranch;
+
+    let lower: number, upper: number, code: string, text: string;
+    if (branch === "IN_ZONE") {
+      lower = Math.max(s1 ?? (Number.isFinite(dma50) ? dma50 * 0.97 : spot * 0.95),
+                       Number.isFinite(dma50) ? dma50 * 0.97 : -Infinity);
       upper = Math.min(spot, Number.isFinite(dma20) ? dma20 : spot);
       code = "MEDIUM_IN_ACCUMULATION_ZONE";
       text = `Already in accumulation zone — accumulate between ₹{LO} and ₹{HI}.`;
-    } else if (Number.isFinite(dma50) && spot > dma50) {
-      lower = Math.max(s1Eff, dma50);
-      const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, (dma50 + spot) / 2) : (dma50 + spot) / 2;
+    } else if (branch === "WAIT_PULLBACK") {
+      lower = Math.max(s1Eff, Number.isFinite(dma50) ? dma50 : s1Eff);
+      const upperRaw = Number.isFinite(dma20) && Number.isFinite(dma50)
+        ? Math.min(dma20, (dma50 + spot) / 2)
+        : (Number.isFinite(dma50) ? (dma50 + spot) / 2 : spot * 0.98);
       upper = upperRaw;
       code = "MEDIUM_WAIT_FOR_PULLBACK_TO_DMA50";
       text = `Extended above 50-DMA — wait for pullback into ₹{LO}–₹{HI}.`;
     } else {
-      lower = Math.max(s2 ?? (Number.isFinite(dma200) ? dma200 : spot * 0.85), Number.isFinite(dma200) ? dma200 : -Infinity);
+      // CORRECTION_S2
+      lower = Math.max(s2 ?? (Number.isFinite(dma200) ? dma200 : spot * 0.85),
+                       Number.isFinite(dma200) ? dma200 : -Infinity);
       upper = Math.min(spot, s1Eff);
       code = "MEDIUM_CORRECTION_ACCUMULATE_TO_S2";
       text = `In correction — accumulate down to S2 between ₹{LO} and ₹{HI}.`;
@@ -643,35 +751,40 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
   }
 
   // ── D) LONG-TERM ──
-  // tier === "long-term"
   const dma = Number.isFinite(dma200) ? dma200 : spot;
   const w52Lv = Number.isFinite(w52L) ? w52L : spot * 0.7;
+
+  let baseBranch: ForcedBranch;
+  if (spot > dma * 1.10) baseBranch = "WAIT_REVERSION";
+  else if (spot < dma * 0.95) baseBranch = "DEEP_VALUE";
+  else baseBranch = "DMA200_ACCUM";
+  const branch: ForcedBranch = forcedBranch ?? baseBranch;
+
   let lower: number, upper: number, code: string, anchor: EntryAnchor, text: string;
-  if (Math.abs(spot - dma) / dma <= 0.05) {
-    lower = Math.max(dma * 0.97, w52Lv * 1.05);
-    upper = Math.min(spot, dma * 1.05);
-    code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
-    text = `Near 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
-  } else if (spot > dma * 1.10) {
+  if (branch === "WAIT_REVERSION") {
     lower = dma; upper = dma * 1.10;
     code = "LONG_WAIT_FOR_DMA200_REVERSION"; anchor = "DMA200";
     text = `Extended ≥10% above 200-DMA — wait for reversion into ₹{LO}–₹{HI}.`;
-  } else if (spot < dma * 0.95) {
+  } else if (branch === "DEEP_VALUE") {
     lower = Math.max(w52Lv, dma * 0.85);
     upper = Math.min(spot, dma * 0.95);
     code = "LONG_DEEP_VALUE_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
-    text = `Deep value below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+    text = `Deep value below 200-DMA — phased accumulation between ₹{LO} and ₹{HI}.`;
   } else {
-    // 0.95×dma .. spot range (between -5% and -0% of DMA200)
-    lower = Math.max(dma * 0.95, w52Lv * 1.05);
-    upper = Math.min(spot, dma);
+    // DMA200_ACCUM (covers near-DMA and just-below-DMA cases)
+    if (Math.abs(spot - dma) / dma <= 0.05) {
+      lower = Math.max(dma * 0.97, w52Lv * 1.05);
+      upper = Math.min(spot, dma * 1.05);
+      text = `Near 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+    } else {
+      lower = Math.max(dma * 0.95, w52Lv * 1.05);
+      upper = Math.min(spot, dma);
+      text = `Just below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+    }
     code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
-    text = `Just below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
   }
   if (!(lower < upper)) { const tmp = Math.min(lower, upper); upper = Math.max(lower, upper); lower = tmp - 0.01; }
   const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
-  // Cap SL strictly below preferred_entry so deep-value names (entry well below
-  // DMA200) still get a usable SL instead of being dropped by Rule 9.
   const slRaw = Math.max(w52Lv * 0.95, dma * 0.85);
   const slCap = pref * 0.92;
   const sl = Math.min(slRaw, slCap);
