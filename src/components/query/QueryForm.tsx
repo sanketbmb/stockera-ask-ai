@@ -337,19 +337,15 @@ export function QueryForm() {
         return;
       }
 
-      const baseInsert = {
+      const trimmedQueryText = queryText.trim();
+      const routerMetaForInsert = routerMeta
+        ? ({ ...routerMeta } as unknown as Record<string, unknown>)
+        : null;
+      const commonInsert = {
         user_id: freshUser.id,
-        stock_name: isSector && resolvedSector
-          ? `Sector: ${resolvedSector.display}`
-          : isEducational && resolvedConcept
-            ? `Concept: ${resolvedConcept.canonical}`
-            : (stockName || "Stock Query"),
-        stock_symbol: stockSymbol || null,
-        buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
-        current_price: currentPrice ? Number(currentPrice) : null,
-        query_text: queryText,
-        assigned_analyst_id: analystId,
-        ...(routerMeta ? { router_meta: routerMeta as unknown as Record<string, unknown> } : {}),
+        query_text: trimmedQueryText,
+        assigned_analyst_id: analystId || null,
+        ...(routerMetaForInsert ? { router_meta: routerMetaForInsert } : {}),
       };
 
       const v1QueryType = intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
@@ -357,7 +353,11 @@ export function QueryForm() {
 
       const insertPayload = usesV1Engine
         ? {
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: stockName.trim(),
+            stock_symbol: stockSymbol || null,
+            buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
+            current_price: currentPrice ? Number(currentPrice) : null,
             status: "ai_answered" as const,
             query_type: v1QueryType,
             engine_version: "v1_tier_shaped",
@@ -374,7 +374,11 @@ export function QueryForm() {
         ? {
             // Phase 3B — sector view. SectorViewReport's server fn freezes
             // the composed payload on first read; no Brain call here.
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: resolvedSector ? `Sector: ${resolvedSector.display}` : "Sector Query",
+            stock_symbol: null,
+            buy_price: null,
+            current_price: null,
             status: "ai_answered" as const,
             query_type: "sector_view" as const,
             engine_version: "v1_sector_view",
@@ -386,7 +390,11 @@ export function QueryForm() {
         ? {
             // Phase 3C — educational. EducationalReport's server fn freezes
             // the composed glossary payload on first read; no LLM call here.
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: resolvedConcept ? `Concept: ${resolvedConcept.canonical}` : "Educational Query",
+            stock_symbol: null,
+            buy_price: null,
+            current_price: null,
             status: "ai_answered" as const,
             query_type: "educational" as const,
             engine_version: "v1_educational",
@@ -397,14 +405,22 @@ export function QueryForm() {
         ? {
             // Phase 3A — "other" lands in the routed-pending placeholder.
             // No Brain call, no v1 engine, no charge. Analyst-routed.
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: "Routed Query",
+            stock_symbol: null,
+            buy_price: null,
+            current_price: null,
             status: "pending" as const,
             query_type: "other" as const,
             engine_version: "router_v1",
             engine_source: "free_text_router",
           }
         : {
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: stockName.trim() || "Stock Query",
+            stock_symbol: stockSymbol || null,
+            buy_price: buyPrice ? Number(buyPrice) : null,
+            current_price: currentPrice ? Number(currentPrice) : null,
             status: "pending" as const,
             query_type: intent,
           };
