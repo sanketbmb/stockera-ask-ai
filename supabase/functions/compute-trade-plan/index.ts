@@ -784,6 +784,10 @@ Deno.serve(async (req) => {
     const dma20 = sma(closes, 20);
     const dma50 = sma(closes, 50);
     const dma200 = sma(closes, 200);
+    // Phase 4C — explicit log when DMA anchoring will fall back due to short history.
+    if (!Number.isFinite(dma20)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<20, skipping DMA20 anchoring`);
+    if (!Number.isFinite(dma50)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<50, skipping DMA50 anchoring`);
+    if (!Number.isFinite(dma200)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<200, skipping DMA200 anchoring`);
     const w52 = closes.slice(-252);
     const w52H = w52.length ? Math.max(...w52) : NaN;
     const w52L = w52.length ? Math.min(...w52) : NaN;
