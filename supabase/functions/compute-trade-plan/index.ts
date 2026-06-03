@@ -537,6 +537,8 @@ Deno.serve(async (req) => {
     const spot = closes[closes.length - 1];
     const prevDay = candles.length >= 2 ? candles[candles.length - 2] : null;
     const atrV = atr(highs, lows, closes, 14);
+    const dma20 = sma(closes, 20);
+    const dma50 = sma(closes, 50);
     const dma200 = sma(closes, 200);
     const w52 = closes.slice(-252);
     const w52H = w52.length ? Math.max(...w52) : NaN;
