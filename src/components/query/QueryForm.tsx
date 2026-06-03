@@ -107,7 +107,7 @@ export function QueryForm() {
   const [routerMeta, setRouterMeta] = useState<RouterOutput | null>(null);
   const [routerLoading, setRouterLoading] = useState(false);
   const [routerNotice, setRouterNotice] = useState<string | null>(null);
-  const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; holding?: string }>({});
+  const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; qty?: number; horizon?: string; holding?: string }>({});
 
   // Step 2
   const [stockName, setStockName] = useState("");
@@ -173,9 +173,13 @@ export function QueryForm() {
     }
     if (r.qty != null && r.qty > 0 && !qty) {
       setQty(String(r.qty));
+      detected.qty = r.qty;
     }
     const mappedHorizon = routerHorizonToFormHorizon(r.horizon);
-    if (mappedHorizon && !horizon) setHorizon(mappedHorizon);
+    if (mappedHorizon && !horizon) {
+      setHorizon(mappedHorizon);
+      detected.horizon = mappedHorizon;
+    }
     if (Object.keys(detected).length) setAutoDetected(detected);
   }
 
@@ -207,6 +211,18 @@ export function QueryForm() {
   const isEducational = intent === "educational";
 
   const resetRouterState = () => {
+    if (autoDetected.stock && (stockName === autoDetected.stock || stockSymbol === autoDetected.stock)) {
+      setStockName("");
+      setStockSymbol("");
+    }
+    if (autoDetected.buyPrice != null) {
+      const detectedPrice = String(autoDetected.buyPrice);
+      if (buyPrice === detectedPrice) setBuyPrice("");
+      if (entryPrice === detectedPrice) setEntryPrice("");
+    }
+    if (autoDetected.qty != null && qty === String(autoDetected.qty)) setQty("");
+    if (autoDetected.horizon && horizon === autoDetected.horizon) setHorizon("");
+    if (autoDetected.holding && holding === autoDetected.holding) setHolding("");
     setRouterMeta(null);
     setRouterNotice(null);
     setAutoDetected({});
