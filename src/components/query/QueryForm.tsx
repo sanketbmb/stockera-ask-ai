@@ -700,9 +700,9 @@ export function QueryForm() {
                 ? "v1_sector_view"
                 : isEducational
                   ? "v1_educational"
-                  : isOther
-                    ? "router_v1"
-                    : "v0_legacy",
+                    : isOther
+                      ? "v1_general"
+                      : "v0_legacy",
             engine_source: usesV1Engine
               ? "post_query"
               : isSector
@@ -710,7 +710,7 @@ export function QueryForm() {
                 : isEducational
                   ? "glossary_library"
                   : isOther
-                    ? "free_text_router"
+                    ? "lovable_ai_gateway"
                     : "legacy_post_query",
             credit_action: "skipped_no_charge_path",
             sector_canonical: isSector ? (resolvedSector?.canonical ?? null) : null,
