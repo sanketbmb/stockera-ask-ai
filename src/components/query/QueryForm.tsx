@@ -61,18 +61,18 @@ type Intent = AnyIntent;
 // Phase 2.1 — 2 examples per live chip. Each entry pre-selects the matching
 // visible intent so a hidden type can never be silently chosen.
 const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
-  // Fresh Entry
+  // Stock — Fresh Entry
   { text: "Should I buy ICICIBANK for the next 6 months?", intent: "buy_decision" },
-  { text: "Fresh entry in Reliance for long term — good levels?", intent: "buy_decision" },
-  // Sell or Hold
+  // Stock — Sell or Hold
   { text: "I bought HDFC Bank at 1850 last year, should I sell now?", intent: "stuck_position" },
-  {
-    text: "Currently holding Reliance, should I exit at current levels?",
-    intent: "stuck_position",
-  },
-  // Should I Average
+  // Stock — Should I Average
   { text: "I'm at a loss in Suzlon, should I average down?", intent: "should_average" },
-  { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
+  // General — Sector View
+  { text: "How will the banking sector perform in the next 12 months?", intent: "sector_view" },
+  // General — Educational
+  { text: "What is RSI and how should I use it?", intent: "educational" },
+  // General — Ask Anything (Other)
+  { text: "What is the overall market mood right now?", intent: "other" },
 ];
 
 const ALL_QUERY_TYPES: {
