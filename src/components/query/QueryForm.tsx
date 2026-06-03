@@ -452,7 +452,18 @@ export function QueryForm() {
         return;
       }
 
-      const trimmedQueryText = queryText.trim();
+      // Phase: post-query universe hardening — block BSE-only stock submissions.
+      // The downstream pipeline (finedge/compute-* modules) is NSE-coded; a BSE
+      // selection would silently degrade. Stock-bearing intents only.
+      const isStockIntent = usesV1Engine || (!isSector && !isEducational && !isOther);
+      if (isStockIntent && stockExchange === "BSE") {
+        toast.error(
+          "This stock is currently supported on BSE only. Full analysis coverage is being added — please try another symbol.",
+        );
+        setGenStage("idle");
+        setSubmitting(false);
+        return;
+      }
       const routerMetaForInsert = routerMeta
         ? ({ ...routerMeta } as unknown as Record<string, unknown>)
         : null;
