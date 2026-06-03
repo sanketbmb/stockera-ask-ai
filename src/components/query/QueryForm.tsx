@@ -603,20 +603,21 @@ export function QueryForm() {
                 engine_source: "glossary_library",
                 concept_canonical: resolvedConcept?.canonical ?? null,
               }
-            : isOther
-              ? {
-                  // Phase 3A — "other" lands in the routed-pending placeholder.
-                  // No Brain call, no v1 engine, no charge. Analyst-routed.
-                  ...commonInsert,
-                  stock_name: "Routed Query",
-                  stock_symbol: null,
-                  buy_price: null,
-                  current_price: null,
-                  status: "pending" as const,
-                  query_type: "other" as const,
-                  engine_version: "router_v1",
-                  engine_source: "free_text_router",
-                }
+              : isOther
+                ? {
+                    // Phase 3D — "other" now generates a Gemini-backed
+                    // analyst-style AI report. GeneralReport's freeze fn runs
+                    // on first read.
+                    ...commonInsert,
+                    stock_name: "General Query",
+                    stock_symbol: null,
+                    buy_price: null,
+                    current_price: null,
+                    status: "ai_answered" as const,
+                    query_type: "other" as const,
+                    engine_version: "v1_general",
+                    engine_source: "lovable_ai_gateway",
+                  }
               : {
                   ...commonInsert,
                   stock_name: stockName.trim() || "Stock Query",
