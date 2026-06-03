@@ -293,19 +293,67 @@ export function QueryForm() {
   };
 
   // Phase 3B + Mission 1.6 — sector auto-detection.
-  // Priority: explicit manual chip > router hint > keyword scan of full text.
+  // Priority: manual chip (sticky) > regex keyword > router hint > LLM inference.
   const detectedSector = useMemo(
     () => (isSector ? detectSectorFromText(queryText) : null),
     [isSector, queryText],
   );
+
+  // Mission 1.6 Phase 2 — LLM fallback runs only when regex misses on long-enough text.
+  // Debounced 600ms after textarea pause. Cached by question text to avoid re-calls.
+  useEffect(() => {
+    if (!isSector) return;
+    // Sticky override: skip LLM entirely if user has manually picked a chip.
+    if (manualSector) return;
+    if (detectedSector) {
+      setInferredSector(null);
+      return;
+    }
+    const trimmed = queryText.trim();
+    // Only attempt LLM inference for substantive text (> 8 words).
+    if (trimmed.split(/\s+/).filter(Boolean).length < 8) {
+      setInferredSector(null);
+      return;
+    }
+    const cached = sectorInferCache.current.get(trimmed);
+    if (cached) {
+      setInferredSector(cached.canonical ? cached : null);
+      return;
+    }
+    let cancelled = false;
+    setInferringSector(true);
+    const handle = setTimeout(async () => {
+      try {
+        const result = await runInferSector({ data: { text: trimmed } });
+        if (cancelled) return;
+        sectorInferCache.current.set(trimmed, result);
+        setInferredSector(result.canonical ? result : null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[sector-infer] client error", (err as Error).message);
+          setInferredSector(null);
+        }
+      } finally {
+        if (!cancelled) setInferringSector(false);
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+      setInferringSector(false);
+    };
+  }, [isSector, manualSector, detectedSector, queryText, runInferSector]);
+
   const resolvedSector = isSector
     ? manualSector
       ? { canonical: manualSector, display: sectorDisplay(manualSector) }
-      : routerMeta?.sector
-        ? resolveSector(routerMeta.sector)
-        : detectedSector
-          ? { canonical: detectedSector.canonical, display: detectedSector.display }
-          : null
+      : detectedSector
+        ? { canonical: detectedSector.canonical, display: detectedSector.display }
+        : inferredSector?.canonical
+          ? { canonical: inferredSector.canonical, display: sectorDisplay(inferredSector.canonical) }
+          : routerMeta?.sector
+            ? resolveSector(routerMeta.sector)
+            : null
     : null;
   // Phase 3C — resolve concept from question text.
   const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
