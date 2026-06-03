@@ -698,6 +698,59 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
   };
 }
 
+// Phase 4C — Zone guardrails: width cap (>12% → tighten to 10%) and
+// inverted/degenerate band fallback (<0.1% width → collapse to single mode).
+// Pure function; preserves reasoning_code lineage (suffixes appended).
+function applyZoneGuards(strategy: EntryStrategy): EntryStrategy {
+  if (strategy.mode !== "zone") return strategy;
+  const { entry_zone_lower: lo, entry_zone_upper: up, preferred_entry: pref } = strategy;
+  if (lo == null || up == null || !(pref > 0)) return strategy;
+
+  let lower = lo, upper = up;
+  // Swap if inverted (defensive — branches above already attempt this).
+  if (lower > upper) { const t = lower; lower = upper; upper = t; }
+  const width = upper - lower;
+  const widthPct = width / pref;
+
+  // Inverted / degenerate fallback → single
+  if (widthPct < 0.001) {
+    console.warn(`[applyZoneGuards] degenerate zone width=${width} pref=${pref}; collapsing to single`);
+    return {
+      ...strategy,
+      mode: "single",
+      entry_zone_lower: null,
+      entry_zone_upper: null,
+      reasoning_code: `${strategy.reasoning_code}_ZONE_INVERTED_FALLBACK`,
+      reasoning_text: `${strategy.reasoning_text} (zone collapsed — using single entry at ₹${round2(pref)}).`,
+      staggered_plan: undefined,
+    };
+  }
+
+  // Width cap → tighten symmetrically to 10% around preferred_entry
+  if (widthPct > 0.12) {
+    const half = pref * 0.05; // 10% total
+    const newLower = round2(Math.max(0.01, pref - half));
+    const newUpper = round2(pref + half);
+    console.warn(`[applyZoneGuards] zone too wide (${(widthPct * 100).toFixed(1)}%); tightening to 10% around ${pref}`);
+    const staggered = strategy.staggered_plan
+      ? [
+          { ...strategy.staggered_plan[0], price: newUpper },
+          { ...strategy.staggered_plan[1], price: round2(pref) },
+          { ...strategy.staggered_plan[2], price: newLower },
+        ]
+      : undefined;
+    return {
+      ...strategy,
+      entry_zone_lower: newLower,
+      entry_zone_upper: newUpper,
+      reasoning_text: `${strategy.reasoning_text} (zone tightened for clarity)`,
+      staggered_plan: staggered,
+    };
+  }
+
+  return strategy;
+}
+
 
 // ─── Main ───
 Deno.serve(async (req) => {
@@ -731,6 +784,10 @@ Deno.serve(async (req) => {
     const dma20 = sma(closes, 20);
     const dma50 = sma(closes, 50);
     const dma200 = sma(closes, 200);
+    // Phase 4C — explicit log when DMA anchoring will fall back due to short history.
+    if (!Number.isFinite(dma20)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<20, skipping DMA20 anchoring`);
+    if (!Number.isFinite(dma50)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<50, skipping DMA50 anchoring`);
+    if (!Number.isFinite(dma200)) console.warn(`[compute-trade-plan] ${symbol}: closes.length=${closes.length}<200, skipping DMA200 anchoring`);
     const w52 = closes.slice(-252);
     const w52H = w52.length ? Math.max(...w52) : NaN;
     const w52L = w52.length ? Math.min(...w52) : NaN;
@@ -895,7 +952,8 @@ Deno.serve(async (req) => {
       s2: raw.support_2,
       closes,
     };
-    const { strategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    const { strategy: rawStrategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    const strategy = applyZoneGuards(rawStrategy);
     raw.entry_zone = strategy.preferred_entry;
     if (strategy.mode === "zone" && sl_override != null) {
       raw.stop_loss = sl_override;

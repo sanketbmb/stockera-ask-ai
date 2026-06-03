@@ -390,6 +390,19 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
 
+  // Phase 4C — zone-mode rendering. Render a translucent band between
+  // entry_zone_lower/upper when the engine emits mode="zone" AND the band is
+  // visually meaningful (≥0.5% wide vs preferred_entry). Otherwise the Entry
+  // single dot stays exactly as before.
+  const es = levels.entry_strategy ?? null;
+  const zoneLo = es?.mode === "zone" ? es.entry_zone_lower : null;
+  const zoneUp = es?.mode === "zone" ? es.entry_zone_upper : null;
+  const zonePref = es?.mode === "zone" ? es.preferred_entry : null;
+  const zoneWidePct = (zoneLo != null && zoneUp != null && zonePref != null && zonePref > 0)
+    ? (zoneUp - zoneLo) / zonePref
+    : 0;
+  const showZoneBand = es?.mode === "zone" && zoneLo != null && zoneUp != null && zonePref != null && zoneWidePct >= 0.005;
+
   const priorityIndex: Record<string, number> = {
     Entry: 0, LTP: 0.5, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7,
   };
@@ -401,11 +414,13 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
+  // When the zone band is shown, drop the single Entry dot (the band + a small
+  // preferred-entry marker take its place). Otherwise keep Entry as today.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
     { v: levels.stop_loss,    label: "SL" },
-    { v: levels.entry_zone,   label: "Entry" },
+    ...(showZoneBand ? [] : [{ v: levels.entry_zone, label: "Entry" }]),
     { v: current,             label: "LTP" },
     { v: levels.resistance_1, label: "R1" },
     { v: levels.target_1,     label: "T1" },
@@ -465,14 +480,51 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     }
   }
 
+  // Zone-band geometry (Phase 4C). Position the translucent band between
+  // entry_zone_lower/upper on the same horizontal scale as the markers, clamped
+  // to the visible strip so wider zones do not bleed off.
+  const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
+  const bandLeft = showZoneBand ? xPct(zoneLo!) : 0;
+  const bandRight = showZoneBand ? xPct(zoneUp!) : 0;
+  const bandWidth = Math.max(0, bandRight - bandLeft);
+  const prefX = showZoneBand ? xPct(zonePref!) : 0;
+
   return (
     <div ref={ref} className="relative my-6 h-24 print:h-24">
+      {showZoneBand && (
+        <div
+          aria-label="Entry accumulation zone"
+          className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
+          style={{
+            left: `${bandLeft}%`,
+            width: `${bandWidth}%`,
+            top: "calc(50% - 12px)",
+            height: "24px",
+          }}
+        />
+      )}
       <motion.div
         className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
+      {showZoneBand && (
+        <div
+          className="absolute -translate-x-1/2"
+          style={{ left: `${prefX}%`, top: 0 }}
+        >
+          <div
+            className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
+            style={{ marginTop: "38px" }}
+            aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+          />
+          <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
+            <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
+            <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
+          </div>
+        </div>
+      )}
       {slots.map((s, i) => {
         const primary = s.labels[0];
         const order = priorityIndex[primary] ?? 9;
@@ -898,7 +950,7 @@ export function StockAnalysisReport({
           )}
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
+            <EntryZoneCell levels={levels} reason={tradePlanReasons.entry_zone} />
             <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
             <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
             <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
@@ -912,6 +964,9 @@ export function StockAnalysisReport({
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>High-volatility stock — wider stop loss recommended, smaller position size advised.</span>
             </motion.p>
+          )}
+          {tier === "long-term" && levels.entry_strategy?.staggered_plan && levels.entry_strategy.staggered_plan.length > 0 && (
+            <StaggeredPlanCard plan={levels.entry_strategy.staggered_plan} />
           )}
         </motion.section>
 
@@ -1239,6 +1294,101 @@ function LevelCell({ label, value, tone, reason, methodTip, footer }: { label: s
     </motion.div>
   );
 }
+
+// Phase 4C — entry-zone-aware card. Replaces the single Entry LevelCell.
+// • Zone mode: "Accumulate ₹A – ₹B, ideally near ₹P" + anchor chip + tooltip.
+// • Single mode (intraday/breakout): "Enter near ₹P".
+// • Tight-zone cosmetic guard mirrors the PriceBand: < 0.5% width collapses
+//   visually to a single line with a "tight zone" subtext.
+const ENTRY_ANCHOR_LABEL: Record<string, string> = {
+  LTP: "Last traded price",
+  DMA20: "20-day moving avg",
+  DMA50: "50-day moving avg",
+  DMA200: "200-day moving avg",
+  S1: "Support 1",
+  S1_DMA50_BLEND: "S1 + DMA50 blend",
+  DMA200_52WL_BLEND: "DMA200 + 52W low blend",
+};
+
+function EntryZoneCell({ levels, reason }: { levels: StockAnalysisPayload["levels"]; reason?: string }) {
+  const es = levels.entry_strategy ?? null;
+  const value = levels.entry_zone;
+
+  if (value == null) {
+    return <LevelCell label="Entry" value={null} tone="text-primary" reason={reason} />;
+  }
+
+  const isZone = es?.mode === "zone" && es.entry_zone_lower != null && es.entry_zone_upper != null && es.preferred_entry > 0;
+  const widthPct = isZone ? (es!.entry_zone_upper! - es!.entry_zone_lower!) / es!.preferred_entry : 0;
+  const tight = isZone && widthPct < 0.005;
+  const anchorLabel = es?.entry_anchor ? (ENTRY_ANCHOR_LABEL[es.entry_anchor] ?? es.entry_anchor) : null;
+
+  return (
+    <motion.div
+      variants={innerStaggerItem}
+      whileHover={{ y: -1 }}
+      transition={{ duration: duration.fast, ease: ease.standard }}
+      className="col-span-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 transition-colors hover:border-primary/50 md:col-span-2"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Entry</p>
+        {anchorLabel && (
+          <span className="rounded-full border border-primary/30 bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+            {anchorLabel}
+          </span>
+        )}
+      </div>
+      {isZone && !tight ? (
+        <p className="mt-0.5 font-display text-base leading-tight text-primary">
+          Accumulate <span className="tabular-nums">{fmtPrice(es!.entry_zone_lower)}</span>{" – "}
+          <span className="tabular-nums">{fmtPrice(es!.entry_zone_upper)}</span>
+          <span className="block text-xs font-normal text-muted-foreground">
+            Ideally near <span className="tabular-nums text-foreground/80">{fmtPrice(es!.preferred_entry)}</span>
+          </span>
+        </p>
+      ) : isZone && tight ? (
+        <>
+          <p className="mt-0.5 font-display text-lg tabular-nums text-primary">{fmtPrice(es!.preferred_entry)}</p>
+          <p className="text-[10px] italic text-muted-foreground">Tight zone — single reference price</p>
+        </>
+      ) : (
+        <p className="mt-0.5 font-display text-lg tabular-nums text-primary">Enter near {fmtPrice(value)}</p>
+      )}
+      {es?.reasoning_text && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground decoration-dotted underline-offset-2 hover:underline">
+              Why this entry? <Info className="h-3 w-3 opacity-60" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-xs leading-snug">
+            {es.reasoning_text}
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </motion.div>
+  );
+}
+
+function StaggeredPlanCard({ plan }: { plan: NonNullable<NonNullable<StockAnalysisPayload["levels"]["entry_strategy"]>["staggered_plan"]> }) {
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-background/60 px-4 py-3">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Phased buying plan</p>
+      <p className="mt-0.5 text-xs text-foreground/75">For long-term accumulation, spread your entry across three tranches:</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {plan.map((p, i) => (
+          <div key={i} className="rounded-md border border-border/60 bg-card px-3 py-2">
+            <p className="font-display text-base text-primary">{p.pct}%</p>
+            <p className="text-xs tabular-nums text-foreground/80">@ {fmtPrice(p.price)}</p>
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{p.note}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 
 
 function ActionPanel({ action, mode, tier, levels }: {
