@@ -520,7 +520,10 @@ Deno.serve(async (req) => {
     if (!symbol) return json({ success: false, error: "SYMBOL_REQUIRED" }, 400);
 
     const qtRaw = (body.query_type ?? "medium-term").toLowerCase();
-    const queryType: QueryType = (qtRaw === "intraday" || qtRaw === "long-term") ? qtRaw : "medium-term";
+    const queryType: QueryType =
+      (qtRaw === "intraday" || qtRaw === "short-term" || qtRaw === "long-term")
+        ? qtRaw
+        : "medium-term";
 
     // ── 1. Candles ──
     let candles: Candle[];
