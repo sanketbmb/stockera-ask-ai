@@ -1165,6 +1165,8 @@ Deno.serve(async (req) => {
       vol_1y: vol1y,
       levels,
       entry_strategy: strategy,
+      regime,
+      regime_inputs: regimeInputs,
       validation: omissions,
       targets_meta: targetsMeta,
       inputs_summary: {
