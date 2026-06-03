@@ -22,13 +22,31 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const FORMULA_VERSION = "trade-plan-1.1";
+const ENGINE_VERSION = "trade_plan_v2_zone_entry";
 const MODULE_TIMEOUT_MS = 20_000;
-const LT_T1_FLOOR_PCT = 0.05;   // T1 must be ≥ spot × 1.05
-const LT_TARGET_CAP_PCT = 0.60; // T1/T2 capped at spot × 1.60
-const LT_LIQUIDITY_MIN_CR = 5;  // avg daily turnover ≥ ₹5cr
-const LT_VOL_MAX_PCT = 60;      // annualized vol ≤ 60%
+const LT_T1_FLOOR_PCT = 0.05;
+const LT_TARGET_CAP_PCT = 0.60;
+const LT_LIQUIDITY_MIN_CR = 5;
+const LT_VOL_MAX_PCT = 60;
 
-type QueryType = "intraday" | "medium-term" | "long-term";
+type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
+
+// Phase 4B — horizon-aware Entry Strategy
+type EntryMode = "single" | "zone";
+type EntryAnchor =
+  | "LTP" | "DMA20" | "DMA50" | "DMA200"
+  | "S1" | "S1_DMA50_BLEND" | "DMA200_52WL_BLEND";
+
+interface EntryStrategy {
+  mode: EntryMode;
+  entry_zone_lower: number | null;
+  entry_zone_upper: number | null;
+  entry_anchor: EntryAnchor;
+  preferred_entry: number;
+  reasoning_code: string;
+  reasoning_text: string;
+  staggered_plan?: Array<{ pct: number; price: number; note: string }>;
+}
 
 interface Candle { date: string; open: number; high: number; low: number; close: number; volume: number }
 
