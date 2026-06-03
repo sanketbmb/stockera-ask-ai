@@ -206,6 +206,12 @@ export function QueryForm() {
   // Phase 3C — "educational" has its own freeze fn + report variant.
   const isEducational = intent === "educational";
 
+  const resetRouterState = () => {
+    setRouterMeta(null);
+    setRouterNotice(null);
+    setAutoDetected({});
+  };
+
   // Phase 3B — resolve sector from router-supplied hint OR the question text.
   const resolvedSector = isSector
     ? resolveSector(routerMeta?.sector ?? queryText)
@@ -304,7 +310,6 @@ export function QueryForm() {
   const [genStage, setGenStage] = useState<"idle" | "creating" | "generating" | "redirecting">("idle");
 
   const handleSubmit = async () => {
-    if (!user) { toast.error("You must be signed in"); return; }
     if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
     // Phase 3A — accept LIVE intents + "other" (when the router is live).
     if (!isRoutableIntent(intent)) { toast.error("Unsupported query type"); return; }
@@ -314,8 +319,26 @@ export function QueryForm() {
     let createdQueryId: string | null = null;
 
     try {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      const freshUser = authData.user;
+      if (authErr || !freshUser) {
+        console.warn("[QueryForm] auth freshness check failed", {
+          message: authErr?.message,
+          status: authErr?.status,
+          cachedUserId: user?.id ?? null,
+        });
+        toast.error(
+          authErr?.message
+            ? `Authentication check failed: ${authErr.message}`
+            : "Authentication expired. Please sign in again.",
+        );
+        setGenStage("idle");
+        setSubmitting(false);
+        return;
+      }
+
       const baseInsert = {
-        user_id: user.id,
+        user_id: freshUser.id,
         stock_name: isSector && resolvedSector
           ? `Sector: ${resolvedSector.display}`
           : isEducational && resolvedConcept
@@ -431,7 +454,7 @@ export function QueryForm() {
       createdQueryId = queryId;
 
       supabase.from("audit_events").insert({
-        event_type: "query_submitted", actor_id: user.id,
+        event_type: "query_submitted", actor_id: freshUser.id,
         resource_type: "query", resource_id: queryId,
         payload: {
           intent,
