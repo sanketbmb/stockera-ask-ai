@@ -2,16 +2,14 @@
 /**
  * run-backtest — Phase 4E backtest harness (MVP)
  *
- * Chunked self-invoking architecture:
- *   POST { action: "start" }                     → create run_id, kick off chunk 0
- *   POST { action: "chunk", run_id, chunk_idx }  → process N symbols, self-invoke next chunk
- *   POST { action: "status", run_id }            → read progress
+ * Actions:
+ *   POST { action: "start" }                             → full universe run
+ *   POST { action: "pilot" }                             → 5 symbols × 3 horizons × 3 dates = 45 cases
+ *   POST { action: "chunk", run_id, chunk_idx, overrides }  → process one symbol, self-invoke next
+ *   POST { action: "status", run_id }                    → read progress
  *
- * Each chunk processes CHUNK_SIZE symbols across all horizons × entry_dates.
- * Engine called via HTTP to compute-trade-plan with historical_as_of.
- * Forward-walk simulation uses the same candle series fetched once per symbol.
- *
- * Auth: x-cron-secret header (SEED_CRON_SECRET) OR service-role bearer.
+ * Stall fix: self-invoke uses EdgeRuntime.waitUntil so the worker doesn't
+ * terminate before the next-chunk fetch leaves the box.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -26,7 +24,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ── Universe (mirrored from src/data/backtest-universe.ts; deno can't import .ts from /src cleanly) ──
 const UNIVERSE: string[] = [
   "RELIANCE","TCS","HDFCBANK","ICICIBANK","INFY","HINDUNILVR","ITC","KOTAKBANK","LT","SBIN",
   "TATAPOWER","TATAMOTORS","SUZLON","TATASTEEL","BAJAJ-AUTO","PAYTM","ADANIENT","ADANIPORTS","GODREJCP","DABUR",
@@ -42,10 +39,10 @@ const FORWARD_DAYS: Record<Horizon, number> = {
   "short-term": 60, "medium-term": 180, "long-term": 365,
 };
 
-const CHUNK_SIZE = 1;                 // symbols per chunk (one symbol fits in a single edge invocation)
-const ENTRY_DATE_INTERVAL_DAYS = 60;  // calendar days between entry-date samples
-const ENTRY_DATES_PER_HORIZON = 6;    // ~365d lookback / 60d
-const ENTRY_HIT_TOLERANCE = 0.005;    // ±0.5% for single-mode entries
+const CHUNK_SIZE = 1;
+const ENTRY_DATE_INTERVAL_DAYS = 60;
+const DEFAULT_ENTRY_DATES = 6;
+const ENTRY_HIT_TOLERANCE = 0.005;
 
 interface Candle { date: string; open: number; high: number; low: number; close: number; volume: number; }
 
@@ -64,7 +61,6 @@ function authorized(req: Request): boolean {
 
 const supa = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-// ── Candle fetch (full series, once per symbol) ──
 async function fetchAllCandles(symbol: string): Promise<Candle[]> {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/finedge-fetch`, {
     method: "POST",
@@ -91,10 +87,8 @@ async function fetchAllCandles(symbol: string): Promise<Candle[]> {
   return out;
 }
 
-// ── Entry-date sampling: every 30d going back 365d, snapped to a trading day present in candles ──
 function sampleEntryDates(allCandles: Candle[], count: number, intervalDays: number, forwardBuffer: number): string[] {
   if (allCandles.length < forwardBuffer + 30) return [];
-  // Anchor: leave forwardBuffer trading days at the end for forward simulation.
   const usable = allCandles.slice(0, allCandles.length - forwardBuffer);
   if (usable.length < 30) return [];
   const lastIdx = usable.length - 1;
@@ -103,7 +97,6 @@ function sampleEntryDates(allCandles: Candle[], count: number, intervalDays: num
   for (let i = 0; i < count; i++) {
     const t = new Date(lastDate - i * intervalDays * 86400_000);
     const tStr = t.toISOString().slice(0, 10);
-    // snap to nearest candle date <= target
     let found: string | null = null;
     for (let j = usable.length - 1; j >= 0; j--) {
       if (usable[j].date <= tStr) { found = usable[j].date; break; }
@@ -113,7 +106,6 @@ function sampleEntryDates(allCandles: Candle[], count: number, intervalDays: num
   return targets;
 }
 
-// ── Call engine with historical_as_of ──
 async function callEngine(symbol: string, horizon: Horizon, asOf: string): Promise<any | null> {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/compute-trade-plan`, {
@@ -127,7 +119,6 @@ async function callEngine(symbol: string, horizon: Horizon, asOf: string): Promi
   } catch { return null; }
 }
 
-// ── Forward simulation ──
 type Outcome = "WIN_T1" | "WIN_T2" | "LOSS_SL" | "ENTRY_MISSED" | "TIMEOUT_NO_RESOLUTION";
 
 interface SimResult {
@@ -139,15 +130,10 @@ interface SimResult {
 }
 
 function simulate(
-  forwardCandles: Candle[],
-  preferredEntry: number,
-  zoneLower: number | null,
-  zoneUpper: number | null,
-  t1: number | null,
-  t2: number | null,
-  sl: number | null,
+  forwardCandles: Candle[], preferredEntry: number,
+  zoneLower: number | null, zoneUpper: number | null,
+  t1: number | null, t2: number | null, sl: number | null,
 ): SimResult {
-  // Entry condition: price touches [zoneLower, zoneUpper] (zone) OR within ±0.5% of preferred (single)
   const hasZone = zoneLower != null && zoneUpper != null && zoneUpper > zoneLower;
   const singleLo = preferredEntry * (1 - ENTRY_HIT_TOLERANCE);
   const singleHi = preferredEntry * (1 + ENTRY_HIT_TOLERANCE);
@@ -162,20 +148,12 @@ function simulate(
   for (let i = 0; i < forwardCandles.length; i++) {
     const c = forwardCandles[i];
     if (!entryHit) {
-      if (c.low <= eHi && c.high >= eLo) {
-        entryHit = true; daysToEntry = i + 1;
-      } else continue;
+      if (c.low <= eHi && c.high >= eLo) { entryHit = true; daysToEntry = i + 1; }
+      else continue;
     }
-    // After entry: check SL / T1 / T2 in remaining bars (including same bar)
-    if (sl != null && !t1Hit && !slFirst && c.low <= sl) {
-      slFirst = true; break;
-    }
-    if (t1 != null && !t1Hit && c.high >= t1) {
-      t1Hit = true; daysT1 = i + 1;
-    }
-    if (t2 != null && !t2Hit && c.high >= t2) {
-      t2Hit = true; daysT2 = i + 1;
-    }
+    if (sl != null && !t1Hit && !slFirst && c.low <= sl) { slFirst = true; break; }
+    if (t1 != null && !t1Hit && c.high >= t1) { t1Hit = true; daysT1 = i + 1; }
+    if (t2 != null && !t2Hit && c.high >= t2) { t2Hit = true; daysT2 = i + 1; }
     if (t1Hit && t2Hit) break;
   }
 
@@ -194,14 +172,12 @@ function simulate(
   };
 }
 
-// ── Process one symbol: fetch candles once, run all (horizon × entry_date) combos ──
-async function processSymbol(runId: string, symbol: string): Promise<{ ok: number; errors: number }> {
+async function processSymbol(runId: string, symbol: string, entryDatesPerHorizon: number): Promise<{ ok: number; errors: number }> {
   let okCount = 0, errCount = 0;
   let allCandles: Candle[] = [];
   try {
     allCandles = await fetchAllCandles(symbol);
   } catch (e) {
-    // Record one DATA_ERROR row per horizon so we have lineage
     for (const horizon of HORIZONS) {
       await supa.from("backtest_results").insert({
         run_id: runId, symbol, horizon, entry_date: "1970-01-01",
@@ -227,7 +203,7 @@ async function processSymbol(runId: string, symbol: string): Promise<{ ok: numbe
 
   for (const horizon of HORIZONS) {
     const fwd = FORWARD_DAYS[horizon];
-    const entryDates = sampleEntryDates(allCandles, ENTRY_DATES_PER_HORIZON, ENTRY_DATE_INTERVAL_DAYS, fwd);
+    const entryDates = sampleEntryDates(allCandles, entryDatesPerHorizon, ENTRY_DATE_INTERVAL_DAYS, fwd);
     for (const entryDate of entryDates) {
       const plan = await callEngine(symbol, horizon, entryDate);
       if (!plan) {
@@ -289,7 +265,6 @@ async function processSymbol(runId: string, symbol: string): Promise<{ ok: numbe
   return { ok: okCount, errors: errCount };
 }
 
-// ── Aggregate stats after run completes ──
 async function finalizeRun(runId: string) {
   const { data: rows } = await supa.from("backtest_results").select("*").eq("run_id", runId);
   if (!rows) return;
@@ -340,13 +315,12 @@ async function finalizeRun(runId: string) {
     breakdown_by_reasoning_code: groupBy("reasoning_code"),
     status: "completed",
     finished_at: new Date().toISOString(),
+    last_progress_at: new Date().toISOString(),
   }).eq("run_id", runId);
 }
 
-// ── Self-invocation for next chunk ──
-async function invokeNextChunk(runId: string, nextIdx: number) {
-  // fire-and-forget; do not await to avoid blocking the response
-  fetch(`${SUPABASE_URL}/functions/v1/run-backtest`, {
+async function invokeNextChunk(runId: string, nextIdx: number, overrides?: { universe?: string[]; entryDates?: number }) {
+  const p = fetch(`${SUPABASE_URL}/functions/v1/run-backtest`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -354,11 +328,25 @@ async function invokeNextChunk(runId: string, nextIdx: number) {
       authorization: `Bearer ${SERVICE_KEY}`,
       "x-cron-secret": CRON_SECRET,
     },
-    body: JSON.stringify({ action: "chunk", run_id: runId, chunk_idx: nextIdx }),
-  }).catch(() => { /* fire and forget */ });
+    body: JSON.stringify({ action: "chunk", run_id: runId, chunk_idx: nextIdx, overrides }),
+  }).catch((e) => { console.error("self-invoke failed", e); });
+  // CRITICAL: keep worker alive until next-chunk request leaves the box.
+  const er: any = (globalThis as any).EdgeRuntime;
+  if (er?.waitUntil) er.waitUntil(p);
+  else await p;
 }
 
-// ── Handlers ──
+async function bumpProgress(runId: string) {
+  const { count } = await supa
+    .from("backtest_results")
+    .select("*", { count: "exact", head: true })
+    .eq("run_id", runId);
+  await supa.from("backtest_run_summary").update({
+    completed_cases: count ?? 0,
+    last_progress_at: new Date().toISOString(),
+  }).eq("run_id", runId);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (!authorized(req)) return json({ success: false, error: "UNAUTHORIZED" }, 401);
@@ -372,47 +360,81 @@ Deno.serve(async (req) => {
     return json({ success: true, run: data });
   }
 
-  if (action === "start") {
+  if (action === "start" || action === "pilot") {
+    // Refuse to start while one is actively progressing (in last 10 min).
+    const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { data: live } = await supa
+      .from("backtest_run_summary")
+      .select("run_id,last_progress_at,started_at,status")
+      .eq("status", "running")
+      .or(`last_progress_at.gte.${tenMinAgo},started_at.gte.${tenMinAgo}`)
+      .limit(1);
+    if (live && live.length > 0) {
+      return json({ success: false, error: `another run is active: ${live[0].run_id}` }, 409);
+    }
+
+    const pilot = action === "pilot";
+    const universe = pilot
+      ? ["RELIANCE", "SUZLON", "HDFCBANK", "ICICIBANK", "TCS"]
+      : UNIVERSE;
+    const entryDates = pilot ? 3 : DEFAULT_ENTRY_DATES;
+
     const runId = crypto.randomUUID();
-    const totalCases = UNIVERSE.length * HORIZONS.length * ENTRY_DATES_PER_HORIZON;
+    const totalCases = universe.length * HORIZONS.length * entryDates;
     const { error } = await supa.from("backtest_run_summary").insert({
       run_id: runId,
       engine_version: "trade_plan_v3_regime_aware",
-      universe_size: UNIVERSE.length,
+      universe_size: universe.length,
       total_cases: totalCases,
       status: "running",
       next_chunk_index: 0,
-      config: { chunk_size: CHUNK_SIZE, entry_dates_per_horizon: ENTRY_DATES_PER_HORIZON, horizons: HORIZONS },
+      last_progress_at: new Date().toISOString(),
+      config: {
+        chunk_size: CHUNK_SIZE,
+        entry_dates_per_horizon: entryDates,
+        horizons: HORIZONS,
+        mode: pilot ? "pilot" : "full",
+        universe,
+      },
     });
     if (error) return json({ success: false, error: error.message }, 500);
-    invokeNextChunk(runId, 0);
-    return json({ success: true, run_id: runId, total_cases: totalCases, message: "Run started; poll status." });
+    await invokeNextChunk(runId, 0, { universe, entryDates });
+    return json({ success: true, run_id: runId, total_cases: totalCases, mode: pilot ? "pilot" : "full" });
   }
 
   if (action === "chunk") {
     const runId: string = body.run_id;
     const chunkIdx: number = body.chunk_idx ?? 0;
+    const overrides = body.overrides as { universe?: string[]; entryDates?: number } | undefined;
+    const universe = overrides?.universe ?? UNIVERSE;
+    const entryDatesPerHorizon = overrides?.entryDates ?? DEFAULT_ENTRY_DATES;
+
     const startSym = chunkIdx * CHUNK_SIZE;
-    const endSym = Math.min(startSym + CHUNK_SIZE, UNIVERSE.length);
-    if (startSym >= UNIVERSE.length) {
+    const endSym = Math.min(startSym + CHUNK_SIZE, universe.length);
+    if (startSym >= universe.length) {
       await finalizeRun(runId);
       return json({ success: true, message: "All chunks complete; run finalized.", run_id: runId });
     }
-    const symbols = UNIVERSE.slice(startSym, endSym);
+    const symbols = universe.slice(startSym, endSym);
     console.log(`[run-backtest] run=${runId} chunk=${chunkIdx} symbols=${symbols.join(",")}`);
     let chunkOk = 0, chunkErr = 0;
     for (const sym of symbols) {
       try {
-        const { ok, errors } = await processSymbol(runId, sym);
+        const { ok, errors } = await processSymbol(runId, sym, entryDatesPerHorizon);
         chunkOk += ok; chunkErr += errors;
       } catch (e) {
         console.error(`symbol ${sym} crashed`, e);
         chunkErr++;
       }
     }
-    await supa.from("backtest_run_summary").update({ next_chunk_index: chunkIdx + 1 }).eq("run_id", runId);
-    if (endSym < UNIVERSE.length) {
-      invokeNextChunk(runId, chunkIdx + 1);
+    await supa.from("backtest_run_summary").update({
+      next_chunk_index: chunkIdx + 1,
+      last_progress_at: new Date().toISOString(),
+    }).eq("run_id", runId);
+    await bumpProgress(runId);
+
+    if (endSym < universe.length) {
+      await invokeNextChunk(runId, chunkIdx + 1, overrides);
       return json({ success: true, chunk_idx: chunkIdx, processed: symbols, ok: chunkOk, errors: chunkErr, next: chunkIdx + 1 });
     } else {
       await finalizeRun(runId);
