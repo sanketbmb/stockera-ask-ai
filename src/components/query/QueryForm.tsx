@@ -878,7 +878,13 @@ export function QueryForm() {
                     onClick={() => {
                       setQueryText(q.text);
                       resetRouterState();
-                      if (isLiveIntent(q.intent)) setIntent(q.intent);
+                      // Pre-select the chip for ANY routable intent (stock,
+                      // sector, educational, ask-anything) so the example
+                      // lands on the correct flow immediately.
+                      if (isRoutableIntent(q.intent)) {
+                        setIntent(q.intent);
+                        setChipManuallyPicked(true);
+                      }
                     }}
                     className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
                   >
@@ -888,27 +894,57 @@ export function QueryForm() {
               </div>
             </div>
 
-            <div>
+            <div className="space-y-4">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Question type
               </Label>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {QUERY_TYPES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setIntent(t.id);
-                      setChipManuallyPicked(true);
-                      resetRouterState();
-                    }}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}
-                  >
-                    <span className="mr-1.5">{t.emoji}</span>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              {(["stock", "general"] as const).map((group) => {
+                const chips = QUERY_TYPES.filter((t) => t.group === group);
+                if (chips.length === 0) return null;
+                const heading =
+                  group === "stock" ? "Stock questions" : "General questions";
+                return (
+                  <div key={group}>
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                      {heading}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {chips.map((t) => {
+                        const active = intent === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.description}
+                            onClick={() => {
+                              setIntent(t.id);
+                              setChipManuallyPicked(true);
+                              resetRouterState();
+                            }}
+                            className={`group rounded-xl border px-3 py-2 text-left transition min-w-[160px] ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 text-sm font-medium">
+                              <span>{t.emoji}</span>
+                              <span>{t.label}</span>
+                            </div>
+                            <p
+                              className={`text-[11px] mt-0.5 leading-snug ${
+                                active ? "text-primary/80" : "text-muted-foreground"
+                              }`}
+                            >
+                              {t.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {routerLoading && (
