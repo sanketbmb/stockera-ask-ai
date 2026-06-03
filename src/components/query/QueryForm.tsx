@@ -576,7 +576,10 @@ export function QueryForm() {
               autoFocus
               rows={(isSector || isEducational) ? 2 : 5}
               value={queryText}
-              onChange={(e) => setQueryText(e.target.value)}
+              onChange={(e) => {
+                setQueryText(e.target.value);
+                resetRouterState();
+              }}
               placeholder={
                 isSector
                   ? "Enter a sector like Private Banks, IT, Energy, Pharma"
@@ -599,6 +602,7 @@ export function QueryForm() {
                   type="button"
                   onClick={() => {
                     setQueryText(q.text);
+                    resetRouterState();
                     if (isLiveIntent(q.intent)) setIntent(q.intent);
                   }}
                   className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
@@ -613,7 +617,7 @@ export function QueryForm() {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Question type</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {QUERY_TYPES.map((t) => (
-                <button key={t.id} type="button" onClick={() => { setIntent(t.id); setChipManuallyPicked(true); }}
+                <button key={t.id} type="button" onClick={() => { setIntent(t.id); setChipManuallyPicked(true); resetRouterState(); }}
                   className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
                   <span className="mr-1.5">{t.emoji}</span>{t.label}
                 </button>
