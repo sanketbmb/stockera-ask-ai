@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -41,6 +41,7 @@ import {
 } from "@/lib/intent-router-schema";
 import { resolveSector, sectorDisplay } from "@/lib/sector-alias-map";
 import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-detector";
+import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import {
   ArrowLeft,
@@ -131,6 +132,7 @@ export function QueryForm() {
   const navigate = useNavigate();
   const runGenerateAiReport = useServerFn(generateAiReport);
   const runIntentRouter = useServerFn(classifyIntentRouter);
+  const runInferSector = useServerFn(inferSectorFromText);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -170,6 +172,10 @@ export function QueryForm() {
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
   const [manualSector, setManualSector] = useState<string | null>(null);
+  // Mission 1.6 Phase 2 — LLM-inferred sector when regex misses.
+  const [inferredSector, setInferredSector] = useState<InferredSector | null>(null);
+  const [inferringSector, setInferringSector] = useState(false);
+  const sectorInferCache = useRef<Map<string, InferredSector>>(new Map());
 
   // Phase 3A — apply a router classification to the form state.
   function applyRouterResult(r: RouterOutput) {
@@ -287,19 +293,67 @@ export function QueryForm() {
   };
 
   // Phase 3B + Mission 1.6 — sector auto-detection.
-  // Priority: explicit manual chip > router hint > keyword scan of full text.
+  // Priority: manual chip (sticky) > regex keyword > router hint > LLM inference.
   const detectedSector = useMemo(
     () => (isSector ? detectSectorFromText(queryText) : null),
     [isSector, queryText],
   );
+
+  // Mission 1.6 Phase 2 — LLM fallback runs only when regex misses on long-enough text.
+  // Debounced 600ms after textarea pause. Cached by question text to avoid re-calls.
+  useEffect(() => {
+    if (!isSector) return;
+    // Sticky override: skip LLM entirely if user has manually picked a chip.
+    if (manualSector) return;
+    if (detectedSector) {
+      setInferredSector(null);
+      return;
+    }
+    const trimmed = queryText.trim();
+    // Only attempt LLM inference for substantive text (> 8 words).
+    if (trimmed.split(/\s+/).filter(Boolean).length < 8) {
+      setInferredSector(null);
+      return;
+    }
+    const cached = sectorInferCache.current.get(trimmed);
+    if (cached) {
+      setInferredSector(cached.canonical ? cached : null);
+      return;
+    }
+    let cancelled = false;
+    setInferringSector(true);
+    const handle = setTimeout(async () => {
+      try {
+        const result = await runInferSector({ data: { text: trimmed } });
+        if (cancelled) return;
+        sectorInferCache.current.set(trimmed, result);
+        setInferredSector(result.canonical ? result : null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[sector-infer] client error", (err as Error).message);
+          setInferredSector(null);
+        }
+      } finally {
+        if (!cancelled) setInferringSector(false);
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+      setInferringSector(false);
+    };
+  }, [isSector, manualSector, detectedSector, queryText, runInferSector]);
+
   const resolvedSector = isSector
     ? manualSector
       ? { canonical: manualSector, display: sectorDisplay(manualSector) }
-      : routerMeta?.sector
-        ? resolveSector(routerMeta.sector)
-        : detectedSector
-          ? { canonical: detectedSector.canonical, display: detectedSector.display }
-          : null
+      : detectedSector
+        ? { canonical: detectedSector.canonical, display: detectedSector.display }
+        : inferredSector?.canonical
+          ? { canonical: inferredSector.canonical, display: sectorDisplay(inferredSector.canonical) }
+          : routerMeta?.sector
+            ? resolveSector(routerMeta.sector)
+            : null
     : null;
   // Phase 3C — resolve concept from question text.
   const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
@@ -1108,17 +1162,26 @@ export function QueryForm() {
                 <div
                   className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-muted bg-muted/30"}`}
                 >
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                     {resolvedSector
                       ? manualSector
                         ? "Sector selected"
-                        : "Sector auto-detected"
-                      : "Pick a sector below"}
+                        : detectedSector
+                          ? "Sector auto-detected"
+                          : "Sector inferred by AI"
+                      : inferringSector
+                        ? "Inferring sector…"
+                        : "Pick a sector below"}
+                    {inferringSector && !resolvedSector && (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    )}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold">
                     {resolvedSector
                       ? resolvedSector.display
-                      : "We couldn't infer a sector from your question — pick one to continue."}
+                      : inferringSector
+                        ? "Reading your question…"
+                        : "We couldn't infer a sector from your question — pick one to continue."}
                   </p>
                   {detectedSector && !manualSector && (
                     <p
@@ -1127,6 +1190,12 @@ export function QueryForm() {
                     >
                       Matched "{detectedSector.matched_keyword}" · confidence:{" "}
                       {detectedSector.confidence}
+                    </p>
+                  )}
+                  {!detectedSector && !manualSector && inferredSector?.canonical && (
+                    <p className="mt-1 text-[11px] text-muted-foreground italic">
+                      AI inference · {Math.round(inferredSector.confidence * 100)}% confident
+                      {inferredSector.reasoning ? ` · ${inferredSector.reasoning}` : ""}
                     </p>
                   )}
                   {manualSector && (
@@ -1139,6 +1208,7 @@ export function QueryForm() {
                     </button>
                   )}
                 </div>
+
 
                 <div className="space-y-3">
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground">
