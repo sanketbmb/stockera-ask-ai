@@ -258,6 +258,156 @@ export type Database = {
         }
         Relationships: []
       }
+      backtest_results: {
+        Row: {
+          created_at: string
+          days_to_entry_hit: number | null
+          days_to_t1: number | null
+          days_to_t2: number | null
+          engine_version: string
+          entry_anchor: string | null
+          entry_date: string
+          entry_hit: boolean | null
+          entry_zone_lower: number | null
+          entry_zone_upper: number | null
+          error_detail: string | null
+          horizon: string
+          id: string
+          outcome: string
+          preferred_entry: number | null
+          reasoning_code: string | null
+          regime: string | null
+          run_id: string
+          sl_hit_first: boolean | null
+          stop_loss: number | null
+          symbol: string
+          t1_hit: boolean | null
+          t2_hit: boolean | null
+          target_1: number | null
+          target_2: number | null
+        }
+        Insert: {
+          created_at?: string
+          days_to_entry_hit?: number | null
+          days_to_t1?: number | null
+          days_to_t2?: number | null
+          engine_version: string
+          entry_anchor?: string | null
+          entry_date: string
+          entry_hit?: boolean | null
+          entry_zone_lower?: number | null
+          entry_zone_upper?: number | null
+          error_detail?: string | null
+          horizon: string
+          id?: string
+          outcome?: string
+          preferred_entry?: number | null
+          reasoning_code?: string | null
+          regime?: string | null
+          run_id: string
+          sl_hit_first?: boolean | null
+          stop_loss?: number | null
+          symbol: string
+          t1_hit?: boolean | null
+          t2_hit?: boolean | null
+          target_1?: number | null
+          target_2?: number | null
+        }
+        Update: {
+          created_at?: string
+          days_to_entry_hit?: number | null
+          days_to_t1?: number | null
+          days_to_t2?: number | null
+          engine_version?: string
+          entry_anchor?: string | null
+          entry_date?: string
+          entry_hit?: boolean | null
+          entry_zone_lower?: number | null
+          entry_zone_upper?: number | null
+          error_detail?: string | null
+          horizon?: string
+          id?: string
+          outcome?: string
+          preferred_entry?: number | null
+          reasoning_code?: string | null
+          regime?: string | null
+          run_id?: string
+          sl_hit_first?: boolean | null
+          stop_loss?: number | null
+          symbol?: string
+          t1_hit?: boolean | null
+          t2_hit?: boolean | null
+          target_1?: number | null
+          target_2?: number | null
+        }
+        Relationships: []
+      }
+      backtest_run_summary: {
+        Row: {
+          breakdown_by_horizon: Json | null
+          breakdown_by_reasoning_code: Json | null
+          breakdown_by_regime: Json | null
+          completed_cases: number
+          config: Json | null
+          data_error_cases: number
+          engine_version: string
+          entry_hit_rate: number | null
+          finished_at: string | null
+          next_chunk_index: number
+          run_id: string
+          sl_hit_rate: number | null
+          started_at: string
+          status: string
+          t1_hit_rate: number | null
+          t2_hit_rate: number | null
+          timeout_rate: number | null
+          total_cases: number
+          universe_size: number
+        }
+        Insert: {
+          breakdown_by_horizon?: Json | null
+          breakdown_by_reasoning_code?: Json | null
+          breakdown_by_regime?: Json | null
+          completed_cases?: number
+          config?: Json | null
+          data_error_cases?: number
+          engine_version: string
+          entry_hit_rate?: number | null
+          finished_at?: string | null
+          next_chunk_index?: number
+          run_id: string
+          sl_hit_rate?: number | null
+          started_at?: string
+          status?: string
+          t1_hit_rate?: number | null
+          t2_hit_rate?: number | null
+          timeout_rate?: number | null
+          total_cases?: number
+          universe_size?: number
+        }
+        Update: {
+          breakdown_by_horizon?: Json | null
+          breakdown_by_reasoning_code?: Json | null
+          breakdown_by_regime?: Json | null
+          completed_cases?: number
+          config?: Json | null
+          data_error_cases?: number
+          engine_version?: string
+          entry_hit_rate?: number | null
+          finished_at?: string | null
+          next_chunk_index?: number
+          run_id?: string
+          sl_hit_rate?: number | null
+          started_at?: string
+          status?: string
+          t1_hit_rate?: number | null
+          t2_hit_rate?: number | null
+          timeout_rate?: number | null
+          total_cases?: number
+          universe_size?: number
+        }
+        Relationships: []
+      }
       benchmark_cache: {
         Row: {
           benchmark_symbol: string
