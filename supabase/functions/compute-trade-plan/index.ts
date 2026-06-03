@@ -861,7 +861,7 @@ Deno.serve(async (req) => {
 
 
 
-    // ── 3. Per-tier raw plan ──
+    // ── 3. Per-tier raw plan (base levels: T1/T2/S/R) ──
     let raw: Levels;
     let ltSlMethod: SlMethod | null = null;
     if (queryType === "intraday") {
@@ -875,14 +875,31 @@ Deno.serve(async (req) => {
         tm.sl_method = ltSlMethod;
       }
     } else {
+      // medium-term and short-term share the swing-based T1/T2/S/R baseline;
+      // entry & SL are then overridden by the horizon-aware EntryStrategy below.
       raw = mediumPlan(spot, atrV, swingHighs, swingLows);
     }
 
-    // ── 4. Validate ──
-    const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);
+    // ── 3b. Build EntryStrategy and override entry / SL accordingly ──
+    const esInputs: EntryStrategyInputs = {
+      spot,
+      dma20, dma50, dma200,
+      w52H, w52L, atrV,
+      s1: raw.support_1,
+      s2: raw.support_2,
+      closes,
+    };
+    const { strategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    raw.entry_zone = strategy.preferred_entry;
+    if (strategy.mode === "zone" && sl_override != null) {
+      raw.stop_loss = sl_override;
+    }
 
-    // For long-term: if R:R validation drops a target that the resolver computed,
-    // surface the reason in targets_meta too so the UI can explain it.
+    // ── 4. Validate (RR & SL distance measured from preferred_entry; spot used for S/R) ──
+    const refPrice = strategy.preferred_entry;
+    const t1WasPresentPreValidate = raw.target_1 != null;
+    const { cleaned, omissions } = validate(raw, spot, refPrice, atrV, queryType, dcfDegenerate);
+
     if (queryType === "long-term" && targetsMeta) {
       const t1Dropped = omissions.find((o) => o.level === "target_1");
       const t2Dropped = omissions.find((o) => o.level === "target_2");
@@ -894,10 +911,13 @@ Deno.serve(async (req) => {
         (targetsMeta.t2 as Record<string, unknown>).reason = `dropped_by_validation: ${t2Dropped.reason}`;
         (targetsMeta.t2 as Record<string, unknown>).value = null;
       }
+      // Phase 4B: surface entry_anchor in targets_meta
+      (targetsMeta as Record<string, unknown>).entry_anchor = strategy.entry_anchor;
+      if (sl_method_override) (targetsMeta as Record<string, unknown>).sl_method = sl_method_override;
     }
 
     // ── 5. Round ──
-    const levels: Levels = {
+    const levels: Levels & { entry_strategy: EntryStrategy } = {
       entry_zone:   r2(cleaned.entry_zone),
       stop_loss:    r2(cleaned.stop_loss),
       target_1:     r2(cleaned.target_1),
@@ -906,21 +926,26 @@ Deno.serve(async (req) => {
       support_2:    r2(cleaned.support_2),
       resistance_1: r2(cleaned.resistance_1),
       resistance_2: r2(cleaned.resistance_2),
+      entry_strategy: strategy,
     };
 
     return json({
       success: true,
       symbol,
       tier: queryType,
+      engine_version: ENGINE_VERSION,
       spot: r2(spot),
       atr_14: r2(atrV),
       vol_1y: vol1y,
       levels,
+      entry_strategy: strategy,
       validation: omissions,
       targets_meta: targetsMeta,
       inputs_summary: {
         bars: candles.length,
         prev_day: prevDay?.date ?? null,
+        dma_20: r2(dma20),
+        dma_50: r2(dma50),
         dma_200: r2(dma200),
         w52_high: r2(w52H),
         w52_low: r2(w52L),
@@ -930,6 +955,7 @@ Deno.serve(async (req) => {
         dcf_degenerate: dcfDegenerate,
         momentum_positive: momentumPositive,
         avg_daily_turnover_cr: avgTurnoverCr,
+        t1_present_pre_validate: t1WasPresentPreValidate,
       },
       formula_version: FORMULA_VERSION,
       computed_at: new Date().toISOString(),
