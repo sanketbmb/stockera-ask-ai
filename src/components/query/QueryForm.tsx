@@ -463,7 +463,8 @@ export function QueryForm() {
         setGenStage("idle");
         setSubmitting(false);
         return;
-      }
+
+      const trimmedQueryText = queryText.trim();
       const routerMetaForInsert = routerMeta
         ? ({ ...routerMeta } as unknown as Record<string, unknown>)
         : null;
