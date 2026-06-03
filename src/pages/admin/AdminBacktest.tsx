@@ -67,7 +67,7 @@ export default function AdminBacktest() {
     return () => clearInterval(t);
   }, []);
 
-  async function startRun() {
+  async function startRun(mode: "start" | "pilot") {
     setStarting(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -79,11 +79,11 @@ export default function AdminBacktest() {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           authorization: token ? `Bearer ${token}` : "",
         },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify({ action: mode }),
       });
       const body = await res.json();
       if (body.success) {
-        toast.success(`Run started: ${body.run_id.slice(0, 8)}… (${body.total_cases} cases)`);
+        toast.success(`${mode === "pilot" ? "Pilot" : "Full"} run started: ${body.run_id.slice(0, 8)}… (${body.total_cases} cases)`);
         await load();
       } else {
         toast.error(body.error || "Failed to start run");
