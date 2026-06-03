@@ -79,21 +79,22 @@ const ALL_QUERY_TYPES: {
   id: Intent;
   label: string;
   emoji: string;
+  group: "stock" | "general";
+  description: string;
   phase3?: boolean;
   sectorOnly?: boolean;
   educationalOnly?: boolean;
   routerOnly?: boolean;
 }[] = [
-  { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
-  { id: "should_average", emoji: "📉", label: "Should I Average" },
-  { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
-  // Phase 3C — Educational ships independently of the broader phase 3 unlock.
-  { id: "educational", emoji: "📚", label: "Educational", educationalOnly: true },
+  { id: "buy_decision", emoji: "🆕", label: "Fresh Entry", group: "stock", description: "Thinking of buying a stock" },
+  { id: "stuck_position", emoji: "🤔", label: "Sell or Hold", group: "stock", description: "Already own it — exit or hold?" },
+  { id: "should_average", emoji: "📉", label: "Should I Average", group: "stock", description: "At a loss — average down?" },
   // Phase 3B — Sector View ships independently of the broader phase 3 unlock.
-  { id: "sector_view", emoji: "🏭", label: "Sector View", sectorOnly: true },
-  // "Other" is exposed when the free-text router is live (Phase 3A). It is
-  // a deliberate escape hatch for questions that don't map to a LIVE chip.
-  { id: "other", emoji: "❓", label: "Other", routerOnly: true },
+  { id: "sector_view", emoji: "🏭", label: "Sector View", group: "general", description: "How will a whole sector perform?", sectorOnly: true },
+  // Phase 3C — Educational ships independently of the broader phase 3 unlock.
+  { id: "educational", emoji: "📚", label: "Educational", group: "general", description: "Concept / indicator explainer", educationalOnly: true },
+  // Phase 3D — "Ask Anything" now generates a real AI report.
+  { id: "other", emoji: "❓", label: "Ask Anything", group: "general", description: "Any other market question", routerOnly: true },
 ];
 
 const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
