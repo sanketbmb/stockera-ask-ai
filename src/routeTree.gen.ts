@@ -42,6 +42,7 @@ import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminExportsRouteImport } from './routes/admin.exports'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminBacktestRouteImport } from './routes/admin.backtest'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
 import { Route as DocsAccuracyRoadmapPrintRouteImport } from './routes/docs.accuracy-roadmap.print'
@@ -212,6 +213,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/admin/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminBacktestRoute = AdminBacktestRouteImport.update({
+  id: '/admin/backtest',
+  path: '/admin/backtest',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminApplyRoute = AdminApplyRouteImport.update({
   id: '/admin/apply',
   path: '/admin/apply',
@@ -257,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
+  '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
+  '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -336,6 +344,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
+  '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/wallet'
     | '/admin/apply'
+    | '/admin/backtest'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -416,6 +426,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/wallet'
     | '/admin/apply'
+    | '/admin/backtest'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -455,6 +466,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/wallet'
     | '/admin/apply'
+    | '/admin/backtest'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -495,6 +507,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
+  AdminBacktestRoute: typeof AdminBacktestRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminExportsRoute: typeof AdminExportsRoute
   AdminLoginRoute: typeof AdminLoginRoute
@@ -746,6 +759,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/backtest': {
+      id: '/admin/backtest'
+      path: '/admin/backtest'
+      fullPath: '/admin/backtest'
+      preLoaderRoute: typeof AdminBacktestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/apply': {
       id: '/admin/apply'
       path: '/admin/apply'
@@ -799,6 +819,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
+  AdminBacktestRoute: AdminBacktestRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminExportsRoute: AdminExportsRoute,
   AdminLoginRoute: AdminLoginRoute,
@@ -819,3 +840,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

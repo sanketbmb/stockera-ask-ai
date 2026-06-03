@@ -872,7 +872,7 @@ Deno.serve(async (req) => {
 
   const started = Date.now();
   try {
-    const body = await req.json().catch(() => ({})) as { symbol?: string; query_type?: string };
+    const body = await req.json().catch(() => ({})) as { symbol?: string; query_type?: string; historical_as_of?: string };
     const symbol = body.symbol?.trim();
     if (!symbol) return json({ success: false, error: "SYMBOL_REQUIRED" }, 400);
 
@@ -882,11 +882,23 @@ Deno.serve(async (req) => {
         ? qtRaw
         : "medium-term";
 
+    // Phase 4E — historical_as_of override (BACKTEST ONLY; do NOT use in live paths).
+    // Truncates candles to <= as_of date, so the engine sees that day as "today".
+    // All downstream math (spot, DMAs, regime, entry strategy) flows unchanged.
+    const asOf = typeof body.historical_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.historical_as_of)
+      ? body.historical_as_of
+      : null;
+
     // ── 1. Candles ──
     let candles: Candle[];
     try { candles = await fetchCandles(symbol); }
     catch (e) { return json({ success: false, error: "DATA_FETCH_FAILED", details: String(e) }, 200); }
-    if (candles.length < 30) return json({ success: false, error: "INSUFFICIENT_HISTORY", got: candles.length }, 200);
+    if (asOf) {
+      candles = candles.filter((c) => c.date <= asOf);
+      console.log(`[BACKTEST MODE] ${symbol} as_of=${asOf} truncated_to=${candles.length} bars`);
+    }
+    if (candles.length < 30) return json({ success: false, error: "INSUFFICIENT_HISTORY", got: candles.length, as_of: asOf }, 200);
+
 
     const closes = candles.map((c) => c.close);
     const highs  = candles.map((c) => c.high);
@@ -1160,7 +1172,10 @@ Deno.serve(async (req) => {
       symbol,
       tier: queryType,
       engine_version: ENGINE_VERSION,
+      backtest_mode: asOf !== null,
+      as_of: asOf,
       spot: r2(spot),
+
       atr_14: r2(atrV),
       vol_1y: vol1y,
       levels,
