@@ -1108,17 +1108,74 @@ export function QueryForm() {
             {isSector && (
               <div className="space-y-4">
                 <div
-                  className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}
+                  className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-muted bg-muted/30"}`}
                 >
                   <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                    Sector recognized
+                    {resolvedSector
+                      ? manualSector
+                        ? "Sector selected"
+                        : "Sector auto-detected"
+                      : "Pick a sector below"}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold">
                     {resolvedSector
                       ? resolvedSector.display
-                      : "Not recognized — try Private Banks, IT, Energy, Pharma, FMCG"}
+                      : "We couldn't infer a sector from your question — pick one to continue."}
                   </p>
+                  {detectedSector && !manualSector && (
+                    <p
+                      className="mt-1 text-[11px] text-muted-foreground"
+                      title={`Matched: "${detectedSector.matched_keyword}"`}
+                    >
+                      Matched "{detectedSector.matched_keyword}" · confidence:{" "}
+                      {detectedSector.confidence}
+                    </p>
+                  )}
+                  {manualSector && (
+                    <button
+                      type="button"
+                      className="mt-2 text-[11px] underline text-muted-foreground hover:text-foreground"
+                      onClick={() => setManualSector(null)}
+                    >
+                      Clear selection & use auto-detect
+                    </button>
+                  )}
                 </div>
+
+                <div className="space-y-3">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                    {resolvedSector ? "Or pick a different sector" : "Choose a sector"}
+                  </Label>
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    {allGroupedSectors().map((g) => (
+                      <div key={g.group}>
+                        <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                          {g.group}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {g.sectors.map((s) => {
+                            const active = resolvedSector?.canonical === s.canonical;
+                            return (
+                              <button
+                                key={s.canonical}
+                                type="button"
+                                onClick={() => setManualSector(s.canonical)}
+                                className={`rounded-full px-3 py-1 text-xs border transition ${
+                                  active
+                                    ? "border-primary bg-primary/10 text-foreground"
+                                    : "border-border bg-background hover:border-primary/40"
+                                }`}
+                              >
+                                {s.display}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <Label>Horizon (optional)</Label>
                   <Select value={horizon} onValueChange={setHorizon}>
