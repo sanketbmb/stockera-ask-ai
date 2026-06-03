@@ -965,6 +965,9 @@ export function StockAnalysisReport({
               <span>High-volatility stock — wider stop loss recommended, smaller position size advised.</span>
             </motion.p>
           )}
+          {tier === "long-term" && levels.entry_strategy?.staggered_plan && levels.entry_strategy.staggered_plan.length > 0 && (
+            <StaggeredPlanCard plan={levels.entry_strategy.staggered_plan} />
+          )}
         </motion.section>
 
 
