@@ -22,7 +22,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const FORMULA_VERSION = "trade-plan-1.1";
-const ENGINE_VERSION = "trade_plan_v2_zone_entry";
+const ENGINE_VERSION = "trade_plan_v3_regime_aware";
 const MODULE_TIMEOUT_MS = 20_000;
 const LT_T1_FLOOR_PCT = 0.05;
 const LT_TARGET_CAP_PCT = 0.60;
