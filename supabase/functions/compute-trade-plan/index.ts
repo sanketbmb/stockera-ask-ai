@@ -169,7 +169,7 @@ async function callJSON(fn: string, body: Record<string, unknown>): Promise<Reco
 }
 
 // ─── Validation engine ───
-function validate(levels: Levels, spot: number, atrV: number, queryType: QueryType, dcfDegenerate: boolean): {
+function validate(levels: Levels, spot: number, refPrice: number, atrV: number, queryType: QueryType, dcfDegenerate: boolean): {
   cleaned: Levels; omissions: Omission[];
 } {
   const out: Levels = { ...levels };
@@ -178,33 +178,31 @@ function validate(levels: Levels, spot: number, atrV: number, queryType: QueryTy
     if (out[k] != null) { out[k] = null; om.push({ level: k, reason }); }
   };
 
-  // Rule 8 (NaN/undefined guard)
   (Object.keys(out) as Array<keyof Levels>).forEach((k) => {
     const v = out[k];
     if (v != null && !Number.isFinite(v)) drop(k, "compute_error: non-finite value");
   });
 
-  // Rule 9: SL must be strictly below spot for LONG positions (all tiers — Stockera has no short recs).
-  // Catches the entire category of "SL above entry" bugs in any tier.
-  if (out.stop_loss != null && out.stop_loss >= spot) {
-    drop("stop_loss", "sl_above_spot_invalid_for_long_position");
+  // Rule 9: SL must be strictly below ref price (preferred_entry, or spot for intraday).
+  if (out.stop_loss != null && out.stop_loss >= refPrice) {
+    drop("stop_loss", "sl_above_ref_invalid_for_long_position");
   }
 
-  // Rule 1: SL distance ≥ 0.5×ATR
-  if (out.stop_loss != null && Number.isFinite(atrV) && Math.abs(spot - out.stop_loss) < 0.5 * atrV) {
+  // Rule 1: SL distance ≥ 0.5×ATR from reference price
+  if (out.stop_loss != null && Number.isFinite(atrV) && Math.abs(refPrice - out.stop_loss) < 0.5 * atrV) {
     drop("stop_loss", "sl_too_tight: distance < 0.5×ATR (noise risk)");
   }
 
-  // Rules 2 & 3: R:R thresholds (require valid SL)
-  const slDist = out.stop_loss != null ? Math.abs(spot - out.stop_loss) : null;
+  // Rules 2 & 3: R:R thresholds — measured from reference price (preferred_entry).
+  const slDist = out.stop_loss != null ? Math.abs(refPrice - out.stop_loss) : null;
   if (out.target_1 != null && slDist != null) {
-    const rr = (out.target_1 - spot) / slDist;
+    const rr = (out.target_1 - refPrice) / slDist;
     if (!(rr >= 1.5)) drop("target_1", `t1_rr_below_1.5 (actual ${rr.toFixed(2)})`);
   } else if (out.target_1 != null && slDist == null) {
     drop("target_1", "t1_omitted: sl invalid, cannot validate R:R");
   }
   if (out.target_2 != null && slDist != null) {
-    const rr = (out.target_2 - spot) / slDist;
+    const rr = (out.target_2 - refPrice) / slDist;
     if (!(rr >= 2.0)) drop("target_2", `t2_rr_below_2.0 (actual ${rr.toFixed(2)})`);
   } else if (out.target_2 != null && slDist == null) {
     drop("target_2", "t2_omitted: sl invalid, cannot validate R:R");
