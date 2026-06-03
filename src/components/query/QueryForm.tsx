@@ -503,7 +503,14 @@ export function QueryForm() {
       if (createdQueryId) {
         navigate({ to: "/report/$queryId", params: { queryId: createdQueryId } });
       } else {
-        toast.error(`Could not create query: ${e instanceof Error ? e.message : "Unknown"}`);
+        const pgLike = e as { code?: string; message?: string; details?: string; hint?: string } | null;
+        const code = pgLike?.code;
+        const msg = (e instanceof Error ? e.message : pgLike?.message) || "Insert failed (no details from server)";
+        const userMsg = code ? `Could not create query [${code}]: ${msg}` : `Could not create query: ${msg}`;
+        toast.error(userMsg, {
+          description: pgLike?.hint || pgLike?.details || undefined,
+          duration: 10000,
+        });
         setGenStage("idle");
         setSubmitting(false);
       }
