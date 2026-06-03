@@ -39,7 +39,8 @@ import {
   routerHorizonToFormHorizon,
   confidenceBand,
 } from "@/lib/intent-router-schema";
-import { resolveSector } from "@/lib/sector-alias-map";
+import { resolveSector, sectorDisplay } from "@/lib/sector-alias-map";
+import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-detector";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import {
   ArrowLeft,
