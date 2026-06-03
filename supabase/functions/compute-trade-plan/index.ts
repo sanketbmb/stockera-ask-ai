@@ -952,7 +952,8 @@ Deno.serve(async (req) => {
       s2: raw.support_2,
       closes,
     };
-    const { strategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    const { strategy: rawStrategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    const strategy = applyZoneGuards(rawStrategy);
     raw.entry_zone = strategy.preferred_entry;
     if (strategy.mode === "zone" && sl_override != null) {
       raw.stop_loss = sl_override;
