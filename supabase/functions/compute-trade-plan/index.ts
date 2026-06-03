@@ -508,6 +508,191 @@ async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
   return null;
 }
 
+// ─── Phase 4B · Horizon-aware Entry Strategy ───
+interface EntryStrategyInputs {
+  spot: number;
+  dma20: number;   // may be NaN
+  dma50: number;   // may be NaN
+  dma200: number;  // may be NaN
+  w52H: number;
+  w52L: number;
+  atrV: number;
+  s1: number | null;
+  s2: number | null;
+  closes: number[];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const mid = (a: number, b: number) => round2((a + b) / 2);
+
+function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
+  strategy: EntryStrategy;
+  sl_override: number | null;
+  sl_method_override: string | null;
+} {
+  const { spot, dma20, dma50, dma200, w52H: _w52H, w52L, atrV, s1, s2, closes } = x;
+  void _w52H;
+
+  // ── A) INTRADAY — unchanged ──
+  if (tier === "intraday") {
+    return {
+      strategy: {
+        mode: "single",
+        entry_zone_lower: null,
+        entry_zone_upper: null,
+        entry_anchor: "LTP",
+        preferred_entry: round2(spot),
+        reasoning_code: "INTRADAY_LTP",
+        reasoning_text: `Intraday entry at LTP ₹${round2(spot)}.`,
+      },
+      sl_override: null,
+      sl_method_override: null,
+    };
+  }
+
+  // ── B) SHORT-TERM ──
+  if (tier === "short-term") {
+    const last20 = closes.slice(-21, -1);
+    const last20High = last20.length ? Math.max(...last20) : NaN;
+    const breakout = Number.isFinite(dma20) && spot > dma20 && Number.isFinite(last20High) && spot >= last20High * 0.995;
+    if (breakout) {
+      return {
+        strategy: {
+          mode: "single",
+          entry_zone_lower: null, entry_zone_upper: null,
+          entry_anchor: "LTP",
+          preferred_entry: round2(spot),
+          reasoning_code: "SHORT_BREAKOUT_LTP",
+          reasoning_text: `Short-term breakout above 20-DMA — enter at LTP ₹${round2(spot)}.`,
+        },
+        sl_override: null, sl_method_override: null,
+      };
+    }
+    if (s1 != null && s1 < spot && (spot - s1) / spot <= 0.06) {
+      const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, spot * 0.985) : spot * 0.985;
+      const lower = round2(s1);
+      const upper = round2(Math.max(upperRaw, lower + 0.01));
+      const pref = mid(lower, upper);
+      return {
+        strategy: {
+          mode: "zone",
+          entry_zone_lower: lower, entry_zone_upper: upper,
+          entry_anchor: "S1",
+          preferred_entry: pref,
+          reasoning_code: "SHORT_PULLBACK_S1_DMA20",
+          reasoning_text: `Accumulate on pullback between ₹${lower} and ₹${upper}, ideally near ₹${pref}.`,
+        },
+        sl_override: round2(lower - 1.0 * atrV),
+        sl_method_override: "short_zone_atr1",
+      };
+    }
+    return {
+      strategy: {
+        mode: "single",
+        entry_zone_lower: null, entry_zone_upper: null,
+        entry_anchor: "LTP",
+        preferred_entry: round2(spot),
+        reasoning_code: "SHORT_NO_PULLBACK_AVAILABLE",
+        reasoning_text: `No clean pullback zone — enter at LTP ₹${round2(spot)} with tight risk.`,
+      },
+      sl_override: null, sl_method_override: null,
+    };
+  }
+
+  // ── C) MEDIUM-TERM ──
+  if (tier === "medium-term") {
+    let lower: number, upper: number, code: string, text: string;
+    const s1Eff = s1 ?? (Number.isFinite(dma50) ? dma50 : spot * 0.95);
+
+    if (Number.isFinite(dma50) && s1 != null && spot >= s1 && spot <= dma50) {
+      lower = Math.max(s1, dma50 * 0.97);
+      upper = Math.min(spot, Number.isFinite(dma20) ? dma20 : spot);
+      code = "MEDIUM_IN_ACCUMULATION_ZONE";
+      text = `Already in accumulation zone — accumulate between ₹{LO} and ₹{HI}.`;
+    } else if (Number.isFinite(dma50) && spot > dma50) {
+      lower = Math.max(s1Eff, dma50);
+      const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, (dma50 + spot) / 2) : (dma50 + spot) / 2;
+      upper = upperRaw;
+      code = "MEDIUM_WAIT_FOR_PULLBACK_TO_DMA50";
+      text = `Extended above 50-DMA — wait for pullback into ₹{LO}–₹{HI}.`;
+    } else {
+      lower = Math.max(s2 ?? (Number.isFinite(dma200) ? dma200 : spot * 0.85), Number.isFinite(dma200) ? dma200 : -Infinity);
+      upper = Math.min(spot, s1Eff);
+      code = "MEDIUM_CORRECTION_ACCUMULATE_TO_S2";
+      text = `In correction — accumulate down to S2 between ₹{LO} and ₹{HI}.`;
+    }
+    if (!(lower < upper)) { const t = lower; lower = Math.min(t, upper) - 0.01; upper = Math.max(t, upper); }
+    const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
+    const slCandidate = lo - 0.75 * atrV;
+    const sl = s2 != null ? Math.min(slCandidate, s2) : slCandidate;
+    const anchor: EntryAnchor =
+      code === "MEDIUM_CORRECTION_ACCUMULATE_TO_S2" ? "S1" : "S1_DMA50_BLEND";
+
+    return {
+      strategy: {
+        mode: "zone",
+        entry_zone_lower: lo, entry_zone_upper: up,
+        entry_anchor: anchor,
+        preferred_entry: pref,
+        reasoning_code: code,
+        reasoning_text: text.replace("{LO}", String(lo)).replace("{HI}", String(up)) + ` Ideal near ₹${pref}.`,
+      },
+      sl_override: round2(sl),
+      sl_method_override: "medium_zone_atr075_s2",
+    };
+  }
+
+  // ── D) LONG-TERM ──
+  // tier === "long-term"
+  const dma = Number.isFinite(dma200) ? dma200 : spot;
+  const w52Lv = Number.isFinite(w52L) ? w52L : spot * 0.7;
+  let lower: number, upper: number, code: string, anchor: EntryAnchor, text: string;
+  if (Math.abs(spot - dma) / dma <= 0.05) {
+    lower = Math.max(dma * 0.97, w52Lv * 1.05);
+    upper = Math.min(spot, dma * 1.05);
+    code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Near 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  } else if (spot > dma * 1.10) {
+    lower = dma; upper = dma * 1.10;
+    code = "LONG_WAIT_FOR_DMA200_REVERSION"; anchor = "DMA200";
+    text = `Extended ≥10% above 200-DMA — wait for reversion into ₹{LO}–₹{HI}.`;
+  } else if (spot < dma * 0.95) {
+    lower = Math.max(w52Lv, dma * 0.85);
+    upper = Math.min(spot, dma * 0.95);
+    code = "LONG_DEEP_VALUE_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Deep value below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  } else {
+    // 0.95×dma .. spot range (between -5% and -0% of DMA200)
+    lower = Math.max(dma * 0.95, w52Lv * 1.05);
+    upper = Math.min(spot, dma);
+    code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Just below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  }
+  if (!(lower < upper)) { const tmp = Math.min(lower, upper); upper = Math.max(lower, upper); lower = tmp - 0.01; }
+  const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
+  const sl = Math.max(w52Lv * 0.95, dma * 0.85);
+  const slMethod = (w52Lv * 0.95 > dma * 0.85) ? "long_zone_52wl_anchor" : "long_zone_dma200_floor";
+  const staggered = [
+    { pct: 30, price: up, note: "First tranche near current level" },
+    { pct: 40, price: pref, note: "Second tranche on pullback" },
+    { pct: 30, price: lo, note: "Final tranche on deeper correction" },
+  ];
+  return {
+    strategy: {
+      mode: "zone",
+      entry_zone_lower: lo, entry_zone_upper: up,
+      entry_anchor: anchor,
+      preferred_entry: pref,
+      reasoning_code: code,
+      reasoning_text: text.replace("{LO}", String(lo)).replace("{HI}", String(up)) + ` Stagger entry; ideal near ₹${pref}.`,
+      staggered_plan: staggered,
+    },
+    sl_override: round2(sl),
+    sl_method_override: slMethod,
+  };
+}
+
+
 // ─── Main ───
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
