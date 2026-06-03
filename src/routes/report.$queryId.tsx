@@ -353,14 +353,10 @@ function ReportContent() {
     if (qt === "educational") {
       return <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
     }
-    // Phase 3D — "other" now generates an AI report (engine_version v1_general).
-    // Legacy rows that pre-date v1_general (or are still pending) fall back to
-    // the routed-pending placeholder so we never break old reports.
+    // Phase 3D — every "other" query now flows through GeneralReport, which
+    // freezes a Gemini-generated analyst-style answer on first read. Idempotent.
     if (qt === "other") {
-      const engineVersion = (data as { engine_version?: string | null }).engine_version;
-      if (engineVersion === "v1_general" || engineVersion === "router_v1" || engineVersion == null) {
-        return <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-      }
+      return <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
     }
     return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
   }
