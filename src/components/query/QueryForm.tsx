@@ -712,9 +712,17 @@ export function QueryForm() {
         const msg =
           (e instanceof Error ? e.message : pgLike?.message) ||
           "Insert failed (no details from server)";
-        const userMsg = code
-          ? `Could not create query [${code}]: ${msg}`
-          : `Could not create query: ${msg}`;
+        console.error("[handleSubmit] pg error", { code, message: msg, details: pgLike?.details, hint: pgLike?.hint });
+        let userMsg: string;
+        if (code === "23514") {
+          userMsg = "Invalid query type — please contact support (CODE: 23514)";
+        } else if (code === "42501") {
+          userMsg = `Permission denied: ${msg} (CODE: 42501)`;
+        } else if (code) {
+          userMsg = `Could not create query [${code}]: ${msg}`;
+        } else {
+          userMsg = `Could not create query: ${msg}`;
+        }
         toast.error(userMsg, {
           description: pgLike?.hint || pgLike?.details || undefined,
           duration: 10000,
