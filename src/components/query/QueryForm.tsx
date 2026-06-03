@@ -370,9 +370,6 @@ export function QueryForm() {
         setStep(2);
         return;
       }
-        setStep(2);
-        return;
-      }
       // Phase 3C — educational requires a resolvable concept; the report itself
       // will degrade gracefully via ConceptNotFoundPanel if we miss here, but
       // we warn early so the user can fix their wording before submission.
