@@ -815,6 +815,9 @@ Deno.serve(async (req) => {
           ((tpRes.data?.entry_strategy as Record<string, unknown> | undefined)?.reasoning_code as string | undefined) ?? null,
         entry_anchor:
           ((tpRes.data?.entry_strategy as Record<string, unknown> | undefined)?.entry_anchor as string | undefined) ?? null,
+        // Phase 4D — deterministic regime classification + inputs
+        regime: (tpRes.data?.regime as string | undefined) ?? null,
+        regime_inputs: (tpRes.data?.regime_inputs as Record<string, unknown> | undefined) ?? null,
         targets_meta: (tpRes.data?.targets_meta as Record<string, unknown> | null | undefined) ?? null,
         confidence_breakdown: confidence.breakdown,
         confidence_band: confidence.band,
