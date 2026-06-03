@@ -480,14 +480,51 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     }
   }
 
+  // Zone-band geometry (Phase 4C). Position the translucent band between
+  // entry_zone_lower/upper on the same horizontal scale as the markers, clamped
+  // to the visible strip so wider zones do not bleed off.
+  const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
+  const bandLeft = showZoneBand ? xPct(zoneLo!) : 0;
+  const bandRight = showZoneBand ? xPct(zoneUp!) : 0;
+  const bandWidth = Math.max(0, bandRight - bandLeft);
+  const prefX = showZoneBand ? xPct(zonePref!) : 0;
+
   return (
     <div ref={ref} className="relative my-6 h-24 print:h-24">
+      {showZoneBand && (
+        <div
+          aria-label="Entry accumulation zone"
+          className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
+          style={{
+            left: `${bandLeft}%`,
+            width: `${bandWidth}%`,
+            top: "calc(50% - 12px)",
+            height: "24px",
+          }}
+        />
+      )}
       <motion.div
         className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
+      {showZoneBand && (
+        <div
+          className="absolute -translate-x-1/2"
+          style={{ left: `${prefX}%`, top: 0 }}
+        >
+          <div
+            className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
+            style={{ marginTop: "38px" }}
+            aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+          />
+          <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
+            <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
+            <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
+          </div>
+        </div>
+      )}
       {slots.map((s, i) => {
         const primary = s.labels[0];
         const order = priorityIndex[primary] ?? 9;
