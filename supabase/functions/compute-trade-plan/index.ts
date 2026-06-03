@@ -698,6 +698,59 @@ function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
   };
 }
 
+// Phase 4C — Zone guardrails: width cap (>12% → tighten to 10%) and
+// inverted/degenerate band fallback (<0.1% width → collapse to single mode).
+// Pure function; preserves reasoning_code lineage (suffixes appended).
+function applyZoneGuards(strategy: EntryStrategy): EntryStrategy {
+  if (strategy.mode !== "zone") return strategy;
+  const { entry_zone_lower: lo, entry_zone_upper: up, preferred_entry: pref } = strategy;
+  if (lo == null || up == null || !(pref > 0)) return strategy;
+
+  let lower = lo, upper = up;
+  // Swap if inverted (defensive — branches above already attempt this).
+  if (lower > upper) { const t = lower; lower = upper; upper = t; }
+  const width = upper - lower;
+  const widthPct = width / pref;
+
+  // Inverted / degenerate fallback → single
+  if (widthPct < 0.001) {
+    console.warn(`[applyZoneGuards] degenerate zone width=${width} pref=${pref}; collapsing to single`);
+    return {
+      ...strategy,
+      mode: "single",
+      entry_zone_lower: null,
+      entry_zone_upper: null,
+      reasoning_code: `${strategy.reasoning_code}_ZONE_INVERTED_FALLBACK`,
+      reasoning_text: `${strategy.reasoning_text} (zone collapsed — using single entry at ₹${round2(pref)}).`,
+      staggered_plan: undefined,
+    };
+  }
+
+  // Width cap → tighten symmetrically to 10% around preferred_entry
+  if (widthPct > 0.12) {
+    const half = pref * 0.05; // 10% total
+    const newLower = round2(Math.max(0.01, pref - half));
+    const newUpper = round2(pref + half);
+    console.warn(`[applyZoneGuards] zone too wide (${(widthPct * 100).toFixed(1)}%); tightening to 10% around ${pref}`);
+    const staggered = strategy.staggered_plan
+      ? [
+          { ...strategy.staggered_plan[0], price: newUpper },
+          { ...strategy.staggered_plan[1], price: round2(pref) },
+          { ...strategy.staggered_plan[2], price: newLower },
+        ]
+      : undefined;
+    return {
+      ...strategy,
+      entry_zone_lower: newLower,
+      entry_zone_upper: newUpper,
+      reasoning_text: `${strategy.reasoning_text} (zone tightened for clarity)`,
+      staggered_plan: staggered,
+    };
+  }
+
+  return strategy;
+}
+
 
 // ─── Main ───
 Deno.serve(async (req) => {
