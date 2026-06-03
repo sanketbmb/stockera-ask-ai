@@ -132,6 +132,7 @@ export function QueryForm() {
   const navigate = useNavigate();
   const runGenerateAiReport = useServerFn(generateAiReport);
   const runIntentRouter = useServerFn(classifyIntentRouter);
+  const runInferSector = useServerFn(inferSectorFromText);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -171,6 +172,10 @@ export function QueryForm() {
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
   const [manualSector, setManualSector] = useState<string | null>(null);
+  // Mission 1.6 Phase 2 — LLM-inferred sector when regex misses.
+  const [inferredSector, setInferredSector] = useState<InferredSector | null>(null);
+  const [inferringSector, setInferringSector] = useState(false);
+  const sectorInferCache = useRef<Map<string, InferredSector>>(new Map());
 
   // Phase 3A — apply a router classification to the form state.
   function applyRouterResult(r: RouterOutput) {
