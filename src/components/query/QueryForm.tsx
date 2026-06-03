@@ -286,8 +286,21 @@ export function QueryForm() {
     setAutoDetected({});
   };
 
-  // Phase 3B — resolve sector from router-supplied hint OR the question text.
-  const resolvedSector = isSector ? resolveSector(routerMeta?.sector ?? queryText) : null;
+  // Phase 3B + Mission 1.6 — sector auto-detection.
+  // Priority: explicit manual chip > router hint > keyword scan of full text.
+  const detectedSector = useMemo(
+    () => (isSector ? detectSectorFromText(queryText) : null),
+    [isSector, queryText],
+  );
+  const resolvedSector = isSector
+    ? manualSector
+      ? { canonical: manualSector, display: sectorDisplay(manualSector) }
+      : routerMeta?.sector
+        ? resolveSector(routerMeta.sector)
+        : detectedSector
+          ? { canonical: detectedSector.canonical, display: detectedSector.display }
+          : null
+    : null;
   // Phase 3C — resolve concept from question text.
   const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
 
