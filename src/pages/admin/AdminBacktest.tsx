@@ -24,6 +24,8 @@ interface RunSummary {
   next_chunk_index: number;
   started_at: string;
   finished_at: string | null;
+  last_progress_at: string | null;
+  error_message: string | null;
 }
 
 interface BreakdownRow {
@@ -65,7 +67,7 @@ export default function AdminBacktest() {
     return () => clearInterval(t);
   }, []);
 
-  async function startRun() {
+  async function startRun(mode: "start" | "pilot") {
     setStarting(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -77,11 +79,11 @@ export default function AdminBacktest() {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           authorization: token ? `Bearer ${token}` : "",
         },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify({ action: mode }),
       });
       const body = await res.json();
       if (body.success) {
-        toast.success(`Run started: ${body.run_id.slice(0, 8)}… (${body.total_cases} cases)`);
+        toast.success(`${mode === "pilot" ? "Pilot" : "Full"} run started: ${body.run_id.slice(0, 8)}… (${body.total_cases} cases)`);
         await load();
       } else {
         toast.error(body.error || "Failed to start run");
@@ -102,9 +104,14 @@ export default function AdminBacktest() {
           <h1 className="text-3xl font-bold">Backtest Harness</h1>
           <p className="text-sm text-muted-foreground">Engine accuracy on historical NSE candles · admin only</p>
         </div>
-        <Button onClick={startRun} disabled={starting}>
-          {starting ? "Starting…" : "Run new backtest"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => startRun("pilot")} disabled={starting}>
+            {starting ? "Starting…" : "Pilot (45 cases)"}
+          </Button>
+          <Button onClick={() => startRun("start")} disabled={starting}>
+            {starting ? "Starting…" : "Run full backtest"}
+          </Button>
+        </div>
       </div>
 
       {loading && !runs.length && <p className="text-muted-foreground">Loading…</p>}
@@ -130,6 +137,19 @@ export default function AdminBacktest() {
               <Stat label="T2 hit" value={pct(latest.t2_hit_rate)} />
               <Stat label="SL hit" value={pct(latest.sl_hit_rate)} />
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-muted-foreground">
+              <div>Started: {new Date(latest.started_at).toLocaleString()}</div>
+              <div>Last progress: {latest.last_progress_at ? new Date(latest.last_progress_at).toLocaleString() : "—"}</div>
+              <div>Next chunk: {latest.next_chunk_index}</div>
+            </div>
+            {latest.error_message && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 text-destructive p-3 text-sm">
+                <strong>Error:</strong> {latest.error_message}
+              </div>
+            )}
+
+
 
             <BreakdownTable title="By horizon" data={latest.breakdown_by_horizon} />
             <BreakdownTable title="By regime" data={latest.breakdown_by_regime} />

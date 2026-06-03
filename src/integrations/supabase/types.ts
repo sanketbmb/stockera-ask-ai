@@ -352,7 +352,9 @@ export type Database = {
           data_error_cases: number
           engine_version: string
           entry_hit_rate: number | null
+          error_message: string | null
           finished_at: string | null
+          last_progress_at: string | null
           next_chunk_index: number
           run_id: string
           sl_hit_rate: number | null
@@ -373,7 +375,9 @@ export type Database = {
           data_error_cases?: number
           engine_version: string
           entry_hit_rate?: number | null
+          error_message?: string | null
           finished_at?: string | null
+          last_progress_at?: string | null
           next_chunk_index?: number
           run_id: string
           sl_hit_rate?: number | null
@@ -394,7 +398,9 @@ export type Database = {
           data_error_cases?: number
           engine_version?: string
           entry_hit_rate?: number | null
+          error_message?: string | null
           finished_at?: string | null
+          last_progress_at?: string | null
           next_chunk_index?: number
           run_id?: string
           sl_hit_rate?: number | null
