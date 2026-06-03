@@ -359,7 +359,7 @@ function ReportContent() {
   if (data.engine_version === "v1_tier_shaped") {
     const symbol = (data.stock_symbol ?? data.stock_name ?? "").toString().toUpperCase();
     const horizonRaw = (data.horizon ?? "medium-term") as string;
-    const horizon: QueryType = (["intraday", "medium-term", "long-term"] as const).includes(horizonRaw as QueryType)
+    const horizon: QueryType = (["intraday", "short-term", "medium-term", "long-term"] as const).includes(horizonRaw as QueryType)
       ? (horizonRaw as QueryType)
       : "medium-term";
     const rawQuestion = (data.custom_question ?? data.query_text ?? "").toString();
