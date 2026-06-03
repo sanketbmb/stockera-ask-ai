@@ -1162,17 +1162,26 @@ export function QueryForm() {
                 <div
                   className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-muted bg-muted/30"}`}
                 >
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                     {resolvedSector
                       ? manualSector
                         ? "Sector selected"
-                        : "Sector auto-detected"
-                      : "Pick a sector below"}
+                        : detectedSector
+                          ? "Sector auto-detected"
+                          : "Sector inferred by AI"
+                      : inferringSector
+                        ? "Inferring sector…"
+                        : "Pick a sector below"}
+                    {inferringSector && !resolvedSector && (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    )}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold">
                     {resolvedSector
                       ? resolvedSector.display
-                      : "We couldn't infer a sector from your question — pick one to continue."}
+                      : inferringSector
+                        ? "Reading your question…"
+                        : "We couldn't infer a sector from your question — pick one to continue."}
                   </p>
                   {detectedSector && !manualSector && (
                     <p
@@ -1181,6 +1190,12 @@ export function QueryForm() {
                     >
                       Matched "{detectedSector.matched_keyword}" · confidence:{" "}
                       {detectedSector.confidence}
+                    </p>
+                  )}
+                  {!detectedSector && !manualSector && inferredSector?.canonical && (
+                    <p className="mt-1 text-[11px] text-muted-foreground italic">
+                      AI inference · {Math.round(inferredSector.confidence * 100)}% confident
+                      {inferredSector.reasoning ? ` · ${inferredSector.reasoning}` : ""}
                     </p>
                   )}
                   {manualSector && (
@@ -1193,6 +1208,7 @@ export function QueryForm() {
                     </button>
                   )}
                 </div>
+
 
                 <div className="space-y-3">
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground">
