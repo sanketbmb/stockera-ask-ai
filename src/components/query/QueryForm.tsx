@@ -152,6 +152,9 @@ export function QueryForm() {
   // Step 2
   const [stockName, setStockName] = useState("");
   const [stockSymbol, setStockSymbol] = useState("");
+  // Track exchange of the selected stock so we can block BSE-only submissions
+  // before the user reaches a downstream pipeline that is NSE-only.
+  const [stockExchange, setStockExchange] = useState<"NSE" | "BSE" | "">("");
   const [buyPrice, setBuyPrice] = useState("");
   const [currentPrice, setCurrentPrice] = useState("");
   const [holding, setHolding] = useState("");
@@ -443,6 +446,19 @@ export function QueryForm() {
           authErr?.message
             ? `Authentication check failed: ${authErr.message}`
             : "Authentication expired. Please sign in again.",
+        );
+        setGenStage("idle");
+        setSubmitting(false);
+        return;
+      }
+
+      // Phase: post-query universe hardening — block BSE-only stock submissions.
+      // The downstream pipeline (finedge/compute-* modules) is NSE-coded; a BSE
+      // selection would silently degrade. Stock-bearing intents only.
+      const isStockIntent = usesV1Engine || (!isSector && !isEducational && !isOther);
+      if (isStockIntent && stockExchange === "BSE") {
+        toast.error(
+          "This stock is currently supported on BSE only. Full analysis coverage is being added — please try another symbol.",
         );
         setGenStage("idle");
         setSubmitting(false);
@@ -872,10 +888,12 @@ export function QueryForm() {
                   onSelect={(s) => {
                     setStockName(s.name);
                     setStockSymbol(s.symbol);
+                    setStockExchange(s.sector === "BSE" ? "BSE" : s.sector === "NSE" ? "NSE" : "");
                   }}
                   onClear={() => {
                     setStockName("");
                     setStockSymbol("");
+                    setStockExchange("");
                   }}
                 />
               </div>

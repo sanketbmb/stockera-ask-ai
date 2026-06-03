@@ -20,13 +20,29 @@ function normalizeSymbol(sym: string): string {
   return sym.trim().toUpperCase().replace(/\.(NS|BO|BSE|NSE)$/i, "");
 }
 
+/**
+ * Drop bond/debenture/commercial-paper rows that pollute stock_master.
+ * Dhan tags them with SEM_INSTRUMENT_NAME='EQUITY' so we cannot filter on `type`;
+ * filter on company_name shape and symbol shape instead.
+ */
+const BOND_NAME_RE =
+  /(-PVT$|-PVT-|-CP$|-CP\b|\bRESET\b|\bTBILL|\bSPREAD\b|\bMTBILL|[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}|[0-9]+(?:\.[0-9]+)?%)/i;
+const EQUITY_SYMBOL_RE = /^[A-Z][A-Z0-9&-]{0,15}$/;
+
+function isLikelyEquity(symbol: string, name: string | null): boolean {
+  if (!EQUITY_SYMBOL_RE.test(symbol)) return false;
+  if (name && BOND_NAME_RE.test(name)) return false;
+  return true;
+}
+
+type RawRow = { symbol: string; company_name: string | null; exchange: string };
+
 /** Prefer NSE row when same symbol exists on both exchanges. */
-function dedupePreferNSE(
-  rows: Array<{ symbol: string; company_name: string | null; exchange: string }>,
-): NseStock[] {
+function dedupePreferNSE(rows: RawRow[]): NseStock[] {
   const byKey = new Map<string, { symbol: string; name: string; sector: string; exchange: string }>();
   for (const r of rows) {
     const symbol = normalizeSymbol(r.symbol);
+    if (!isLikelyEquity(symbol, r.company_name)) continue;
     const existing = byKey.get(symbol);
     const candidate = {
       symbol,
@@ -54,6 +70,9 @@ function rankResults(results: NseStock[], q: string): NseStock[] {
       const aPre = a.symbol.startsWith(query) ? 0 : 1;
       const bPre = b.symbol.startsWith(query) ? 0 : 1;
       if (aPre !== bPre) return aPre - bPre;
+      const aNse = a.sector === "NSE" ? 0 : 1;
+      const bNse = b.sector === "NSE" ? 0 : 1;
+      if (aNse !== bNse) return aNse - bNse;
       return a.symbol.localeCompare(b.symbol);
     })
     .slice(0, MAX_RESULTS);
@@ -74,12 +93,13 @@ async function searchStockMaster(q: string): Promise<NseStock[]> {
   const upper = query.toUpperCase();
   const like = `%${query}%`;
 
-  // Fetch enough rows to dedupe NSE/BSE duplicates before slicing.
+  // Wider pool so the equity filter + NSE-preference dedupe still surface real
+  // matches when bond rows dominate the raw result set.
   const { data, error } = await supabase
     .from("stock_master")
     .select("symbol, company_name, exchange")
     .or(`symbol.ilike.${upper}%,symbol.ilike.${like},company_name.ilike.${like}`)
-    .limit(40);
+    .limit(120);
 
   if (error) throw error;
   const deduped = dedupePreferNSE(data ?? []);

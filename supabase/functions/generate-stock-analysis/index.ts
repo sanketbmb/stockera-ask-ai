@@ -120,10 +120,15 @@ async function callModule(
 interface StockMaster { symbol: string; company_name: string | null; exchange: string; segment: string }
 async function resolveStock(rawSymbol: string): Promise<StockMaster | null> {
   const sym = rawSymbol.trim().toUpperCase().replace(/\.NS$|\.BO$/i, "");
-  const rows = await sbSelect<StockMaster[]>(
-    `stock_master?symbol=eq.${encodeURIComponent(sym)}&select=symbol,company_name,exchange,segment&limit=1`
+  // Prefer NSE when both exchanges have the symbol. Fall back to BSE if NSE is absent.
+  const nseRows = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=eq.${encodeURIComponent(sym)}&exchange=eq.NSE&select=symbol,company_name,exchange,segment&limit=1`,
   );
-  if (Array.isArray(rows) && rows.length > 0) return rows[0];
+  if (Array.isArray(nseRows) && nseRows.length > 0) return nseRows[0];
+  const anyRows = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=eq.${encodeURIComponent(sym)}&select=symbol,company_name,exchange,segment&limit=1`,
+  );
+  if (Array.isArray(anyRows) && anyRows.length > 0) return anyRows[0];
   return null;
 }
 async function fetchSectorIndustry(symbol: string, auth: string | null): Promise<{ sector: string | null; industry: string | null }> {
