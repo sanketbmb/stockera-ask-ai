@@ -169,6 +169,7 @@ export function QueryForm() {
 
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
+  const [manualSector, setManualSector] = useState<string | null>(null);
 
   // Phase 3A — apply a router classification to the form state.
   function applyRouterResult(r: RouterOutput) {
