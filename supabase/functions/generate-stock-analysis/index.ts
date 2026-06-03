@@ -33,7 +33,7 @@ import {
 } from "../_shared/action-buckets.ts";
 import { findBaseline } from "../_shared/regression-baseline.ts";
 
-type QueryType = "intraday" | "medium-term" | "long-term";
+type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 type Action = BucketAction;
 
 interface ModuleTrace {
@@ -379,6 +379,7 @@ function normalizeSentiment(d: Record<string, unknown> | null) {
 // Helpers below preserve the legacy call sites without changing values.
 const WEIGHT_PRESETS: Record<QueryType, PillarWeights> = {
   "intraday":    WEIGHTING_PROFILES.intraday_v1.weights,
+  "short-term":  WEIGHTING_PROFILES.short_v1.weights,
   "medium-term": WEIGHTING_PROFILES.medium_v1.weights,
   "long-term":   WEIGHTING_PROFILES.long_v1.weights,
 };
@@ -399,7 +400,10 @@ function riskLabel(s: number | null): string {
   return "VERY_HIGH";
 }
 function timeHorizonLabel(q: QueryType): string {
-  return q === "intraday" ? "1–5 days" : q === "long-term" ? "12+ months" : "1–6 months";
+  if (q === "intraday") return "1–5 days";
+  if (q === "short-term") return "2–12 weeks";
+  if (q === "long-term") return "12+ months";
+  return "1–6 months";
 }
 
 function computeVerdict(
@@ -584,6 +588,7 @@ function computeConfidence(
 
 const TIER_REASON_PREFIX: Record<QueryType, string> = {
   "intraday":    "Short-term setup driven by technical and momentum conditions",
+  "short-term":  "Short-term swing view led by technicals and momentum, with fundamentals as a sanity rail",
   "medium-term": "Balanced swing view using technical, fundamental, risk and momentum factors",
   "long-term":   "Long-horizon view prioritizing business quality, valuation support and risk profile",
 };
@@ -593,6 +598,8 @@ function summaryReason(scores: Record<string, number | null>, queryType: QueryTy
   const order: Array<[string, string]> =
     queryType === "intraday"
       ? [["technical","Technicals"],["momentum","Momentum"],["risk","Risk"],["sentiment","Sentiment"]]
+      : queryType === "short-term"
+      ? [["technical","Technicals"],["momentum","Momentum"],["risk","Risk"],["fundamental","Fundamentals"],["sentiment","Sentiment"]]
       : queryType === "long-term"
       ? [["fundamental","Fundamentals"],["risk","Risk"],["technical","Technicals"],["momentum","Momentum"],["sentiment","Sentiment"]]
       : [["technical","Technicals"],["fundamental","Fundamentals"],["risk","Risk"],["momentum","Momentum"],["sentiment","Sentiment"]];
@@ -621,7 +628,10 @@ Deno.serve(async (req) => {
     if (!rawSymbol) return json({ success: false, error: "SYMBOL_REQUIRED" }, 400);
 
     const qtRaw = (body.query_type ?? "medium-term").toLowerCase();
-    const queryType: QueryType = (qtRaw === "intraday" || qtRaw === "long-term") ? qtRaw : "medium-term";
+    const queryType: QueryType =
+      (qtRaw === "intraday" || qtRaw === "short-term" || qtRaw === "long-term" || qtRaw === "medium-term")
+        ? (qtRaw as QueryType)
+        : "medium-term";
     const language = body.language ?? "en";
     const includeNews = body.include_news !== false;
     const auth = req.headers.get("authorization");
