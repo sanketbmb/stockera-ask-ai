@@ -22,13 +22,31 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const FORMULA_VERSION = "trade-plan-1.1";
+const ENGINE_VERSION = "trade_plan_v2_zone_entry";
 const MODULE_TIMEOUT_MS = 20_000;
-const LT_T1_FLOOR_PCT = 0.05;   // T1 must be ≥ spot × 1.05
-const LT_TARGET_CAP_PCT = 0.60; // T1/T2 capped at spot × 1.60
-const LT_LIQUIDITY_MIN_CR = 5;  // avg daily turnover ≥ ₹5cr
-const LT_VOL_MAX_PCT = 60;      // annualized vol ≤ 60%
+const LT_T1_FLOOR_PCT = 0.05;
+const LT_TARGET_CAP_PCT = 0.60;
+const LT_LIQUIDITY_MIN_CR = 5;
+const LT_VOL_MAX_PCT = 60;
 
-type QueryType = "intraday" | "medium-term" | "long-term";
+type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
+
+// Phase 4B — horizon-aware Entry Strategy
+type EntryMode = "single" | "zone";
+type EntryAnchor =
+  | "LTP" | "DMA20" | "DMA50" | "DMA200"
+  | "S1" | "S1_DMA50_BLEND" | "DMA200_52WL_BLEND";
+
+interface EntryStrategy {
+  mode: EntryMode;
+  entry_zone_lower: number | null;
+  entry_zone_upper: number | null;
+  entry_anchor: EntryAnchor;
+  preferred_entry: number;
+  reasoning_code: string;
+  reasoning_text: string;
+  staggered_plan?: Array<{ pct: number; price: number; note: string }>;
+}
 
 interface Candle { date: string; open: number; high: number; low: number; close: number; volume: number }
 
@@ -151,7 +169,7 @@ async function callJSON(fn: string, body: Record<string, unknown>): Promise<Reco
 }
 
 // ─── Validation engine ───
-function validate(levels: Levels, spot: number, atrV: number, queryType: QueryType, dcfDegenerate: boolean): {
+function validate(levels: Levels, spot: number, refPrice: number, atrV: number, queryType: QueryType, dcfDegenerate: boolean): {
   cleaned: Levels; omissions: Omission[];
 } {
   const out: Levels = { ...levels };
@@ -160,33 +178,31 @@ function validate(levels: Levels, spot: number, atrV: number, queryType: QueryTy
     if (out[k] != null) { out[k] = null; om.push({ level: k, reason }); }
   };
 
-  // Rule 8 (NaN/undefined guard)
   (Object.keys(out) as Array<keyof Levels>).forEach((k) => {
     const v = out[k];
     if (v != null && !Number.isFinite(v)) drop(k, "compute_error: non-finite value");
   });
 
-  // Rule 9: SL must be strictly below spot for LONG positions (all tiers — Stockera has no short recs).
-  // Catches the entire category of "SL above entry" bugs in any tier.
-  if (out.stop_loss != null && out.stop_loss >= spot) {
-    drop("stop_loss", "sl_above_spot_invalid_for_long_position");
+  // Rule 9: SL must be strictly below ref price (preferred_entry, or spot for intraday).
+  if (out.stop_loss != null && out.stop_loss >= refPrice) {
+    drop("stop_loss", "sl_above_ref_invalid_for_long_position");
   }
 
-  // Rule 1: SL distance ≥ 0.5×ATR
-  if (out.stop_loss != null && Number.isFinite(atrV) && Math.abs(spot - out.stop_loss) < 0.5 * atrV) {
+  // Rule 1: SL distance ≥ 0.5×ATR from reference price
+  if (out.stop_loss != null && Number.isFinite(atrV) && Math.abs(refPrice - out.stop_loss) < 0.5 * atrV) {
     drop("stop_loss", "sl_too_tight: distance < 0.5×ATR (noise risk)");
   }
 
-  // Rules 2 & 3: R:R thresholds (require valid SL)
-  const slDist = out.stop_loss != null ? Math.abs(spot - out.stop_loss) : null;
+  // Rules 2 & 3: R:R thresholds — measured from reference price (preferred_entry).
+  const slDist = out.stop_loss != null ? Math.abs(refPrice - out.stop_loss) : null;
   if (out.target_1 != null && slDist != null) {
-    const rr = (out.target_1 - spot) / slDist;
+    const rr = (out.target_1 - refPrice) / slDist;
     if (!(rr >= 1.5)) drop("target_1", `t1_rr_below_1.5 (actual ${rr.toFixed(2)})`);
   } else if (out.target_1 != null && slDist == null) {
     drop("target_1", "t1_omitted: sl invalid, cannot validate R:R");
   }
   if (out.target_2 != null && slDist != null) {
-    const rr = (out.target_2 - spot) / slDist;
+    const rr = (out.target_2 - refPrice) / slDist;
     if (!(rr >= 2.0)) drop("target_2", `t2_rr_below_2.0 (actual ${rr.toFixed(2)})`);
   } else if (out.target_2 != null && slDist == null) {
     drop("target_2", "t2_omitted: sl invalid, cannot validate R:R");
@@ -492,6 +508,197 @@ async function fetchSectorAggregate(sectorRaw: string | null): Promise<{
   return null;
 }
 
+// ─── Phase 4B · Horizon-aware Entry Strategy ───
+interface EntryStrategyInputs {
+  spot: number;
+  dma20: number;   // may be NaN
+  dma50: number;   // may be NaN
+  dma200: number;  // may be NaN
+  w52H: number;
+  w52L: number;
+  atrV: number;
+  s1: number | null;
+  s2: number | null;
+  closes: number[];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const mid = (a: number, b: number) => round2((a + b) / 2);
+
+function buildEntryStrategy(tier: QueryType, x: EntryStrategyInputs): {
+  strategy: EntryStrategy;
+  sl_override: number | null;
+  sl_method_override: string | null;
+} {
+  const { spot, dma20, dma50, dma200, w52H: _w52H, w52L, atrV, s1, s2, closes } = x;
+  void _w52H;
+
+  // ── A) INTRADAY — unchanged ──
+  if (tier === "intraday") {
+    return {
+      strategy: {
+        mode: "single",
+        entry_zone_lower: null,
+        entry_zone_upper: null,
+        entry_anchor: "LTP",
+        preferred_entry: round2(spot),
+        reasoning_code: "INTRADAY_LTP",
+        reasoning_text: `Intraday entry at LTP ₹${round2(spot)}.`,
+      },
+      sl_override: null,
+      sl_method_override: null,
+    };
+  }
+
+  // ── B) SHORT-TERM ──
+  if (tier === "short-term") {
+    const last20 = closes.slice(-21, -1);
+    const last20High = last20.length ? Math.max(...last20) : NaN;
+    const breakout = Number.isFinite(dma20) && spot > dma20 && Number.isFinite(last20High) && spot >= last20High * 0.995;
+    if (breakout) {
+      return {
+        strategy: {
+          mode: "single",
+          entry_zone_lower: null, entry_zone_upper: null,
+          entry_anchor: "LTP",
+          preferred_entry: round2(spot),
+          reasoning_code: "SHORT_BREAKOUT_LTP",
+          reasoning_text: `Short-term breakout above 20-DMA — enter at LTP ₹${round2(spot)}.`,
+        },
+        sl_override: null, sl_method_override: null,
+      };
+    }
+    if (s1 != null && s1 < spot && (spot - s1) / spot <= 0.06) {
+      const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, spot * 0.985) : spot * 0.985;
+      const lower = round2(s1);
+      const upper = round2(Math.max(upperRaw, lower + 0.01));
+      const pref = mid(lower, upper);
+      return {
+        strategy: {
+          mode: "zone",
+          entry_zone_lower: lower, entry_zone_upper: upper,
+          entry_anchor: "S1",
+          preferred_entry: pref,
+          reasoning_code: "SHORT_PULLBACK_S1_DMA20",
+          reasoning_text: `Accumulate on pullback between ₹${lower} and ₹${upper}, ideally near ₹${pref}.`,
+        },
+        sl_override: round2(lower - 1.0 * atrV),
+        sl_method_override: "short_zone_atr1",
+      };
+    }
+    return {
+      strategy: {
+        mode: "single",
+        entry_zone_lower: null, entry_zone_upper: null,
+        entry_anchor: "LTP",
+        preferred_entry: round2(spot),
+        reasoning_code: "SHORT_NO_PULLBACK_AVAILABLE",
+        reasoning_text: `No clean pullback zone — enter at LTP ₹${round2(spot)} with tight risk.`,
+      },
+      sl_override: null, sl_method_override: null,
+    };
+  }
+
+  // ── C) MEDIUM-TERM ──
+  if (tier === "medium-term") {
+    let lower: number, upper: number, code: string, text: string;
+    const s1Eff = s1 ?? (Number.isFinite(dma50) ? dma50 : spot * 0.95);
+
+    if (Number.isFinite(dma50) && s1 != null && spot >= s1 && spot <= dma50) {
+      lower = Math.max(s1, dma50 * 0.97);
+      upper = Math.min(spot, Number.isFinite(dma20) ? dma20 : spot);
+      code = "MEDIUM_IN_ACCUMULATION_ZONE";
+      text = `Already in accumulation zone — accumulate between ₹{LO} and ₹{HI}.`;
+    } else if (Number.isFinite(dma50) && spot > dma50) {
+      lower = Math.max(s1Eff, dma50);
+      const upperRaw = Number.isFinite(dma20) ? Math.min(dma20, (dma50 + spot) / 2) : (dma50 + spot) / 2;
+      upper = upperRaw;
+      code = "MEDIUM_WAIT_FOR_PULLBACK_TO_DMA50";
+      text = `Extended above 50-DMA — wait for pullback into ₹{LO}–₹{HI}.`;
+    } else {
+      lower = Math.max(s2 ?? (Number.isFinite(dma200) ? dma200 : spot * 0.85), Number.isFinite(dma200) ? dma200 : -Infinity);
+      upper = Math.min(spot, s1Eff);
+      code = "MEDIUM_CORRECTION_ACCUMULATE_TO_S2";
+      text = `In correction — accumulate down to S2 between ₹{LO} and ₹{HI}.`;
+    }
+    if (!(lower < upper)) { const t = lower; lower = Math.min(t, upper) - 0.01; upper = Math.max(t, upper); }
+    const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
+    const slCandidate = lo - 0.75 * atrV;
+    const sl = s2 != null ? Math.min(slCandidate, s2) : slCandidate;
+    const anchor: EntryAnchor =
+      code === "MEDIUM_CORRECTION_ACCUMULATE_TO_S2" ? "S1" : "S1_DMA50_BLEND";
+
+    return {
+      strategy: {
+        mode: "zone",
+        entry_zone_lower: lo, entry_zone_upper: up,
+        entry_anchor: anchor,
+        preferred_entry: pref,
+        reasoning_code: code,
+        reasoning_text: text.replace("{LO}", String(lo)).replace("{HI}", String(up)) + ` Ideal near ₹${pref}.`,
+      },
+      sl_override: round2(sl),
+      sl_method_override: "medium_zone_atr075_s2",
+    };
+  }
+
+  // ── D) LONG-TERM ──
+  // tier === "long-term"
+  const dma = Number.isFinite(dma200) ? dma200 : spot;
+  const w52Lv = Number.isFinite(w52L) ? w52L : spot * 0.7;
+  let lower: number, upper: number, code: string, anchor: EntryAnchor, text: string;
+  if (Math.abs(spot - dma) / dma <= 0.05) {
+    lower = Math.max(dma * 0.97, w52Lv * 1.05);
+    upper = Math.min(spot, dma * 1.05);
+    code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Near 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  } else if (spot > dma * 1.10) {
+    lower = dma; upper = dma * 1.10;
+    code = "LONG_WAIT_FOR_DMA200_REVERSION"; anchor = "DMA200";
+    text = `Extended ≥10% above 200-DMA — wait for reversion into ₹{LO}–₹{HI}.`;
+  } else if (spot < dma * 0.95) {
+    lower = Math.max(w52Lv, dma * 0.85);
+    upper = Math.min(spot, dma * 0.95);
+    code = "LONG_DEEP_VALUE_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Deep value below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  } else {
+    // 0.95×dma .. spot range (between -5% and -0% of DMA200)
+    lower = Math.max(dma * 0.95, w52Lv * 1.05);
+    upper = Math.min(spot, dma);
+    code = "LONG_DMA200_ACCUMULATION"; anchor = "DMA200_52WL_BLEND";
+    text = `Just below 200-DMA — accumulate between ₹{LO} and ₹{HI}.`;
+  }
+  if (!(lower < upper)) { const tmp = Math.min(lower, upper); upper = Math.max(lower, upper); lower = tmp - 0.01; }
+  const lo = round2(lower); const up = round2(upper); const pref = mid(lo, up);
+  // Cap SL strictly below preferred_entry so deep-value names (entry well below
+  // DMA200) still get a usable SL instead of being dropped by Rule 9.
+  const slRaw = Math.max(w52Lv * 0.95, dma * 0.85);
+  const slCap = pref * 0.92;
+  const sl = Math.min(slRaw, slCap);
+  const slMethod = (slRaw > slCap)
+    ? "long_zone_capped_below_entry"
+    : ((w52Lv * 0.95 > dma * 0.85) ? "long_zone_52wl_anchor" : "long_zone_dma200_floor");
+  const staggered = [
+    { pct: 30, price: up, note: "First tranche near current level" },
+    { pct: 40, price: pref, note: "Second tranche on pullback" },
+    { pct: 30, price: lo, note: "Final tranche on deeper correction" },
+  ];
+  return {
+    strategy: {
+      mode: "zone",
+      entry_zone_lower: lo, entry_zone_upper: up,
+      entry_anchor: anchor,
+      preferred_entry: pref,
+      reasoning_code: code,
+      reasoning_text: text.replace("{LO}", String(lo)).replace("{HI}", String(up)) + ` Stagger entry; ideal near ₹${pref}.`,
+      staggered_plan: staggered,
+    },
+    sl_override: round2(sl),
+    sl_method_override: slMethod,
+  };
+}
+
+
 // ─── Main ───
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -504,7 +711,10 @@ Deno.serve(async (req) => {
     if (!symbol) return json({ success: false, error: "SYMBOL_REQUIRED" }, 400);
 
     const qtRaw = (body.query_type ?? "medium-term").toLowerCase();
-    const queryType: QueryType = (qtRaw === "intraday" || qtRaw === "long-term") ? qtRaw : "medium-term";
+    const queryType: QueryType =
+      (qtRaw === "intraday" || qtRaw === "short-term" || qtRaw === "long-term")
+        ? qtRaw
+        : "medium-term";
 
     // ── 1. Candles ──
     let candles: Candle[];
@@ -518,6 +728,8 @@ Deno.serve(async (req) => {
     const spot = closes[closes.length - 1];
     const prevDay = candles.length >= 2 ? candles[candles.length - 2] : null;
     const atrV = atr(highs, lows, closes, 14);
+    const dma20 = sma(closes, 20);
+    const dma50 = sma(closes, 50);
     const dma200 = sma(closes, 200);
     const w52 = closes.slice(-252);
     const w52H = w52.length ? Math.max(...w52) : NaN;
@@ -655,7 +867,7 @@ Deno.serve(async (req) => {
 
 
 
-    // ── 3. Per-tier raw plan ──
+    // ── 3. Per-tier raw plan (base levels: T1/T2/S/R) ──
     let raw: Levels;
     let ltSlMethod: SlMethod | null = null;
     if (queryType === "intraday") {
@@ -669,14 +881,31 @@ Deno.serve(async (req) => {
         tm.sl_method = ltSlMethod;
       }
     } else {
+      // medium-term and short-term share the swing-based T1/T2/S/R baseline;
+      // entry & SL are then overridden by the horizon-aware EntryStrategy below.
       raw = mediumPlan(spot, atrV, swingHighs, swingLows);
     }
 
-    // ── 4. Validate ──
-    const { cleaned, omissions } = validate(raw, spot, atrV, queryType, dcfDegenerate);
+    // ── 3b. Build EntryStrategy and override entry / SL accordingly ──
+    const esInputs: EntryStrategyInputs = {
+      spot,
+      dma20, dma50, dma200,
+      w52H, w52L, atrV,
+      s1: raw.support_1,
+      s2: raw.support_2,
+      closes,
+    };
+    const { strategy, sl_override, sl_method_override } = buildEntryStrategy(queryType, esInputs);
+    raw.entry_zone = strategy.preferred_entry;
+    if (strategy.mode === "zone" && sl_override != null) {
+      raw.stop_loss = sl_override;
+    }
 
-    // For long-term: if R:R validation drops a target that the resolver computed,
-    // surface the reason in targets_meta too so the UI can explain it.
+    // ── 4. Validate (RR & SL distance measured from preferred_entry; spot used for S/R) ──
+    const refPrice = strategy.preferred_entry;
+    const t1WasPresentPreValidate = raw.target_1 != null;
+    const { cleaned, omissions } = validate(raw, spot, refPrice, atrV, queryType, dcfDegenerate);
+
     if (queryType === "long-term" && targetsMeta) {
       const t1Dropped = omissions.find((o) => o.level === "target_1");
       const t2Dropped = omissions.find((o) => o.level === "target_2");
@@ -688,10 +917,13 @@ Deno.serve(async (req) => {
         (targetsMeta.t2 as Record<string, unknown>).reason = `dropped_by_validation: ${t2Dropped.reason}`;
         (targetsMeta.t2 as Record<string, unknown>).value = null;
       }
+      // Phase 4B: surface entry_anchor in targets_meta
+      (targetsMeta as Record<string, unknown>).entry_anchor = strategy.entry_anchor;
+      if (sl_method_override) (targetsMeta as Record<string, unknown>).sl_method = sl_method_override;
     }
 
     // ── 5. Round ──
-    const levels: Levels = {
+    const levels: Levels & { entry_strategy: EntryStrategy } = {
       entry_zone:   r2(cleaned.entry_zone),
       stop_loss:    r2(cleaned.stop_loss),
       target_1:     r2(cleaned.target_1),
@@ -700,21 +932,26 @@ Deno.serve(async (req) => {
       support_2:    r2(cleaned.support_2),
       resistance_1: r2(cleaned.resistance_1),
       resistance_2: r2(cleaned.resistance_2),
+      entry_strategy: strategy,
     };
 
     return json({
       success: true,
       symbol,
       tier: queryType,
+      engine_version: ENGINE_VERSION,
       spot: r2(spot),
       atr_14: r2(atrV),
       vol_1y: vol1y,
       levels,
+      entry_strategy: strategy,
       validation: omissions,
       targets_meta: targetsMeta,
       inputs_summary: {
         bars: candles.length,
         prev_day: prevDay?.date ?? null,
+        dma_20: r2(dma20),
+        dma_50: r2(dma50),
         dma_200: r2(dma200),
         w52_high: r2(w52H),
         w52_low: r2(w52L),
@@ -724,6 +961,7 @@ Deno.serve(async (req) => {
         dcf_degenerate: dcfDegenerate,
         momentum_positive: momentumPositive,
         avg_daily_turnover_cr: avgTurnoverCr,
+        t1_present_pre_validate: t1WasPresentPreValidate,
       },
       formula_version: FORMULA_VERSION,
       computed_at: new Date().toISOString(),

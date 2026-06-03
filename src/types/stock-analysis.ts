@@ -41,6 +41,19 @@ export interface PriceContext {
   as_of: string;
 }
 
+export interface EntryStrategy {
+  mode: "single" | "zone";
+  entry_zone_lower: number | null;
+  entry_zone_upper: number | null;
+  entry_anchor:
+    | "LTP" | "DMA20" | "DMA50" | "DMA200"
+    | "S1" | "S1_DMA50_BLEND" | "DMA200_52WL_BLEND";
+  preferred_entry: number;
+  reasoning_code: string;
+  reasoning_text: string;
+  staggered_plan?: Array<{ pct: number; price: number; note: string }>;
+}
+
 export interface TradeLevels {
   entry_zone: number | null;
   stop_loss: number | null;
@@ -50,6 +63,7 @@ export interface TradeLevels {
   support_2: number | null;
   resistance_1: number | null;
   resistance_2: number | null;
+  entry_strategy?: EntryStrategy | null;
 }
 
 export interface ReturnsSnapshot {
