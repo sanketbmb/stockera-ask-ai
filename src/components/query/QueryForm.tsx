@@ -160,7 +160,7 @@ export function QueryForm() {
     }
 
     // Prefill — never invent values. Only set fields the router actually returned.
-    const detected: { stock?: string; buyPrice?: number; holding?: string } = {};
+    const detected: { stock?: string; buyPrice?: number; qty?: number; horizon?: string; holding?: string } = {};
     if (r.symbol && !stockName) {
       setStockName(r.symbol);
       setStockSymbol(r.symbol);
