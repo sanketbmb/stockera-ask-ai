@@ -656,13 +656,12 @@ Deno.serve(async (req) => {
         ? callModule("compute-sentiment", { symbol: sym }, auth)
         : Promise.resolve({ trace: skipTrace("compute-sentiment", "SKIPPED_BY_REQUEST"), data: null }),
       TRADE_PLAN_SOURCE === "new"
-        // Phase 4A: short-term temporarily reuses the medium-term entry/exit logic
-        // inside compute-trade-plan. A short-term-specific entry zone engine is
-        // coming in Phase 4B; until then we pass "medium-term" for short-term so
-        // the existing medium-term branch is exercised deterministically.
+        // Phase 4B: short-term now flows through compute-trade-plan as a
+        // first-class tier (own EntryStrategy branch). No more medium-term
+        // workaround.
         ? callModule(
             "compute-trade-plan",
-            { symbol: sym, query_type: queryType === "short-term" ? "medium-term" : queryType },
+            { symbol: sym, query_type: queryType },
             auth,
           )
         : Promise.resolve({ trace: skipTrace("compute-trade-plan", "SKIPPED_FLAG_LEGACY"), data: null }),
