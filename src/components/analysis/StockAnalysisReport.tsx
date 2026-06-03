@@ -1295,6 +1295,101 @@ function LevelCell({ label, value, tone, reason, methodTip, footer }: { label: s
   );
 }
 
+// Phase 4C — entry-zone-aware card. Replaces the single Entry LevelCell.
+// • Zone mode: "Accumulate ₹A – ₹B, ideally near ₹P" + anchor chip + tooltip.
+// • Single mode (intraday/breakout): "Enter near ₹P".
+// • Tight-zone cosmetic guard mirrors the PriceBand: < 0.5% width collapses
+//   visually to a single line with a "tight zone" subtext.
+const ENTRY_ANCHOR_LABEL: Record<string, string> = {
+  LTP: "Last traded price",
+  DMA20: "20-day moving avg",
+  DMA50: "50-day moving avg",
+  DMA200: "200-day moving avg",
+  S1: "Support 1",
+  S1_DMA50_BLEND: "S1 + DMA50 blend",
+  DMA200_52WL_BLEND: "DMA200 + 52W low blend",
+};
+
+function EntryZoneCell({ levels, reason }: { levels: StockAnalysisPayload["levels"]; reason?: string }) {
+  const es = levels.entry_strategy ?? null;
+  const value = levels.entry_zone;
+
+  if (value == null) {
+    return <LevelCell label="Entry" value={null} tone="text-primary" reason={reason} />;
+  }
+
+  const isZone = es?.mode === "zone" && es.entry_zone_lower != null && es.entry_zone_upper != null && es.preferred_entry > 0;
+  const widthPct = isZone ? (es!.entry_zone_upper! - es!.entry_zone_lower!) / es!.preferred_entry : 0;
+  const tight = isZone && widthPct < 0.005;
+  const anchorLabel = es?.entry_anchor ? (ENTRY_ANCHOR_LABEL[es.entry_anchor] ?? es.entry_anchor) : null;
+
+  return (
+    <motion.div
+      variants={innerStaggerItem}
+      whileHover={{ y: -1 }}
+      transition={{ duration: duration.fast, ease: ease.standard }}
+      className="col-span-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 transition-colors hover:border-primary/50 md:col-span-2"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Entry</p>
+        {anchorLabel && (
+          <span className="rounded-full border border-primary/30 bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+            {anchorLabel}
+          </span>
+        )}
+      </div>
+      {isZone && !tight ? (
+        <p className="mt-0.5 font-display text-base leading-tight text-primary">
+          Accumulate <span className="tabular-nums">{fmtPrice(es!.entry_zone_lower)}</span>{" – "}
+          <span className="tabular-nums">{fmtPrice(es!.entry_zone_upper)}</span>
+          <span className="block text-xs font-normal text-muted-foreground">
+            Ideally near <span className="tabular-nums text-foreground/80">{fmtPrice(es!.preferred_entry)}</span>
+          </span>
+        </p>
+      ) : isZone && tight ? (
+        <>
+          <p className="mt-0.5 font-display text-lg tabular-nums text-primary">{fmtPrice(es!.preferred_entry)}</p>
+          <p className="text-[10px] italic text-muted-foreground">Tight zone — single reference price</p>
+        </>
+      ) : (
+        <p className="mt-0.5 font-display text-lg tabular-nums text-primary">Enter near {fmtPrice(value)}</p>
+      )}
+      {es?.reasoning_text && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground decoration-dotted underline-offset-2 hover:underline">
+              Why this entry? <Info className="h-3 w-3 opacity-60" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-xs leading-snug">
+            {es.reasoning_text}
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </motion.div>
+  );
+}
+
+function StaggeredPlanCard({ plan }: { plan: NonNullable<NonNullable<StockAnalysisPayload["levels"]["entry_strategy"]>["staggered_plan"]> }) {
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-background/60 px-4 py-3">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Phased buying plan</p>
+      <p className="mt-0.5 text-xs text-foreground/75">For long-term accumulation, spread your entry across three tranches:</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {plan.map((p, i) => (
+          <div key={i} className="rounded-md border border-border/60 bg-card px-3 py-2">
+            <p className="font-display text-base text-primary">{p.pct}%</p>
+            <p className="text-xs tabular-nums text-foreground/80">@ {fmtPrice(p.price)}</p>
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{p.note}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
 
 function ActionPanel({ action, mode, tier, levels }: {
   action: VerdictAction; mode: "holding" | "fresh" | "exploring"; tier: QueryType; levels: StockAnalysisPayload["levels"];
