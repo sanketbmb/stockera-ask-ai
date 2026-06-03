@@ -138,6 +138,19 @@ export default function AdminBacktest() {
               <Stat label="SL hit" value={pct(latest.sl_hit_rate)} />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-muted-foreground">
+              <div>Started: {new Date(latest.started_at).toLocaleString()}</div>
+              <div>Last progress: {latest.last_progress_at ? new Date(latest.last_progress_at).toLocaleString() : "—"}</div>
+              <div>Next chunk: {latest.next_chunk_index}</div>
+            </div>
+            {latest.error_message && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 text-destructive p-3 text-sm">
+                <strong>Error:</strong> {latest.error_message}
+              </div>
+            )}
+
+
+
             <BreakdownTable title="By horizon" data={latest.breakdown_by_horizon} />
             <BreakdownTable title="By regime" data={latest.breakdown_by_regime} />
             <BreakdownTable title="By reasoning code" data={latest.breakdown_by_reasoning_code} compact />
