@@ -390,6 +390,19 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
 
+  // Phase 4C — zone-mode rendering. Render a translucent band between
+  // entry_zone_lower/upper when the engine emits mode="zone" AND the band is
+  // visually meaningful (≥0.5% wide vs preferred_entry). Otherwise the Entry
+  // single dot stays exactly as before.
+  const es = levels.entry_strategy ?? null;
+  const zoneLo = es?.mode === "zone" ? es.entry_zone_lower : null;
+  const zoneUp = es?.mode === "zone" ? es.entry_zone_upper : null;
+  const zonePref = es?.mode === "zone" ? es.preferred_entry : null;
+  const zoneWidePct = (zoneLo != null && zoneUp != null && zonePref != null && zonePref > 0)
+    ? (zoneUp - zoneLo) / zonePref
+    : 0;
+  const showZoneBand = es?.mode === "zone" && zoneLo != null && zoneUp != null && zonePref != null && zoneWidePct >= 0.005;
+
   const priorityIndex: Record<string, number> = {
     Entry: 0, LTP: 0.5, SL: 1, T1: 2, T2: 3, S1: 4, S2: 5, R1: 6, R2: 7,
   };
@@ -401,11 +414,13 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
+  // When the zone band is shown, drop the single Entry dot (the band + a small
+  // preferred-entry marker take its place). Otherwise keep Entry as today.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
     { v: levels.stop_loss,    label: "SL" },
-    { v: levels.entry_zone,   label: "Entry" },
+    ...(showZoneBand ? [] : [{ v: levels.entry_zone, label: "Entry" }]),
     { v: current,             label: "LTP" },
     { v: levels.resistance_1, label: "R1" },
     { v: levels.target_1,     label: "T1" },
