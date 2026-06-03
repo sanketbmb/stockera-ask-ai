@@ -10,7 +10,13 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,7 +41,16 @@ import {
 } from "@/lib/intent-router-schema";
 import { resolveSector } from "@/lib/sector-alias-map";
 import { resolveConcept } from "@/lib/concept-alias-map";
-import { ArrowLeft, ArrowRight, ChevronRight, Info, Loader2, Sparkles, Wallet, CheckCircle2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  Info,
+  Loader2,
+  Sparkles,
+  Wallet,
+  CheckCircle2,
+} from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
 
@@ -49,13 +64,24 @@ const QUESTION_EXAMPLES: { text: string; intent: Intent }[] = [
   { text: "Fresh entry in Reliance for long term — good levels?", intent: "buy_decision" },
   // Sell or Hold
   { text: "I bought HDFC Bank at 1850 last year, should I sell now?", intent: "stuck_position" },
-  { text: "Currently holding Reliance, should I exit at current levels?", intent: "stuck_position" },
+  {
+    text: "Currently holding Reliance, should I exit at current levels?",
+    intent: "stuck_position",
+  },
   // Should I Average
   { text: "I'm at a loss in Suzlon, should I average down?", intent: "should_average" },
   { text: "My position in Dixon is down — is averaging justified here?", intent: "should_average" },
 ];
 
-const ALL_QUERY_TYPES: { id: Intent; label: string; emoji: string; phase3?: boolean; sectorOnly?: boolean; educationalOnly?: boolean; routerOnly?: boolean }[] = [
+const ALL_QUERY_TYPES: {
+  id: Intent;
+  label: string;
+  emoji: string;
+  phase3?: boolean;
+  sectorOnly?: boolean;
+  educationalOnly?: boolean;
+  routerOnly?: boolean;
+}[] = [
   { id: "stuck_position", emoji: "🤔", label: "Sell or Hold" },
   { id: "should_average", emoji: "📉", label: "Should I Average" },
   { id: "buy_decision", emoji: "🆕", label: "Fresh Entry" },
@@ -76,9 +102,13 @@ const QUERY_TYPES = ALL_QUERY_TYPES.filter((t) => {
   return true;
 });
 
-
 const HOLD_OPTIONS = ["< 1 week", "1-4 weeks", "1-3 months", "3-12 months", "1+ year"];
-const HORIZON_OPTIONS = ["Intraday", "Short-term (<3mo)", "Medium-term (3-12mo)", "Long-term (1+ year)"];
+const HORIZON_OPTIONS = [
+  "Intraday",
+  "Short-term (<3mo)",
+  "Medium-term (3-12mo)",
+  "Long-term (1+ year)",
+];
 const LANG_OPTIONS = ["English", "Hindi", "Other"];
 
 // Phase 3A — the heuristic classifier is retained only as an offline
@@ -87,7 +117,11 @@ const LANG_OPTIONS = ["English", "Hindi", "Other"];
 function heuristicClassify(text: string): Intent {
   const t = text.toLowerCase();
   if (/\b(average|averaging|buy more|double down)\b/.test(t)) return "should_average";
-  if (/\b(should i buy|fresh entry|entry point|invest in)\b/.test(t) && !/\b(stuck|loss|holding)\b/.test(t)) return "buy_decision";
+  if (
+    /\b(should i buy|fresh entry|entry point|invest in)\b/.test(t) &&
+    !/\b(stuck|loss|holding)\b/.test(t)
+  )
+    return "buy_decision";
   if (/\b(sell|exit|stuck|loss|hold|book profit)\b/.test(t)) return "stuck_position";
   return "other";
 }
@@ -107,7 +141,13 @@ export function QueryForm() {
   const [routerMeta, setRouterMeta] = useState<RouterOutput | null>(null);
   const [routerLoading, setRouterLoading] = useState(false);
   const [routerNotice, setRouterNotice] = useState<string | null>(null);
-  const [autoDetected, setAutoDetected] = useState<{ stock?: string; buyPrice?: number; holding?: string }>({});
+  const [autoDetected, setAutoDetected] = useState<{
+    stock?: string;
+    buyPrice?: number;
+    qty?: number;
+    horizon?: string;
+    holding?: string;
+  }>({});
 
   // Step 2
   const [stockName, setStockName] = useState("");
@@ -146,7 +186,9 @@ export function QueryForm() {
     setIntent(nextIntent);
 
     if (band === "low") {
-      setRouterNotice("We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.");
+      setRouterNotice(
+        "We couldn’t classify your question confidently — submitting as “Other”. Refine the wording for an AI report.",
+      );
       // Force "other" only if we had no chip pick and no high confidence.
       if (userChip == null) setIntent("other");
       return; // No prefill on low confidence — never fabricate.
@@ -160,7 +202,13 @@ export function QueryForm() {
     }
 
     // Prefill — never invent values. Only set fields the router actually returned.
-    const detected: { stock?: string; buyPrice?: number; holding?: string } = {};
+    const detected: {
+      stock?: string;
+      buyPrice?: number;
+      qty?: number;
+      horizon?: string;
+      holding?: string;
+    } = {};
     if (r.symbol && !stockName) {
       setStockName(r.symbol);
       setStockSymbol(r.symbol);
@@ -173,9 +221,13 @@ export function QueryForm() {
     }
     if (r.qty != null && r.qty > 0 && !qty) {
       setQty(String(r.qty));
+      detected.qty = r.qty;
     }
     const mappedHorizon = routerHorizonToFormHorizon(r.horizon);
-    if (mappedHorizon && !horizon) setHorizon(mappedHorizon);
+    if (mappedHorizon && !horizon) {
+      setHorizon(mappedHorizon);
+      detected.horizon = mappedHorizon;
+    }
     if (Object.keys(detected).length) setAutoDetected(detected);
   }
 
@@ -185,7 +237,9 @@ export function QueryForm() {
       const { data } = await supabase
         .from("analyst_profiles")
         .select("id, display_name, sebi_reg_number, avatar_url, rating")
-        .eq("is_approved", true).eq("is_available", true).limit(6);
+        .eq("is_approved", true)
+        .eq("is_available", true)
+        .limit(6);
       return data ?? [];
     },
   });
@@ -206,24 +260,46 @@ export function QueryForm() {
   // Phase 3C — "educational" has its own freeze fn + report variant.
   const isEducational = intent === "educational";
 
+  const resetRouterState = () => {
+    if (
+      autoDetected.stock &&
+      (stockName === autoDetected.stock || stockSymbol === autoDetected.stock)
+    ) {
+      setStockName("");
+      setStockSymbol("");
+    }
+    if (autoDetected.buyPrice != null) {
+      const detectedPrice = String(autoDetected.buyPrice);
+      if (buyPrice === detectedPrice) setBuyPrice("");
+      if (entryPrice === detectedPrice) setEntryPrice("");
+    }
+    if (autoDetected.qty != null && qty === String(autoDetected.qty)) setQty("");
+    if (autoDetected.horizon && horizon === autoDetected.horizon) setHorizon("");
+    if (autoDetected.holding && holding === autoDetected.holding) setHolding("");
+    setRouterMeta(null);
+    setRouterNotice(null);
+    setAutoDetected({});
+  };
+
   // Phase 3B — resolve sector from router-supplied hint OR the question text.
-  const resolvedSector = isSector
-    ? resolveSector(routerMeta?.sector ?? queryText)
-    : null;
+  const resolvedSector = isSector ? resolveSector(routerMeta?.sector ?? queryText) : null;
   // Phase 3C — resolve concept from question text.
   const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
   const qtyNum = qty ? Number(qty) : NaN;
-  const entryPriceValid = !showPhase2Fields || (Number.isFinite(entryPriceNum) && entryPriceNum > 0 && /^\d+(\.\d{0,2})?$/.test(entryPrice));
-  const qtyValid = !isAveraging || (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isInteger(qtyNum));
+  const entryPriceValid =
+    !showPhase2Fields ||
+    (Number.isFinite(entryPriceNum) && entryPriceNum > 0 && /^\d+(\.\d{0,2})?$/.test(entryPrice));
+  const qtyValid =
+    !isAveraging || (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isInteger(qtyNum));
   const anythingElseValid = anythingElse.length <= 500;
 
   const goNext = async () => {
     if (step === 0) {
       // Phase 3B/3C — sector + educational chips allow shorter input ("IT", "RSI").
-      const minChars = (isSector || isEducational) ? 2 : 15;
+      const minChars = isSector || isEducational ? 2 : 15;
       if (queryText.trim().length < minChars) {
         toast.error(
           isSector
@@ -263,11 +339,16 @@ export function QueryForm() {
     }
     if (step === 1) {
       // Phase 3A — "other" skips stock/entry fields entirely.
-      if (isOther) { setStep(2); return; }
+      if (isOther) {
+        setStep(2);
+        return;
+      }
       // Phase 3B — sector view requires a resolvable sector but no stock/entry fields.
       if (isSector) {
         if (!resolvedSector) {
-          toast.error("Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.");
+          toast.error(
+            "Couldn't recognize that sector. Try Private Banks, IT, Energy, Pharma, FMCG.",
+          );
           return;
         }
         setStep(2);
@@ -278,63 +359,122 @@ export function QueryForm() {
       // we warn early so the user can fix their wording before submission.
       if (isEducational) {
         if (!resolvedConcept) {
-          toast.error("Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.");
+          toast.error(
+            "Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.",
+          );
           return;
         }
         setStep(2);
         return;
       }
-      if (showStockFields && !stockName) { toast.error("Please pick a stock"); return; }
-      if (showPhase2Fields) {
-        if (!entryPrice) { toast.error("Please enter your entry price"); return; }
-        if (!entryPriceValid) { toast.error("Please re-check your entry price"); return; }
-        if (isAveraging && !qty) { toast.error("Please enter your quantity"); return; }
-        if (isAveraging && !qtyValid) { toast.error("Quantity must be a positive whole number"); return; }
-        if (!horizon) { toast.error("Please pick your investment horizon"); return; }
-        if (!anythingElseValid) { toast.error("Please keep the extra context under 500 characters"); return; }
-      } else {
-        if (showBuyPrice && !buyPrice) { toast.error("Please enter your buy price"); return; }
+      if (showStockFields && !stockName) {
+        toast.error("Please pick a stock");
+        return;
       }
-      if (showStockFields && !showPhase2Fields && !currentPrice) { toast.error("Please enter the current stock price"); return; }
+      if (showPhase2Fields) {
+        if (!entryPrice) {
+          toast.error("Please enter your entry price");
+          return;
+        }
+        if (!entryPriceValid) {
+          toast.error("Please re-check your entry price");
+          return;
+        }
+        if (isAveraging && !qty) {
+          toast.error("Please enter your quantity");
+          return;
+        }
+        if (isAveraging && !qtyValid) {
+          toast.error("Quantity must be a positive whole number");
+          return;
+        }
+        if (!horizon) {
+          toast.error("Please pick your investment horizon");
+          return;
+        }
+        if (!anythingElseValid) {
+          toast.error("Please keep the extra context under 500 characters");
+          return;
+        }
+      } else {
+        if (showBuyPrice && !buyPrice) {
+          toast.error("Please enter your buy price");
+          return;
+        }
+      }
+      if (showStockFields && !showPhase2Fields && !currentPrice) {
+        toast.error("Please enter the current stock price");
+        return;
+      }
       setStep(2);
       return;
     }
   };
 
-  const [genStage, setGenStage] = useState<"idle" | "creating" | "generating" | "redirecting">("idle");
+  const [genStage, setGenStage] = useState<"idle" | "creating" | "generating" | "redirecting">(
+    "idle",
+  );
 
   const handleSubmit = async () => {
-    if (!user) { toast.error("You must be signed in"); return; }
-    if (!agreeDisclaimer) { toast.error("Please accept the SEBI disclaimer"); return; }
+    if (!agreeDisclaimer) {
+      toast.error("Please accept the SEBI disclaimer");
+      return;
+    }
     // Phase 3A — accept LIVE intents + "other" (when the router is live).
-    if (!isRoutableIntent(intent)) { toast.error("Unsupported query type"); return; }
+    if (!isRoutableIntent(intent)) {
+      toast.error("Unsupported query type");
+      return;
+    }
 
     setSubmitting(true);
     setGenStage("creating");
     let createdQueryId: string | null = null;
 
     try {
-      const baseInsert = {
-        user_id: user.id,
-        stock_name: isSector && resolvedSector
-          ? `Sector: ${resolvedSector.display}`
-          : isEducational && resolvedConcept
-            ? `Concept: ${resolvedConcept.canonical}`
-            : (stockName || "Stock Query"),
-        stock_symbol: stockSymbol || null,
-        buy_price: buyPrice ? Number(buyPrice) : (showPhase2Fields && entryPrice ? Number(entryPrice) : null),
-        current_price: currentPrice ? Number(currentPrice) : null,
-        query_text: queryText,
-        assigned_analyst_id: analystId,
-        ...(routerMeta ? { router_meta: routerMeta as unknown as Record<string, unknown> } : {}),
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      const freshUser = authData.user;
+      if (authErr || !freshUser) {
+        console.warn("[QueryForm] auth freshness check failed", {
+          message: authErr?.message,
+          status: authErr?.status,
+          cachedUserId: user?.id ?? null,
+        });
+        toast.error(
+          authErr?.message
+            ? `Authentication check failed: ${authErr.message}`
+            : "Authentication expired. Please sign in again.",
+        );
+        setGenStage("idle");
+        setSubmitting(false);
+        return;
+      }
+
+      const trimmedQueryText = queryText.trim();
+      const routerMetaForInsert = routerMeta
+        ? ({ ...routerMeta } as unknown as Record<string, unknown>)
+        : null;
+      const commonInsert = {
+        user_id: freshUser.id,
+        query_text: trimmedQueryText,
+        assigned_analyst_id: analystId || null,
+        ...(routerMetaForInsert ? { router_meta: routerMetaForInsert } : {}),
       };
 
-      const v1QueryType = intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
+      const v1QueryType =
+        intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
       const trimmedExtra = anythingElse.trim();
 
       const insertPayload = usesV1Engine
         ? {
-            ...baseInsert,
+            ...commonInsert,
+            stock_name: stockName.trim(),
+            stock_symbol: stockSymbol || null,
+            buy_price: buyPrice
+              ? Number(buyPrice)
+              : showPhase2Fields && entryPrice
+                ? Number(entryPrice)
+                : null,
+            current_price: currentPrice ? Number(currentPrice) : null,
             status: "ai_answered" as const,
             query_type: v1QueryType,
             engine_version: "v1_tier_shaped",
@@ -348,43 +488,61 @@ export function QueryForm() {
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
           }
         : isSector
-        ? {
-            // Phase 3B — sector view. SectorViewReport's server fn freezes
-            // the composed payload on first read; no Brain call here.
-            ...baseInsert,
-            status: "ai_answered" as const,
-            query_type: "sector_view" as const,
-            engine_version: "v1_sector_view",
-            engine_source: "sector_aggregates",
-            horizon: normalizeHorizon(horizon || "Medium-term (3-12mo)"),
-            sector_canonical: resolvedSector?.canonical ?? null,
-          }
-        : isEducational
-        ? {
-            // Phase 3C — educational. EducationalReport's server fn freezes
-            // the composed glossary payload on first read; no LLM call here.
-            ...baseInsert,
-            status: "ai_answered" as const,
-            query_type: "educational" as const,
-            engine_version: "v1_educational",
-            engine_source: "glossary_library",
-            concept_canonical: resolvedConcept?.canonical ?? null,
-          }
-        : isOther
-        ? {
-            // Phase 3A — "other" lands in the routed-pending placeholder.
-            // No Brain call, no v1 engine, no charge. Analyst-routed.
-            ...baseInsert,
-            status: "pending" as const,
-            query_type: "other" as const,
-            engine_version: "router_v1",
-            engine_source: "free_text_router",
-          }
-        : {
-            ...baseInsert,
-            status: "pending" as const,
-            query_type: intent,
-          };
+          ? {
+              // Phase 3B — sector view. SectorViewReport's server fn freezes
+              // the composed payload on first read; no Brain call here.
+              ...commonInsert,
+              stock_name: resolvedSector ? `Sector: ${resolvedSector.display}` : "Sector Query",
+              stock_symbol: null,
+              buy_price: null,
+              current_price: null,
+              status: "ai_answered" as const,
+              query_type: "sector_view" as const,
+              engine_version: "v1_sector_view",
+              engine_source: "sector_aggregates",
+              horizon: normalizeHorizon(horizon || "Medium-term (3-12mo)"),
+              sector_canonical: resolvedSector?.canonical ?? null,
+            }
+          : isEducational
+            ? {
+                // Phase 3C — educational. EducationalReport's server fn freezes
+                // the composed glossary payload on first read; no LLM call here.
+                ...commonInsert,
+                stock_name: resolvedConcept
+                  ? `Concept: ${resolvedConcept.canonical}`
+                  : "Educational Query",
+                stock_symbol: null,
+                buy_price: null,
+                current_price: null,
+                status: "ai_answered" as const,
+                query_type: "educational" as const,
+                engine_version: "v1_educational",
+                engine_source: "glossary_library",
+                concept_canonical: resolvedConcept?.canonical ?? null,
+              }
+            : isOther
+              ? {
+                  // Phase 3A — "other" lands in the routed-pending placeholder.
+                  // No Brain call, no v1 engine, no charge. Analyst-routed.
+                  ...commonInsert,
+                  stock_name: "Routed Query",
+                  stock_symbol: null,
+                  buy_price: null,
+                  current_price: null,
+                  status: "pending" as const,
+                  query_type: "other" as const,
+                  engine_version: "router_v1",
+                  engine_source: "free_text_router",
+                }
+              : {
+                  ...commonInsert,
+                  stock_name: stockName.trim() || "Stock Query",
+                  stock_symbol: stockSymbol || null,
+                  buy_price: buyPrice ? Number(buyPrice) : null,
+                  current_price: currentPrice ? Number(currentPrice) : null,
+                  status: "pending" as const,
+                  query_type: intent,
+                };
 
       // Pre-flight payload validation — fail fast with precise message.
       const requiredByIntent: string[] = ["user_id", "stock_name", "query_text"];
@@ -404,9 +562,17 @@ export function QueryForm() {
 
       const payloadShape = Object.keys(insertPayload as Record<string, unknown>).sort();
       const { data: inserted, error: qErr } = await supabase
-        .from("queries").insert(insertPayload as never).select("id").single();
+        .from("queries")
+        .insert(insertPayload as never)
+        .select("id")
+        .single();
       if (qErr || !inserted) {
-        const pgErr = qErr as null | { code?: string; message?: string; details?: string; hint?: string };
+        const pgErr = qErr as null | {
+          code?: string;
+          message?: string;
+          details?: string;
+          hint?: string;
+        };
         console.error("[queries.insert] failed", {
           code: pgErr?.code,
           message: pgErr?.message,
@@ -430,38 +596,51 @@ export function QueryForm() {
       const queryId = inserted.id as string;
       createdQueryId = queryId;
 
-      supabase.from("audit_events").insert({
-        event_type: "query_submitted", actor_id: user.id,
-        resource_type: "query", resource_id: queryId,
-        payload: {
-          intent,
-          v1_query_type: usesV1Engine ? v1QueryType : null,
-          has_stock: !!stockSymbol,
-          has_entry_price: !!entryPrice,
-          has_qty: !!qty,
-          custom_question_present: !!trimmedExtra,
-          engine_version: usesV1Engine
-            ? "v1_tier_shaped"
-            : isSector ? "v1_sector_view"
-            : isEducational ? "v1_educational"
-            : isOther ? "router_v1"
-            : "v0_legacy",
-          engine_source: usesV1Engine
-            ? "post_query"
-            : isSector ? "sector_aggregates"
-            : isEducational ? "glossary_library"
-            : isOther ? "free_text_router"
-            : "legacy_post_query",
-          credit_action: "skipped_no_charge_path",
-          sector_canonical: isSector ? resolvedSector?.canonical ?? null : null,
-          concept_canonical: isEducational ? resolvedConcept?.canonical ?? null : null,
-          router_version: routerMeta?.router_version ?? null,
-          router_interpreted_type: routerMeta?.interpreted_type ?? null,
-          router_confidence: routerMeta?.confidence_score ?? null,
-          router_clarification_needed: routerMeta?.clarification_needed ?? null,
-          router_language_hint: routerMeta?.language_hint ?? null,
-        },
-      }).then(({ error }) => { if (error) console.warn("audit insert failed", error); });
+      supabase
+        .from("audit_events")
+        .insert({
+          event_type: "query_submitted",
+          actor_id: freshUser.id,
+          resource_type: "query",
+          resource_id: queryId,
+          payload: {
+            intent,
+            v1_query_type: usesV1Engine ? v1QueryType : null,
+            has_stock: !!stockSymbol,
+            has_entry_price: !!entryPrice,
+            has_qty: !!qty,
+            custom_question_present: !!trimmedExtra,
+            engine_version: usesV1Engine
+              ? "v1_tier_shaped"
+              : isSector
+                ? "v1_sector_view"
+                : isEducational
+                  ? "v1_educational"
+                  : isOther
+                    ? "router_v1"
+                    : "v0_legacy",
+            engine_source: usesV1Engine
+              ? "post_query"
+              : isSector
+                ? "sector_aggregates"
+                : isEducational
+                  ? "glossary_library"
+                  : isOther
+                    ? "free_text_router"
+                    : "legacy_post_query",
+            credit_action: "skipped_no_charge_path",
+            sector_canonical: isSector ? (resolvedSector?.canonical ?? null) : null,
+            concept_canonical: isEducational ? (resolvedConcept?.canonical ?? null) : null,
+            router_version: routerMeta?.router_version ?? null,
+            router_interpreted_type: routerMeta?.interpreted_type ?? null,
+            router_confidence: routerMeta?.confidence_score ?? null,
+            router_clarification_needed: routerMeta?.clarification_needed ?? null,
+            router_language_hint: routerMeta?.language_hint ?? null,
+          },
+        })
+        .then(({ error }) => {
+          if (error) console.warn("audit insert failed", error);
+        });
 
       if (usesV1Engine || isOther || isSector || isEducational) {
         // v1 engine, sector view, educational, and "other" all navigate
@@ -483,7 +662,9 @@ export function QueryForm() {
             const obj = e as Record<string, unknown>;
             return (
               (typeof obj.message === "string" && obj.message) ||
-              (typeof obj.data === "object" && obj.data && typeof (obj.data as Record<string, unknown>).message === "string"
+              (typeof obj.data === "object" &&
+              obj.data &&
+              typeof (obj.data as Record<string, unknown>).message === "string"
                 ? ((obj.data as Record<string, unknown>).message as string)
                 : "") ||
               JSON.stringify(e).slice(0, 150)
@@ -493,7 +674,9 @@ export function QueryForm() {
         };
         const errMsg = extractMsg(genErr);
         console.error("[generateAiReport] raw error object:", genErr);
-        toast.error(`Report generation failed: ${errMsg}. Opening report — it will refresh once ready.`);
+        toast.error(
+          `Report generation failed: ${errMsg}. Opening report — it will refresh once ready.`,
+        );
       }
       await refresh();
       setGenStage("redirecting");
@@ -503,10 +686,19 @@ export function QueryForm() {
       if (createdQueryId) {
         navigate({ to: "/report/$queryId", params: { queryId: createdQueryId } });
       } else {
-        const pgLike = e as { code?: string; message?: string; details?: string; hint?: string } | null;
+        const pgLike = e as {
+          code?: string;
+          message?: string;
+          details?: string;
+          hint?: string;
+        } | null;
         const code = pgLike?.code;
-        const msg = (e instanceof Error ? e.message : pgLike?.message) || "Insert failed (no details from server)";
-        const userMsg = code ? `Could not create query [${code}]: ${msg}` : `Could not create query: ${msg}`;
+        const msg =
+          (e instanceof Error ? e.message : pgLike?.message) ||
+          "Insert failed (no details from server)";
+        const userMsg = code
+          ? `Could not create query [${code}]: ${msg}`
+          : `Could not create query: ${msg}`;
         toast.error(userMsg, {
           description: pgLike?.hint || pgLike?.details || undefined,
           duration: 10000,
@@ -519,362 +711,574 @@ export function QueryForm() {
 
   return (
     <TooltipProvider>
-    <Card className="border border-border bg-card/80 backdrop-blur p-6 md:p-8">
-      <div className="flex items-center justify-between mb-2">
-        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Step {step + 1} of 3</p>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Wallet className="h-3.5 w-3.5" /> Wallet: <span className="font-semibold text-foreground">₹{balance}</span>
+      <Card className="border border-border bg-card/80 backdrop-blur p-6 md:p-8">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            Step {step + 1} of 3
+          </p>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Wallet className="h-3.5 w-3.5" /> Wallet:{" "}
+            <span className="font-semibold text-foreground">₹{balance}</span>
+          </div>
         </div>
-      </div>
-      <Progress value={((step + 1) / 3) * 100} className="h-1.5 mb-6" />
-      <div className="grid grid-cols-3 text-[11px] uppercase tracking-wider mb-6">
-        {["Question", "Context", "Review"].map((t, i) => (
-          <div key={t} className={`flex items-center gap-2 ${i === step ? "text-primary" : i < step ? "text-foreground" : "text-muted-foreground"}`}>
-            <span className={`h-6 w-6 rounded-full border flex items-center justify-center text-[11px] ${i <= step ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{i + 1}</span>
-            <span>{t}</span>
-            {i < 2 && <ChevronRight className="h-3 w-3 ml-auto text-border" />}
-          </div>
-        ))}
-      </div>
-
-      {/* ===== STEP 0: QUESTION ===== */}
-      {step === 0 && (
-        <div className="space-y-5">
-          <div>
-            <Label htmlFor="qtext" className="text-base">
-              {isSector
-                ? "Which sector? *"
-                : isEducational
-                  ? "Which concept? *"
-                  : "What's your question? *"}
-            </Label>
-            <Textarea
-              id="qtext"
-              autoFocus
-              rows={(isSector || isEducational) ? 2 : 5}
-              value={queryText}
-              onChange={(e) => setQueryText(e.target.value)}
-              placeholder={
-                isSector
-                  ? "Enter a sector like Private Banks, IT, Energy, Pharma"
-                  : isEducational
-                    ? "Ask about a concept like RSI, MACD, DCF, Beta, or Relative Strength"
-                    : "e.g. I bought Siemens at 3668 a year back, should I sell now?"
-              }
-              className="mt-2 text-base"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1 text-right">{queryText.length}/500</p>
-          </div>
-
-
-          <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Quick examples</Label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {QUESTION_EXAMPLES.map((q) => (
-                <button
-                  key={q.text}
-                  type="button"
-                  onClick={() => {
-                    setQueryText(q.text);
-                    if (isLiveIntent(q.intent)) setIntent(q.intent);
-                  }}
-                  className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
-                >
-                  {q.text}
-                </button>
-              ))}
+        <Progress value={((step + 1) / 3) * 100} className="h-1.5 mb-6" />
+        <div className="grid grid-cols-3 text-[11px] uppercase tracking-wider mb-6">
+          {["Question", "Context", "Review"].map((t, i) => (
+            <div
+              key={t}
+              className={`flex items-center gap-2 ${i === step ? "text-primary" : i < step ? "text-foreground" : "text-muted-foreground"}`}
+            >
+              <span
+                className={`h-6 w-6 rounded-full border flex items-center justify-center text-[11px] ${i <= step ? "border-primary bg-primary/10 text-primary" : "border-border"}`}
+              >
+                {i + 1}
+              </span>
+              <span>{t}</span>
+              {i < 2 && <ChevronRight className="h-3 w-3 ml-auto text-border" />}
             </div>
-          </div>
-
-          <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Question type</Label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {QUERY_TYPES.map((t) => (
-                <button key={t.id} type="button" onClick={() => { setIntent(t.id); setChipManuallyPicked(true); }}
-                  className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
-                  <span className="mr-1.5">{t.emoji}</span>{t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {routerLoading && (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-              <span>Understanding your question…</span>
-            </div>
-          )}
-          {!routerLoading && routerNotice && (
-            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              {routerNotice}
-            </div>
-          )}
-          {!routerLoading && routerMeta && !routerNotice && confidenceBand(routerMeta.confidence_score) === "high" && (
-            <p className="text-[11px] text-muted-foreground italic">
-              Auto-routed via free-text router · confidence: high
-              {routerMeta.symbol ? <> · <span className="font-mono not-italic">{routerMeta.symbol}</span></> : null}
-            </p>
-          )}
+          ))}
         </div>
-      )}
 
-      {/* ===== STEP 1: CONTEXT (dynamic by intent) ===== */}
-      {step === 1 && (
-        <div className="space-y-5">
-          {Object.keys(autoDetected).length > 0 && (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span>Auto-detected from your question — edit if wrong</span>
-            </div>
-          )}
-
-          {showStockFields && (
+        {/* ===== STEP 0: QUESTION ===== */}
+        {step === 0 && (
+          <div className="space-y-5">
             <div>
-              <Label>Stock *</Label>
-              <StockAutocomplete
-                value={stockName ? { symbol: stockSymbol || stockName, name: stockName, sector: "" } as NseStock : null}
-                onSelect={(s) => { setStockName(s.name); setStockSymbol(s.symbol); }}
-                onClear={() => { setStockName(""); setStockSymbol(""); }}
+              <Label htmlFor="qtext" className="text-base">
+                {isSector
+                  ? "Which sector? *"
+                  : isEducational
+                    ? "Which concept? *"
+                    : "What's your question? *"}
+              </Label>
+              <Textarea
+                id="qtext"
+                autoFocus
+                rows={isSector || isEducational ? 2 : 5}
+                value={queryText}
+                onChange={(e) => {
+                  setQueryText(e.target.value);
+                  resetRouterState();
+                }}
+                placeholder={
+                  isSector
+                    ? "Enter a sector like Private Banks, IT, Energy, Pharma"
+                    : isEducational
+                      ? "Ask about a concept like RSI, MACD, DCF, Beta, or Relative Strength"
+                      : "e.g. I bought Siemens at 3668 a year back, should I sell now?"
+                }
+                className="mt-2 text-base"
               />
+              <p className="text-[11px] text-muted-foreground mt-1 text-right">
+                {queryText.length}/500
+              </p>
             </div>
-          )}
 
-          {showStockFields && !showPhase2Fields && (
-            <div className="grid sm:grid-cols-2 gap-3 items-start">
-              {showBuyPrice && (
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Quick examples
+              </Label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {QUESTION_EXAMPLES.map((q) => (
+                  <button
+                    key={q.text}
+                    type="button"
+                    onClick={() => {
+                      setQueryText(q.text);
+                      resetRouterState();
+                      if (isLiveIntent(q.intent)) setIntent(q.intent);
+                    }}
+                    className="rounded-full border border-border bg-background hover:border-primary/40 px-3 py-1.5 text-xs"
+                  >
+                    {q.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Question type
+              </Label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {QUERY_TYPES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setIntent(t.id);
+                      setChipManuallyPicked(true);
+                      resetRouterState();
+                    }}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition ${intent === t.id ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}
+                  >
+                    <span className="mr-1.5">{t.emoji}</span>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {routerLoading && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Understanding your question…</span>
+              </div>
+            )}
+            {!routerLoading && routerNotice && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                {routerNotice}
+              </div>
+            )}
+            {!routerLoading &&
+              routerMeta &&
+              !routerNotice &&
+              confidenceBand(routerMeta.confidence_score) === "high" && (
+                <p className="text-[11px] text-muted-foreground italic">
+                  Auto-routed via free-text router · confidence: high
+                  {routerMeta.symbol ? (
+                    <>
+                      {" "}
+                      · <span className="font-mono not-italic">{routerMeta.symbol}</span>
+                    </>
+                  ) : null}
+                </p>
+              )}
+          </div>
+        )}
+
+        {/* ===== STEP 1: CONTEXT (dynamic by intent) ===== */}
+        {step === 1 && (
+          <div className="space-y-5">
+            {Object.keys(autoDetected).length > 0 && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>Auto-detected from your question — edit if wrong</span>
+              </div>
+            )}
+
+            {showStockFields && (
+              <div>
+                <Label>Stock *</Label>
+                <StockAutocomplete
+                  value={
+                    stockName
+                      ? ({
+                          symbol: stockSymbol || stockName,
+                          name: stockName,
+                          sector: "",
+                        } as NseStock)
+                      : null
+                  }
+                  onSelect={(s) => {
+                    setStockName(s.name);
+                    setStockSymbol(s.symbol);
+                  }}
+                  onClear={() => {
+                    setStockName("");
+                    setStockSymbol("");
+                  }}
+                />
+              </div>
+            )}
+
+            {showStockFields && !showPhase2Fields && (
+              <div className="grid sm:grid-cols-2 gap-3 items-start">
+                {showBuyPrice && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="buy" className="flex items-center gap-1 h-5 leading-5">
+                      <span>Buy Price *</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          Your average entry price for this position.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        ₹
+                      </span>
+                      <Input
+                        id="buy"
+                        className="pl-7 h-10"
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="3668"
+                        value={buyPrice}
+                        onChange={(e) => setBuyPrice(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1.5">
-                  <Label htmlFor="buy" className="flex items-center gap-1 h-5 leading-5">
-                    <span>Buy Price *</span>
+                  <Label htmlFor="current" className="flex items-center gap-1 h-5 leading-5">
+                    <span>Current Price *</span>
                     <Tooltip>
-                      <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                      <TooltipContent className="text-xs max-w-[200px]">Your average entry price for this position.</TooltipContent>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs max-w-[220px]">
+                        Enter the stock price you see right now so the AI report uses your latest
+                        context.
+                      </TooltipContent>
                     </Tooltip>
                   </Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                    <Input id="buy" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3668" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      ₹
+                    </span>
+                    <Input
+                      id="current"
+                      className="pl-7 h-10"
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="3589"
+                      value={currentPrice}
+                      onChange={(e) => setCurrentPrice(e.target.value)}
+                    />
                   </div>
                 </div>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="current" className="flex items-center gap-1 h-5 leading-5">
-                  <span>Current Price *</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                    <TooltipContent className="text-xs max-w-[220px]">Enter the stock price you see right now so the AI report uses your latest context.</TooltipContent>
-                  </Tooltip>
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                  <Input id="current" className="pl-7 h-10" type="number" inputMode="decimal" placeholder="3589" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} />
-                </div>
+                {showBuyPrice && (
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="holding" className="flex items-center h-5 leading-5">
+                      Holding duration *
+                    </Label>
+                    <Select value={holding} onValueChange={setHolding}>
+                      <SelectTrigger id="holding" className="h-10">
+                        <SelectValue placeholder="Select duration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {HOLD_OPTIONS.map((o) => (
+                          <SelectItem key={o} value={o}>
+                            {o}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-              {showBuyPrice && (
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="holding" className="flex items-center h-5 leading-5">Holding duration *</Label>
-                  <Select value={holding} onValueChange={setHolding}>
-                    <SelectTrigger id="holding" className="h-10"><SelectValue placeholder="Select duration" /></SelectTrigger>
-                    <SelectContent>{HOLD_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+            )}
+
+            {showPhase2Fields && (
+              <div className="space-y-4">
+                <div className="grid sm:grid-cols-2 gap-3 items-start">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="entry" className="flex items-center gap-1 h-5 leading-5">
+                      <span>Entry Price *</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[220px]">
+                          Your average buy price for this position. Used to compute unrealized P/L.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        ₹
+                      </span>
+                      <Input
+                        id="entry"
+                        className="pl-7 h-10"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        placeholder="3668.00"
+                        value={entryPrice}
+                        onChange={(e) => setEntryPrice(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="qty" className="flex items-center gap-1 h-5 leading-5">
+                      <span>Quantity {isAveraging ? "*" : "(optional)"}</span>
+                    </Label>
+                    <Input
+                      id="qty"
+                      className="h-10"
+                      type="number"
+                      inputMode="numeric"
+                      step="1"
+                      min="1"
+                      placeholder="e.g. 25"
+                      value={qty}
+                      onChange={(e) => setQty(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Investment horizon *</Label>
+                  <Select value={horizon} onValueChange={setHorizon}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="How long do you plan to hold?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HORIZON_OPTIONS.map((o) => (
+                        <SelectItem key={o} value={o}>
+                          {o}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 </div>
-              )}
-            </div>
-          )}
-
-          {showPhase2Fields && (
-            <div className="space-y-4">
-              <div className="grid sm:grid-cols-2 gap-3 items-start">
-                <div className="space-y-1.5">
-                  <Label htmlFor="entry" className="flex items-center gap-1 h-5 leading-5">
-                    <span>Entry Price *</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild><Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                      <TooltipContent className="text-xs max-w-[220px]">Your average buy price for this position. Used to compute unrealized P/L.</TooltipContent>
-                    </Tooltip>
+                <div>
+                  <Label htmlFor="extra" className="flex items-center h-5 leading-5">
+                    Anything else? (optional)
                   </Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                    <Input id="entry" className="pl-7 h-10" type="number" inputMode="decimal" step="0.01" min="0" placeholder="3668.00"
-                      value={entryPrice} onChange={(e) => setEntryPrice(e.target.value)} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="qty" className="flex items-center gap-1 h-5 leading-5">
-                    <span>Quantity {isAveraging ? "*" : "(optional)"}</span>
-                  </Label>
-                  <Input id="qty" className="h-10" type="number" inputMode="numeric" step="1" min="1" placeholder="e.g. 25"
-                    value={qty} onChange={(e) => setQty(e.target.value)} />
+                  <Textarea
+                    id="extra"
+                    rows={3}
+                    maxLength={500}
+                    placeholder="Any extra context — preserved verbatim, never sent to AI."
+                    value={anythingElse}
+                    onChange={(e) => setAnythingElse(e.target.value)}
+                    className="mt-1.5"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1 text-right">
+                    {anythingElse.length}/500
+                  </p>
                 </div>
               </div>
+            )}
+
+            {intent === "buy_decision" && (
               <div>
                 <Label>Investment horizon *</Label>
                 <Select value={horizon} onValueChange={setHorizon}>
-                  <SelectTrigger><SelectValue placeholder="How long do you plan to hold?" /></SelectTrigger>
-                  <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                  <SelectTrigger>
+                    <SelectValue placeholder="How long do you plan to hold?" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HORIZON_OPTIONS.map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="extra" className="flex items-center h-5 leading-5">Anything else? (optional)</Label>
-                <Textarea id="extra" rows={3} maxLength={500} placeholder="Any extra context — preserved verbatim, never sent to AI."
-                  value={anythingElse} onChange={(e) => setAnythingElse(e.target.value)} className="mt-1.5" />
-                <p className="text-[11px] text-muted-foreground mt-1 text-right">{anythingElse.length}/500</p>
+            )}
+
+            {isSector && (
+              <div className="space-y-4">
+                <div
+                  className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}
+                >
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Sector recognized
+                  </p>
+                  <p className="mt-0.5 text-sm font-semibold">
+                    {resolvedSector
+                      ? resolvedSector.display
+                      : "Not recognized — try Private Banks, IT, Energy, Pharma, FMCG"}
+                  </p>
+                </div>
+                <div>
+                  <Label>Horizon (optional)</Label>
+                  <Select value={horizon} onValueChange={setHorizon}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Framing only — sector view doesn't change by horizon yet" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HORIZON_OPTIONS.map((o) => (
+                        <SelectItem key={o} value={o}>
+                          {o}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1 italic">
+                    Sector View uses one composed snapshot; horizon affects framing copy only.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isEducational && (
+              <div
+                className={`rounded-xl border px-4 py-3 ${
+                  resolvedConcept
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-amber-500/40 bg-amber-500/5"
+                }`}
+              >
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Concept recognized
+                </p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  {resolvedConcept
+                    ? resolvedConcept.canonical
+                    : "Not recognized — try RSI, MACD, DCF, Beta, or Piotroski F-Score"}
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground italic">
+                  Educational reports are explanatory, glossary-backed, and contain no buy/sell
+                  verdicts.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <Label>Choose analyst (optional)</Label>
+              <div className="grid sm:grid-cols-2 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setAnalystId(null)}
+                  className={`text-left rounded-xl border p-3 transition ${analystId === null ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                >
+                  <p className="text-sm font-semibold">Auto-assign best fit</p>
+                  <p className="text-xs text-muted-foreground">SEBI analyst within 24h</p>
+                </button>
+                {analysts.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setAnalystId(a.id)}
+                    className={`text-left rounded-xl border p-3 transition ${analystId === a.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                  >
+                    <p className="text-sm font-semibold">{a.display_name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      SEBI {a.sebi_reg_number} · ⭐ {Number(a.rating ?? 5).toFixed(1)}
+                    </p>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {intent === "buy_decision" && (
             <div>
-              <Label>Investment horizon *</Label>
-              <Select value={horizon} onValueChange={setHorizon}>
-                <SelectTrigger><SelectValue placeholder="How long do you plan to hold?" /></SelectTrigger>
-                <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+              <Label>Language preference</Label>
+              <Select value={language} onValueChange={setLanguage}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANG_OPTIONS.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
-          )}
-
-          {isSector && (
-            <div className="space-y-4">
-              <div className={`rounded-xl border px-4 py-3 ${resolvedSector ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Sector recognized</p>
-                <p className="mt-0.5 text-sm font-semibold">
-                  {resolvedSector ? resolvedSector.display : "Not recognized — try Private Banks, IT, Energy, Pharma, FMCG"}
-                </p>
-              </div>
-              <div>
-                <Label>Horizon (optional)</Label>
-                <Select value={horizon} onValueChange={setHorizon}>
-                  <SelectTrigger><SelectValue placeholder="Framing only — sector view doesn't change by horizon yet" /></SelectTrigger>
-                  <SelectContent>{HORIZON_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground mt-1 italic">
-                  Sector View uses one composed snapshot; horizon affects framing copy only.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {isEducational && (
-            <div
-              className={`rounded-xl border px-4 py-3 ${
-                resolvedConcept
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-amber-500/40 bg-amber-500/5"
-              }`}
-            >
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Concept recognized</p>
-              <p className="mt-0.5 text-sm font-semibold">
-                {resolvedConcept
-                  ? resolvedConcept.canonical
-                  : "Not recognized — try RSI, MACD, DCF, Beta, or Piotroski F-Score"}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground italic">
-                Educational reports are explanatory, glossary-backed, and contain no buy/sell verdicts.
-              </p>
-            </div>
-          )}
-
-
-          <div>
-            <Label>Choose analyst (optional)</Label>
-            <div className="grid sm:grid-cols-2 gap-2 mt-1">
-              <button type="button" onClick={() => setAnalystId(null)}
-                className={`text-left rounded-xl border p-3 transition ${analystId === null ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
-                <p className="text-sm font-semibold">Auto-assign best fit</p>
-                <p className="text-xs text-muted-foreground">SEBI analyst within 24h</p>
-              </button>
-              {analysts.map((a) => (
-                <button key={a.id} type="button" onClick={() => setAnalystId(a.id)}
-                  className={`text-left rounded-xl border p-3 transition ${analystId === a.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
-                  <p className="text-sm font-semibold">{a.display_name}</p>
-                  <p className="text-[11px] text-muted-foreground">SEBI {a.sebi_reg_number} · ⭐ {Number(a.rating ?? 5).toFixed(1)}</p>
-                </button>
-              ))}
-            </div>
           </div>
-
-          <div>
-            <Label>Language preference</Label>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-              <SelectContent>{LANG_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
-
-      {/* ===== STEP 2: REVIEW ===== */}
-      {step === 2 && (
-        <div className="space-y-5">
-          <div className="rounded-xl border border-border bg-background/60 p-5 space-y-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Your question</p>
-              <p className="text-sm mt-1 whitespace-pre-wrap">{queryText}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm border-t border-border pt-3">
-              <Field label="Type" value={QUERY_TYPES.find((q) => q.id === intent)?.label ?? "—"} />
-              {stockName && <Field label="Stock" value={`${stockName}${stockSymbol ? ` (${stockSymbol})` : ""}`} />}
-              {buyPrice && <Field label="Buy Price" value={`₹${buyPrice}`} />}
-              {currentPrice && <Field label="Current Price" value={`₹${currentPrice}`} />}
-              {holding && <Field label="Holding" value={holding} />}
-              {horizon && <Field label="Horizon" value={horizon} />}
-              <Field label="Language" value={language} />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              <span><strong>AI Context Report:</strong> included free</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              <span><strong>SEBI Analyst Video:</strong> included within 24h of submission</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground pt-1">Both are part of the same deliverable — not separate purchases.</p>
-          </div>
-
-          <label className="flex items-start gap-3 cursor-pointer">
-            <Checkbox checked={agreeDisclaimer} onCheckedChange={(c) => setAgreeDisclaimer(c === true)} className="mt-1" />
-            <span className="text-xs text-muted-foreground leading-relaxed">
-              I understand the AI report is educational context only — not SEBI investment advice. Personalized recommendations come from a SEBI-Registered Research Analyst within 24 hours.
-            </span>
-          </label>
-        </div>
-      )}
-
-      {submitting && (
-        <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-4">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold">
-                {genStage === "creating" && "Submitting your query…"}
-                {genStage === "generating" && "Generating your AI context report…"}
-                {genStage === "redirecting" && "Opening your report…"}
-                {genStage === "idle" && "Working…"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                This usually takes 10–30 seconds. The page will open automatically.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between pt-7 mt-2 border-t border-border">
-        <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0 || submitting}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back
-        </Button>
-        {step < 2 ? (
-          <Button onClick={goNext}>Continue <ArrowRight className="h-4 w-4 ml-1" /></Button>
-        ) : (
-          <Button onClick={handleSubmit} disabled={submitting || !agreeDisclaimer}
-            className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95 px-6">
-            {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…</> : <><Sparkles className="h-4 w-4 mr-2" /> Generate Report</>}
-          </Button>
         )}
-      </div>
-    </Card>
+
+        {/* ===== STEP 2: REVIEW ===== */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-border bg-background/60 p-5 space-y-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Your question
+                </p>
+                <p className="text-sm mt-1 whitespace-pre-wrap">{queryText}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm border-t border-border pt-3">
+                <Field
+                  label="Type"
+                  value={QUERY_TYPES.find((q) => q.id === intent)?.label ?? "—"}
+                />
+                {stockName && (
+                  <Field
+                    label="Stock"
+                    value={`${stockName}${stockSymbol ? ` (${stockSymbol})` : ""}`}
+                  />
+                )}
+                {buyPrice && <Field label="Buy Price" value={`₹${buyPrice}`} />}
+                {currentPrice && <Field label="Current Price" value={`₹${currentPrice}`} />}
+                {holding && <Field label="Holding" value={holding} />}
+                {horizon && <Field label="Horizon" value={horizon} />}
+                <Field label="Language" value={language} />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                <span>
+                  <strong>AI Context Report:</strong> included free
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                <span>
+                  <strong>SEBI Analyst Video:</strong> included within 24h of submission
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Both are part of the same deliverable — not separate purchases.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox
+                checked={agreeDisclaimer}
+                onCheckedChange={(c) => setAgreeDisclaimer(c === true)}
+                className="mt-1"
+              />
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                I understand the AI report is educational context only — not SEBI investment advice.
+                Personalized recommendations come from a SEBI-Registered Research Analyst within 24
+                hours.
+              </span>
+            </label>
+          </div>
+        )}
+
+        {submitting && (
+          <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold">
+                  {genStage === "creating" && "Submitting your query…"}
+                  {genStage === "generating" && "Generating your AI context report…"}
+                  {genStage === "redirecting" && "Opening your report…"}
+                  {genStage === "idle" && "Working…"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  This usually takes 10–30 seconds. The page will open automatically.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between pt-7 mt-2 border-t border-border">
+          <Button
+            variant="ghost"
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0 || submitting}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+          </Button>
+          {step < 2 ? (
+            <Button onClick={goNext}>
+              Continue <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || !agreeDisclaimer}
+              className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95 px-6"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 mr-2" /> Generate Report
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </Card>
     </TooltipProvider>
   );
 }
