@@ -24,6 +24,8 @@ interface RunSummary {
   next_chunk_index: number;
   started_at: string;
   finished_at: string | null;
+  last_progress_at: string | null;
+  error_message: string | null;
 }
 
 interface BreakdownRow {
