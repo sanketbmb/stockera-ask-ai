@@ -104,9 +104,14 @@ export default function AdminBacktest() {
           <h1 className="text-3xl font-bold">Backtest Harness</h1>
           <p className="text-sm text-muted-foreground">Engine accuracy on historical NSE candles · admin only</p>
         </div>
-        <Button onClick={startRun} disabled={starting}>
-          {starting ? "Starting…" : "Run new backtest"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => startRun("pilot")} disabled={starting}>
+            {starting ? "Starting…" : "Pilot (45 cases)"}
+          </Button>
+          <Button onClick={() => startRun("start")} disabled={starting}>
+            {starting ? "Starting…" : "Run full backtest"}
+          </Button>
+        </div>
       </div>
 
       {loading && !runs.length && <p className="text-muted-foreground">Loading…</p>}
