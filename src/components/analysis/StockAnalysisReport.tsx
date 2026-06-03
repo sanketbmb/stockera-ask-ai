@@ -950,7 +950,7 @@ export function StockAnalysisReport({
           )}
           <PriceBand levels={levels} current={price_context.current_price} />
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <LevelCell label="Entry" value={levels.entry_zone} tone="text-primary" reason={tradePlanReasons.entry_zone} />
+            <EntryZoneCell levels={levels} reason={tradePlanReasons.entry_zone} />
             <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
             <LevelCell label="Target 1" value={levels.target_1} tone="text-emerald-700" reason={tradePlanReasons.target_1} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t1 ?? null} label="Target 1" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
             <LevelCell label="Target 2" value={levels.target_2} tone="text-emerald-700" reason={tradePlanReasons.target_2} methodTip={<TargetMethodTip targetMeta={targetsMeta?.t2 ?? null} label="Target 2" sectorSource={targetsMeta?.sector_aggregate_source ?? null} sectorMethodVersion={targetsMeta?.sector_method_version ?? null} />} />
