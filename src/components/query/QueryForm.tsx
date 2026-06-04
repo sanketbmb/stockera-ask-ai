@@ -448,15 +448,34 @@ export function QueryForm() {
         setStep(2);
         return;
       }
-      // Phase 3C — educational requires a resolvable concept; the report itself
-      // will degrade gracefully via ConceptNotFoundPanel if we miss here, but
-      // we warn early so the user can fix their wording before submission.
+      // Phase 3C + Phase 2B — educational requires a resolvable concept. If the
+      // alias map misses, try LLM inference once before proceeding. We never
+      // block with a red toast; on a true miss the report renderer falls back
+      // to ConceptNotFoundPanel with suggestions.
       if (isEducational) {
-        if (!resolvedConcept) {
-          toast.error(
-            "Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.",
-          );
-          return;
+        if (!aliasConcept && !inferredConcept?.canonical) {
+          const key = queryText.trim().toLowerCase();
+          const cached = conceptInferCache.current.get(key);
+          let result: InferredConcept | null = cached ?? null;
+          if (!result) {
+            setInferringConcept(true);
+            try {
+              result = await runInferConcept({ data: { text: queryText.trim() } });
+              conceptInferCache.current.set(key, result);
+            } catch (err) {
+              console.warn("[concept-infer] client error:", (err as Error).message);
+              result = null;
+            } finally {
+              setInferringConcept(false);
+            }
+          }
+          if (result?.canonical) {
+            setInferredConcept(result);
+            toast.success(`Concept inferred by AI · ${result.canonical}`);
+          } else {
+            // Silent advance — server renders ConceptNotFoundPanel with suggestions.
+            toast.message("We'll show the closest matches on the next screen.");
+          }
         }
         setStep(2);
         return;
