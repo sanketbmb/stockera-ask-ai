@@ -157,7 +157,10 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
 }
 
 // ───────────────── Marketaux fetch (via wrapper) ─────────────────
-async function fetchMarketaux(symbols: string, callerAuth: string | null): Promise<Article[]> {
+// MISSION 6.1A: always authenticate to marketaux-fetch with the anon key.
+// Forwarding the orchestrator's service-role bearer was causing silent
+// failures on the verify_jwt=true wrapper, leading to empty 24h cache rows.
+async function fetchMarketaux(symbols: string): Promise<Article[]> {
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 19); // YYYY-MM-DDTHH:MM:SS
@@ -166,7 +169,7 @@ async function fetchMarketaux(symbols: string, callerAuth: string | null): Promi
     headers: {
       "Content-Type": "application/json",
       apikey: ANON_KEY,
-      authorization: callerAuth ?? `Bearer ${ANON_KEY}`,
+      authorization: `Bearer ${ANON_KEY}`,
     },
     body: JSON.stringify({
       endpoint: "news/all",
