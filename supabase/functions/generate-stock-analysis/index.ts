@@ -354,17 +354,28 @@ function normalizeMomentum(d: Record<string, unknown> | null) {
 
 function normalizeSentiment(d: Record<string, unknown> | null) {
   if (!d) return null;
-  const top = ((d.top_articles ?? []) as Array<Record<string, unknown>>)[0];
+  const topArticlesRaw = ((d.top_articles ?? []) as Array<Record<string, unknown>>);
+  const top = topArticlesRaw[0];
   const counts = (d.counts ?? {}) as Record<string, Record<string, unknown>>;
   const c30 = (counts["30d"] ?? {}) as Record<string, unknown>;
   const classification = String(d.classification ?? "");
   const newsLimited = classification === "NO_NEWS" || classification === "SYMBOL_UNRECOGNIZED";
+  // Mission 6.1B: persist up to 3 top articles into the report payload so
+  // the UI can render a real news block (title + source + date + link).
+  const top_articles = topArticlesRaw.slice(0, 3).map((a) => ({
+    title: String(a.title ?? ""),
+    source: String(a.source ?? ""),
+    url: String(a.url ?? ""),
+    published_at: String(a.published_at ?? ""),
+    sentiment: typeof a.sentiment === "number" ? a.sentiment : 0,
+  }));
   return {
     snapshot: {
       news_sentiment_score: num(d.sentiment_score),
       sentiment_label: classification,
       article_count: num(c30.total) ?? 0,
       top_news_driver: top ? String(top.title ?? "") : "",
+      top_articles,
     },
     score: newsLimited ? null : num(d.sentiment_score),
     as_of: String(d.as_of_date ?? ((d.metadata ?? {}) as Record<string, unknown>).computed_at ?? ""),
