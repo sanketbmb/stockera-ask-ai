@@ -246,18 +246,12 @@ async function fetchSectorFundamentalFallback(sector: string | null, industry: s
   const roe = num(r.roe_median);
   if (pe == null && pb == null && roe == null) return null;
   const canonOut = (r.sector_canonical as string) ?? candidates[0].toLowerCase().replace(/[^a-z0-9]+/g, "_");
-
-  const r = rows[0];
-  const pe = num(r.pe_median);
-  const pb = num(r.pb_median);
-  const roe = num(r.roe_median);
-  if (pe == null && pb == null && roe == null) return null;
   return {
     pe_ratio: pe,
     pb_ratio: pb,
     roe,
-    sector_canonical: (r.sector_canonical as string) ?? canon,
-    sector_display: (r.sector_display as string) ?? sector,
+    sector_canonical: canonOut,
+    sector_display: (r.sector_display as string) ?? candidates[0],
     sample_size: num(r.sample_size),
   };
 }
