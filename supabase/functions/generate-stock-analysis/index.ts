@@ -784,7 +784,7 @@ Deno.serve(async (req) => {
         relative_strength_vs_nifty: null, trend_strength: "", volume_confirmation: "NEUTRAL", momentum_label: "",
       },
       sentiment_snapshot: sent?.snapshot ?? {
-        news_sentiment_score: null, sentiment_label: "", article_count: 0, top_news_driver: "",
+        news_sentiment_score: null, sentiment_label: "", article_count: 0, top_news_driver: "", top_articles: [],
       },
       intraday_microstructure_snapshot:
         (imRes.data?.intraday_microstructure_snapshot as Record<string, unknown> | undefined) ?? null,
