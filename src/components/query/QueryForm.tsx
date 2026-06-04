@@ -44,6 +44,7 @@ import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-de
 import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
 import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
+import { getLtpForSymbol } from "@/lib/market.functions";
 import {
   ArrowLeft,
   ArrowRight,
