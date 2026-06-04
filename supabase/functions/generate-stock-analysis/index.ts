@@ -539,6 +539,7 @@ function computeVerdict(
   scores: { technical: number | null; fundamental: number | null; risk: number | null; momentum: number | null; sentiment: number | null },
   riskSnap: { max_drawdown: number | null; beta: number | null; volatility_1y: number | null } | null,
   queryType: QueryType,
+  opts: { fundamentalFallbackApplied?: boolean } = {},
 ) {
   const weights = WEIGHT_PRESETS[queryType];
   let weightedSum = 0, weightUsed = 0;
