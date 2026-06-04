@@ -1847,7 +1847,11 @@ function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
         copyKey="card_medium_fundamentals_lite"
         summary={`P/E ${fmtNum(f.pe_ratio)} reads as ${labelize(f.valuation_label).toLowerCase()}. ROE ${fmtPct(f.roe)}.`}
         muted={flags.banking_override_applied && (f.altman_z_score == null)}
-        footnote={flags.banking_override_applied ? "Banking sector — Altman Z & DCF de-emphasised." : null}
+        footnote={
+          f.derivation === "sector_fallback"
+            ? `Sector-derived fallback · company fundamentals unavailable${f.sector_fallback_meta?.sector_display ? ` · sector: ${f.sector_fallback_meta.sector_display}` : ""}.`
+            : (flags.banking_override_applied ? "Banking sector — Altman Z & DCF de-emphasised." : null)
+        }
       >
         <Metric label="P/E" value={<AnimatedNumber value={f.pe_ratio} decimals={2} duration={700} />} hint={METRIC_COPY.m_pe_ratio.measures} />
         <Metric label="ROE" value={f.roe != null ? <AnimatedNumber value={f.roe} decimals={2} suffix="%" duration={700} /> : DASH} />
