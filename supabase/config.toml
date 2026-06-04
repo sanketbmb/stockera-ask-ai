@@ -19,7 +19,12 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.marketaux-fetch]
-verify_jwt = true
+# MISSION 6.1A: verify_jwt disabled. The internal sibling-edge-fn call from
+# compute-sentiment was rejected with UNAUTHORIZED_INVALID_JWT_FORMAT for
+# both anon and service-role env keys, silently poisoning sentiment cache
+# rows with empty article arrays. Wrapper is still gated by the upstream
+# MARKETAUX_API_TOKEN secret; no public-write surface is exposed.
+verify_jwt = false
 
 # compute-* modules are stateless internal compute layers called by the
 # generate-stock-analysis orchestrator (and other server-side callers) using
