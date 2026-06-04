@@ -156,39 +156,38 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
   });
 }
 
-// ───────────────── Marketaux fetch (via wrapper) ─────────────────
-// MISSION 6.1A: use SERVICE_KEY for the sibling edge-fn call. The
-// SUPABASE_ANON_KEY env var is rejected by the marketaux-fetch gateway
-// with UNAUTHORIZED_INVALID_JWT_FORMAT, which was the root cause of the
-// silent 0-article cache poisoning across all recent reports.
+// ───────────────── Marketaux fetch (direct upstream) ─────────────────
+// MISSION 6.1A.1: Call Marketaux directly using MARKETAUX_API_TOKEN.
+// The previous sibling-wrapper call (marketaux-fetch) required either a
+// JWT gateway that rejected our service key (UNAUTHORIZED_INVALID_JWT_FORMAT)
+// or a fully-public wrapper that any caller could hit to burn our quota.
+// Direct call eliminates both risks: only this function (which itself
+// requires auth at the orchestrator boundary) can spend Marketaux credits.
+const MARKETAUX_BASE_URL = "https://api.marketaux.com/v1/news/all";
+
 async function fetchMarketaux(symbols: string): Promise<Article[]> {
+  const token = Deno.env.get("MARKETAUX_API_TOKEN");
+  if (!token) {
+    throw new Error("MARKETAUX_API_TOKEN not configured");
+  }
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 19); // YYYY-MM-DDTHH:MM:SS
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/marketaux-fetch`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-    },
-    body: JSON.stringify({
-      endpoint: "news/all",
-      params: {
-        symbols,
-        filter_entities: "true",
-        limit: ARTICLES_PER_CALL,
-        published_after: publishedAfter,
-        language: "en",
-      },
-    }),
+  const qs = new URLSearchParams({
+    api_token: token,
+    symbols,
+    filter_entities: "true",
+    limit: String(ARTICLES_PER_CALL),
+    published_after: publishedAfter,
+    language: "en",
   });
+  const res = await fetch(`${MARKETAUX_BASE_URL}?${qs.toString()}`, { method: "GET" });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`marketaux-fetch ${res.status}: ${txt.slice(0, 300)}`);
+    throw new Error(`marketaux ${res.status}: ${txt.slice(0, 300)}`);
   }
   const body = await res.json();
-  const arr = body?.data?.data;
+  const arr = body?.data;
   return Array.isArray(arr) ? (arr as Article[]) : [];
 }
 
