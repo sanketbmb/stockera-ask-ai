@@ -123,7 +123,7 @@ function applyVerdictSuppression(
   }
   if (!matched) return payload;
 
-  const auditExt = payload.audit_meta as Record<string, unknown>;
+  const auditExt = payload.audit_meta as unknown as Record<string, unknown>;
   // Idempotent — if already suppressed with same surfaced verdict, skip.
   if (auditExt.verdict_suppressed === true && auditExt.suppressed_surfaced === matched.surfaced) {
     return payload;
