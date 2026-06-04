@@ -12,6 +12,7 @@ export const RouterIntentEnum = z.enum([
   "averaging_decision",
   "sector_view",
   "educational",
+  "stock_picker",
   "other",
 ]);
 export type RouterIntent = z.infer<typeof RouterIntentEnum>;
@@ -71,6 +72,11 @@ export function toFormIntent(t: RouterIntent): AnyIntent {
       return "sector_view";
     case "educational":
       return "educational";
+    // Phase 1 (Stock Picker) ships behind ENABLE_STOCK_PICKER. Until then,
+    // route stock_picker hits to the general "Ask Anything" path so the user
+    // still gets a real AI report. (Dark dispatch.)
+    case "stock_picker":
+      return "other";
     case "other":
     default:
       return "other";
