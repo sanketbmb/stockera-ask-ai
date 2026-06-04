@@ -222,8 +222,8 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
       // Wave 1 fix: if suppression newly applies on a cache read, re-persist
       // the hardened payload so the DB reflects the safer verdict on subsequent
       // queries (admin tools, analytics, etc.). Best-effort, non-fatal.
-      const cachedAudit = (cached.audit_meta ?? {}) as Record<string, unknown>;
-      const suppressedAudit = (suppressed.audit_meta ?? {}) as Record<string, unknown>;
+      const cachedAudit = (cached.audit_meta ?? {}) as unknown as Record<string, unknown>;
+      const suppressedAudit = (suppressed.audit_meta ?? {}) as unknown as Record<string, unknown>;
       const newlySuppressed =
         suppressedAudit.verdict_suppressed === true &&
         cachedAudit.verdict_suppressed !== true;
@@ -241,10 +241,10 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
             resource_type: "query",
             resource_id: row.id,
             payload: {
-              suppressed_surfaced: suppressedAudit.suppressed_surfaced,
-              suppressed_reason: suppressedAudit.suppressed_reason,
-              trend_label: suppressedAudit.suppressed_trend_label,
-              reasoning_code: suppressedAudit.suppressed_reasoning_code,
+              suppressed_surfaced: String(suppressedAudit.suppressed_surfaced ?? ""),
+              suppressed_reason: String(suppressedAudit.suppressed_reason ?? ""),
+              trend_label: String(suppressedAudit.suppressed_trend_label ?? ""),
+              reasoning_code: String(suppressedAudit.suppressed_reasoning_code ?? ""),
             },
           }).then(({ error }) => {
             if (error) console.warn("[freezeOrReadReport] suppress-audit failed:", error);
