@@ -237,8 +237,9 @@ async function fetchSectorFundamentalFallback(sector: string | null, industry: s
 
   let rows: Array<Record<string, unknown>> | null = null;
   for (const cand of candidates) {
-    const canon = cand.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-    // 1) canonical exact
+    const canonRaw = cand.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const canon = SECTOR_ALIASES[canonRaw] ?? canonRaw;
+    // 1) canonical exact (after alias)
     rows = await sbSelect<Array<Record<string, unknown>>>(
       `sector_aggregates?sector_canonical=eq.${encodeURIComponent(canon)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
     );
