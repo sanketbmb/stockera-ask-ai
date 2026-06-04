@@ -25,6 +25,7 @@ Map each user question to exactly one canonical type:
 - "averaging_decision": user already owns the stock at a loss/discount and is asking whether to average down / buy more.
 - "sector_view": user is asking about a sector or group of stocks, not a single ticker.
 - "educational": user is asking a concept / definition / how-it-works question.
+- "stock_picker": user is asking for stock IDEAS/RECOMMENDATIONS without naming a specific ticker — e.g. "which stock to buy", "best stock for intraday", "top picks for next month", "recommend stocks for long term", "give me 5 stocks to invest in".
 - "other": ambiguous, off-topic, mutual-fund / portfolio, or anything not covered above.
 
 Extraction rules (CRITICAL — when in doubt, return null):
@@ -83,6 +84,7 @@ async function callGateway(text: string, signal: AbortSignal): Promise<RouterOut
                     "averaging_decision",
                     "sector_view",
                     "educational",
+                    "stock_picker",
                     "other",
                   ],
                 },

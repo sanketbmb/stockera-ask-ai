@@ -42,6 +42,7 @@ import {
 import { resolveSector, sectorDisplay } from "@/lib/sector-alias-map";
 import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-detector";
 import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
+import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import {
   ArrowLeft,
@@ -134,6 +135,7 @@ export function QueryForm() {
   const runGenerateAiReport = useServerFn(generateAiReport);
   const runIntentRouter = useServerFn(classifyIntentRouter);
   const runInferSector = useServerFn(inferSectorFromText);
+  const runInferConcept = useServerFn(inferConceptFromText);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -177,6 +179,10 @@ export function QueryForm() {
   const [inferredSector, setInferredSector] = useState<InferredSector | null>(null);
   const [inferringSector, setInferringSector] = useState(false);
   const sectorInferCache = useRef<Map<string, InferredSector>>(new Map());
+  // Phase 2B — LLM-inferred concept for Educational when alias map misses.
+  const [inferredConcept, setInferredConcept] = useState<InferredConcept | null>(null);
+  const [inferringConcept, setInferringConcept] = useState(false);
+  const conceptInferCache = useRef<Map<string, InferredConcept>>(new Map());
 
   // Phase 3A — apply a router classification to the form state.
   function applyRouterResult(r: RouterOutput) {
@@ -303,6 +309,7 @@ export function QueryForm() {
     setRouterMeta(null);
     setRouterNotice(null);
     setAutoDetected({});
+    setInferredConcept(null);
   };
 
   // Phase 3B + Mission 1.6 — sector auto-detection.
@@ -368,8 +375,13 @@ export function QueryForm() {
             ? resolveSector(routerMeta.sector)
             : null
     : null;
-  // Phase 3C — resolve concept from question text.
-  const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
+  // Phase 3C — resolve concept from question text. Phase 2B adds LLM fallback.
+  const aliasConcept = isEducational ? resolveConcept(queryText) : null;
+  const resolvedConcept = aliasConcept
+    ? aliasConcept
+    : isEducational && inferredConcept?.canonical
+      ? { canonical: inferredConcept.canonical, confidence: "alias" as const }
+      : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
@@ -437,15 +449,34 @@ export function QueryForm() {
         setStep(2);
         return;
       }
-      // Phase 3C — educational requires a resolvable concept; the report itself
-      // will degrade gracefully via ConceptNotFoundPanel if we miss here, but
-      // we warn early so the user can fix their wording before submission.
+      // Phase 3C + Phase 2B — educational requires a resolvable concept. If the
+      // alias map misses, try LLM inference once before proceeding. We never
+      // block with a red toast; on a true miss the report renderer falls back
+      // to ConceptNotFoundPanel with suggestions.
       if (isEducational) {
-        if (!resolvedConcept) {
-          toast.error(
-            "Couldn't recognize that concept. Try RSI, MACD, DCF, Beta, or Piotroski F-Score.",
-          );
-          return;
+        if (!aliasConcept && !inferredConcept?.canonical) {
+          const key = queryText.trim().toLowerCase();
+          const cached = conceptInferCache.current.get(key);
+          let result: InferredConcept | null = cached ?? null;
+          if (!result) {
+            setInferringConcept(true);
+            try {
+              result = await runInferConcept({ data: { text: queryText.trim() } });
+              conceptInferCache.current.set(key, result);
+            } catch (err) {
+              console.warn("[concept-infer] client error:", (err as Error).message);
+              result = null;
+            } finally {
+              setInferringConcept(false);
+            }
+          }
+          if (result?.canonical) {
+            setInferredConcept(result);
+            toast.success(`Concept inferred by AI · ${result.canonical}`);
+          } else {
+            // Silent advance — server renders ConceptNotFoundPanel with suggestions.
+            toast.message("We'll show the closest matches on the next screen.");
+          }
         }
         setStep(2);
         return;
@@ -793,12 +824,20 @@ export function QueryForm() {
         const msg =
           (e instanceof Error ? e.message : pgLike?.message) ||
           "Insert failed (no details from server)";
-        console.error("[handleSubmit] pg error", { code, message: msg, details: pgLike?.details, hint: pgLike?.hint });
+        console.error("[handleSubmit] pg error envelope", JSON.stringify({
+          code, message: msg, details: pgLike?.details, hint: pgLike?.hint,
+        }));
         let userMsg: string;
         if (code === "23514") {
-          userMsg = "Invalid query type — please contact support (CODE: 23514)";
+          userMsg = "Value not allowed by a database check — please contact support (CODE: 23514)";
+        } else if (code === "23502") {
+          userMsg = `Missing required field: ${pgLike?.details || msg} (CODE: 23502)`;
+        } else if (code === "23505") {
+          userMsg = `This entry already exists: ${pgLike?.details || msg} (CODE: 23505)`;
         } else if (code === "42501") {
           userMsg = `Permission denied: ${msg} (CODE: 42501)`;
+        } else if (code === "PGRST116") {
+          userMsg = `Record not found: ${msg} (CODE: PGRST116)`;
         } else if (code) {
           userMsg = `Could not create query [${code}]: ${msg}`;
         } else {
@@ -963,6 +1002,20 @@ export function QueryForm() {
               <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                 <span>Understanding your question…</span>
+              </div>
+            )}
+            {inferringConcept && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Looking up that concept…</span>
+              </div>
+            )}
+            {!inferringConcept && isEducational && inferredConcept?.canonical && !aliasConcept && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs flex items-center gap-2 text-emerald-800 dark:text-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>
+                  Concept inferred by AI · <span className="font-mono">{inferredConcept.canonical}</span>
+                </span>
               </div>
             )}
             {!routerLoading && routerNotice && (

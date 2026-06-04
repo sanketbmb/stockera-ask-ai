@@ -113,6 +113,176 @@ const ALIAS_MAP: Record<string, string> = {
   "price to earnings": "PE Ratio",
   "price-to-earnings": "PE Ratio",
   "price earnings ratio": "PE Ratio",
+
+  // ─── Phase 2A — aliases for 30 new concepts ───
+
+  // ROE
+  "roe": "ROE",
+  "return on equity": "ROE",
+
+  // ROCE
+  "roce": "ROCE",
+  "return on capital employed": "ROCE",
+  "return on capital": "ROCE",
+
+  // EPS
+  "eps": "EPS",
+  "earnings per share": "EPS",
+  "earning per share": "EPS",
+
+  // Book Value
+  "book value": "Book Value",
+  "bv": "Book Value",
+  "book value per share": "Book Value",
+
+  // P/B
+  "pb": "P/B Ratio",
+  "p/b": "P/B Ratio",
+  "pb ratio": "P/B Ratio",
+  "p/b ratio": "P/B Ratio",
+  "price to book": "P/B Ratio",
+  "price-to-book": "P/B Ratio",
+
+  // Dividend Yield
+  "dividend yield": "Dividend Yield",
+  "dy": "Dividend Yield",
+  "div yield": "Dividend Yield",
+
+  // Market Cap
+  "market cap": "Market Cap",
+  "market capitalisation": "Market Cap",
+  "market capitalization": "Market Cap",
+  "mcap": "Market Cap",
+  "m-cap": "Market Cap",
+
+  // Volume
+  "volume": "Volume",
+  "trading volume": "Volume",
+  "traded volume": "Volume",
+
+  // Liquidity
+  "liquidity": "Liquidity",
+  "trading liquidity": "Liquidity",
+  "turnover": "Liquidity",
+  "impact cost": "Liquidity",
+
+  // Volatility
+  "volatility": "Volatility",
+  "stock volatility": "Volatility",
+  "std dev": "Volatility",
+  "standard deviation": "Volatility",
+  "annualised volatility": "Volatility",
+
+  // Stop Loss
+  "stop loss": "Stop Loss",
+  "stoploss": "Stop Loss",
+  "sl": "Stop Loss",
+
+  // Target Price
+  "target price": "Target Price",
+  "target": "Target Price",
+  "price target": "Target Price",
+  "tgt": "Target Price",
+
+  // Support
+  "support": "Support",
+  "support level": "Support",
+  "support zone": "Support",
+
+  // Resistance
+  "resistance": "Resistance",
+  "resistance level": "Resistance",
+  "resistance zone": "Resistance",
+
+  // Trend
+  "trend": "Trend",
+  "uptrend": "Trend",
+  "downtrend": "Trend",
+  "trending": "Trend",
+
+  // Pullback
+  "pullback": "Pullback",
+  "retracement": "Pullback",
+  "dip": "Pullback",
+
+  // Breakout
+  "breakout": "Breakout",
+  "break out": "Breakout",
+  "breakouts": "Breakout",
+
+  // Gap
+  "gap": "Gap",
+  "gap up": "Gap",
+  "gap down": "Gap",
+  "gap fill": "Gap",
+
+  // Candlestick
+  "candlestick": "Candlestick",
+  "candle": "Candlestick",
+  "candles": "Candlestick",
+  "candlestick chart": "Candlestick",
+  "candlestick pattern": "Candlestick",
+
+  // SMA
+  "sma": "SMA",
+  "simple moving average": "SMA",
+  "moving average": "SMA",
+
+  // Stochastic
+  "stochastic": "Stochastic",
+  "stoch": "Stochastic",
+  "stochastic oscillator": "Stochastic",
+
+  // OBV
+  "obv": "OBV",
+  "on balance volume": "OBV",
+  "on-balance volume": "OBV",
+
+  // Fibonacci
+  "fibonacci": "Fibonacci",
+  "fib": "Fibonacci",
+  "fib levels": "Fibonacci",
+  "fibonacci retracement": "Fibonacci",
+  "golden ratio": "Fibonacci",
+
+  // Pivot Points
+  "pivot": "Pivot Points",
+  "pivots": "Pivot Points",
+  "pivot point": "Pivot Points",
+  "pivot points": "Pivot Points",
+
+  // Open Interest
+  "oi": "Open Interest",
+  "open interest": "Open Interest",
+
+  // Sortino
+  "sortino": "Sortino Ratio",
+  "sortino ratio": "Sortino Ratio",
+
+  // VaR
+  "var": "VaR",
+  "value at risk": "VaR",
+  "var 95": "VaR",
+  "var(95)": "VaR",
+
+  // Free Cash Flow
+  "fcf": "Free Cash Flow",
+  "free cash flow": "Free Cash Flow",
+  "free cashflow": "Free Cash Flow",
+
+  // Debt to Equity
+  "d/e": "Debt to Equity",
+  "de": "Debt to Equity",
+  "de ratio": "Debt to Equity",
+  "d/e ratio": "Debt to Equity",
+  "debt to equity": "Debt to Equity",
+  "debt-to-equity": "Debt to Equity",
+  "debt equity ratio": "Debt to Equity",
+
+  // Working Capital
+  "working capital": "Working Capital",
+  "wc": "Working Capital",
+  "net working capital": "Working Capital",
 };
 
 function normalise(s: string): string {
