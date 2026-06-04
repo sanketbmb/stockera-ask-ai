@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CACHE_ID = "market_snapshot";
@@ -131,3 +132,47 @@ export const getMarketSnapshot = createServerFn({ method: "GET" }).handler(
     }
   },
 );
+
+// Wave 1 — Fix #3: LTP autofill helper for QueryForm.
+// Reads the latest cached LTP for a symbol from the ltp_cache table.
+// Returns { ltp, ageMs, stale } so the UI can decide whether to autofill.
+// Fresh = fetched within the last 24 hours.
+
+const LTP_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+export interface LtpResult {
+  ltp: number | null;
+  fetchedAt: string | null;
+  ageMs: number | null;
+  stale: boolean;
+}
+
+export const getLtpForSymbol = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({ symbol: z.string().min(1).max(32).regex(/^[A-Za-z0-9._&-]+$/) }).parse(input),
+  )
+  .handler(async ({ data }): Promise<LtpResult> => {
+    const symbol = data.symbol.toUpperCase();
+    try {
+      const { data: row, error } = await supabaseAdmin
+        .from("ltp_cache")
+        .select("ltp, fetched_at")
+        .eq("symbol", symbol)
+        .maybeSingle();
+      if (error || !row || row.ltp == null || !row.fetched_at) {
+        return { ltp: null, fetchedAt: null, ageMs: null, stale: true };
+      }
+      const fetchedAtMs = new Date(row.fetched_at as string).getTime();
+      const ageMs = Date.now() - fetchedAtMs;
+      const stale = ageMs > LTP_FRESHNESS_MS;
+      return {
+        ltp: Number(row.ltp),
+        fetchedAt: row.fetched_at as string,
+        ageMs,
+        stale,
+      };
+    } catch (err) {
+      console.error("[getLtpForSymbol] failed:", err);
+      return { ltp: null, fetchedAt: null, ageMs: null, stale: true };
+    }
+  });

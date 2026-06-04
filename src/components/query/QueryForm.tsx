@@ -44,6 +44,7 @@ import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-de
 import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
 import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
+import { getLtpForSymbol } from "@/lib/market.functions";
 import {
   ArrowLeft,
   ArrowRight,
@@ -171,6 +172,34 @@ export function QueryForm() {
   const [entryPrice, setEntryPrice] = useState("");
   const [qty, setQty] = useState("");
   const [anythingElse, setAnythingElse] = useState("");
+  // Wave 1 Fix #3 — LTP autofill state
+  const [ltpAutofillState, setLtpAutofillState] = useState<"idle" | "loading" | "filled" | "stale">("idle");
+  const fetchLtp = useServerFn(getLtpForSymbol);
+  useEffect(() => {
+    let cancelled = false;
+    const sym = (stockSymbol || "").trim();
+    if (!sym || !showStockFields || showPhase2Fields) {
+      setLtpAutofillState("idle");
+      return;
+    }
+    setLtpAutofillState("loading");
+    fetchLtp({ data: { symbol: sym } })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ltp != null && !res.stale) {
+          // Autofill only if user hasn't already typed a value.
+          setCurrentPrice((prev) => (prev && prev.trim() !== "" ? prev : String(res.ltp)));
+          setLtpAutofillState("filled");
+        } else {
+          setLtpAutofillState("stale");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLtpAutofillState("stale");
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockSymbol]);
 
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
@@ -1135,6 +1164,15 @@ export function QueryForm() {
                       onChange={(e) => setCurrentPrice(e.target.value)}
                     />
                   </div>
+                  {ltpAutofillState === "loading" && (
+                    <p className="text-xs text-muted-foreground">Fetching live price…</p>
+                  )}
+                  {ltpAutofillState === "filled" && (
+                    <p className="text-xs text-muted-foreground">Autofilled from latest cached price — edit if needed.</p>
+                  )}
+                  {ltpAutofillState === "stale" && (
+                    <p className="text-xs text-muted-foreground">Could not fetch live price — please enter manually.</p>
+                  )}
                 </div>
                 {showBuyPrice && (
                   <div className="space-y-1.5 sm:col-span-2">

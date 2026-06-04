@@ -76,29 +76,48 @@ function enrichAuditMeta(
 // Maps engine reasoning_code → safer surfaced verdict + strips trade levels.
 // Applied to both newly-frozen payloads AND cache reads, so older rows get
 // hardened the next time the user opens them.
+//
+// Wave 1 fix: code-based rules are evaluated first; the trending-down branch
+// runs independently on the trend label (previously it was gated by a regex
+// rule's appliesTo("") call which always returned false, so the hook was
+// effectively dead for the trending-down case).
 type SuppressedVerdict = "WAIT_FOR_CLARITY" | "MONITOR";
-interface SuppressionRule {
+interface CodeRule {
+  kind: "code";
   surfaced: SuppressedVerdict;
-  appliesTo: (queryType: string, code: string) => boolean;
+  matches: (queryType: string, code: string) => boolean;
   reason: string;
 }
+interface TrendRule {
+  kind: "trend";
+  surfaced: SuppressedVerdict;
+  matches: (queryType: string, trendLabel: string) => boolean;
+  reason: string;
+}
+type SuppressionRule = CodeRule | TrendRule;
+
 const SUPPRESSION_RULES: SuppressionRule[] = [
   {
-    surfaced: "WAIT_FOR_CLARITY",
-    appliesTo: (qt, _code) => qt === "fresh_entry",
-    // Note: trend label lives on technical_snapshot, not reasoning_code.
-    // We pattern-match against the trend_label in the payload below.
-    reason: "fresh_entry on a TRENDING_DOWN tape — suppress until structure clears",
-  },
-  {
+    kind: "code",
     surfaced: "MONITOR",
-    appliesTo: (_qt, code) => /_ZONE_INVERTED_FALLBACK/i.test(code),
+    matches: (_qt, code) => /_ZONE_INVERTED_FALLBACK/i.test(code),
     reason: "Entry zone inverted — monitor for cleaner setup",
   },
   {
+    kind: "code",
     surfaced: "WAIT_FOR_CLARITY",
-    appliesTo: (_qt, code) => /SHORT_CORRECTIVE_LOW_CONVICTION/i.test(code),
+    matches: (_qt, code) => /SHORT_CORRECTIVE_LOW_CONVICTION/i.test(code),
     reason: "Short corrective leg with low conviction — wait for clarity",
+  },
+  {
+    kind: "trend",
+    surfaced: "WAIT_FOR_CLARITY",
+    matches: (qt, trendLabel) =>
+      qt === "fresh_entry" &&
+      (trendLabel.includes("TRENDING_DOWN") ||
+        trendLabel.includes("DOWNTREND") ||
+        trendLabel.includes("BEARISH")),
+    reason: "fresh_entry on a bearish/down-trending tape — suppress until structure clears",
   },
 ];
 
@@ -108,18 +127,13 @@ function applyVerdictSuppression(
 ): StockAnalysisPayload {
   const code = payload.levels?.entry_strategy?.reasoning_code ?? "";
   const trendLabel = (payload.technical_snapshot?.trend_label ?? "").toUpperCase();
-  const isTrendingDown = trendLabel.includes("TRENDING_DOWN") || trendLabel.includes("DOWNTREND");
 
   let matched: SuppressionRule | null = null;
   for (const rule of SUPPRESSION_RULES) {
-    if (rule.surfaced === "WAIT_FOR_CLARITY" && rule.appliesTo(queryType, "") && isTrendingDown) {
-      matched = rule;
-      break;
-    }
-    if (rule.appliesTo(queryType, code) && rule !== SUPPRESSION_RULES[0]) {
-      matched = rule;
-      break;
-    }
+    const ok = rule.kind === "code"
+      ? rule.matches(queryType, code)
+      : rule.matches(queryType, trendLabel);
+    if (ok) { matched = rule; break; }
   }
   if (!matched) return payload;
 
@@ -206,6 +220,40 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
       const suppressed = applyVerdictSuppression(cached, queryType);
+
+      // Wave 1 fix: if suppression newly applies on a cache read, re-persist
+      // the hardened payload so the DB reflects the safer verdict on subsequent
+      // queries (admin tools, analytics, etc.). Best-effort, non-fatal.
+      const cachedAudit = (cached.audit_meta ?? {}) as unknown as Record<string, unknown>;
+      const suppressedAudit = (suppressed.audit_meta ?? {}) as unknown as Record<string, unknown>;
+      const newlySuppressed =
+        suppressedAudit.verdict_suppressed === true &&
+        cachedAudit.verdict_suppressed !== true;
+      if (newlySuppressed) {
+        const { error: rePersistErr } = await supabaseAdmin
+          .from("queries")
+          .update({ ai_report: JSON.parse(JSON.stringify(suppressed)) } as never)
+          .eq("id", row.id);
+        if (rePersistErr) {
+          console.warn("[freezeOrReadReport] cache-hit re-persist failed (non-fatal):", rePersistErr);
+        } else {
+          await supabaseAdmin.from("audit_events").insert({
+            event_type: "verdict_suppression_applied_on_read",
+            actor_id: userId,
+            resource_type: "query",
+            resource_id: row.id,
+            payload: {
+              suppressed_surfaced: String(suppressedAudit.suppressed_surfaced ?? ""),
+              suppressed_reason: String(suppressedAudit.suppressed_reason ?? ""),
+              trend_label: String(suppressedAudit.suppressed_trend_label ?? ""),
+              reasoning_code: String(suppressedAudit.suppressed_reasoning_code ?? ""),
+            },
+          }).then(({ error }) => {
+            if (error) console.warn("[freezeOrReadReport] suppress-audit failed:", error);
+          });
+        }
+      }
+
       const enriched = enrichAuditMeta(suppressed, {
         frozenAt: row.frozen_at as string,
         servedFromCache: true,
