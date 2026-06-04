@@ -996,6 +996,20 @@ export function QueryForm() {
                 <span>Understanding your question…</span>
               </div>
             )}
+            {inferringConcept && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span>Looking up that concept…</span>
+              </div>
+            )}
+            {!inferringConcept && isEducational && inferredConcept?.canonical && !aliasConcept && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs flex items-center gap-2 text-emerald-800 dark:text-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>
+                  Concept inferred by AI · <span className="font-mono">{inferredConcept.canonical}</span>
+                </span>
+              </div>
+            )}
             {!routerLoading && routerNotice && (
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
                 {routerNotice}
