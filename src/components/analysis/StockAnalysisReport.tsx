@@ -1603,6 +1603,83 @@ const QUALITY_LABEL: Record<string, string> = {
   BANKING_ADJUSTED: "Banking-adjusted",
 };
 
+// ─────────────────────────────────────────────────────────────────────
+// Mission 6.1B — Recent News block. Reads from sentiment_snapshot.top_articles
+// (persisted by generate-stock-analysis from compute-sentiment). Pure
+// information; no advice logic. Three states:
+//   • coverage + score   → "Sentiment label" + top 3 headlines
+//   • coverage, no score → "Limited recent coverage" + top 3 headlines
+//   • no coverage        → "No recent coverage" block
+// ─────────────────────────────────────────────────────────────────────
+function fmtArticleDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+}
+function sentimentTone(s: number): string {
+  if (s > 0.15) return "text-emerald-700 dark:text-emerald-300";
+  if (s < -0.15) return "text-rose-700 dark:text-rose-300";
+  return "text-muted-foreground";
+}
+function RecentNewsBlock({ sent }: { sent: StockAnalysisPayload["sentiment_snapshot"] }) {
+  const articles = sent.top_articles ?? [];
+  const hasArticles = articles.length > 0;
+  const hasScore = sent.news_sentiment_score != null;
+  const articleCount = sent.article_count ?? 0;
+
+  let headline: string;
+  if (!hasArticles && articleCount === 0) {
+    headline = "No recent coverage in the last 30 days.";
+  } else if (!hasScore) {
+    headline = "Limited recent coverage — score withheld.";
+  } else {
+    headline = `Sentiment: ${labelize(sent.sentiment_label)}`;
+  }
+
+  return (
+    <div className="col-span-3 mt-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Recent news · last 30d</p>
+        <p className="font-mono text-[10px] text-muted-foreground">{articleCount} article{articleCount === 1 ? "" : "s"}</p>
+      </div>
+      <p className="mt-1 text-[12px] text-foreground/85">{headline}</p>
+      {hasArticles ? (
+        <ul className="mt-2 space-y-1.5">
+          {articles.map((a, i) => (
+            <li key={i} className="text-[12px] leading-snug">
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground/90 hover:text-accent hover:underline underline-offset-2"
+              >
+                {a.title || "(untitled)"}
+              </a>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
+                <span>{a.source || "—"}</span>
+                {a.published_at && <><span>·</span><span>{fmtArticleDate(a.published_at)}</span></>}
+                <span>·</span>
+                <span className={sentimentTone(a.sentiment)}>
+                  sent {a.sentiment > 0 ? "+" : ""}{a.sentiment.toFixed(2)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-[11px] italic text-muted-foreground">
+          News-aware modules will activate once coverage picks up.
+        </p>
+      )}
+      <p className="mt-2 text-[10px] italic text-muted-foreground">
+        Source: Marketaux news API · for context only, not a recommendation.
+      </p>
+    </div>
+  );
+}
+
+
 function TierShapedGrid({ data }: { data: StockAnalysisPayload }) {
   const tier = data.query_context.query_type;
   if (tier === "intraday")    return <IntradayGrid data={data} />;
@@ -1706,6 +1783,8 @@ function IntradayGrid({ data }: { data: StockAnalysisPayload }) {
             </ul>
           </div>
         )}
+        <RecentNewsBlock sent={sent} />
+
       </TierCard>
     </motion.section>
   );
@@ -1826,6 +1905,7 @@ function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: S
         )}
         <p className="mt-2 text-[10px] italic text-muted-foreground">Earnings calendar — coming soon. Only corporate actions FinEdge confirms are shown.</p>
       </div>
+      <RecentNewsBlock sent={sent} />
     </TierCard>
   );
 }
@@ -1833,7 +1913,8 @@ function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: S
 function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
   const {
     fundamental_snapshot: f, risk_snapshot: r, momentum_snapshot: mom,
-    returns_snapshot: ret, score_breakdown: s, flags, long_term_quality_snapshot, audit_meta,
+    returns_snapshot: ret, sentiment_snapshot: sent, score_breakdown: s,
+    flags, long_term_quality_snapshot, audit_meta,
   } = data;
   const q: LongTermQualitySnapshot | null = long_term_quality_snapshot ?? null;
   const sectorSource = audit_meta.targets_meta?.sector_aggregate_source ?? null;
@@ -1918,6 +1999,7 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
         <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} hint={METRIC_COPY.m_rs_vs_nifty.measures} />
         <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
         <Metric label="RS vs Nifty" value={mom.relative_strength_vs_nifty != null ? fmtPct(mom.relative_strength_vs_nifty, 2, true) : DASH} />
+        <RecentNewsBlock sent={sent} />
       </TierCard>
     </motion.section>
   );

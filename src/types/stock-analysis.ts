@@ -111,11 +111,21 @@ export interface MomentumSnapshot {
   momentum_label: string;
 }
 
+export interface SentimentTopArticle {
+  title: string;
+  source: string;
+  url: string;
+  published_at: string;
+  sentiment: number;
+}
+
 export interface SentimentSnapshot {
   news_sentiment_score: number | null;
   sentiment_label: string;
   article_count: number;
   top_news_driver: string;
+  // Mission 6.1B: top 3 recent articles surfaced by compute-sentiment.
+  top_articles?: SentimentTopArticle[];
 }
 
 export interface Flags {
