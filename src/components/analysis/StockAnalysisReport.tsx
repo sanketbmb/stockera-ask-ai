@@ -1913,7 +1913,8 @@ function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: S
 function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
   const {
     fundamental_snapshot: f, risk_snapshot: r, momentum_snapshot: mom,
-    returns_snapshot: ret, score_breakdown: s, flags, long_term_quality_snapshot, audit_meta,
+    returns_snapshot: ret, sentiment_snapshot: sent, score_breakdown: s,
+    flags, long_term_quality_snapshot, audit_meta,
   } = data;
   const q: LongTermQualitySnapshot | null = long_term_quality_snapshot ?? null;
   const sectorSource = audit_meta.targets_meta?.sector_aggregate_source ?? null;
