@@ -114,8 +114,10 @@ const SUPPRESSION_RULES: SuppressionRule[] = [
     surfaced: "WAIT_FOR_CLARITY",
     matches: (qt, trendLabel) =>
       qt === "fresh_entry" &&
-      (trendLabel.includes("TRENDING_DOWN") || trendLabel.includes("DOWNTREND")),
-    reason: "fresh_entry on a TRENDING_DOWN tape — suppress until structure clears",
+      (trendLabel.includes("TRENDING_DOWN") ||
+        trendLabel.includes("DOWNTREND") ||
+        trendLabel.includes("BEARISH")),
+    reason: "fresh_entry on a bearish/down-trending tape — suppress until structure clears",
   },
 ];
 
