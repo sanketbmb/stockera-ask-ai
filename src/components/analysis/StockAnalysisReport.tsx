@@ -1956,9 +1956,11 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
         copyKey="card_long_valuation"
         summary={fundamentalProse(f, flags.banking_override_applied)}
         footnote={
-          (dcfDegenerate || flags.banking_override_applied)
-            ? `Sector-multiple fair value used (DCF unavailable${sectorSource === "bootstrap" ? " · sector data: bootstrap" : sectorSource === "default_fallback" ? " · using default fallback" : ""}).`
-            : null
+          f.derivation === "sector_fallback"
+            ? `Sector-derived fallback · company fundamentals unavailable${f.sector_fallback_meta?.sector_display ? ` · sector: ${f.sector_fallback_meta.sector_display}` : ""}. Only sector medians shown; company-level quality scores withheld.`
+            : (dcfDegenerate || flags.banking_override_applied)
+              ? `Sector-multiple fair value used (DCF unavailable${sectorSource === "bootstrap" ? " · sector data: bootstrap" : sectorSource === "default_fallback" ? " · using default fallback" : ""}).`
+              : null
         }
       >
         <Metric label="P/E" value={<AnimatedNumber value={f.pe_ratio} decimals={2} duration={700} />} hint={METRIC_COPY.m_pe_ratio.measures} />
