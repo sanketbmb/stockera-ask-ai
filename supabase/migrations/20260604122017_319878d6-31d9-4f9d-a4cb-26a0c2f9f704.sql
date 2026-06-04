@@ -1,0 +1,1 @@
+DELETE FROM public.sentiment_cache WHERE symbol IN ('HDFCBANK','TCS','ABB','INDIANB','RPSGVENT');
