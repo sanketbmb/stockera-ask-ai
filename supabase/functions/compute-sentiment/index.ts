@@ -157,9 +157,10 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
 }
 
 // ───────────────── Marketaux fetch (via wrapper) ─────────────────
-// MISSION 6.1A: always authenticate to marketaux-fetch with the anon key.
-// Forwarding the orchestrator's service-role bearer was causing silent
-// failures on the verify_jwt=true wrapper, leading to empty 24h cache rows.
+// MISSION 6.1A: use SERVICE_KEY for the sibling edge-fn call. The
+// SUPABASE_ANON_KEY env var is rejected by the marketaux-fetch gateway
+// with UNAUTHORIZED_INVALID_JWT_FORMAT, which was the root cause of the
+// silent 0-article cache poisoning across all recent reports.
 async function fetchMarketaux(symbols: string): Promise<Article[]> {
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
@@ -168,8 +169,8 @@ async function fetchMarketaux(symbols: string): Promise<Article[]> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: ANON_KEY,
-      authorization: `Bearer ${ANON_KEY}`,
+      apikey: SERVICE_KEY,
+      authorization: `Bearer ${SERVICE_KEY}`,
     },
     body: JSON.stringify({
       endpoint: "news/all",
