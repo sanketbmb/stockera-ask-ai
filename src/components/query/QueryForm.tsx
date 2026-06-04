@@ -172,6 +172,34 @@ export function QueryForm() {
   const [entryPrice, setEntryPrice] = useState("");
   const [qty, setQty] = useState("");
   const [anythingElse, setAnythingElse] = useState("");
+  // Wave 1 Fix #3 — LTP autofill state
+  const [ltpAutofillState, setLtpAutofillState] = useState<"idle" | "loading" | "filled" | "stale">("idle");
+  const fetchLtp = useServerFn(getLtpForSymbol);
+  useEffect(() => {
+    let cancelled = false;
+    const sym = (stockSymbol || "").trim();
+    if (!sym || !showStockFields || showPhase2Fields) {
+      setLtpAutofillState("idle");
+      return;
+    }
+    setLtpAutofillState("loading");
+    fetchLtp({ data: { symbol: sym } })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ltp != null && !res.stale) {
+          // Autofill only if user hasn't already typed a value.
+          setCurrentPrice((prev) => (prev && prev.trim() !== "" ? prev : String(res.ltp)));
+          setLtpAutofillState("filled");
+        } else {
+          setLtpAutofillState("stale");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLtpAutofillState("stale");
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockSymbol]);
 
   // Step 3
   const [agreeDisclaimer, setAgreeDisclaimer] = useState(false);
