@@ -374,8 +374,13 @@ export function QueryForm() {
             ? resolveSector(routerMeta.sector)
             : null
     : null;
-  // Phase 3C — resolve concept from question text.
-  const resolvedConcept = isEducational ? resolveConcept(queryText) : null;
+  // Phase 3C — resolve concept from question text. Phase 2B adds LLM fallback.
+  const aliasConcept = isEducational ? resolveConcept(queryText) : null;
+  const resolvedConcept = aliasConcept
+    ? aliasConcept
+    : isEducational && inferredConcept?.canonical
+      ? { canonical: inferredConcept.canonical, confidence: "alias" as const }
+      : null;
 
   // ─ Phase 2 input sanitization ─
   const entryPriceNum = entryPrice ? Number(entryPrice) : NaN;
