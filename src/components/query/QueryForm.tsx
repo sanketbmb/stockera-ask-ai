@@ -1164,6 +1164,15 @@ export function QueryForm() {
                       onChange={(e) => setCurrentPrice(e.target.value)}
                     />
                   </div>
+                  {ltpAutofillState === "loading" && (
+                    <p className="text-xs text-muted-foreground">Fetching live price…</p>
+                  )}
+                  {ltpAutofillState === "filled" && (
+                    <p className="text-xs text-muted-foreground">Autofilled from latest cached price — edit if needed.</p>
+                  )}
+                  {ltpAutofillState === "stale" && (
+                    <p className="text-xs text-muted-foreground">Could not fetch live price — please enter manually.</p>
+                  )}
                 </div>
                 {showBuyPrice && (
                   <div className="space-y-1.5 sm:col-span-2">
