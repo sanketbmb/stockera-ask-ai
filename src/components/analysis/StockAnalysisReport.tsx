@@ -1783,6 +1783,8 @@ function IntradayGrid({ data }: { data: StockAnalysisPayload }) {
             </ul>
           </div>
         )}
+        <RecentNewsBlock sent={sent} />
+
       </TierCard>
     </motion.section>
   );
