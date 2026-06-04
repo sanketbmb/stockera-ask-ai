@@ -75,7 +75,7 @@ async function todayCallCount(): Promise<number> {
     .from("audit_events")
     .select("id", { count: "exact", head: true })
     .eq("event_type", "concept_infer_call")
-    .gte("created_at", since.toISOString());
+    .gte("occurred_at", since.toISOString());
   if (error) {
     console.warn("[concept-infer] count failed:", error.message);
     return 0;
