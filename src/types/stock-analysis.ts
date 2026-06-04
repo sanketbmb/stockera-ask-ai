@@ -92,6 +92,14 @@ export interface FundamentalSnapshot {
   altman_z_score: number | null;
   dcf_upside_pct: number | null;
   valuation_label: string;
+  // Mission 6.2 Fix #2 — sector-derived fallback when company fundamentals
+  // are missing. `derivation: "sector_fallback"` signals UI to label the card.
+  derivation?: "sector_fallback" | null;
+  sector_fallback_meta?: {
+    sector_display: string | null;
+    sample_size: number | null;
+    pb_ratio: number | null;
+  } | null;
 }
 
 export interface RiskSnapshot {

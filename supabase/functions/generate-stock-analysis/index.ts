@@ -118,18 +118,164 @@ async function callModule(
 
 // ─── Stock resolution ───
 interface StockMaster { symbol: string; company_name: string | null; exchange: string; segment: string }
-async function resolveStock(rawSymbol: string): Promise<StockMaster | null> {
-  const sym = rawSymbol.trim().toUpperCase().replace(/\.NS$|\.BO$/i, "");
-  // Prefer NSE when both exchanges have the symbol. Fall back to BSE if NSE is absent.
+type ResolveOk = { ok: true; stock: StockMaster; match_type: "exact" | "prefix" | "contains_symbol" | "contains_name"; original_input: string };
+type ResolveAmbiguous = { ok: false; ambiguous: true; candidates: Array<{ symbol: string; company_name: string | null; exchange: string }>; original_input: string };
+type ResolveMiss = { ok: false; ambiguous: false; original_input: string; hint?: string };
+
+function dedupeNsePreferred(rows: StockMaster[]): StockMaster[] {
+  const bySym = new Map<string, StockMaster>();
+  for (const r of rows) {
+    const cur = bySym.get(r.symbol);
+    if (!cur) bySym.set(r.symbol, r);
+    else if (cur.exchange !== "NSE" && r.exchange === "NSE") bySym.set(r.symbol, r);
+  }
+  return Array.from(bySym.values());
+}
+
+async function resolveStock(rawSymbol: string): Promise<ResolveOk | ResolveAmbiguous | ResolveMiss> {
+  const original = rawSymbol.trim();
+  const sym = original.toUpperCase().replace(/\.NS$|\.BO$/i, "");
+
+  // 1) Exact match (NSE preferred)
   const nseRows = await sbSelect<StockMaster[]>(
     `stock_master?symbol=eq.${encodeURIComponent(sym)}&exchange=eq.NSE&select=symbol,company_name,exchange,segment&limit=1`,
   );
-  if (Array.isArray(nseRows) && nseRows.length > 0) return nseRows[0];
+  if (Array.isArray(nseRows) && nseRows.length > 0) return { ok: true, stock: nseRows[0], match_type: "exact", original_input: original };
   const anyRows = await sbSelect<StockMaster[]>(
     `stock_master?symbol=eq.${encodeURIComponent(sym)}&select=symbol,company_name,exchange,segment&limit=1`,
   );
-  if (Array.isArray(anyRows) && anyRows.length > 0) return anyRows[0];
-  return null;
+  if (Array.isArray(anyRows) && anyRows.length > 0) return { ok: true, stock: anyRows[0], match_type: "exact", original_input: original };
+
+  // Fuzzy: only attempt when input has at least 3 chars (avoid noise)
+  if (sym.length < 3) return { ok: false, ambiguous: false, original_input: original, hint: "Symbol too short for fuzzy match" };
+
+  // 1.5) Reverse-prefix: user typed a longer string than the actual ticker
+  //      (e.g. "RPSGVENTURE" → "RPSGVENT"). Try shorter prefixes of the input
+  //      as exact symbol matches, longest first. Conservative: only stop ≥ 4 chars.
+  if (sym.length > 4) {
+    for (let k = sym.length - 1; k >= Math.max(4, sym.length - 6); k--) {
+      const candidate = sym.slice(0, k);
+      const rows = await sbSelect<StockMaster[]>(
+        `stock_master?symbol=eq.${encodeURIComponent(candidate)}&select=symbol,company_name,exchange,segment&limit=2`,
+      );
+      if (Array.isArray(rows) && rows.length > 0) {
+        const chosen = rows.find((r) => r.exchange === "NSE") ?? rows[0];
+        return { ok: true, stock: chosen, match_type: "prefix", original_input: original };
+      }
+    }
+  }
+
+
+  // 2) Prefix match on symbol
+  const prefRowsRaw = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=ilike.${encodeURIComponent(sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let prefRows = Array.isArray(prefRowsRaw) ? dedupeNsePreferred(prefRowsRaw) : [];
+  if (prefRows.length === 1) return { ok: true, stock: prefRows[0], match_type: "prefix", original_input: original };
+  if (prefRows.length >= 2 && prefRows.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: prefRows.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  // 3) Contains on symbol
+  const containsSymRaw = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=ilike.${encodeURIComponent("%" + sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let containsSym = Array.isArray(containsSymRaw) ? dedupeNsePreferred(containsSymRaw) : [];
+  if (containsSym.length === 1) return { ok: true, stock: containsSym[0], match_type: "contains_symbol", original_input: original };
+  if (containsSym.length >= 2 && containsSym.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: containsSym.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  // 4) Contains on company_name
+  const containsNameRaw = await sbSelect<StockMaster[]>(
+    `stock_master?company_name=ilike.${encodeURIComponent("%" + sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let containsName = Array.isArray(containsNameRaw) ? dedupeNsePreferred(containsNameRaw) : [];
+  if (containsName.length === 1) return { ok: true, stock: containsName[0], match_type: "contains_name", original_input: original };
+  if (containsName.length >= 2 && containsName.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: containsName.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  return { ok: false, ambiguous: false, original_input: original, hint: containsName.length > 5 || containsSym.length > 5 || prefRows.length > 5 ? "Too many matches — refine your input" : "No matching symbol or company name" };
+}
+
+// ─── Sector-derived fundamentals fallback ───
+interface SectorFallbackFund {
+  pe_ratio: number | null;
+  pb_ratio: number | null;
+  roe: number | null;
+  sector_canonical: string | null;
+  sector_display: string | null;
+  sample_size: number | null;
+}
+// Loose aliases mapping common finedge sector/industry labels onto the
+// canonical buckets already present in sector_aggregates. Kept short and
+// transparent — extend as new mappings are confirmed.
+const SECTOR_ALIASES: Record<string, string> = {
+  "life_insurance": "financial_services",
+  "general_insurance": "financial_services",
+  "insurance": "financial_services",
+  "non_banking_financial_company_nbfc": "financial_services",
+  "nbfc": "financial_services",
+  "heavy_electrical_equipment": "capital_goods",
+  "electrical_equipment": "capital_goods",
+  "industrial_manufacturing": "capital_goods",
+  "logistics": "services",
+  "transportation": "services",
+  "retailing": "consumer_discretionary",
+  "ecommerce": "consumer_discretionary",
+  "internet_software_services": "information_technology",
+};
+async function fetchSectorFundamentalFallback(sector: string | null, industry: string | null = null): Promise<SectorFallbackFund | null> {
+  const candidates: string[] = [];
+  if (sector && sector.trim()) candidates.push(sector.trim());
+  if (industry && industry.trim() && industry.trim().toLowerCase() !== (sector ?? "").trim().toLowerCase()) {
+    candidates.push(industry.trim());
+  }
+  if (candidates.length === 0) return null;
+
+
+  let rows: Array<Record<string, unknown>> | null = null;
+  for (const cand of candidates) {
+    const canonRaw = cand.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const canon = SECTOR_ALIASES[canonRaw] ?? canonRaw;
+    // 1) canonical exact (after alias)
+    rows = await sbSelect<Array<Record<string, unknown>>>(
+      `sector_aggregates?sector_canonical=eq.${encodeURIComponent(canon)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+    );
+    if (Array.isArray(rows) && rows.length > 0) break;
+    // 2) display ilike exact
+    rows = await sbSelect<Array<Record<string, unknown>>>(
+      `sector_aggregates?sector_display=ilike.${encodeURIComponent(cand)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+    );
+    if (Array.isArray(rows) && rows.length > 0) break;
+    // 3) display contains last word (token-loose)
+    const tokens = cand.split(/\s+/).filter((t) => t.length >= 4);
+    for (const tok of tokens.reverse()) {
+      rows = await sbSelect<Array<Record<string, unknown>>>(
+        `sector_aggregates?sector_display=ilike.${encodeURIComponent("%" + tok + "%")}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+      );
+      if (Array.isArray(rows) && rows.length > 0) break;
+    }
+    if (Array.isArray(rows) && rows.length > 0) break;
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const r = rows[0];
+  // null/undefined-safe coercion (Number(null) === 0, so guard explicitly).
+  const safeNum = (v: unknown): number | null => (v == null ? null : num(v));
+  const pe = safeNum(r.pe_median);
+  const pb = safeNum(r.pb_median);
+  const roe = safeNum(r.roe_median);
+  if (pe == null && pb == null && roe == null) return null;
+  const canonOut = (r.sector_canonical as string) ?? candidates[0].toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  return {
+    pe_ratio: pe,
+    pb_ratio: pb,
+    roe,
+    sector_canonical: canonOut,
+    sector_display: (r.sector_display as string) ?? candidates[0],
+    sample_size: num(r.sample_size),
+  };
 }
 async function fetchSectorIndustry(symbol: string, auth: string | null): Promise<{ sector: string | null; industry: string | null }> {
   try {
@@ -232,18 +378,15 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
   let dcfUpside = dcfPerShare != null && price != null && price > 0
     ? r2(((dcfPerShare - price) / price) * 100)
     : null;
-  // Fix 3: clamp DCF upside to [-50, +200] when present.
   if (dcfUpside != null) {
     dcfUpside = Math.max(-50, Math.min(200, dcfUpside));
   }
 
-  // Valuation label
   let valuationLabel = "";
   if (pe != null) {
     valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
   }
 
-  // Fix 4: prefer upstream banking_override flag when present; fall back to legacy detection.
   const upstreamBankingApplied = q.banking_override_applied === true;
   const upstreamBankingReason  = typeof q.banking_override_reason === "string" ? q.banking_override_reason : null;
   const isBanking = (sector ?? "").toLowerCase().includes("bank") || (sector ?? "").toLowerCase().includes("financial");
@@ -253,7 +396,6 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
     ?? (bankingOverride ? "legacy_sector_or_missing_altman" : null);
   if (bankingOverride) altmanZ = null;
 
-  // Fix 3: surface DCF status / method from upstream (compute-fundamentals) with safe fallbacks.
   const dcfStatus = typeof q.dcf_status === "string"
     ? q.dcf_status
     : (dcfPerShare == null ? "DCF_UNAVAILABLE" : "DCF_OK");
@@ -269,6 +411,8 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
       altman_z_score: altmanZ,
       dcf_upside_pct: bankingOverride ? null : dcfUpside,
       valuation_label: valuationLabel,
+      derivation: null as string | null,
+      sector_fallback_meta: null as { sector_display: string | null; sample_size: number | null; pb_ratio: number | null } | null,
     },
     score: num(d.fundamental_score),
     as_of: String(d.computed_at ?? ""),
@@ -276,6 +420,39 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
     banking_override_reason: bankingReason,
     dcf_status: bankingOverride ? "DCF_SKIPPED" : dcfStatus,
     dcf_method_used: bankingOverride ? "DCF_SKIPPED" : dcfMethod,
+  };
+}
+
+// Build a sector-derived fallback fundamental snapshot when compute-fundamentals
+// produced no usable company data. Only fills what sector_aggregates actually
+// contains — never invents Piotroski / Altman / DCF.
+function buildSectorFallbackFundamental(fb: SectorFallbackFund, sector: string | null) {
+  const pe = fb.pe_ratio;
+  let valuationLabel = "";
+  if (pe != null) {
+    valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
+  }
+  return {
+    snapshot: {
+      pe_ratio: pe,
+      roe: fb.roe,
+      piotroski_f_score: null,
+      altman_z_score: null,
+      dcf_upside_pct: null,
+      valuation_label: valuationLabel,
+      derivation: "sector_fallback" as string | null,
+      sector_fallback_meta: {
+        sector_display: fb.sector_display ?? sector,
+        sample_size: fb.sample_size,
+        pb_ratio: fb.pb_ratio,
+      } as { sector_display: string | null; sample_size: number | null; pb_ratio: number | null } | null,
+    },
+    score: null as number | null,
+    as_of: new Date().toISOString(),
+    banking_override: false,
+    banking_override_reason: null as string | null,
+    dcf_status: "DCF_UNAVAILABLE",
+    dcf_method_used: "DCF_SKIPPED",
   };
 }
 
@@ -421,6 +598,7 @@ function computeVerdict(
   scores: { technical: number | null; fundamental: number | null; risk: number | null; momentum: number | null; sentiment: number | null },
   riskSnap: { max_drawdown: number | null; beta: number | null; volatility_1y: number | null } | null,
   queryType: QueryType,
+  opts: { fundamentalFallbackApplied?: boolean } = {},
 ) {
   const weights = WEIGHT_PRESETS[queryType];
   let weightedSum = 0, weightUsed = 0;
@@ -459,15 +637,19 @@ function computeVerdict(
     }
     // Missing fundamentals must NOT cap action for intraday (weight is 0 anyway).
   } else if (queryType === "long-term") {
-    // Long-term: missing fundamental is a hard cap.
-    if (scores.fundamental == null && (action === "BUY" || action === "HOLD")) {
+    // Long-term: missing fundamental is a hard cap — but a successful sector
+    // fallback (Mission 6.2 Fix #2) lifts the cap. The fallback is honest
+    // sector-derived context, not a fabricated company score.
+    if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
       action = "WATCHLIST"; demotions++; guardrailNotes.push("long-term missing fundamental caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
+      guardrailNotes.push("long-term fundamental: sector_fallback applied (no hard cap)");
     }
     // Weak fundamentals materially demote.
     if (scores.fundamental != null && scores.fundamental < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("long-term weak fundamental demotes");
     }
-    // Drawdown alone does NOT destroy quality setup; only demote if risk score is also weak.
     if (riskSnap?.max_drawdown != null && riskSnap.max_drawdown < -50 &&
         scores.risk != null && scores.risk < 45) {
       if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term drawdown+weak risk demotes"); }
@@ -481,8 +663,14 @@ function computeVerdict(
       if (action === "BUY")  { action = "HOLD"; demotions++; guardrailNotes.push("medium drawdown/beta demotes BUY"); }
       else if (action === "HOLD") { action = "WATCHLIST"; demotions++; guardrailNotes.push("medium drawdown/beta demotes HOLD"); }
     }
-    if ((scores.technical == null || scores.fundamental == null) && (action === "BUY" || action === "HOLD")) {
-      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing tech/fund caps→WATCHLIST");
+    if (scores.technical == null && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing technical caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing fundamental caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
+      guardrailNotes.push("medium fundamental: sector_fallback applied (no hard cap)");
     }
   }
 
@@ -647,9 +835,27 @@ Deno.serve(async (req) => {
     const includeNews = body.include_news !== false;
     const auth = req.headers.get("authorization");
 
-    // 1. Resolve stock
-    const stock = await resolveStock(rawSymbol);
-    if (!stock) return json({ success: false, error: "SYMBOL_NOT_FOUND", symbol: rawSymbol });
+    // 1. Resolve stock (exact → prefix → contains_symbol → contains_name)
+    const resolved = await resolveStock(rawSymbol);
+    if (!resolved.ok) {
+      if (resolved.ambiguous) {
+        return json({
+          success: false,
+          error: "SYMBOL_AMBIGUOUS",
+          symbol: rawSymbol,
+          candidates: resolved.candidates,
+          hint: "Multiple matches — please pick a specific ticker.",
+        });
+      }
+      return json({ success: false, error: "SYMBOL_NOT_FOUND", symbol: rawSymbol, hint: resolved.hint ?? null });
+    }
+    const stock = resolved.stock;
+    const symbolResolution = {
+      original_input: resolved.original_input,
+      resolved_symbol: stock.symbol,
+      match_type: resolved.match_type,
+      derived: resolved.match_type === "exact" ? null : "fuzzy_match",
+    };
 
     const sym = stock.symbol;
     const { sector, industry } = await fetchSectorIndustry(sym, auth);
@@ -688,12 +894,53 @@ Deno.serve(async (req) => {
 
     // 3. Normalize
     const tech = normalizeTechnical(tRes.data);
-    const fund = normalizeFundamental(fRes.data, sector);
+    let fund = normalizeFundamental(fRes.data, sector);
     const risk = normalizeRisk(rRes.data);
     const mom  = normalizeMomentum(mRes.data);
     const sent = normalizeSentiment(sRes.data);
 
     if (tech?.derived_levels) tRes.trace.derived = "levels:orchestrator";
+
+    // 3b. Mission 6.2 Fix #2 — Sector-derived fundamental fallback.
+    // Triggered when compute-fundamentals failed OR returned a snapshot with
+    // no usable valuation/profitability values. Fills ONLY what
+    // sector_aggregates actually contains. Never fabricates company-level
+    // Piotroski / Altman / DCF.
+    const fundFetchFailed = !fRes.trace.ok;
+    const fundCode = fRes.trace.code ?? fRes.trace.error ?? null;
+    const snapEmpty =
+      fund == null ||
+      (fund.snapshot.pe_ratio == null &&
+        fund.snapshot.roe == null &&
+        fund.snapshot.piotroski_f_score == null &&
+        fund.snapshot.altman_z_score == null &&
+        fund.snapshot.dcf_upside_pct == null);
+    let fundamentalFallbackMeta: {
+      derived: "sector_fallback";
+      reason: string;
+      sector_used: string | null;
+      sample_size: number | null;
+      filled_fields: string[];
+    } | null = null;
+    if ((fundFetchFailed || snapEmpty) && (sector || industry)) {
+      const fb = await fetchSectorFundamentalFallback(sector, industry);
+      if (fb) {
+        const built = buildSectorFallbackFundamental(fb, sector);
+        const filled: string[] = [];
+        if (fb.pe_ratio != null) filled.push("pe_ratio");
+        if (fb.roe != null) filled.push("roe");
+        if (fb.pb_ratio != null) filled.push("pb_ratio");
+        fund = built;
+        fundamentalFallbackMeta = {
+          derived: "sector_fallback",
+          reason: fundFetchFailed ? (fundCode ?? "FETCH_FAILED") : "INSUFFICIENT_HISTORY",
+          sector_used: fb.sector_display ?? fb.sector_canonical ?? sector,
+          sample_size: fb.sample_size,
+          filled_fields: filled,
+        };
+        fRes.trace.derived = "fundamentals:sector_fallback";
+      }
+    }
 
     // 4. Compute verdict
     const scores = {
@@ -703,7 +950,12 @@ Deno.serve(async (req) => {
       momentum:    mom?.score ?? null,
       sentiment:   sent?.score ?? null,
     };
-    const verdict = computeVerdict(scores, risk?.snapshot ?? null, queryType);
+    const verdict = computeVerdict(
+      scores,
+      risk?.snapshot ?? null,
+      queryType,
+      { fundamentalFallbackApplied: fundamentalFallbackMeta != null },
+    );
 
     // 5. Flags
     const flags = {
@@ -776,6 +1028,7 @@ Deno.serve(async (req) => {
       },
       fundamental_snapshot: fund?.snapshot ?? {
         pe_ratio: null, roe: null, piotroski_f_score: null, altman_z_score: null, dcf_upside_pct: null, valuation_label: "",
+        derivation: null, sector_fallback_meta: null,
       },
       risk_snapshot: risk?.snapshot ?? {
         beta: null, volatility_1y: null, sharpe_ratio: null, sortino_ratio: null, max_drawdown: null, var_95: null, liquidity_label: "",
@@ -801,6 +1054,9 @@ Deno.serve(async (req) => {
       audit_meta: {
         formula_version: FORMULA_VERSION,
         verdict_model_version: VERDICT_MODEL_VERSION,
+        // Mission 6.2 — symbol-resolver + fundamentals-fallback provenance.
+        symbol_resolution: symbolResolution,
+        fundamental_fallback: fundamentalFallbackMeta,
         tier_applied: queryType,
         tier_weights: WEIGHT_PRESETS[queryType],
         // Fix 1 + 2: versioned profile / bucket references.
