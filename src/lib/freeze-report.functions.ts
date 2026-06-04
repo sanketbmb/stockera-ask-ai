@@ -218,6 +218,40 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
       const suppressed = applyVerdictSuppression(cached, queryType);
+
+      // Wave 1 fix: if suppression newly applies on a cache read, re-persist
+      // the hardened payload so the DB reflects the safer verdict on subsequent
+      // queries (admin tools, analytics, etc.). Best-effort, non-fatal.
+      const cachedAudit = (cached.audit_meta ?? {}) as Record<string, unknown>;
+      const suppressedAudit = (suppressed.audit_meta ?? {}) as Record<string, unknown>;
+      const newlySuppressed =
+        suppressedAudit.verdict_suppressed === true &&
+        cachedAudit.verdict_suppressed !== true;
+      if (newlySuppressed) {
+        const { error: rePersistErr } = await supabaseAdmin
+          .from("queries")
+          .update({ ai_report: JSON.parse(JSON.stringify(suppressed)) } as never)
+          .eq("id", row.id);
+        if (rePersistErr) {
+          console.warn("[freezeOrReadReport] cache-hit re-persist failed (non-fatal):", rePersistErr);
+        } else {
+          await supabaseAdmin.from("audit_events").insert({
+            event_type: "verdict_suppression_applied_on_read",
+            actor_id: userId,
+            resource_type: "query",
+            resource_id: row.id,
+            payload: {
+              suppressed_surfaced: suppressedAudit.suppressed_surfaced,
+              suppressed_reason: suppressedAudit.suppressed_reason,
+              trend_label: suppressedAudit.suppressed_trend_label,
+              reasoning_code: suppressedAudit.suppressed_reasoning_code,
+            },
+          }).then(({ error }) => {
+            if (error) console.warn("[freezeOrReadReport] suppress-audit failed:", error);
+          });
+        }
+      }
+
       const enriched = enrichAuditMeta(suppressed, {
         frozenAt: row.frozen_at as string,
         servedFromCache: true,
