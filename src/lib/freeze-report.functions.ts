@@ -72,6 +72,94 @@ function enrichAuditMeta(
   return { ...payload, audit_meta: extended };
 }
 
+// Phase 3A — freeze-layer verdict suppression. No engine math touched.
+// Maps engine reasoning_code → safer surfaced verdict + strips trade levels.
+// Applied to both newly-frozen payloads AND cache reads, so older rows get
+// hardened the next time the user opens them.
+type SuppressedVerdict = "WAIT_FOR_CLARITY" | "MONITOR";
+interface SuppressionRule {
+  surfaced: SuppressedVerdict;
+  appliesTo: (queryType: string, code: string) => boolean;
+  reason: string;
+}
+const SUPPRESSION_RULES: SuppressionRule[] = [
+  {
+    surfaced: "WAIT_FOR_CLARITY",
+    appliesTo: (qt, _code) => qt === "fresh_entry",
+    // Note: trend label lives on technical_snapshot, not reasoning_code.
+    // We pattern-match against the trend_label in the payload below.
+    reason: "fresh_entry on a TRENDING_DOWN tape — suppress until structure clears",
+  },
+  {
+    surfaced: "MONITOR",
+    appliesTo: (_qt, code) => /_ZONE_INVERTED_FALLBACK/i.test(code),
+    reason: "Entry zone inverted — monitor for cleaner setup",
+  },
+  {
+    surfaced: "WAIT_FOR_CLARITY",
+    appliesTo: (_qt, code) => /SHORT_CORRECTIVE_LOW_CONVICTION/i.test(code),
+    reason: "Short corrective leg with low conviction — wait for clarity",
+  },
+];
+
+function applyVerdictSuppression(
+  payload: StockAnalysisPayload,
+  queryType: string,
+): StockAnalysisPayload {
+  const code = payload.levels?.entry_strategy?.reasoning_code ?? "";
+  const trendLabel = (payload.technical_snapshot?.trend_label ?? "").toUpperCase();
+  const isTrendingDown = trendLabel.includes("TRENDING_DOWN") || trendLabel.includes("DOWNTREND");
+
+  let matched: SuppressionRule | null = null;
+  for (const rule of SUPPRESSION_RULES) {
+    if (rule.surfaced === "WAIT_FOR_CLARITY" && rule.appliesTo(queryType, "") && isTrendingDown) {
+      matched = rule;
+      break;
+    }
+    if (rule.appliesTo(queryType, code) && rule !== SUPPRESSION_RULES[0]) {
+      matched = rule;
+      break;
+    }
+  }
+  if (!matched) return payload;
+
+  const auditExt = payload.audit_meta as Record<string, unknown>;
+  // Idempotent — if already suppressed with same surfaced verdict, skip.
+  if (auditExt.verdict_suppressed === true && auditExt.suppressed_surfaced === matched.surfaced) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    final_verdict: {
+      ...payload.final_verdict,
+      // Surface as WATCHLIST in the orchestrator enum (renderer-safe) and
+      // record the richer label in audit_meta.
+      action: "WATCHLIST",
+      summary_reason: matched.reason,
+    },
+    levels: {
+      ...payload.levels,
+      entry_zone: null,
+      stop_loss: null,
+      target_1: null,
+      target_2: null,
+      entry_strategy: payload.levels.entry_strategy
+        ? { ...payload.levels.entry_strategy, preferred_entry: 0 }
+        : null,
+    },
+    audit_meta: {
+      ...payload.audit_meta,
+      verdict_suppressed: true,
+      suppressed_surfaced: matched.surfaced,
+      suppressed_reason: matched.reason,
+      suppressed_reasoning_code: code || null,
+      suppressed_trend_label: trendLabel || null,
+      levels_suppressed: true,
+    } as typeof payload.audit_meta & Record<string, unknown>,
+  };
+}
+
 export const freezeOrReadReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => Input.parse(input))
