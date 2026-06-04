@@ -578,15 +578,19 @@ function computeVerdict(
     }
     // Missing fundamentals must NOT cap action for intraday (weight is 0 anyway).
   } else if (queryType === "long-term") {
-    // Long-term: missing fundamental is a hard cap.
-    if (scores.fundamental == null && (action === "BUY" || action === "HOLD")) {
+    // Long-term: missing fundamental is a hard cap — but a successful sector
+    // fallback (Mission 6.2 Fix #2) lifts the cap. The fallback is honest
+    // sector-derived context, not a fabricated company score.
+    if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
       action = "WATCHLIST"; demotions++; guardrailNotes.push("long-term missing fundamental caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
+      guardrailNotes.push("long-term fundamental: sector_fallback applied (no hard cap)");
     }
     // Weak fundamentals materially demote.
     if (scores.fundamental != null && scores.fundamental < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("long-term weak fundamental demotes");
     }
-    // Drawdown alone does NOT destroy quality setup; only demote if risk score is also weak.
     if (riskSnap?.max_drawdown != null && riskSnap.max_drawdown < -50 &&
         scores.risk != null && scores.risk < 45) {
       if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term drawdown+weak risk demotes"); }
@@ -600,8 +604,14 @@ function computeVerdict(
       if (action === "BUY")  { action = "HOLD"; demotions++; guardrailNotes.push("medium drawdown/beta demotes BUY"); }
       else if (action === "HOLD") { action = "WATCHLIST"; demotions++; guardrailNotes.push("medium drawdown/beta demotes HOLD"); }
     }
-    if ((scores.technical == null || scores.fundamental == null) && (action === "BUY" || action === "HOLD")) {
-      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing tech/fund caps→WATCHLIST");
+    if (scores.technical == null && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing technical caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
+      action = "WATCHLIST"; demotions++; guardrailNotes.push("medium missing fundamental caps→WATCHLIST");
+    }
+    if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
+      guardrailNotes.push("medium fundamental: sector_fallback applied (no hard cap)");
     }
   }
 
