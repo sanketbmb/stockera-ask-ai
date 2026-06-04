@@ -776,9 +776,27 @@ Deno.serve(async (req) => {
     const includeNews = body.include_news !== false;
     const auth = req.headers.get("authorization");
 
-    // 1. Resolve stock
-    const stock = await resolveStock(rawSymbol);
-    if (!stock) return json({ success: false, error: "SYMBOL_NOT_FOUND", symbol: rawSymbol });
+    // 1. Resolve stock (exact → prefix → contains_symbol → contains_name)
+    const resolved = await resolveStock(rawSymbol);
+    if (!resolved.ok) {
+      if (resolved.ambiguous) {
+        return json({
+          success: false,
+          error: "SYMBOL_AMBIGUOUS",
+          symbol: rawSymbol,
+          candidates: resolved.candidates,
+          hint: "Multiple matches — please pick a specific ticker.",
+        });
+      }
+      return json({ success: false, error: "SYMBOL_NOT_FOUND", symbol: rawSymbol, hint: resolved.hint ?? null });
+    }
+    const stock = resolved.stock;
+    const symbolResolution = {
+      original_input: resolved.original_input,
+      resolved_symbol: stock.symbol,
+      match_type: resolved.match_type,
+      derived: resolved.match_type === "exact" ? null : "fuzzy_match",
+    };
 
     const sym = stock.symbol;
     const { sector, industry } = await fetchSectorIndustry(sym, auth);
