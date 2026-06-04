@@ -835,12 +835,53 @@ Deno.serve(async (req) => {
 
     // 3. Normalize
     const tech = normalizeTechnical(tRes.data);
-    const fund = normalizeFundamental(fRes.data, sector);
+    let fund = normalizeFundamental(fRes.data, sector);
     const risk = normalizeRisk(rRes.data);
     const mom  = normalizeMomentum(mRes.data);
     const sent = normalizeSentiment(sRes.data);
 
     if (tech?.derived_levels) tRes.trace.derived = "levels:orchestrator";
+
+    // 3b. Mission 6.2 Fix #2 — Sector-derived fundamental fallback.
+    // Triggered when compute-fundamentals failed OR returned a snapshot with
+    // no usable valuation/profitability values. Fills ONLY what
+    // sector_aggregates actually contains. Never fabricates company-level
+    // Piotroski / Altman / DCF.
+    const fundFetchFailed = !fRes.trace.ok;
+    const fundCode = fRes.trace.code ?? fRes.trace.error ?? null;
+    const snapEmpty =
+      fund == null ||
+      (fund.snapshot.pe_ratio == null &&
+        fund.snapshot.roe == null &&
+        fund.snapshot.piotroski_f_score == null &&
+        fund.snapshot.altman_z_score == null &&
+        fund.snapshot.dcf_upside_pct == null);
+    let fundamentalFallbackMeta: {
+      derived: "sector_fallback";
+      reason: string;
+      sector_used: string | null;
+      sample_size: number | null;
+      filled_fields: string[];
+    } | null = null;
+    if ((fundFetchFailed || snapEmpty) && sector) {
+      const fb = await fetchSectorFundamentalFallback(sector);
+      if (fb) {
+        const built = buildSectorFallbackFundamental(fb, sector);
+        const filled: string[] = [];
+        if (fb.pe_ratio != null) filled.push("pe_ratio");
+        if (fb.roe != null) filled.push("roe");
+        if (fb.pb_ratio != null) filled.push("pb_ratio");
+        fund = built;
+        fundamentalFallbackMeta = {
+          derived: "sector_fallback",
+          reason: fundFetchFailed ? (fundCode ?? "FETCH_FAILED") : "INSUFFICIENT_HISTORY",
+          sector_used: fb.sector_display ?? fb.sector_canonical ?? sector,
+          sample_size: fb.sample_size,
+          filled_fields: filled,
+        };
+        fRes.trace.derived = "fundamentals:sector_fallback";
+      }
+    }
 
     // 4. Compute verdict
     const scores = {
@@ -850,7 +891,12 @@ Deno.serve(async (req) => {
       momentum:    mom?.score ?? null,
       sentiment:   sent?.score ?? null,
     };
-    const verdict = computeVerdict(scores, risk?.snapshot ?? null, queryType);
+    const verdict = computeVerdict(
+      scores,
+      risk?.snapshot ?? null,
+      queryType,
+      { fundamentalFallbackApplied: fundamentalFallbackMeta != null },
+    );
 
     // 5. Flags
     const flags = {
