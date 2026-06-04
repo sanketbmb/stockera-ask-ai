@@ -319,18 +319,15 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
   let dcfUpside = dcfPerShare != null && price != null && price > 0
     ? r2(((dcfPerShare - price) / price) * 100)
     : null;
-  // Fix 3: clamp DCF upside to [-50, +200] when present.
   if (dcfUpside != null) {
     dcfUpside = Math.max(-50, Math.min(200, dcfUpside));
   }
 
-  // Valuation label
   let valuationLabel = "";
   if (pe != null) {
     valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
   }
 
-  // Fix 4: prefer upstream banking_override flag when present; fall back to legacy detection.
   const upstreamBankingApplied = q.banking_override_applied === true;
   const upstreamBankingReason  = typeof q.banking_override_reason === "string" ? q.banking_override_reason : null;
   const isBanking = (sector ?? "").toLowerCase().includes("bank") || (sector ?? "").toLowerCase().includes("financial");
@@ -340,7 +337,6 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
     ?? (bankingOverride ? "legacy_sector_or_missing_altman" : null);
   if (bankingOverride) altmanZ = null;
 
-  // Fix 3: surface DCF status / method from upstream (compute-fundamentals) with safe fallbacks.
   const dcfStatus = typeof q.dcf_status === "string"
     ? q.dcf_status
     : (dcfPerShare == null ? "DCF_UNAVAILABLE" : "DCF_OK");
@@ -356,6 +352,8 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
       altman_z_score: altmanZ,
       dcf_upside_pct: bankingOverride ? null : dcfUpside,
       valuation_label: valuationLabel,
+      derivation: null as string | null,
+      sector_fallback_meta: null as { sector_display: string | null; sample_size: number | null; pb_ratio: number | null } | null,
     },
     score: num(d.fundamental_score),
     as_of: String(d.computed_at ?? ""),
@@ -363,6 +361,39 @@ function normalizeFundamental(d: Record<string, unknown> | null, sector: string 
     banking_override_reason: bankingReason,
     dcf_status: bankingOverride ? "DCF_SKIPPED" : dcfStatus,
     dcf_method_used: bankingOverride ? "DCF_SKIPPED" : dcfMethod,
+  };
+}
+
+// Build a sector-derived fallback fundamental snapshot when compute-fundamentals
+// produced no usable company data. Only fills what sector_aggregates actually
+// contains — never invents Piotroski / Altman / DCF.
+function buildSectorFallbackFundamental(fb: SectorFallbackFund, sector: string | null) {
+  const pe = fb.pe_ratio;
+  let valuationLabel = "";
+  if (pe != null) {
+    valuationLabel = pe < 15 ? "UNDERVALUED" : pe < 25 ? "FAIR" : pe < 40 ? "PREMIUM" : "OVERVALUED";
+  }
+  return {
+    snapshot: {
+      pe_ratio: pe,
+      roe: fb.roe,
+      piotroski_f_score: null,
+      altman_z_score: null,
+      dcf_upside_pct: null,
+      valuation_label: valuationLabel,
+      derivation: "sector_fallback" as string | null,
+      sector_fallback_meta: {
+        sector_display: fb.sector_display ?? sector,
+        sample_size: fb.sample_size,
+        pb_ratio: fb.pb_ratio,
+      } as { sector_display: string | null; sample_size: number | null; pb_ratio: number | null } | null,
+    },
+    score: null as number | null,
+    as_of: new Date().toISOString(),
+    banking_override: false,
+    banking_override_reason: null as string | null,
+    dcf_status: "DCF_UNAVAILABLE",
+    dcf_method_used: "DCF_SKIPPED",
   };
 }
 
