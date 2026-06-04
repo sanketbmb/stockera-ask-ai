@@ -42,6 +42,7 @@ import {
 import { resolveSector, sectorDisplay } from "@/lib/sector-alias-map";
 import { detectSectorFromText, allGroupedSectors } from "@/lib/sector-keyword-detector";
 import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.functions";
+import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import {
   ArrowLeft,
@@ -134,6 +135,7 @@ export function QueryForm() {
   const runGenerateAiReport = useServerFn(generateAiReport);
   const runIntentRouter = useServerFn(classifyIntentRouter);
   const runInferSector = useServerFn(inferSectorFromText);
+  const runInferConcept = useServerFn(inferConceptFromText);
   const { user, profile, refresh } = useAuth();
   const [step, setStep] = useState(0); // 0=Question, 1=Context, 2=Review
   const [submitting, setSubmitting] = useState(false);
@@ -177,6 +179,10 @@ export function QueryForm() {
   const [inferredSector, setInferredSector] = useState<InferredSector | null>(null);
   const [inferringSector, setInferringSector] = useState(false);
   const sectorInferCache = useRef<Map<string, InferredSector>>(new Map());
+  // Phase 2B — LLM-inferred concept for Educational when alias map misses.
+  const [inferredConcept, setInferredConcept] = useState<InferredConcept | null>(null);
+  const [inferringConcept, setInferringConcept] = useState(false);
+  const conceptInferCache = useRef<Map<string, InferredConcept>>(new Map());
 
   // Phase 3A — apply a router classification to the form state.
   function applyRouterResult(r: RouterOutput) {
