@@ -413,14 +413,14 @@ Deno.serve(async (req) => {
 
       try {
         formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`, callerAuth);
+        fetched = await fetchMarketaux(`${symbol}.NS`);
         callsThisRequest += 1;
         articlesThisRequest += fetched.length;
         symbol_format_used = `${symbol}.NS`;
 
         if (fetched.length === 0) {
           formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol, callerAuth);
+          const fallback = await fetchMarketaux(symbol);
           callsThisRequest += 1;
           articlesThisRequest += fallback.length;
           if (fallback.length > 0) {
@@ -434,9 +434,13 @@ Deno.serve(async (req) => {
       }
 
       articles = fetched;
-      const ttl = fetched.length < LOW_VOLUME_THRESHOLD ? LOW_VOLUME_TTL_HOURS : CACHE_TTL_HOURS;
-      // Always cache (even empty) to avoid hammering the budget on unknown symbols.
-      await upsertCache(symbol, fetched, symbol_format_used ?? formatsTried[0], ttl);
+      // MISSION 6.1A: only persist a cache row when the fetch actually
+      // succeeded. Cache poisoning (24h empty rows from failed fetches)
+      // was the dominant cause of NULL sentiment across all recent reports.
+      if (!warning) {
+        const ttl = fetched.length < LOW_VOLUME_THRESHOLD ? LOW_VOLUME_TTL_HOURS : CACHE_TTL_HOURS;
+        await upsertCache(symbol, fetched, symbol_format_used ?? formatsTried[0], ttl);
+      }
 
       if (callsThisRequest > 0) {
         await bumpUsage(callsThisRequest, articlesThisRequest);
