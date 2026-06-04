@@ -1905,6 +1905,7 @@ function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: S
         )}
         <p className="mt-2 text-[10px] italic text-muted-foreground">Earnings calendar — coming soon. Only corporate actions FinEdge confirms are shown.</p>
       </div>
+      <RecentNewsBlock sent={sent} />
     </TierCard>
   );
 }
