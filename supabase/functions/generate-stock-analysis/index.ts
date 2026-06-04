@@ -149,6 +149,23 @@ async function resolveStock(rawSymbol: string): Promise<ResolveOk | ResolveAmbig
   // Fuzzy: only attempt when input has at least 3 chars (avoid noise)
   if (sym.length < 3) return { ok: false, ambiguous: false, original_input: original, hint: "Symbol too short for fuzzy match" };
 
+  // 1.5) Reverse-prefix: user typed a longer string than the actual ticker
+  //      (e.g. "RPSGVENTURE" → "RPSGVENT"). Try shorter prefixes of the input
+  //      as exact symbol matches, longest first. Conservative: only stop ≥ 4 chars.
+  if (sym.length > 4) {
+    for (let k = sym.length - 1; k >= Math.max(4, sym.length - 6); k--) {
+      const candidate = sym.slice(0, k);
+      const rows = await sbSelect<StockMaster[]>(
+        `stock_master?symbol=eq.${encodeURIComponent(candidate)}&select=symbol,company_name,exchange,segment&limit=2`,
+      );
+      if (Array.isArray(rows) && rows.length > 0) {
+        const chosen = rows.find((r) => r.exchange === "NSE") ?? rows[0];
+        return { ok: true, stock: chosen, match_type: "prefix", original_input: original };
+      }
+    }
+  }
+
+
   // 2) Prefix match on symbol
   const prefRowsRaw = await sbSelect<StockMaster[]>(
     `stock_master?symbol=ilike.${encodeURIComponent(sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
