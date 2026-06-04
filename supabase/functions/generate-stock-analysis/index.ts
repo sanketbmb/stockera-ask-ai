@@ -994,6 +994,9 @@ Deno.serve(async (req) => {
       audit_meta: {
         formula_version: FORMULA_VERSION,
         verdict_model_version: VERDICT_MODEL_VERSION,
+        // Mission 6.2 — symbol-resolver + fundamentals-fallback provenance.
+        symbol_resolution: symbolResolution,
+        fundamental_fallback: fundamentalFallbackMeta,
         tier_applied: queryType,
         tier_weights: WEIGHT_PRESETS[queryType],
         // Fix 1 + 2: versioned profile / bucket references.
