@@ -824,12 +824,20 @@ export function QueryForm() {
         const msg =
           (e instanceof Error ? e.message : pgLike?.message) ||
           "Insert failed (no details from server)";
-        console.error("[handleSubmit] pg error", { code, message: msg, details: pgLike?.details, hint: pgLike?.hint });
+        console.error("[handleSubmit] pg error envelope", JSON.stringify({
+          code, message: msg, details: pgLike?.details, hint: pgLike?.hint,
+        }));
         let userMsg: string;
         if (code === "23514") {
-          userMsg = "Invalid query type — please contact support (CODE: 23514)";
+          userMsg = "Value not allowed by a database check — please contact support (CODE: 23514)";
+        } else if (code === "23502") {
+          userMsg = `Missing required field: ${pgLike?.details || msg} (CODE: 23502)`;
+        } else if (code === "23505") {
+          userMsg = `This entry already exists: ${pgLike?.details || msg} (CODE: 23505)`;
         } else if (code === "42501") {
           userMsg = `Permission denied: ${msg} (CODE: 42501)`;
+        } else if (code === "PGRST116") {
+          userMsg = `Record not found: ${msg} (CODE: PGRST116)`;
         } else if (code) {
           userMsg = `Could not create query [${code}]: ${msg}`;
         } else {
