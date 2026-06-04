@@ -261,9 +261,11 @@ async function fetchSectorFundamentalFallback(sector: string | null, industry: s
   }
   if (!Array.isArray(rows) || rows.length === 0) return null;
   const r = rows[0];
-  const pe = num(r.pe_median);
-  const pb = num(r.pb_median);
-  const roe = num(r.roe_median);
+  // null/undefined-safe coercion (Number(null) === 0, so guard explicitly).
+  const safeNum = (v: unknown): number | null => (v == null ? null : num(v));
+  const pe = safeNum(r.pe_median);
+  const pb = safeNum(r.pb_median);
+  const roe = safeNum(r.roe_median);
   if (pe == null && pb == null && roe == null) return null;
   const canonOut = (r.sector_canonical as string) ?? candidates[0].toLowerCase().replace(/[^a-z0-9]+/g, "_");
   return {
