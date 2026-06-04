@@ -118,18 +118,105 @@ async function callModule(
 
 // ─── Stock resolution ───
 interface StockMaster { symbol: string; company_name: string | null; exchange: string; segment: string }
-async function resolveStock(rawSymbol: string): Promise<StockMaster | null> {
-  const sym = rawSymbol.trim().toUpperCase().replace(/\.NS$|\.BO$/i, "");
-  // Prefer NSE when both exchanges have the symbol. Fall back to BSE if NSE is absent.
+type ResolveOk = { ok: true; stock: StockMaster; match_type: "exact" | "prefix" | "contains_symbol" | "contains_name"; original_input: string };
+type ResolveAmbiguous = { ok: false; ambiguous: true; candidates: Array<{ symbol: string; company_name: string | null; exchange: string }>; original_input: string };
+type ResolveMiss = { ok: false; ambiguous: false; original_input: string; hint?: string };
+
+function dedupeNsePreferred(rows: StockMaster[]): StockMaster[] {
+  const bySym = new Map<string, StockMaster>();
+  for (const r of rows) {
+    const cur = bySym.get(r.symbol);
+    if (!cur) bySym.set(r.symbol, r);
+    else if (cur.exchange !== "NSE" && r.exchange === "NSE") bySym.set(r.symbol, r);
+  }
+  return Array.from(bySym.values());
+}
+
+async function resolveStock(rawSymbol: string): Promise<ResolveOk | ResolveAmbiguous | ResolveMiss> {
+  const original = rawSymbol.trim();
+  const sym = original.toUpperCase().replace(/\.NS$|\.BO$/i, "");
+
+  // 1) Exact match (NSE preferred)
   const nseRows = await sbSelect<StockMaster[]>(
     `stock_master?symbol=eq.${encodeURIComponent(sym)}&exchange=eq.NSE&select=symbol,company_name,exchange,segment&limit=1`,
   );
-  if (Array.isArray(nseRows) && nseRows.length > 0) return nseRows[0];
+  if (Array.isArray(nseRows) && nseRows.length > 0) return { ok: true, stock: nseRows[0], match_type: "exact", original_input: original };
   const anyRows = await sbSelect<StockMaster[]>(
     `stock_master?symbol=eq.${encodeURIComponent(sym)}&select=symbol,company_name,exchange,segment&limit=1`,
   );
-  if (Array.isArray(anyRows) && anyRows.length > 0) return anyRows[0];
-  return null;
+  if (Array.isArray(anyRows) && anyRows.length > 0) return { ok: true, stock: anyRows[0], match_type: "exact", original_input: original };
+
+  // Fuzzy: only attempt when input has at least 3 chars (avoid noise)
+  if (sym.length < 3) return { ok: false, ambiguous: false, original_input: original, hint: "Symbol too short for fuzzy match" };
+
+  // 2) Prefix match on symbol
+  const prefRowsRaw = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=ilike.${encodeURIComponent(sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let prefRows = Array.isArray(prefRowsRaw) ? dedupeNsePreferred(prefRowsRaw) : [];
+  if (prefRows.length === 1) return { ok: true, stock: prefRows[0], match_type: "prefix", original_input: original };
+  if (prefRows.length >= 2 && prefRows.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: prefRows.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  // 3) Contains on symbol
+  const containsSymRaw = await sbSelect<StockMaster[]>(
+    `stock_master?symbol=ilike.${encodeURIComponent("%" + sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let containsSym = Array.isArray(containsSymRaw) ? dedupeNsePreferred(containsSymRaw) : [];
+  if (containsSym.length === 1) return { ok: true, stock: containsSym[0], match_type: "contains_symbol", original_input: original };
+  if (containsSym.length >= 2 && containsSym.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: containsSym.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  // 4) Contains on company_name
+  const containsNameRaw = await sbSelect<StockMaster[]>(
+    `stock_master?company_name=ilike.${encodeURIComponent("%" + sym + "%")}&select=symbol,company_name,exchange,segment&limit=20`,
+  );
+  let containsName = Array.isArray(containsNameRaw) ? dedupeNsePreferred(containsNameRaw) : [];
+  if (containsName.length === 1) return { ok: true, stock: containsName[0], match_type: "contains_name", original_input: original };
+  if (containsName.length >= 2 && containsName.length <= 5) {
+    return { ok: false, ambiguous: true, original_input: original, candidates: containsName.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
+  }
+
+  return { ok: false, ambiguous: false, original_input: original, hint: containsName.length > 5 || containsSym.length > 5 || prefRows.length > 5 ? "Too many matches — refine your input" : "No matching symbol or company name" };
+}
+
+// ─── Sector-derived fundamentals fallback ───
+interface SectorFallbackFund {
+  pe_ratio: number | null;
+  pb_ratio: number | null;
+  roe: number | null;
+  sector_canonical: string | null;
+  sector_display: string | null;
+  sample_size: number | null;
+}
+async function fetchSectorFundamentalFallback(sector: string | null): Promise<SectorFallbackFund | null> {
+  if (!sector || !sector.trim()) return null;
+  const canon = sector.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  // Try canonical exact match first
+  let rows = await sbSelect<Array<Record<string, unknown>>>(
+    `sector_aggregates?sector_canonical=eq.${encodeURIComponent(canon)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+  );
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = await sbSelect<Array<Record<string, unknown>>>(
+      `sector_aggregates?sector_display=ilike.${encodeURIComponent(sector.trim())}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+    );
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const r = rows[0];
+  const pe = num(r.pe_median);
+  const pb = num(r.pb_median);
+  const roe = num(r.roe_median);
+  if (pe == null && pb == null && roe == null) return null;
+  return {
+    pe_ratio: pe,
+    pb_ratio: pb,
+    roe,
+    sector_canonical: (r.sector_canonical as string) ?? canon,
+    sector_display: (r.sector_display as string) ?? sector,
+    sample_size: num(r.sample_size),
+  };
 }
 async function fetchSectorIndustry(symbol: string, auth: string | null): Promise<{ sector: string | null; industry: string | null }> {
   try {
