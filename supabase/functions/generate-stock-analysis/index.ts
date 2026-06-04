@@ -208,19 +208,45 @@ interface SectorFallbackFund {
   sector_display: string | null;
   sample_size: number | null;
 }
-async function fetchSectorFundamentalFallback(sector: string | null): Promise<SectorFallbackFund | null> {
-  if (!sector || !sector.trim()) return null;
-  const canon = sector.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  // Try canonical exact match first
-  let rows = await sbSelect<Array<Record<string, unknown>>>(
-    `sector_aggregates?sector_canonical=eq.${encodeURIComponent(canon)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
-  );
-  if (!Array.isArray(rows) || rows.length === 0) {
+async function fetchSectorFundamentalFallback(sector: string | null, industry: string | null = null): Promise<SectorFallbackFund | null> {
+  const candidates: string[] = [];
+  if (sector && sector.trim()) candidates.push(sector.trim());
+  if (industry && industry.trim() && industry.trim().toLowerCase() !== (sector ?? "").trim().toLowerCase()) {
+    candidates.push(industry.trim());
+  }
+  if (candidates.length === 0) return null;
+
+  let rows: Array<Record<string, unknown>> | null = null;
+  for (const cand of candidates) {
+    const canon = cand.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    // 1) canonical exact
     rows = await sbSelect<Array<Record<string, unknown>>>(
-      `sector_aggregates?sector_display=ilike.${encodeURIComponent(sector.trim())}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+      `sector_aggregates?sector_canonical=eq.${encodeURIComponent(canon)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
     );
+    if (Array.isArray(rows) && rows.length > 0) break;
+    // 2) display ilike exact
+    rows = await sbSelect<Array<Record<string, unknown>>>(
+      `sector_aggregates?sector_display=ilike.${encodeURIComponent(cand)}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+    );
+    if (Array.isArray(rows) && rows.length > 0) break;
+    // 3) display contains last word (token-loose)
+    const tokens = cand.split(/\s+/).filter((t) => t.length >= 4);
+    for (const tok of tokens.reverse()) {
+      rows = await sbSelect<Array<Record<string, unknown>>>(
+        `sector_aggregates?sector_display=ilike.${encodeURIComponent("%" + tok + "%")}&select=sector_canonical,sector_display,pe_median,pb_median,roe_median,sample_size&limit=1`,
+      );
+      if (Array.isArray(rows) && rows.length > 0) break;
+    }
+    if (Array.isArray(rows) && rows.length > 0) break;
   }
   if (!Array.isArray(rows) || rows.length === 0) return null;
+  const r = rows[0];
+  const pe = num(r.pe_median);
+  const pb = num(r.pb_median);
+  const roe = num(r.roe_median);
+  if (pe == null && pb == null && roe == null) return null;
+  const canonOut = (r.sector_canonical as string) ?? candidates[0].toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
   const r = rows[0];
   const pe = num(r.pe_median);
   const pb = num(r.pb_median);
