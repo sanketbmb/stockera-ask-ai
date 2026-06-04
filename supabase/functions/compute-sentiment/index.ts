@@ -157,7 +157,10 @@ async function bumpUsage(deltaCalls: number, deltaArticles: number): Promise<voi
 }
 
 // ───────────────── Marketaux fetch (via wrapper) ─────────────────
-async function fetchMarketaux(symbols: string, callerAuth: string | null): Promise<Article[]> {
+// MISSION 6.1A: always authenticate to marketaux-fetch with the anon key.
+// Forwarding the orchestrator's service-role bearer was causing silent
+// failures on the verify_jwt=true wrapper, leading to empty 24h cache rows.
+async function fetchMarketaux(symbols: string): Promise<Article[]> {
   const publishedAfter = new Date(Date.now() - NEWS_WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 19); // YYYY-MM-DDTHH:MM:SS
@@ -166,7 +169,7 @@ async function fetchMarketaux(symbols: string, callerAuth: string | null): Promi
     headers: {
       "Content-Type": "application/json",
       apikey: ANON_KEY,
-      authorization: callerAuth ?? `Bearer ${ANON_KEY}`,
+      authorization: `Bearer ${ANON_KEY}`,
     },
     body: JSON.stringify({
       endpoint: "news/all",
@@ -360,7 +363,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
 
   try {
-    const callerAuth = req.headers.get("authorization");
+    // callerAuth intentionally not used — see fetchMarketaux() note (Mission 6.1A).
+    void req.headers.get("authorization");
     const body = await req.json().catch(() => ({}));
     const rawSymbol = String(body?.symbol ?? "").trim().toUpperCase();
     if (!rawSymbol) return json({ success: false, error: "symbol required" }, 400);
@@ -410,14 +414,14 @@ Deno.serve(async (req) => {
 
       try {
         formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`, callerAuth);
+        fetched = await fetchMarketaux(`${symbol}.NS`);
         callsThisRequest += 1;
         articlesThisRequest += fetched.length;
         symbol_format_used = `${symbol}.NS`;
 
         if (fetched.length === 0) {
           formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol, callerAuth);
+          const fallback = await fetchMarketaux(symbol);
           callsThisRequest += 1;
           articlesThisRequest += fallback.length;
           if (fallback.length > 0) {
@@ -431,9 +435,13 @@ Deno.serve(async (req) => {
       }
 
       articles = fetched;
-      const ttl = fetched.length < LOW_VOLUME_THRESHOLD ? LOW_VOLUME_TTL_HOURS : CACHE_TTL_HOURS;
-      // Always cache (even empty) to avoid hammering the budget on unknown symbols.
-      await upsertCache(symbol, fetched, symbol_format_used ?? formatsTried[0], ttl);
+      // MISSION 6.1A: only persist a cache row when the fetch actually
+      // succeeded. Cache poisoning (24h empty rows from failed fetches)
+      // was the dominant cause of NULL sentiment across all recent reports.
+      if (!warning) {
+        const ttl = fetched.length < LOW_VOLUME_THRESHOLD ? LOW_VOLUME_TTL_HOURS : CACHE_TTL_HOURS;
+        await upsertCache(symbol, fetched, symbol_format_used ?? formatsTried[0], ttl);
+      }
 
       if (callsThisRequest > 0) {
         await bumpUsage(callsThisRequest, articlesThisRequest);
