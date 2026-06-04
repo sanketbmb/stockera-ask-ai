@@ -900,8 +900,8 @@ Deno.serve(async (req) => {
       sample_size: number | null;
       filled_fields: string[];
     } | null = null;
-    if ((fundFetchFailed || snapEmpty) && sector) {
-      const fb = await fetchSectorFundamentalFallback(sector);
+    if ((fundFetchFailed || snapEmpty) && (sector || industry)) {
+      const fb = await fetchSectorFundamentalFallback(sector, industry);
       if (fb) {
         const built = buildSectorFallbackFundamental(fb, sector);
         const filled: string[] = [];
