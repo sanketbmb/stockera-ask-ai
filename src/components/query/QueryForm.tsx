@@ -309,6 +309,7 @@ export function QueryForm() {
     setRouterMeta(null);
     setRouterNotice(null);
     setAutoDetected({});
+    setInferredConcept(null);
   };
 
   // Phase 3B + Mission 1.6 — sector auto-detection.
