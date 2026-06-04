@@ -1999,6 +1999,7 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
         <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} hint={METRIC_COPY.m_rs_vs_nifty.measures} />
         <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
         <Metric label="RS vs Nifty" value={mom.relative_strength_vs_nifty != null ? fmtPct(mom.relative_strength_vs_nifty, 2, true) : DASH} />
+        <RecentNewsBlock sent={sent} />
       </TierCard>
     </motion.section>
   );
