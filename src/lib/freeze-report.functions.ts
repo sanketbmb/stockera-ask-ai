@@ -205,7 +205,8 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     // ─── Cache hit ───
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
-      const enriched = enrichAuditMeta(cached, {
+      const suppressed = applyVerdictSuppression(cached, queryType);
+      const enriched = enrichAuditMeta(suppressed, {
         frozenAt: row.frozen_at as string,
         servedFromCache: true,
         reportPath,
@@ -229,7 +230,8 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     const artifactStatus: "frozen" | "regenerated" = data.forceRefresh ? "regenerated" : "frozen";
 
     const decision = meteringFor(reportPath);
-    const persistPayload = enrichAuditMeta(fresh, {
+    const freshSuppressed = applyVerdictSuppression(fresh, queryType);
+    const persistPayload = enrichAuditMeta(freshSuppressed, {
       frozenAt,
       servedFromCache: false,
       reportPath,
