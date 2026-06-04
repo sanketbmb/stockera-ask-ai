@@ -363,7 +363,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
 
   try {
-    const callerAuth = req.headers.get("authorization");
+    // callerAuth intentionally not used — see fetchMarketaux() note (Mission 6.1A).
+    void req.headers.get("authorization");
     const body = await req.json().catch(() => ({}));
     const rawSymbol = String(body?.symbol ?? "").trim().toUpperCase();
     if (!rawSymbol) return json({ success: false, error: "symbol required" }, 400);
