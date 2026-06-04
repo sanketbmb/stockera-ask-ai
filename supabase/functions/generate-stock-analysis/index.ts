@@ -208,6 +208,24 @@ interface SectorFallbackFund {
   sector_display: string | null;
   sample_size: number | null;
 }
+// Loose aliases mapping common finedge sector/industry labels onto the
+// canonical buckets already present in sector_aggregates. Kept short and
+// transparent — extend as new mappings are confirmed.
+const SECTOR_ALIASES: Record<string, string> = {
+  "life_insurance": "financial_services",
+  "general_insurance": "financial_services",
+  "insurance": "financial_services",
+  "non_banking_financial_company_nbfc": "financial_services",
+  "nbfc": "financial_services",
+  "heavy_electrical_equipment": "capital_goods",
+  "electrical_equipment": "capital_goods",
+  "industrial_manufacturing": "capital_goods",
+  "logistics": "services",
+  "transportation": "services",
+  "retailing": "consumer_discretionary",
+  "ecommerce": "consumer_discretionary",
+  "internet_software_services": "information_technology",
+};
 async function fetchSectorFundamentalFallback(sector: string | null, industry: string | null = null): Promise<SectorFallbackFund | null> {
   const candidates: string[] = [];
   if (sector && sector.trim()) candidates.push(sector.trim());
@@ -215,6 +233,7 @@ async function fetchSectorFundamentalFallback(sector: string | null, industry: s
     candidates.push(industry.trim());
   }
   if (candidates.length === 0) return null;
+
 
   let rows: Array<Record<string, unknown>> | null = null;
   for (const cand of candidates) {
