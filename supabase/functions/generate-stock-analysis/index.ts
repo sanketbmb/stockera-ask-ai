@@ -969,6 +969,7 @@ Deno.serve(async (req) => {
       },
       fundamental_snapshot: fund?.snapshot ?? {
         pe_ratio: null, roe: null, piotroski_f_score: null, altman_z_score: null, dcf_upside_pct: null, valuation_label: "",
+        derivation: null, sector_fallback_meta: null,
       },
       risk_snapshot: risk?.snapshot ?? {
         beta: null, volatility_1y: null, sharpe_ratio: null, sortino_ratio: null, max_drawdown: null, var_95: null, liquidity_label: "",
