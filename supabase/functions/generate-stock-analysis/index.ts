@@ -32,6 +32,17 @@ import {
   type Action as BucketAction,
 } from "../_shared/action-buckets.ts";
 import { findBaseline } from "../_shared/regression-baseline.ts";
+import {
+  HORIZON_SHAPING_VERSION,
+  SHAPING_ACTIVE,
+  shapeScoresByHorizon,
+  applyBankingCarveout,
+  evaluatePromotion,
+  computeOverall,
+  emptyDelta,
+  type PillarScores,
+  type PromotionAction,
+} from "../_shared/horizon-shaping.ts";
 
 type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 type Action = BucketAction;
