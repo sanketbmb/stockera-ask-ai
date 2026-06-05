@@ -227,10 +227,8 @@ Deno.serve(async (req) => {
     earnings_consistency_label,
   );
 
-  const long_quality_composite_banking = bankingLongQualityComposite(
-    piotroski_f_score,
-    earnings_consistency_label,
-  );
+
+
 
   const snapshot = {
     roe_5y_avg,
