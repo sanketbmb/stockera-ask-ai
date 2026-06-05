@@ -1,215 +1,244 @@
-# Wave 5c — Visual Polish (PLAN ONLY)
+# Wave 5d — V1 Freeze QA + Move 4b (PLAN ONLY)
 
-Frontend-only. No backend, no scoring, no weights, no RLS, no sentiment pipeline, no stock-picker. `PROMOTION_RULES_ENABLED` stays `false`. Landing page untouched.
-
----
-
-## Pre-plan flag — needs founder decision
-
-**Returns-strip schema gap.** `returns_snapshot` (src/types/stock-analysis.ts L70-77) exposes `one_week`, `one_month`, `three_month`, `one_year`, `vs_nifty_one_month`, `vs_nifty_three_month`. **There is no `six_month` field** in the orchestrator payload or in compute-momentum. The brief asks for "1M / 3M / 6M / 1Y / vs Nifty".
-
-Two options — pick one before Build:
-
-- **(A) Drop 6M** and render `1M / 3M / 1Y / 1M vs Nifty / 3M vs Nifty`. Stays frontend-only. **Recommended.**
-- **(B) Keep 6M** which requires adding a field in compute-momentum + orchestrator + types. That violates the "no backend" guardrail of Wave 5c and should be its own wave.
-
-Plan below assumes (A).
+Stock Picker stays deferred. `PROMOTION_RULES_ENABLED=false`. No scoring/weight/RLS changes proposed in this plan.
 
 ---
 
-## Item 1 — Restore horizontal price-zone axis
+## Pre-plan flag — QA execution scope (needs founder decision)
 
-### Current code
+The QA matrix as specified is **8 stocks × 4 horizons = 32 fresh regenerations**. Each regeneration fans out to compute-technicals, compute-fundamentals, compute-risk, compute-momentum, compute-sentiment, compute-trade-plan, plus per-tier helpers (compute-long-term-quality on long-term, compute-intraday-microstructure on intraday) and a Marketaux+Dhan upstream call. That is a meaningful credit + provider-quota burn.
 
-File: `src/components/analysis/StockAnalysisReport.tsx`
+Pick one before Build:
 
-- `PriceBand` component: L398–595 (declared L398, returns at L502)
-- Horizontal axis line: **already present** at L516–521 (`motion.div` with `bg-gradient-to-r from-rose-300 via-border to-emerald-300`, `h-px`).
-- Empty/insufficient short-circuit: L457–459 returns the italic paragraph and renders no axis.
-- Dots: L538–595.
+- **(A) Full 32-cell matrix** — definitive freeze evidence. Highest cost.
+- **(B) Targeted 12-cell sample** *(recommended)*: HDFCBANK × 4 horizons (covers banking carveout + Step 2/3 carry-over), NSDL × intraday + long-term (no-coverage path), INFY × medium-term, TCS × short-term, BPCL × long-term (alias path), ICICIBANK × long-term. Catches every visual-QA invariant in the brief without paying 32×.
+- **(C) Code-only audit (0 credits)** — verify invariants by reading the rendered component tree against the schema; only re-generate a stock if a specific invariant is unprovable from code. Lowest cost; weakest evidence.
 
-### Diagnosis
-
-The axis element exists but is a single `h-px` (1-CSS-pixel) gradient between three muted stops on `bg-card`. Against the surrounding 24px zone band (L504–515) and the dot ring shadows, it visually disappears on the populated state — which matches the user-reported regression even though no line was deleted. There is no git evidence of a removal; this is a perceived disappearance from contrast loss.
-
-### Change (purely presentational)
-
-L516–521 only. Replace the single hairline with a clearly visible rail:
-
-- Bump from `h-px` to `h-0.5` (2px) and switch to a solid `bg-border` mid-section with rose→emerald end-cap gradients (or keep gradient but raise alpha — `from-rose-400/70 via-border to-emerald-400/70`).
-- Add tick-marks at each `slots[i].x` percentage (2px-wide × 6px-tall divs absolutely positioned, color `bg-border`) so the rail reads as a true axis even when dots collide.
-- Keep the empty-state branch (L457–459) untouched.
-- No prop changes, no data contract change, no animation timing change beyond reusing `priceBandLine` variant already in motion-variants.
-
-### Citations
-
-- src/components/analysis/StockAnalysisReport.tsx L398, L457–459, L502–521, L538–595.
-
-### Credit estimate
-
-~3–5 credits (single component, ~15 LOC changed, visual-only).
-
-### Deploy surface
-
-Frontend Publish only. No edge function redeploy.
+The matrix below is the deliverable structure regardless of choice; only the populated row count changes.
 
 ---
 
-## Item 2 — Returns-at-a-glance strip on every horizon
+## Item 1 — QA matrix (template — execute on Build)
 
-### Current state in TierShapedGrid
+Columns per cell: **eyebrow**, **verdict prose unique**, **gray-state when no data**, **price-zone rail visible**, **returns strip consistent**, **placeholders hidden**, **notes**.
 
-File: `src/components/analysis/StockAnalysisReport.tsx`
 
-- `TierShapedGrid` router: L1708–1714.
-- `IntradayGrid` L1716–1817 — **no returns metrics surfaced anywhere**.
-- `MediumTermGrid` L1827–1941 — exposes `3M return` (L1848), `1M vs Nifty` (L1849), `1M return` (L1864), `3M vs Nifty` (L1865) scattered across cards. No unified strip.
-- `LongTermGrid` L1943– end — returns scattered across L2028–2035.
-- Short-term reuses `MediumTermGrid` via L1712–1713 with `tierLabel="Short-term"`.
+| Stock      | Intraday               | Short-term             | Medium-term            | Long-term                             |
+| ---------- | ---------------------- | ---------------------- | ---------------------- | ------------------------------------- |
+| HDFCBANK   | *pending*              | *pending*              | *pending*              | *pending* (Move 4b regression target) |
+| ICICIBANK  | *pending*              | *pending*              | *pending*              | *pending*                             |
+| INFY       | *pending*              | *pending*              | *pending*              | *pending*                             |
+| TCS        | *pending*              | *pending*              | *pending*              | *pending*                             |
+| BPCL       | *pending*              | *pending*              | *pending*              | *pending* (alias path)                |
+| IDFCFIRSTB | *pending*              | *pending*              | *pending*              | *pending* (1-article alias path)      |
+| NESTLEIND  | *pending*              | *pending*              | *pending*              | *pending* (genuine zero-news)         |
+| NSDL       | *pending* (gray state) | *pending* (gray state) | *pending* (gray state) | *pending* (gray state)                |
 
-### Change
 
-Introduce a single presentational `ReturnsStrip` component in the **same file** (keep diff scoped), placed in the report flow at the existing slot **immediately below the verdict block, above the metric grid**, i.e. just before `<TierShapedGrid data={data} />` at L888. This way it renders for every horizon without touching the per-grid card layouts.
+Each cell will record: `PASS / FAIL / N/A — note`. Failures get classified at the bottom as **blocks V1 freeze** vs **defer to Wave 5e**.
 
-Strip layout (assumes Option A above): five tabular cells — `1M`, `3M`, `1Y`, `1M vs NIFTY`, `3M vs NIFTY` — each pulling from `data.returns_snapshot`.
-
-Behaviour:
-
-- If `returns_snapshot` has at least one non-null populated field → render the strip with `DASH` for any individual null cell.
-- If **all five** fields are null → render a single muted placeholder row: "Return history not available for this horizon." Same wrapper, same height, so the layout does not jump.
-
-Do **not** remove the existing per-grid `Metric` cells inside MediumTermGrid/LongTermGrid in this wave — that is a separate dedup pass. Wave 5c is additive.
-
-### Citations to touch
-
-- src/components/analysis/StockAnalysisReport.tsx L617 (destructure already includes `returns_snapshot`), L887–888 (insert point), new `ReturnsStrip` declared near the other small presentational helpers (e.g. just above `TierShapedGrid` at L1707).
-- src/types/stock-analysis.ts L70–77 (read-only reference for available fields).
-
-### Credit estimate
-
-~6–8 credits (one new in-file component ~40 LOC, one insertion point, light styling).
-
-### Deploy surface
-
-Frontend Publish only.
+Note: short-term + medium-term routing both render `MediumTermGrid` (Step 3 eyebrow fix); verifying both confirms the `tierLabel` prop is wired correctly per query_type.
 
 ---
 
-## Item 3 — Hide or honestly label placeholder modules
+## Item 2 — Regression / duplication finding (concrete, citation-locked)
 
-### Flag
+**Confirmed duplication.** The new `ReturnsStrip` (added in Wave 5c at `src/components/analysis/StockAnalysisReport.tsx` L1720–1768) overlaps with per-card return metrics inside MediumTermGrid and LongTermGrid:
 
-File: `src/lib/feature-flags.ts` — add a single new export at the bottom of the existing flag block:
+- **MediumTermGrid** (also used by short-term via `tierLabel`):
+  - L1915 — `<Metric label="3M return" …>` *(duplicate of strip cell "3M")*
+  - L1916 — `<Metric label="1M vs Nifty" …>` *(duplicate of "1M vs NIFTY")*
+  - L1931 — `<Metric label="1M return" …>` *(duplicate of "1M")*
+  - L1932 — `<Metric label="3M vs Nifty" …>` *(duplicate of "3M vs NIFTY")*
+- **LongTermGrid**:
+  - L2097 — `<Metric label="1Y return" …>` *(duplicate of "1Y")*
+  - L2098 — `<Metric label="3M return" …>` *(duplicate of "3M")*
+  - L2099 — `<Metric label="1M return" …>` *(duplicate of "1M")*
+  - L2100 — `<Metric label="1M vs Nifty" …>` *(duplicate of "1M vs NIFTY")*
+  - L2101 — `<Metric label="3M vs Nifty" …>` *(duplicate of "3M vs NIFTY")*
 
-```ts
-export const SHOW_PLACEHOLDER_MODULES = false; // Wave 5c: default OFF for V1
-```
+Not duplicated (leave intact):
 
-No other flag semantics change.
+- L1927, L2102 — `<Metric label="RS vs Nifty" …>` (different metric: `momentum.relative_strength_vs_nifty`, not in strip).
+- L2095 — `summary` prose inside the LongTermGrid card uses 1Y/3M values — keep as prose, not a Metric cell.
 
-### Block A — "Peers in the same sector"
+### Smallest dedup proposal (separable build)
 
-File: `src/components/analysis/StockAnalysisReport.tsx`
+- Delete the 4 lines in MediumTermGrid (L1915, L1916, L1931, L1932) and the 5 lines in LongTermGrid (L2097, L2098, L2099, L2100, L2101). No layout container changes; the surviving `Metric` cells reflow within their existing `grid` parents.
+- Frontend-only. No type/contract changes.
+- Estimate: ~2 credits.
+- Deploy surface: frontend Publish.
+- Verification: same QA matrix above (every cell that previously listed a return value should now show it only inside the top strip).
 
-- Section block: L1025–1033 (the whole `<motion.section>` wrapping `SectionTitle eyebrow="Also consider"`).
-- Change: wrap the entire section in `{SHOW_PLACEHOLDER_MODULES && (…)}`. When ON, current copy at L1031 stays verbatim. When OFF, nothing renders (no empty card, no spacing artifact — the surrounding sections already carry their own `space-y` from the parent at higher level).
-
-### Block B — "Expert analysis in progress"
-
-File: `src/components/report/ExpertAnswerSection.tsx`
-
-- Placeholder/in-progress state: L72–98 (the `<section id="expert-analysis">` returned when no answer exists yet).
-- Change: at the top of that branch, early-return `null` when `SHOW_PLACEHOLDER_MODULES` is false. The "answered" branch starting at L101 is unaffected — real analyst answers always render.
-- Import `SHOW_PLACEHOLDER_MODULES` from `@/lib/feature-flags`.
-
-Both blocks must be guarded by the **same** flag so a single toggle controls V1 behaviour.
-
-### Citations
-
-- src/lib/feature-flags.ts (new export, ~1 LOC).
-- src/components/analysis/StockAnalysisReport.tsx L1025–1033.
-- src/components/report/ExpertAnswerSection.tsx L72–98 (early return) + new import at file head.
-
-### Credit estimate
-
-~3–4 credits (one flag, two wraps).
-
-### Deploy surface
-
-Frontend Publish only.
+Keep this as a **separate build** from Move 4b per founder guardrail.
 
 ---
 
-## Combined verification checklist (post-Publish)
+## Item 3 — Move 4b: banking carveout sign inversion
 
-Regenerate and visually inspect:
+### Spec re-confirmed (from chat #667)
 
-1. **HDFCBANK short-term** — eyebrows still read `SHORT-TERM · CARD n` (Step 3 carry-over check), price-zone rail visibly horizontal, returns strip renders with 1M/3M/1Y + vs-NIFTY values, no "Peers" section, no "Expert analysis in progress" card.
-2. **HDFCBANK medium-term** — same checks; verdict prose differs from short-term (Wave 5a Step 2 carry-over).
-3. **HDFCBANK long-term** — rail visible, returns strip populated, placeholders hidden.
-4. **HDFCBANK intraday (data present)** — rail visible on populated levels, returns strip populated, placeholders hidden, intraday microstructure cards unchanged.
-5. **NSDL intraday (no data)** — verdict still renders `NO_COVERAGE_NEW_LISTING` cleanly, price-zone falls into existing insufficient-data branch (L457–459) unchanged, returns strip shows the muted placeholder row (not the populated grid), no "Peers" / "Expert" placeholders.
-6. Toggle `SHOW_PLACEHOLDER_MODULES = true` locally on one horizon and confirm both blocks reappear with original copy intact (regression escape hatch).
+> IF `long_quality_composite_banking < fundamental_score` → skip blend, use `fundamental_score` directly, set `banking_carveout_applied = false`, set `banking_carveout_skipped_reason = "composite_would_drag"`.
+> ELSE → existing 0.5/0.5 blend.
 
-## Out of scope (do not touch in 5c)
+### Locations
 
-- Verdict logic, suppression, INSUFFICIENT_DATA gray state.
-- MediumTermGrid eyebrow routing (already shipped Step 3).
-- supabase/functions/**.
-- Landing page.
-- Stock picker, Move 4b, Marketaux alias map.
-- Dedup of per-card return metrics inside MediumTermGrid / LongTermGrid (additive only this wave).
+Primary edit:
+
+- `supabase/functions/_shared/horizon-shaping.ts`
+  - L128–134 — `CarveoutResult` type. Add optional `skippedReason?: string | null` field (or repurpose `reason` with a new sentinel string — see "Detail" below).
+  - L136–162 — `applyBankingCarveout(...)`. Insert the asymmetric guard between the existing "missing_input" branch (L151–153) and the blend at L154. Specifically:
+    ```ts
+    if (longQualityCompositeBanking < fundamentalScore) {
+      return {
+        applied: false,
+        fundamentalBlended: fundamentalScore,
+        fundamentalOriginal: fundamentalScore,
+        longQualityCompositeBanking,
+        reason: "composite_would_drag",
+      };
+    }
+    ```
+
+Consumer that records the audit field:
+
+- `supabase/functions/generate-stock-analysis/index.ts`
+  - L980 — `applyBankingCarveout(...)` call. No signature change required.
+  - L1198–1201 — `banking_carveout_applied: carveout.applied`, `banking_carveout_reason: carveout.reason`. Add one line: `banking_carveout_skipped_reason: carveout.applied ? null : (carveout.reason === "composite_would_drag" ? "composite_would_drag" : null)` so the founder-spec field name appears in `horizon_shaping`.
+
+### Detail — `reason` vs `skippedReason`
+
+Simpler: reuse the existing `reason` channel and add `"composite_would_drag"` to the set of non-applied reasons already returned ("shaping_inactive", "non_long_tier", "non_banking", "missing_input"). Then expose it under the spec-named key `banking_carveout_skipped_reason` only when `applied=false AND reason==="composite_would_drag"` (so the existing failure modes don't pollute that field). Smallest diff, no new type member.
+
+### Gate
+
+The function is already gated by `SHAPING_ACTIVE` (L142) which reads `HORIZON_SHAPING_VERSION` env. The new branch sits inside that gate — no new flag needed. Rollback = revert one helper plus one orchestrator line.
+
+### Falsification
+
+- **HDFCBANK long-term** (composite 42 < F 48): expect `banking_carveout_applied=false`, `banking_carveout_skipped_reason="composite_would_drag"`, `fundamental_blended === fundamental_original === 48`, overall score +~1 pt vs current 43.
+- **KOTAKBANK long-term** (composite > F per Wave 3 math): expect `banking_carveout_applied=true`, blend fires as today. No behavior change.
+- **HDFCBANK intraday / short-term / medium-term**: `applied=false`, `reason="non_long_tier"` — unchanged.
+- **INFY long-term** (non-banking): `applied=false`, `reason="non_banking"` — unchanged.
+
+### Credits + deploy surface
+
+- ~5–8 credits (one shared helper + one orchestrator edit + one HDFCBANK regen + one KOTAKBANK regen for falsification).
+- Deploy surface: **backend** — `supabase deploy generate-stock-analysis` (it bundles the shared `_shared/horizon-shaping.ts`). Auto-live after deploy, no frontend Publish required.
+
+---
+
+## Items separability
+
+Per founder guardrail, three separable builds in this order:
+
+1. **Move 4b** (backend, ~5–8 cr) — falsified against HDFCBANK + KOTAKBANK.
+2. **Dedup pass** (frontend, ~2 cr) — only if QA in Item 1 confirms visual duplication on populated horizons.
+3. **Any QA failures** classified below as "blocks V1 freeze" — patched one at a time.
+
+Do not bundle. Do not pull Stock Picker forward.
+
+---
+
+## Bugs surfaced from pre-QA code reading
+
+Classified preliminarily; promotes/demotes once the QA matrix runs.
+
+### Blocks V1 freeze
+
+- *(none from code reading alone — pending QA matrix)*
+
+### Defer to Wave 5e
+
+- **Returns duplication** (Item 2 above) — visual noise, not incorrect; ship dedup right after Move 4b.
+- `**fundamental_blended` rounding asymmetry** — `Math.round` at L154 introduces ±0.5pt drift per pillar; documented limitation, not a bug.
+- `**bankingLongQualityComposite` dampening centered on 50** (L295) — strong banks lose intensity even when correctly composite-high; founder-flagged previously; sits behind a "Move 4c" calibration review that is explicitly deferred until post-stress-test.
+
+---
+
+## Guardrails reaffirmed
+
+- No scoring weight changes.
+- No new pillars.
+- No RLS changes.
+- No stock-picker work.
+- `PROMOTION_RULES_ENABLED=false` unchanged.
+- No bundling: QA findings, dedup, and Move 4b ship separately.
 
 ## STOP
 
-Plan only. Awaiting approval + decision on the 6M question (Option A vs B) before Build.  
-  
-Approve Wave 5c for BUILD with Option A.
+Awaiting founder decision on:
 
-Founder decision on returns strip:
+1. QA scope (A / B / C above).
+2. Approval to start Move 4b backend build (independent of QA outcome).
+3. Whether to pre-approve the dedup build conditional on QA confirming visual duplication, or require a separate approval round. 
 
-- Choose Option A.
+Approve Wave 5d with the following founder decisions:
 
-- Do NOT add 6M in this wave.
+1) QA scope
 
-- Use only existing frontend-available fields:
+- Choose Option B: targeted 12-cell sample.
 
-  1M / 3M / 1Y / 1M vs NIFTY / 3M vs NIFTY
+- Do not run the full 32-cell matrix at this stage.
 
-Approved scope:
+- Do not use code-only audit as the final freeze evidence.
 
-1) Restore the visible horizontal price-zone axis in populated states only.
+2) Move 4b
 
-2) Add the unified ReturnsStrip below the verdict block and above TierShapedGrid using existing returns_snapshot fields only.
+- Approve Move 4b backend build now, independent of QA outcome.
 
-3) Hide placeholder modules by default using SHOW_PLACEHOLDER_MODULES = false.
+- Keep it fully isolated:
 
-Guardrails remain:
+  - no scoring weight changes
 
-- frontend only
+  - no new pillars
 
-- no supabase/functions changes
+  - no RLS changes
 
-- no scoring / weights / buckets / RLS changes
+  - no stock-picker work
 
-- no sentiment pipeline changes
+- After build, falsify exactly against:
 
-- no stock-picker work
+  - HDFCBANK long-term
 
-- no landing page work
+  - KOTAKBANK long-term
 
-- no dedup pass on existing per-card returns in this wave
+  - HDFCBANK short / medium / intraday
 
-Build and then return:
+  - INFY long-term
 
-- exact files changed
+- Return the before/after audit fields for those cases.
 
-- publish confirmation
+3) Dedup pass
 
-- visual verification against:
+- Do NOT auto-build immediately.
 
-  HDFCBANK short-term, medium-term, long-term, one populated intraday, and NSDL intraday
+- Conditional pre-approval is granted only if the targeted QA clearly confirms that the new ReturnsStrip is visually duplicating return metrics in populated medium-term / long-term reports.
 
-STOP after Wave 5c build report and verification.
+- If confirmed, then proceed with the small frontend-only dedup build as a separate step after Move 4b.
 
-Do not start stock-picker or any next wave automatically.
+- If not clearly visible in QA, stop and return findings before building dedup.
+
+4) Freeze guardrails
+
+- PROMOTION_RULES_ENABLED remains false.
+
+- No stock-picker work in this wave.
+
+- No bundling: targeted QA, Move 4b, and dedup stay separable.
+
+Required order:
+
+- First: targeted QA matrix (Option B)
+
+- Second: Move 4b build + falsification
+
+- Third: dedup only if QA confirms it is visibly duplicative
+
+- Then STOP for founder review
+
+Do not start Stock Picker.
+
+Do not start any Wave 5e work.
+
+&nbsp;
