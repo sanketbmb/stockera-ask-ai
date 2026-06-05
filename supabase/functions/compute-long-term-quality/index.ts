@@ -4,6 +4,8 @@
 // promoter holding signal via finedge "shareholdings/ownership-history".
 // Stateless; never throws; degrades to nulls with diagnostic trail.
 
+import { bankingLongQualityComposite } from "../_shared/horizon-shaping.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
