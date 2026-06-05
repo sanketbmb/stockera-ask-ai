@@ -997,6 +997,11 @@ Deno.serve(async (req) => {
     // 4c. Horizon shaping — bounded ±3 per pillar, ±4 total weighted overall.
     const shaping = shapeScoresByHorizon(postCarveoutScores, tierWeights, queryType);
     const finalScores: PillarScores = shaping.shapedScores;
+    // Alias for downstream payload assembly. `scores` always reflects the
+    // post-carveout, post-shaping values used to compute the verdict.
+    // Raw pre-shaping pillars are persisted in audit_meta.horizon_shaping.
+    const scores = finalScores;
+
 
     const verdict = computeVerdict(
       finalScores,
