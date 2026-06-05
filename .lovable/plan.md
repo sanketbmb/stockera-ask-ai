@@ -1,244 +1,178 @@
-# Wave 5d — V1 Freeze QA + Move 4b (PLAN ONLY)
+## Wave 5e — Pre-Stock-Picker Cleanup (PLAN ONLY)
 
-Stock Picker stays deferred. `PROMOTION_RULES_ENABLED=false`. No scoring/weight/RLS changes proposed in this plan.
-
----
-
-## Pre-plan flag — QA execution scope (needs founder decision)
-
-The QA matrix as specified is **8 stocks × 4 horizons = 32 fresh regenerations**. Each regeneration fans out to compute-technicals, compute-fundamentals, compute-risk, compute-momentum, compute-sentiment, compute-trade-plan, plus per-tier helpers (compute-long-term-quality on long-term, compute-intraday-microstructure on intraday) and a Marketaux+Dhan upstream call. That is a meaningful credit + provider-quota burn.
-
-Pick one before Build:
-
-- **(A) Full 32-cell matrix** — definitive freeze evidence. Highest cost.
-- **(B) Targeted 12-cell sample** *(recommended)*: HDFCBANK × 4 horizons (covers banking carveout + Step 2/3 carry-over), NSDL × intraday + long-term (no-coverage path), INFY × medium-term, TCS × short-term, BPCL × long-term (alias path), ICICIBANK × long-term. Catches every visual-QA invariant in the brief without paying 32×.
-- **(C) Code-only audit (0 credits)** — verify invariants by reading the rendered component tree against the schema; only re-generate a stock if a specific invariant is unprovable from code. Lowest cost; weakest evidence.
-
-The matrix below is the deliverable structure regardless of choice; only the populated row count changes.
+Four scoped fixes. Each ships independently with founder approval. No bundling. PROMOTION_RULES_ENABLED and SHOW_PLACEHOLDER_MODULES stay false.
 
 ---
 
-## Item 1 — QA matrix (template — execute on Build)
+### Fix 1 — PriceBand adjacent-marker collision
 
-Columns per cell: **eyebrow**, **verdict prose unique**, **gray-state when no data**, **price-zone rail visible**, **returns strip consistent**, **placeholders hidden**, **notes**.
+**Evidence:** ICICIBANK long-term ENTRY ₹966.28 vs LTP ₹977.75; SBIN long-term LTP ₹747.35 vs ENTRY ₹761.74 → labels overlap into unreadable blob. Wave 5c thickened the rail but the collision walker only triggers when `cur.side === prev.side` (line 483), so the alternating top/bottom pattern leaves *adjacent* labels both rendered at the same vertical position with the labels themselves still horizontally overlapping (a 9% MIN_GAP_PCT is enforced for re-flipping but not for actual label width on the alternating side).
 
+**File:** `src/components/analysis/StockAnalysisReport.tsx` — `PriceBand` function L399–597.
 
-| Stock      | Intraday               | Short-term             | Medium-term            | Long-term                             |
-| ---------- | ---------------------- | ---------------------- | ---------------------- | ------------------------------------- |
-| HDFCBANK   | *pending*              | *pending*              | *pending*              | *pending* (Move 4b regression target) |
-| ICICIBANK  | *pending*              | *pending*              | *pending*              | *pending*                             |
-| INFY       | *pending*              | *pending*              | *pending*              | *pending*                             |
-| TCS        | *pending*              | *pending*              | *pending*              | *pending*                             |
-| BPCL       | *pending*              | *pending*              | *pending*              | *pending* (alias path)                |
-| IDFCFIRSTB | *pending*              | *pending*              | *pending*              | *pending* (1-article alias path)      |
-| NESTLEIND  | *pending*              | *pending*              | *pending*              | *pending* (genuine zero-news)         |
-| NSDL       | *pending* (gray state) | *pending* (gray state) | *pending* (gray state) | *pending* (gray state)                |
+- Slot positioning + collision walk: L466–492.
+- Label render with `topPx` math: L548–594.
 
+**Proposed change (frontend only, no data contract change):**
 
-Each cell will record: `PASS / FAIL / N/A — note`. Failures get classified at the bottom as **blocks V1 freeze** vs **defer to Wave 5e**.
+1. **Near-value merge (extend existing exact-merge at L443–456):** if two adjacent slot x-percentages are within 1.5% of rail width, merge into one dot with combined label `"ENTRY / LTP ₹972.02"` using the midpoint price — apply only when the price gap is ≤0.5% (cosmetic merge, not semantic). For ICICIBANK and SBIN cases above (≈1.2% price gap), this is the primary fix.
+2. **Stagger fallback (rewrite L480–492 walker):** when within MIN_GAP_PCT, push to opposite side AND bump to `tier: 1` if the opposite side already has a tier-0 neighbour within MIN_GAP_PCT. Today only same-side collisions escalate to tier 1.
+3. **3+ cluster guard:** if ≥3 consecutive slots fall within MIN_GAP_PCT, assign them rotating sides (top-tier0, bottom-tier0, top-tier1, bottom-tier1) deterministically.
+4. Keep monotonic left-to-right order intact (already enforced by L456 sort).
 
-Note: short-term + medium-term routing both render `MediumTermGrid` (Step 3 eyebrow fix); verifying both confirms the `tierLabel` prop is wired correctly per query_type.
-
----
-
-## Item 2 — Regression / duplication finding (concrete, citation-locked)
-
-**Confirmed duplication.** The new `ReturnsStrip` (added in Wave 5c at `src/components/analysis/StockAnalysisReport.tsx` L1720–1768) overlaps with per-card return metrics inside MediumTermGrid and LongTermGrid:
-
-- **MediumTermGrid** (also used by short-term via `tierLabel`):
-  - L1915 — `<Metric label="3M return" …>` *(duplicate of strip cell "3M")*
-  - L1916 — `<Metric label="1M vs Nifty" …>` *(duplicate of "1M vs NIFTY")*
-  - L1931 — `<Metric label="1M return" …>` *(duplicate of "1M")*
-  - L1932 — `<Metric label="3M vs Nifty" …>` *(duplicate of "3M vs NIFTY")*
-- **LongTermGrid**:
-  - L2097 — `<Metric label="1Y return" …>` *(duplicate of "1Y")*
-  - L2098 — `<Metric label="3M return" …>` *(duplicate of "3M")*
-  - L2099 — `<Metric label="1M return" …>` *(duplicate of "1M")*
-  - L2100 — `<Metric label="1M vs Nifty" …>` *(duplicate of "1M vs NIFTY")*
-  - L2101 — `<Metric label="3M vs Nifty" …>` *(duplicate of "3M vs NIFTY")*
-
-Not duplicated (leave intact):
-
-- L1927, L2102 — `<Metric label="RS vs Nifty" …>` (different metric: `momentum.relative_strength_vs_nifty`, not in strip).
-- L2095 — `summary` prose inside the LongTermGrid card uses 1Y/3M values — keep as prose, not a Metric cell.
-
-### Smallest dedup proposal (separable build)
-
-- Delete the 4 lines in MediumTermGrid (L1915, L1916, L1931, L1932) and the 5 lines in LongTermGrid (L2097, L2098, L2099, L2100, L2101). No layout container changes; the surviving `Metric` cells reflow within their existing `grid` parents.
-- Frontend-only. No type/contract changes.
-- Estimate: ~2 credits.
-- Deploy surface: frontend Publish.
-- Verification: same QA matrix above (every cell that previously listed a return value should now show it only inside the top strip).
-
-Keep this as a **separate build** from Move 4b per founder guardrail.
+**Credit estimate:** ~6 credits (single function, ~40 lines changed, no new components).
+**Deploy surface:** Frontend Publish.
+**Falsification:** Regenerate ICICIBANK long-term and SBIN long-term. ENTRY+LTP must render either as one merged dot with combined label, or as two non-overlapping labels on opposite sides.
 
 ---
 
-## Item 3 — Move 4b: banking carveout sign inversion
+### Fix 2 — Sparse PriceBand + empty Fresh Entry Plan partial-data state
 
-### Spec re-confirmed (from chat #667)
+**Evidence:** HDFCBANK long-term renders only S2 + LTP on the rail (every other slot dash); Fresh Entry Plan below is 4× dash with the generic "Invalidation level not derivable…" line. Visually broken.
 
-> IF `long_quality_composite_banking < fundamental_score` → skip blend, use `fundamental_score` directly, set `banking_carveout_applied = false`, set `banking_carveout_skipped_reason = "composite_would_drag"`.
-> ELSE → existing 0.5/0.5 blend.
+**Files:**
 
-### Locations
+- `src/components/analysis/StockAnalysisReport.tsx` — `PriceBand` L399–597 (rawPoints filter L430–440 already drops nulls; the "<2 points" early return at L458 is the only existing partial-data branch).
+- `src/components/analysis/StockAnalysisReport.tsx` — `LongTermGrid` PriceBand call site L987 (and equivalent in MediumTermGrid/IntradayGrid — to confirm by grep before build).
+- `src/components/report/FreshEntryAddendum.tsx` L49–82 — Fresh Entry Plan card; renders all four `LevelCell`s unconditionally (L72–75).
 
-Primary edit:
+**Proposed change (frontend only):**
 
-- `supabase/functions/_shared/horizon-shaping.ts`
-  - L128–134 — `CarveoutResult` type. Add optional `skippedReason?: string | null` field (or repurpose `reason` with a new sentinel string — see "Detail" below).
-  - L136–162 — `applyBankingCarveout(...)`. Insert the asymmetric guard between the existing "missing_input" branch (L151–153) and the blend at L154. Specifically:
-    ```ts
-    if (longQualityCompositeBanking < fundamentalScore) {
-      return {
-        applied: false,
-        fundamentalBlended: fundamentalScore,
-        fundamentalOriginal: fundamentalScore,
-        longQualityCompositeBanking,
-        reason: "composite_would_drag",
-      };
-    }
-    ```
+1. **PriceBand sparse state:** count populated slots from the 9 candidate fields (entry_zone, stop_loss, target_1, target_2, support_1, support_2, resistance_1, resistance_2, current). If ≥5 of 9 are null AND verdict ≠ INSUFFICIENT_DATA, still render populated dots but append a single muted line under the rail: *"Only support/current level available — full level set unavailable for this horizon."* Pass `verdict` flag in (PriceBand currently receives only `levels` + `current`, so add an optional `partialNote?: string` prop computed by the caller — keeps PriceBand presentation-only).
+2. **FreshEntryAddendum collapse:** in `FreshEntryAddendum` (L49), count nulls across `entry_zone`, `stop_loss`, `target_1`, `target_2`. If ≥3 are null, return a compact muted single-line card: *"Fresh entry plan unavailable — wait for fuller level coverage."* instead of the 4-cell grid + invalidation prose. Keep the section heading and "Stockera Engine" eyebrow for layout consistency.
 
-Consumer that records the audit field:
-
-- `supabase/functions/generate-stock-analysis/index.ts`
-  - L980 — `applyBankingCarveout(...)` call. No signature change required.
-  - L1198–1201 — `banking_carveout_applied: carveout.applied`, `banking_carveout_reason: carveout.reason`. Add one line: `banking_carveout_skipped_reason: carveout.applied ? null : (carveout.reason === "composite_would_drag" ? "composite_would_drag" : null)` so the founder-spec field name appears in `horizon_shaping`.
-
-### Detail — `reason` vs `skippedReason`
-
-Simpler: reuse the existing `reason` channel and add `"composite_would_drag"` to the set of non-applied reasons already returned ("shaping_inactive", "non_long_tier", "non_banking", "missing_input"). Then expose it under the spec-named key `banking_carveout_skipped_reason` only when `applied=false AND reason==="composite_would_drag"` (so the existing failure modes don't pollute that field). Smallest diff, no new type member.
-
-### Gate
-
-The function is already gated by `SHAPING_ACTIVE` (L142) which reads `HORIZON_SHAPING_VERSION` env. The new branch sits inside that gate — no new flag needed. Rollback = revert one helper plus one orchestrator line.
-
-### Falsification
-
-- **HDFCBANK long-term** (composite 42 < F 48): expect `banking_carveout_applied=false`, `banking_carveout_skipped_reason="composite_would_drag"`, `fundamental_blended === fundamental_original === 48`, overall score +~1 pt vs current 43.
-- **KOTAKBANK long-term** (composite > F per Wave 3 math): expect `banking_carveout_applied=true`, blend fires as today. No behavior change.
-- **HDFCBANK intraday / short-term / medium-term**: `applied=false`, `reason="non_long_tier"` — unchanged.
-- **INFY long-term** (non-banking): `applied=false`, `reason="non_banking"` — unchanged.
-
-### Credits + deploy surface
-
-- ~5–8 credits (one shared helper + one orchestrator edit + one HDFCBANK regen + one KOTAKBANK regen for falsification).
-- Deploy surface: **backend** — `supabase deploy generate-stock-analysis` (it bundles the shared `_shared/horizon-shaping.ts`). Auto-live after deploy, no frontend Publish required.
+**Credit estimate:** ~5 credits.
+**Deploy surface:** Frontend Publish.
+**Falsification:** HDFCBANK long-term shows the explanatory line under the rail; Fresh Entry Plan collapses to the single muted line. Stocks with full level coverage (e.g. INFY long-term) render unchanged.
 
 ---
 
-## Items separability
+### Fix 3 — Banking long-term verdict prose templating leak
 
-Per founder guardrail, three separable builds in this order:
+**Evidence:** HDFCBANK and SBIN long-term both open with *"Long-horizon view prioritizing business quality, valuation support and risk profile. weak fundamentals (X), …"* — identical prose, only numbers swapped. ICICIBANK long-term shows different/better prose because its verdict is suppressed via `applyVerdictSuppression`.
 
-1. **Move 4b** (backend, ~5–8 cr) — falsified against HDFCBANK + KOTAKBANK.
-2. **Dedup pass** (frontend, ~2 cr) — only if QA in Item 1 confirms visual duplication on populated horizons.
-3. **Any QA failures** classified below as "blocks V1 freeze" — patched one at a time.
+**Root cause located:**
 
-Do not bundle. Do not pull Stock Picker forward.
+- `supabase/functions/generate-stock-analysis/index.ts` L800–805: `TIER_REASON_PREFIX` hard-codes the long-term opening.
+- `supabase/functions/generate-stock-analysis/index.ts` L807–826: `summaryReason()` is a pure score-dump — concatenates `${tag} ${pillar} (${score})` per pillar in tier-specific order. No driver narrative, no banking branch.
+- L1088: `summary_reason: summaryReason(scores, queryType)` — written into final_verdict before `applyVerdictSuppression` has any chance to rewrite long-term banking prose (suppression is INSUFFICIENT_DATA-shaped, not banking-shaped).
+
+**Proposed change (backend, text-only, no scoring/weight change):**
+
+1. **Replace `TIER_REASON_PREFIX["long-term"]**` with a driver-aware composer for long-term. Add a small helper `longTermNarrative(scores, isBanking)` that picks the dominant driver:
+  - If `fundamental < 40` → *"Long-term thesis weakened by deteriorating fundamentals"*
+  - Else if `risk < 40` → *"Long-term risk profile is elevated"*
+  - Else if `momentum < 35 && technical < 45` → *"Long-term trend is rolling over — defer fresh accumulation until a durable base forms"*
+  - Else if `fundamental >= 60 && risk >= 50` → *"Valuation and balance-sheet quality support a long-horizon stance"*
+  - Else → keep today's neutral prefix.
+2. **Banking-specific overlay:** when `isBanking && queryType === "long-term"`, override with NIM/asset-quality-flavoured driver prose (e.g. *"Banking long-term view governed by ROE durability and balance-sheet leverage"*) — text-only, sourced from pillar scores already in `scores`.
+3. Keep the score-dump tail (L817–822 `labels`) but limit to top 2 pillar drivers (not all five), so the sentence reads as analysis, not a dump.
+4. `isBanking` is already known at this call site (banking carveout audit, L980 area per Wave 5d) — thread it into `summaryReason`.
+
+**Credit estimate:** ~7 credits (one function rewrite, one call-site change, banking flag plumbing already in scope).
+**Deploy surface:** Backend (`generate-stock-analysis`) auto-live.
+**Falsification:** Regenerate HDFCBANK long-term and SBIN long-term. Opening sentences must differ in *prose*, not just numbers, and neither should reuse *"Long-horizon view prioritizing…"*. ICICIBANK long-term unchanged (already suppressed elsewhere). INFY long-term (non-banking) prose still composed from driver logic.
 
 ---
 
-## Bugs surfaced from pre-QA code reading
+### Fix 4 — Business Quality card honest empty-state for banking
 
-Classified preliminarily; promotes/demotes once the QA matrix runs.
+**Investigation findings:**
 
-### Blocks V1 freeze
+- `supabase/functions/compute-long-term-quality/index.ts` is the producer for `long_term_quality_snapshot`:
+  - **fcf_yield is hard-coded null** at L120–121 with reason `fcf_yield_requires_capex_history_not_exposed_by_fundamentals` — **genuine upstream gap, not a silent drop.**
+  - **eps_cagr_5y is intentionally suppressed under banking override** at L183–190 (`suppressed_under_banking_override`) — **by design.**
+  - **promoter_holding_pct** L149–163: fetched from a shareholdings source; null reason `shareholdings_unavailable` when missing — **upstream gap.**
+  - **roce_5y_avg** L91, with fallback at L106 — populated when available; banks often have it null because FinEdge does not expose `returnOnCapital` consistently for banks.
+- `compute-fundamentals/index.ts` L394 populates `roce` from `returnOnCapital` ratio — also a real upstream gap for banks.
 
-- *(none from code reading alone — pending QA matrix)*
+**Conclusion:** All four fields are genuinely unavailable for banks (provider gap + intentional banking suppression). Not a silent drop.
 
-### Defer to Wave 5e
+**Proposed change (frontend only):**
 
-- **Returns duplication** (Item 2 above) — visual noise, not incorrect; ship dedup right after Move 4b.
-- `**fundamental_blended` rounding asymmetry** — `Math.round` at L154 introduces ±0.5pt drift per pillar; documented limitation, not a bug.
-- `**bankingLongQualityComposite` dampening centered on 50** (L295) — strong banks lose intensity even when correctly composite-high; founder-flagged previously; sits behind a "Move 4c" calibration review that is explicitly deferred until post-stress-test.
+1. **Hide upstream-null rows for banking stocks.** In `LongTermGrid` Business Quality card (`src/components/analysis/StockAnalysisReport.tsx` L2033–2044), when `q?.quality_label === "BANKING_ADJUSTED"`, suppress the rows that are structurally null for banks: FCF yield (L2037), EPS CAGR (L2038), and ROCE (L2035) only if null. Keep Promoter % visible — render with explicit dash + "Shareholdings unavailable" tooltip if null (it's not banking-specific, just data gap).
+2. **Replace with banking-relevant metrics ONLY if already computed.** Per guardrail (no new pillars): grep confirms NIM/GNPA/CASA/CAR are NOT computed today. So this fix is **suppress-only**, no substitution. Add a single muted line at the bottom of the card: *"Banking-adjusted: capex-based and EPS-growth metrics omitted by design. Quality governed by ROE, leverage, F-Score and earnings consistency."*
+3. **Banking-adjusted label consistency.** Footnote at L2028–2032 gates on `q?.quality_label === "BANKING_ADJUSTED"`. Verify in `compute-long-term-quality` why HDFCBANK and ICICIBANK don't get this label while SBIN does — likely a gating threshold in the banking detector. **Investigation-only in this plan** — if it's a sector-detection miss (e.g. HDFCBANK's sector string mismatches the banking trigger list), the fix is one-line in the sector-match set; if it's a data-completeness threshold (e.g. needs Piotroski ≥ N), document and propose threshold relaxation in the build phase. Cite `supabase/functions/compute-long-term-quality/index.ts` banking detection block (to pinpoint exact lines during build).
+
+**Credit estimate:** ~6 credits frontend + ~3 credits backend (banking-label gating fix), split-deployable.
+**Deploy surface:** 
+
+- Frontend Publish for row suppression + footnote text.
+- Backend auto-live for banking-label gating fix (if needed).
+
+**Falsification:** All three banks (HDFCBANK, ICICIBANK, SBIN) long-term Business Quality cards either show populated rows or honestly hide unavailable rows with the single explanatory line. "Banking-adjusted" footnote renders on all three.
 
 ---
 
-## Guardrails reaffirmed
+### Summary table
 
-- No scoring weight changes.
-- No new pillars.
-- No RLS changes.
-- No stock-picker work.
-- `PROMOTION_RULES_ENABLED=false` unchanged.
-- No bundling: QA findings, dedup, and Move 4b ship separately.
 
-## STOP
+| Fix                         | Surface            | Credits | Falsification stocks                  |
+| --------------------------- | ------------------ | ------- | ------------------------------------- |
+| 1 — Marker collision        | Frontend           | ~6      | ICICIBANK LT, SBIN LT                 |
+| 2 — Sparse rail + empty FEP | Frontend           | ~5      | HDFCBANK LT                           |
+| 3 — Banking verdict prose   | Backend            | ~7      | HDFCBANK LT, SBIN LT, INFY LT control |
+| 4 — Banking Quality card    | Frontend + Backend | ~9      | HDFCBANK LT, ICICIBANK LT, SBIN LT    |
 
-Awaiting founder decision on:
 
-1. QA scope (A / B / C above).
-2. Approval to start Move 4b backend build (independent of QA outcome).
-3. Whether to pre-approve the dedup build conditional on QA confirming visual duplication, or require a separate approval round. 
+**STOP after plan. Founder approves each fix separately before any build. Stock Picker remains deferred until Wave 5e closes.**  
+  
+Approve Wave 5e PLAN with 3 mandatory amendments and split approval for Fix 4.
 
-Approve Wave 5d with the following founder decisions:
+1) Fix 1 amendment
 
-1) QA scope
+- Do NOT use a synthetic midpoint merged price label like "ENTRY / LTP ₹972.02".
 
-- Choose Option B: targeted 12-cell sample.
+- If two markers are merged, preserve both actual values in the label, e.g.:
 
-- Do not run the full 32-cell matrix at this stage.
+  "ENTRY ₹966.28 / LTP ₹977.75"
 
-- Do not use code-only audit as the final freeze evidence.
+  or a stacked two-line label.
 
-2) Move 4b
+- No invented midpoint value.
 
-- Approve Move 4b backend build now, independent of QA outcome.
+2) Fix 3 amendment
 
-- Keep it fully isolated:
+- Banking long-term prose must remain grounded only in already-computed signals.
 
-  - no scoring weight changes
+- Do NOT introduce wording that implies unavailable banking metrics (NIM, GNPA, CASA, CAR, asset-quality specifics, etc.) unless those fields are already present in the payload.
 
-  - no new pillars
+- Narrative should be driven from existing pillar scores / long-term-quality fields only.
 
-  - no RLS changes
+3) Fix 4 split
 
-  - no stock-picker work
+- Approve Fix 4a now: frontend-only honest empty-state cleanup for banking Business Quality card.
 
-- After build, falsify exactly against:
+- Do NOT auto-approve Fix 4b backend banking-label consistency fix yet.
 
-  - HDFCBANK long-term
+- First return the exact root cause and file/line citation for why HDFCBANK and ICICIBANK are missing the Banking-adjusted label while SBIN shows it.
 
-  - KOTAKBANK long-term
+- Then founder will approve Fix 4b separately if needed.
 
-  - HDFCBANK short / medium / intraday
+Build sequencing requested:
 
-  - INFY long-term
+- Fix 3 first
 
-- Return the before/after audit fields for those cases.
+- then Fix 1
 
-3) Dedup pass
+- then Fix 2
 
-- Do NOT auto-build immediately.
+- then Fix 4a
 
-- Conditional pre-approval is granted only if the targeted QA clearly confirms that the new ReturnsStrip is visually duplicating return metrics in populated medium-term / long-term reports.
+- then STOP and return root-cause note for possible Fix 4b approval
 
-- If confirmed, then proceed with the small frontend-only dedup build as a separate step after Move 4b.
+Guardrails unchanged:
 
-- If not clearly visible in QA, stop and return findings before building dedup.
+- no new pillars
 
-4) Freeze guardrails
+- no scoring weight changes
 
-- PROMOTION_RULES_ENABLED remains false.
+- no RLS changes
 
-- No stock-picker work in this wave.
+- no stock-picker work
 
-- No bundling: targeted QA, Move 4b, and dedup stay separable.
+- no bundling
 
-Required order:
-
-- First: targeted QA matrix (Option B)
-
-- Second: Move 4b build + falsification
-
-- Third: dedup only if QA confirms it is visibly duplicative
-
-- Then STOP for founder review
-
-Do not start Stock Picker.
-
-Do not start any Wave 5e work.
+STOP after revised plan / build sequencing confirmation.
 
 &nbsp;
