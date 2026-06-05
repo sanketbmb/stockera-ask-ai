@@ -831,7 +831,7 @@ export function StockAnalysisReport({
         )}
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
-        {report_modules.show_score_ring && (
+        {!isInsufficient && report_modules.show_score_ring && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
             <div className="mb-4 flex items-start justify-between gap-3">
               <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
