@@ -1713,6 +1713,58 @@ function RecentNewsBlock({ sent }: { sent: StockAnalysisPayload["sentiment_snaps
   );
 }
 
+// Wave 5c — Unified returns strip rendered on every horizon, immediately
+// below the verdict block and above the tier-shaped metric grid. Reads only
+// existing returns_snapshot fields; renders a muted placeholder row when
+// nothing is populated so the layout never collapses.
+function ReturnsStrip({ data }: { data: StockAnalysisPayload }) {
+  const r = data.returns_snapshot;
+  const cells: Array<{ label: string; value: number | null }> = [
+    { label: "1M", value: r.one_month },
+    { label: "3M", value: r.three_month },
+    { label: "1Y", value: r.one_year },
+    { label: "1M vs NIFTY", value: r.vs_nifty_one_month },
+    { label: "3M vs NIFTY", value: r.vs_nifty_three_month },
+  ];
+  const allNull = cells.every((c) => c.value == null);
+
+  if (allNull) {
+    return (
+      <motion.section
+        variants={sectionFadeUp}
+        className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-4"
+      >
+        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Returns at a glance</p>
+        <p className="mt-1 text-sm italic text-muted-foreground">Return history not available for this horizon.</p>
+      </motion.section>
+    );
+  }
+
+  return (
+    <motion.section
+      variants={sectionFadeUp}
+      className="rounded-2xl border border-border bg-card px-6 py-4"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Returns at a glance</p>
+      <div className="mt-3 grid grid-cols-3 gap-4 md:grid-cols-5">
+        {cells.map((c) => {
+          const v = c.value;
+          const tone = v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-700" : "text-rose-700";
+          return (
+            <div key={c.label} className="flex flex-col">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{c.label}</span>
+              <span className={`mt-0.5 font-display text-base tabular-nums ${tone}`}>
+                {v != null ? fmtPct(v, 1, true) : DASH}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </motion.section>
+  );
+}
+
+
 
 function TierShapedGrid({ data }: { data: StockAnalysisPayload }) {
   const tier = data.query_context.query_type;
