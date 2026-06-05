@@ -151,6 +151,19 @@ export function applyBankingCarveout(
   if (fundamentalScore == null || longQualityCompositeBanking == null) {
     return { applied: false, fundamentalBlended: fundamentalScore, fundamentalOriginal: fundamentalScore, longQualityCompositeBanking, reason: "missing_input" };
   }
+  // Move 4b — asymmetric guard. If the banking-applicable composite is BELOW
+  // the raw fundamental score, the 0.5/0.5 blend would drag a structurally
+  // sound bank down (e.g. HDFCBANK: composite 42 < F 48 → blend 45). Skip the
+  // blend in that direction; only allow the carveout to LIFT.
+  if (longQualityCompositeBanking < fundamentalScore) {
+    return {
+      applied: false,
+      fundamentalBlended: fundamentalScore,
+      fundamentalOriginal: fundamentalScore,
+      longQualityCompositeBanking,
+      reason: "composite_would_drag",
+    };
+  }
   const blended = Math.round(0.5 * fundamentalScore + 0.5 * longQualityCompositeBanking);
   return {
     applied: true,
