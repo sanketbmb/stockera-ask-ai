@@ -1036,6 +1036,22 @@ Deno.serve(async (req) => {
       verdict.guardrailNotes.push(`promotion: ${promotion.reason} (${promotion.newAction})`);
     }
 
+    // 5d. Move 3c — distressed-liquidity clamp (intraday, R<50). Asymmetric
+    // downgrade; runs AFTER promotion so it overrides any HOLD/BUY lift.
+    const ivplRaw = (imRes.data?.intraday_microstructure_snapshot as Record<string, unknown> | undefined)
+      ?.intraday_volume_profile_label;
+    const ivpl = typeof ivplRaw === "string" ? ivplRaw : null;
+    const liquidityGate = evaluateLiquidityGate(
+      verdict.action as PromotionAction,
+      finalScores,
+      queryType,
+      ivpl,
+    );
+    if (liquidityGate.applied) {
+      verdict.action = liquidityGate.newAction as Action;
+      verdict.guardrailNotes.push(`liquidity_gate: ${liquidityGate.reason} (${liquidityGate.newAction})`);
+    }
+
 
     // 6. Assemble payload
     const asOfDate = tech?.as_of || fund?.as_of || risk?.as_of || mom?.as_of || sent?.as_of || new Date().toISOString();
