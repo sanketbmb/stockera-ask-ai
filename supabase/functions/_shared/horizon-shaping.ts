@@ -194,6 +194,7 @@ export function evaluatePromotion(
   opts: PromotionOpts,
 ): PromotionResult {
   if (!SHAPING_ACTIVE) return { promoted: false, newAction: action, reason: null };
+  if (!PROMOTION_RULES_ENABLED) return { promoted: false, newAction: action, reason: "promotion_rules_disabled" };
   const threshold = NEXT_BUCKET_THRESHOLD[action];
   if (threshold == null) return { promoted: false, newAction: action, reason: null };
   if (opts.missingPillars > 0) return { promoted: false, newAction: action, reason: "missing_pillars" };
