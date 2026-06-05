@@ -750,7 +750,13 @@ export function StockAnalysisReport({
                   <Badge variant="outline" className={`text-xs ${verdictStyle.chip}`}>{TIER_LABEL[tier]}</Badge>
                 </motion.div>
               </div>
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">{final_verdict.summary_reason}</p>
+              {isInsufficient ? (
+                <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">
+                  We don't have enough recent data to issue a reliable verdict for this horizon.
+                </p>
+              ) : (
+                <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">{final_verdict.summary_reason}</p>
+              )}
               <p className="mt-3 text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Based on tier-aware analysis · model {audit_meta.verdict_model_version}
               </p>
