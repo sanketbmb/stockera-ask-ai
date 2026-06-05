@@ -415,27 +415,34 @@ Deno.serve(async (req) => {
       // No cache, no budget — empty
       articles = [];
       warning = "DAILY_BUDGET_CONSERVATION_MODE";
+    } else if (MARKETAUX_NO_COVERAGE.has(symbol.toUpperCase())) {
+      // Wave 5b: symbols with confirmed zero upstream coverage skip the fetch
+      // chain entirely. Cache an empty result with normal TTL so we do not
+      // re-probe daily, and surface the explicit classification downstream.
+      articles = [];
+      symbol_format_used = "NO_COVERAGE_NEW_LISTING";
+      warning = "NO_COVERAGE_NEW_LISTING";
+      await upsertCache(symbol, [], symbol_format_used, LOW_VOLUME_TTL_HOURS);
     } else {
-      // Cache miss path → call Marketaux. Try .NS first, then bare.
+      // Cache miss path → call Marketaux through the alias chain.
+      // Order: .NS first, then any declared aliases (e.g. .BO), then bare.
+      const chain = marketauxSymbolChain(symbol);
       const formatsTried: string[] = [];
       let fetched: Article[] = [];
 
       try {
-        formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`);
-        callsThisRequest += 1;
-        articlesThisRequest += fetched.length;
-        symbol_format_used = `${symbol}.NS`;
-
-        if (fetched.length === 0) {
-          formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol);
+        for (const fmt of chain) {
+          formatsTried.push(fmt);
+          const res = await fetchMarketaux(fmt);
           callsThisRequest += 1;
-          articlesThisRequest += fallback.length;
-          if (fallback.length > 0) {
-            fetched = fallback;
-            symbol_format_used = symbol;
+          articlesThisRequest += res.length;
+          if (res.length > 0) {
+            fetched = res;
+            symbol_format_used = fmt;
+            break;
           }
+          // Remember the first format we tried so cache row is non-null.
+          if (symbol_format_used === null) symbol_format_used = fmt;
         }
       } catch (e) {
         console.error(`[compute-sentiment] fetch failed for ${symbol}:`, e);
