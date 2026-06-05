@@ -1824,7 +1824,7 @@ function microstructureProse(m: IntradayMicrostructureSnapshot | null): string {
   return `${gap} on ${vol} volume; ${atr}.`;
 }
 
-function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
+function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPayload; tierLabel?: string }) {
   const {
     technical_snapshot: t, fundamental_snapshot: f, momentum_snapshot: mom,
     returns_snapshot: ret, sentiment_snapshot: sent, score_breakdown: s,
@@ -1834,7 +1834,7 @@ function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
   return (
     <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       <TierCard
-        eyebrow="Medium · Card 1"
+        eyebrow={`${tierLabel} · Card 1`}
         title="Trend & Structure"
         icon={LineChart}
         score={s.technical_score}
@@ -1850,7 +1850,7 @@ function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
       </TierCard>
 
       <TierCard
-        eyebrow="Medium · Card 2"
+        eyebrow={`${tierLabel} · Card 2`}
         title="Momentum & Relative Strength"
         icon={Activity}
         score={s.momentum_score}
@@ -1866,7 +1866,7 @@ function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
       </TierCard>
 
       <TierCard
-        eyebrow="Medium · Card 3"
+        eyebrow={`${tierLabel} · Card 3`}
         title="Light Fundamentals"
         icon={Building2}
         score={s.fundamental_score}
@@ -1886,7 +1886,7 @@ function MediumTermGrid({ data }: { data: StockAnalysisPayload }) {
         <Metric label="DCF upside" value={f.dcf_upside_pct != null && f.dcf_upside_pct > -95 ? fmtPct(f.dcf_upside_pct, 1, true) : DASH} />
       </TierCard>
 
-      <CatalystCalendarCard symbol={stock.symbol} sent={sent} score={s.sentiment_score} />
+      <CatalystCalendarCard symbol={stock.symbol} sent={sent} score={s.sentiment_score} tierLabel={tierLabel} />
     </motion.section>
   );
 }
