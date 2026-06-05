@@ -1912,8 +1912,7 @@ function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPay
         <Metric label="EMA stack" value={labelize(t.ema_stack)} hint="50DMA vs 200DMA position" />
         <Metric label="Trend" value={labelize(t.trend_label)} />
         <Metric label="ADX" value={<AnimatedNumber value={t.adx} decimals={1} duration={700} />} />
-        <Metric label="3M return" value={ret.three_month != null ? fmtPct(ret.three_month, 1, true) : DASH} hint={METRIC_COPY.m_returns_window.measures} />
-        <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} />
+        {/* Wave 5d dedup — 3M return / 1M vs Nifty moved to ReturnsStrip */}
       </TierCard>
 
       <TierCard
