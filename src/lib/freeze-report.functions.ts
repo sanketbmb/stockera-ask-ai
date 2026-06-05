@@ -264,7 +264,7 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     // ─── Cache hit ───
     if (!data.forceRefresh && row.ai_report && row.frozen_at) {
       const cached = row.ai_report as unknown as StockAnalysisPayload;
-      const suppressed = applyVerdictSuppression(cached, queryType);
+      const suppressed = applyVerdictSuppression(cached, queryType, horizon);
 
       // Wave 1 fix: if suppression newly applies on a cache read, re-persist
       // the hardened payload so the DB reflects the safer verdict on subsequent
