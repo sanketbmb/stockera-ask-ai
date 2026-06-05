@@ -1121,7 +1121,7 @@ Deno.serve(async (req) => {
         overall_score: verdict.overall_score,
         risk_label: riskLabel(scores.risk),
         time_horizon: timeHorizonLabel(queryType),
-        summary_reason: summaryReason(scores, queryType),
+        summary_reason: summaryReason(scores, queryType, isBanking),
         verdict_reason: verdict.verdict_reason ?? null,
       },
       score_breakdown: {
