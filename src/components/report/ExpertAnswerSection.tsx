@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { ShareButton } from "@/components/common/ShareButton";
 import { AnalystReportPill } from "@/components/report/AnalystReportPill";
+import { SHOW_PLACEHOLDER_MODULES } from "@/lib/feature-flags";
 
 interface Props {
   queryId: string;
