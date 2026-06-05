@@ -82,51 +82,86 @@ function enrichAuditMeta(
 // rule's appliesTo("") call which always returned false, so the hook was
 // effectively dead for the trending-down case).
 type SuppressedVerdict = "WAIT_FOR_CLARITY" | "MONITOR";
+type HorizonKey = "intraday" | "short-term" | "medium-term" | "long-term";
+type RuleId = "ENTRY_ZONE_INVERTED" | "SHORT_CORRECTIVE_LOW_CONVICTION" | "TRENDING_DOWN_FRESH_ENTRY";
+
 interface CodeRule {
   kind: "code";
+  id: RuleId;
   surfaced: SuppressedVerdict;
   matches: (queryType: string, code: string) => boolean;
-  reason: string;
 }
 interface TrendRule {
   kind: "trend";
+  id: RuleId;
   surfaced: SuppressedVerdict;
   matches: (queryType: string, trendLabel: string) => boolean;
-  reason: string;
 }
 type SuppressionRule = CodeRule | TrendRule;
 
 const SUPPRESSION_RULES: SuppressionRule[] = [
   {
     kind: "code",
+    id: "ENTRY_ZONE_INVERTED",
     surfaced: "MONITOR",
     matches: (_qt, code) => /_ZONE_INVERTED_FALLBACK/i.test(code),
-    reason: "Entry zone inverted — monitor for cleaner setup",
   },
   {
     kind: "code",
+    id: "SHORT_CORRECTIVE_LOW_CONVICTION",
     surfaced: "WAIT_FOR_CLARITY",
     matches: (_qt, code) => /SHORT_CORRECTIVE_LOW_CONVICTION/i.test(code),
-    reason: "Short corrective leg with low conviction — wait for clarity",
   },
   {
     kind: "trend",
+    id: "TRENDING_DOWN_FRESH_ENTRY",
     surfaced: "WAIT_FOR_CLARITY",
     matches: (qt, trendLabel) =>
       qt === "fresh_entry" &&
       (trendLabel.includes("TRENDING_DOWN") ||
         trendLabel.includes("DOWNTREND") ||
         trendLabel.includes("BEARISH")),
-    reason: "fresh_entry on a bearish/down-trending tape — suppress until structure clears",
   },
 ];
+
+// Wave 5a Step 2 — horizon-aware suppression prose. Same rule + verdict action
+// across horizons, but the surfaced reason text branches by horizon so an
+// intraday report no longer reads identically to a long-term one.
+const SUPPRESSION_REASON_TEXT: Record<RuleId, Record<HorizonKey, string>> = {
+  ENTRY_ZONE_INVERTED: {
+    "intraday": "Intraday entry zone is inverted — monitor for a cleaner micro-structure before stepping in.",
+    "short-term": "Short-term entry zone is inverted — wait for a cleaner swing setup before entering.",
+    "medium-term": "Medium-term entry zone is inverted — monitor for a cleaner positional base to form.",
+    "long-term": "Long-term entry zone is inverted — accumulate only after a cleaner base develops.",
+  },
+  SHORT_CORRECTIVE_LOW_CONVICTION: {
+    "intraday": "Intraday tape is in a short corrective leg with low conviction — wait for direction to confirm.",
+    "short-term": "Short-term swing is corrective with low conviction — wait for a clearer reversal signal.",
+    "medium-term": "Medium-term setup is corrective with low conviction — wait for trend clarity before committing.",
+    "long-term": "Long-term thesis intact but near-term setup is corrective — wait for a cleaner accumulation zone.",
+  },
+  TRENDING_DOWN_FRESH_ENTRY: {
+    "intraday": "Intraday tape is bearish — avoid fresh entries until intraday structure flips.",
+    "short-term": "Short-term trend is down — wait for a swing-low reversal before fresh entries.",
+    "medium-term": "Medium-term trend is down — wait for structure to base out before fresh entries.",
+    "long-term": "Long-term trend is weakening — defer fresh accumulation until a durable base forms.",
+  },
+};
+
+function normalizeHorizon(h: string | null | undefined): HorizonKey {
+  const v = (h ?? "").toLowerCase();
+  if (v === "intraday" || v === "short-term" || v === "medium-term" || v === "long-term") return v;
+  return "medium-term";
+}
 
 function applyVerdictSuppression(
   payload: StockAnalysisPayload,
   queryType: string,
+  horizonInput: string,
 ): StockAnalysisPayload {
   const code = payload.levels?.entry_strategy?.reasoning_code ?? "";
   const trendLabel = (payload.technical_snapshot?.trend_label ?? "").toUpperCase();
+  const horizon = normalizeHorizon(horizonInput);
 
   let matched: SuppressionRule | null = null;
   for (const rule of SUPPRESSION_RULES) {
@@ -137,9 +172,17 @@ function applyVerdictSuppression(
   }
   if (!matched) return payload;
 
+  const reason = SUPPRESSION_REASON_TEXT[matched.id][horizon];
+
   const auditExt = payload.audit_meta as unknown as Record<string, unknown>;
-  // Idempotent — if already suppressed with same surfaced verdict, skip.
-  if (auditExt.verdict_suppressed === true && auditExt.suppressed_surfaced === matched.surfaced) {
+  // Idempotent — skip only if previously suppressed with same surfaced verdict
+  // AND same horizon + rule (so re-opens on a different horizon refresh prose).
+  if (
+    auditExt.verdict_suppressed === true &&
+    auditExt.suppressed_surfaced === matched.surfaced &&
+    auditExt.suppressed_horizon === horizon &&
+    auditExt.suppressed_rule_id === matched.id
+  ) {
     return payload;
   }
 
@@ -150,7 +193,7 @@ function applyVerdictSuppression(
       // Surface as WATCHLIST in the orchestrator enum (renderer-safe) and
       // record the richer label in audit_meta.
       action: "WATCHLIST",
-      summary_reason: matched.reason,
+      summary_reason: reason,
     },
     levels: {
       ...payload.levels,
@@ -166,7 +209,9 @@ function applyVerdictSuppression(
       ...payload.audit_meta,
       verdict_suppressed: true,
       suppressed_surfaced: matched.surfaced,
-      suppressed_reason: matched.reason,
+      suppressed_rule_id: matched.id,
+      suppressed_horizon: horizon,
+      suppressed_reason: reason,
       suppressed_reasoning_code: code || null,
       suppressed_trend_label: trendLabel || null,
       levels_suppressed: true,
