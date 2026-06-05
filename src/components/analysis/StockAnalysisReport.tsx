@@ -514,11 +514,20 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
         />
       )}
       <motion.div
-        className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
+        className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
+      {/* Tick marks anchored to each priced point so the rail reads as an axis */}
+      {slots.map((s, i) => (
+        <div
+          key={`tick-${i}`}
+          aria-hidden
+          className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
+          style={{ left: `${s.x}%` }}
+        />
+      ))}
       {showZoneBand && (
         <div
           className="absolute -translate-x-1/2"
