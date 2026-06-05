@@ -323,7 +323,7 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     const artifactStatus: "frozen" | "regenerated" = data.forceRefresh ? "regenerated" : "frozen";
 
     const decision = meteringFor(reportPath);
-    const freshSuppressed = applyVerdictSuppression(fresh, queryType);
+    const freshSuppressed = applyVerdictSuppression(fresh, queryType, horizon);
     const persistPayload = enrichAuditMeta(freshSuppressed, {
       frozenAt,
       servedFromCache: false,
