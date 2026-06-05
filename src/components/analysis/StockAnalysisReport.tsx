@@ -2083,31 +2083,50 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
   return (
     <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       {/* Card 1 — Business Quality */}
-      <TierCard
-        eyebrow="Long-term · Card 1"
-        title="Business Quality"
-        icon={Sparkles}
-        score={s.fundamental_score}
-        copyKey="card_long_business_quality"
-        summary={businessQualityProse(q, flags.banking_override_applied)}
-        footnote={
-          q?.quality_label === "BANKING_ADJUSTED"
-            ? "Banking-adjusted view: EPS volatility suppressed; quality governed by ROE, leverage & promoter holding."
-            : null
-        }
-      >
-        <Metric label="ROE (5y)" value={q?.roe_5y_avg != null ? <AnimatedNumber value={q.roe_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roe_5y.measures} />
-        <Metric label="ROCE (5y)" value={q?.roce_5y_avg != null && q.roce_5y_avg !== 0 ? <AnimatedNumber value={q.roce_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roce_5y.measures} />
-        <Metric label="Debt / Equity" value={q?.debt_to_equity_current != null ? <AnimatedNumber value={q.debt_to_equity_current} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_debt_equity.measures} />
-        <Metric label="FCF yield" value={q?.fcf_yield != null ? fmtPct(q.fcf_yield, 1) : DASH} hint={METRIC_COPY.m_fcf_yield.measures} />
-        <Metric label="EPS CAGR (5y)" value={q?.eps_cagr_5y != null ? fmtPct(q.eps_cagr_5y, 1, true) : DASH} hint={METRIC_COPY.m_eps_cagr_5y.measures} />
-        <Metric label="Promoter %" value={q?.promoter_holding_pct != null ? fmtPct(q.promoter_holding_pct, 1) : DASH} hint={METRIC_COPY.m_promoter_holding.measures} />
-        {/* Move 4a — F-Score raw fallback. The long-quality composite suppresses Piotroski for the
-            banking carveout, but the raw 0–9 score should still surface here for transparency. */}
-        <Metric label="F-Score" value={(q?.piotroski_f_score ?? f.piotroski_f_score) != null ? `${q?.piotroski_f_score ?? f.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
-        <Metric label="Quality" value={q?.quality_label ? QUALITY_LABEL[q.quality_label] : DASH} hint={METRIC_COPY.m_quality_label.measures} />
-        <Metric label="Completeness" value={q?.data_completeness_pct != null ? `${q.data_completeness_pct}%` : DASH} hint="Share of quality fields populated for this stock." />
-      </TierCard>
+      {(() => {
+        // Wave 5e Fix 4a — banking honest empty-state. The composite-banking
+        // flag is a more reliable banking detector than quality_label (which
+        // requires upstream completeness thresholds — see Fix 4b root-cause
+        // note). Hide rows that are structurally null for banks rather than
+        // rendering a card that is ~60% dashes.
+        const isBankingAdj = q?.quality_label === "BANKING_ADJUSTED"
+          || flags.banking_override_applied === true;
+        const hideRoce = isBankingAdj && (q?.roce_5y_avg == null || q?.roce_5y_avg === 0);
+        const hideFcf  = isBankingAdj && q?.fcf_yield == null;
+        const hideEps  = isBankingAdj && q?.eps_cagr_5y == null;
+        const bankingFootnote = isBankingAdj
+          ? "Banking-adjusted: capex-based and EPS-growth metrics omitted by design. Quality governed by ROE, leverage, F-Score and earnings consistency."
+          : null;
+        return (
+          <TierCard
+            eyebrow="Long-term · Card 1"
+            title="Business Quality"
+            icon={Sparkles}
+            score={s.fundamental_score}
+            copyKey="card_long_business_quality"
+            summary={businessQualityProse(q, flags.banking_override_applied)}
+            footnote={bankingFootnote}
+          >
+            <Metric label="ROE (5y)" value={q?.roe_5y_avg != null ? <AnimatedNumber value={q.roe_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roe_5y.measures} />
+            {!hideRoce && (
+              <Metric label="ROCE (5y)" value={q?.roce_5y_avg != null && q.roce_5y_avg !== 0 ? <AnimatedNumber value={q.roce_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roce_5y.measures} />
+            )}
+            <Metric label="Debt / Equity" value={q?.debt_to_equity_current != null ? <AnimatedNumber value={q.debt_to_equity_current} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_debt_equity.measures} />
+            {!hideFcf && (
+              <Metric label="FCF yield" value={q?.fcf_yield != null ? fmtPct(q.fcf_yield, 1) : DASH} hint={METRIC_COPY.m_fcf_yield.measures} />
+            )}
+            {!hideEps && (
+              <Metric label="EPS CAGR (5y)" value={q?.eps_cagr_5y != null ? fmtPct(q.eps_cagr_5y, 1, true) : DASH} hint={METRIC_COPY.m_eps_cagr_5y.measures} />
+            )}
+            <Metric label="Promoter %" value={q?.promoter_holding_pct != null ? fmtPct(q.promoter_holding_pct, 1) : DASH} hint={METRIC_COPY.m_promoter_holding.measures} />
+            {/* Move 4a — F-Score raw fallback. The long-quality composite suppresses Piotroski for the
+                banking carveout, but the raw 0–9 score should still surface here for transparency. */}
+            <Metric label="F-Score" value={(q?.piotroski_f_score ?? f.piotroski_f_score) != null ? `${q?.piotroski_f_score ?? f.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
+            <Metric label="Quality" value={q?.quality_label ? QUALITY_LABEL[q.quality_label] : DASH} hint={METRIC_COPY.m_quality_label.measures} />
+            <Metric label="Completeness" value={q?.data_completeness_pct != null ? `${q.data_completeness_pct}%` : DASH} hint="Share of quality fields populated for this stock." />
+          </TierCard>
+        );
+      })()}
 
       {/* Card 2 — Valuation & Fair Value */}
       <TierCard
