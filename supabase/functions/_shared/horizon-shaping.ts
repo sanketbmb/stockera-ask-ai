@@ -18,6 +18,10 @@ export const SHAPING_ACTIVE = HORIZON_SHAPING_VERSION === "shape_v1";
 // post falsification-audit). Shaping + carve-out remain active independently.
 export const PROMOTION_RULES_ENABLED =
   (Deno.env.get("PROMOTION_RULES_ENABLED") ?? "false").toLowerCase() === "true";
+// Mission 6.4 Move 3c — distressed-liquidity falsification clamp (R<50).
+// Default ON; flip to "false" to roll back without redeploying.
+export const LIQUIDITY_GATE_ENABLED =
+  (Deno.env.get("LIQUIDITY_GATE_ENABLED") ?? "true").toLowerCase() === "true";
 
 export type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 export type PillarKey = "technical" | "fundamental" | "risk" | "momentum" | "sentiment";
@@ -230,6 +234,36 @@ export function evaluatePromotion(
   if (idx < 0 || idx >= order.indexOf("HOLD")) return { promoted: false, newAction: action, reason: null };
   return { promoted: true, newAction: order[idx + 1], reason: signalDesc };
 }
+
+// ─── Move 3c — distressed-liquidity falsification clamp ───
+// Intraday tier only. When ivpl=BELOW_AVERAGE AND technical ≥ 65 AND risk < 50,
+// clamp any HOLD/BUY down to WATCHLIST. Asymmetric (downgrade only), gated by
+// SHAPING_ACTIVE + LIQUIDITY_GATE_ENABLED. Threshold R<50 from Move 3a''
+// out-of-sample validation: 7-point margin vs next-healthy SIEMENS (R=56).
+export type LiquidityGateResult = {
+  applied: boolean;
+  newAction: PromotionAction;
+  reason: string | null;
+};
+
+export function evaluateLiquidityGate(
+  action: PromotionAction,
+  scores: PillarScores,
+  queryType: QueryType,
+  ivpl: string | null,
+): LiquidityGateResult {
+  if (!SHAPING_ACTIVE) return { applied: false, newAction: action, reason: null };
+  if (!LIQUIDITY_GATE_ENABLED) return { applied: false, newAction: action, reason: "liquidity_gate_disabled" };
+  if (queryType !== "intraday") return { applied: false, newAction: action, reason: null };
+  if (ivpl !== "BELOW_AVERAGE") return { applied: false, newAction: action, reason: null };
+  const t = scores.technical, r = scores.risk;
+  if (t == null || r == null) return { applied: false, newAction: action, reason: "missing_t_or_r" };
+  if (t < 65) return { applied: false, newAction: action, reason: null };
+  if (r >= 50) return { applied: false, newAction: action, reason: null };
+  if (action !== "HOLD" && action !== "BUY") return { applied: false, newAction: action, reason: null };
+  return { applied: true, newAction: "WATCHLIST", reason: "distressed_liquidity_clamp:T>=65_AND_R<50_AND_ivpl=BELOW_AVERAGE" };
+}
+
 
 // ─── Earnings consistency label → 0-100 (helper for compute-long-term-quality) ───
 export function earningsConsistencyToScore(label: string | null): number | null {
