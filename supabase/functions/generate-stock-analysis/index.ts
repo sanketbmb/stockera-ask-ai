@@ -953,16 +953,53 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4. Compute verdict
-    const scores = {
+    // 4. Compute verdict (Wave 3 Option A+ pipeline)
+    //    raw → banking carve-out (long-term banks only) → horizon shaping → promotion
+    const rawScores: PillarScores = {
       technical:   tech?.score ?? null,
       fundamental: fund?.score ?? null,
       risk:        risk?.score ?? null,
       momentum:    mom?.score ?? null,
       sentiment:   sent?.score ?? null,
     };
+    const tierWeights = WEIGHT_PRESETS[queryType];
+
+    // 4a. raw overall (pre-everything) — drift-free counterfactual baseline.
+    const overall_score_raw = computeOverall(rawScores, tierWeights);
+
+    // 4b. Banking carve-out — long-term banks only. Reads the banking-applicable
+    // long-quality composite from compute-long-term-quality (always emitted now).
+    const lqSnap = (lqRes.data?.long_term_quality_snapshot as Record<string, unknown> | undefined) ?? null;
+    const longQualityCompositeBanking =
+      lqSnap && typeof lqSnap.long_quality_composite_banking === "number"
+        ? (lqSnap.long_quality_composite_banking as number)
+        : null;
+    const sectorLower = (sector ?? "").toLowerCase();
+    const isBanking = sectorLower.includes("bank") || sectorLower.includes("financial");
+    const carveout = applyBankingCarveout(
+      rawScores.fundamental,
+      longQualityCompositeBanking,
+      queryType,
+      isBanking,
+    );
+    const postCarveoutScores: PillarScores = {
+      ...rawScores,
+      fundamental: carveout.applied ? carveout.fundamentalBlended : rawScores.fundamental,
+    };
+    const overall_score_pre_carveout = carveout.applied
+      ? computeOverall(postCarveoutScores, tierWeights)
+      : overall_score_raw;
+    // Naming note: per spec the field "overall_score_pre_carveout" is the
+    // value AFTER carve-out and BEFORE shaping. Deltas defined accordingly:
+    //   carveout_delta = overall_score_pre_carveout - overall_score_raw
+    //   shaping_delta  = overall_score - overall_score_pre_carveout
+
+    // 4c. Horizon shaping — bounded ±3 per pillar, ±4 total weighted overall.
+    const shaping = shapeScoresByHorizon(postCarveoutScores, tierWeights, queryType);
+    const finalScores: PillarScores = shaping.shapedScores;
+
     const verdict = computeVerdict(
-      scores,
+      finalScores,
       risk?.snapshot ?? null,
       queryType,
       { fundamentalFallbackApplied: fundamentalFallbackMeta != null },
@@ -976,15 +1013,34 @@ Deno.serve(async (req) => {
       incomplete_data: verdict.missingCount >= 2,
     };
 
-    // 5b. Confidence engine (new — replaces legacy verdict.confidence_pct)
+    // 5b. Confidence engine
     const confidence = computeConfidence(
-      scores,
+      finalScores,
       risk?.snapshot ?? null,
       { news_data_limited: flags.news_data_limited, benchmark_fallback_used: flags.benchmark_fallback_used },
       sent?.snapshot.article_count ?? null,
       queryType,
-      WEIGHT_PRESETS[queryType],
+      tierWeights,
     );
+
+    // 5c. Symmetric one-bucket promotion — runs AFTER confidence is known.
+    const promotion = evaluatePromotion(
+      verdict.action as PromotionAction,
+      verdict.overall_score,
+      finalScores,
+      queryType,
+      {
+        confidenceBand: confidence.band,
+        missingPillars: verdict.missingCount,
+        fundamentalFallbackApplied: fundamentalFallbackMeta != null,
+        volumeConfirmation: mom?.volume_confirmation ?? null,
+      },
+    );
+    if (promotion.promoted) {
+      verdict.action = promotion.newAction as Action;
+      verdict.guardrailNotes.push(`promotion: ${promotion.reason} (${promotion.newAction})`);
+    }
+
 
     // 6. Assemble payload
     const asOfDate = tech?.as_of || fund?.as_of || risk?.as_of || mom?.as_of || sent?.as_of || new Date().toISOString();
