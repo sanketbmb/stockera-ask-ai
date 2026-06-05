@@ -38,6 +38,7 @@ import {
   shapeScoresByHorizon,
   applyBankingCarveout,
   evaluatePromotion,
+  evaluateLiquidityGate,
   computeOverall,
   type PillarScores,
   type PromotionAction,
