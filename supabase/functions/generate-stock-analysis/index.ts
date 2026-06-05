@@ -615,6 +615,16 @@ function computeVerdict(
   let weightedSum = 0, weightUsed = 0;
   let missingCount = 0;
   const guardrailNotes: string[] = [];
+function computeVerdict(
+  scores: { technical: number | null; fundamental: number | null; risk: number | null; momentum: number | null; sentiment: number | null },
+  riskSnap: { max_drawdown: number | null; beta: number | null; volatility_1y: number | null } | null,
+  queryType: QueryType,
+  opts: { fundamentalFallbackApplied?: boolean } = {},
+) {
+  const weights = WEIGHT_PRESETS[queryType];
+  let weightedSum = 0, weightUsed = 0;
+  let missingCount = 0;
+  const guardrailNotes: string[] = [];
   (Object.keys(weights) as Array<keyof typeof weights>).forEach((k) => {
     const w = weights[k];
     const s = scores[k];
@@ -622,7 +632,7 @@ function computeVerdict(
     else if (w > 0) missingCount += 1;
   });
   const overall = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
-  let action = actionFromScore(overall);
+  let action: Action = actionFromScore(overall);
   let demotions = 0;
   let confidencePenalty = 0;
 
@@ -633,31 +643,24 @@ function computeVerdict(
   }
 
   if (queryType === "intraday") {
-    // Intraday: weak technicals/momentum matter heavily.
     if (scores.technical != null && scores.technical < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("intraday weak technical demotes");
     }
     if (scores.momentum != null && scores.momentum < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("intraday weak momentum demotes");
     }
-    // High beta / volatility hits confidence hard intraday; minor demotion on extreme.
     if (riskSnap?.beta != null && riskSnap.beta > 1.5) confidencePenalty += 10;
     if (riskSnap?.volatility_1y != null && riskSnap.volatility_1y > 45) confidencePenalty += 10;
     if (riskSnap?.beta != null && riskSnap.beta > 2.0 && action === "BUY") {
       action = "HOLD"; demotions++; guardrailNotes.push("intraday beta>2 demotes BUY");
     }
-    // Missing fundamentals must NOT cap action for intraday (weight is 0 anyway).
   } else if (queryType === "long-term") {
-    // Long-term: missing fundamental is a hard cap — but a successful sector
-    // fallback (Mission 6.2 Fix #2) lifts the cap. The fallback is honest
-    // sector-derived context, not a fabricated company score.
     if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
       action = "WATCHLIST"; demotions++; guardrailNotes.push("long-term missing fundamental caps→WATCHLIST");
     }
     if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
       guardrailNotes.push("long-term fundamental: sector_fallback applied (no hard cap)");
     }
-    // Weak fundamentals materially demote.
     if (scores.fundamental != null && scores.fundamental < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("long-term weak fundamental demotes");
     }
@@ -669,7 +672,6 @@ function computeVerdict(
       if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term high beta+weak risk demotes"); }
     }
   } else {
-    // Medium-term: balanced baseline.
     if (riskSnap && ((riskSnap.max_drawdown != null && riskSnap.max_drawdown < -50) || (riskSnap.beta != null && riskSnap.beta > 2.0))) {
       if (action === "BUY")  { action = "HOLD"; demotions++; guardrailNotes.push("medium drawdown/beta demotes BUY"); }
       else if (action === "HOLD") { action = "WATCHLIST"; demotions++; guardrailNotes.push("medium drawdown/beta demotes HOLD"); }
@@ -691,8 +693,6 @@ function computeVerdict(
     action = "AVOID"; demotions++; guardrailNotes.push("≥3 modules missing → AVOID");
   }
 
-  // Legacy confidence retained internally for guardrail telemetry only; final
-  // confidence_pct is computed by computeConfidence() (5-factor engine).
   const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10 - confidencePenalty));
   return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes };
 }
