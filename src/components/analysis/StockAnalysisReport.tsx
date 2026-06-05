@@ -886,6 +886,7 @@ export function StockAnalysisReport({
         <TierShapedGrid data={data} />
 
 
+        {!isInsufficient && (<>
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <SectionTitle eyebrow="Action zone" title="What to do now" icon={Compass} />
@@ -994,6 +995,8 @@ export function StockAnalysisReport({
 
 
 
+
+        </>)}
 
         {addendum}
 
