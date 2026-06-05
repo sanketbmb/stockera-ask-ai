@@ -274,6 +274,7 @@ Deno.serve(async (req) => {
     }
     const stock = stockCandles.slice(-LOOKBACK_DAYS);
     const stockCloses = stock.map((c) => c.close);
+    const stockVolumes = stock.map((c) => c.volume);
     const close = stockCloses[stockCloses.length - 1];
     const asOf = stock[stock.length - 1].date;
     const tradingDays = stock.length;
