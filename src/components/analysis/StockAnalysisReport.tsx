@@ -780,6 +780,7 @@ export function StockAnalysisReport({
         </motion.section>
 
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
+        {!isInsufficient && (
         <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <TriadCard
             icon={Gauge}
@@ -827,9 +828,10 @@ export function StockAnalysisReport({
           />
 
         </motion.section>
+        )}
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
-        {report_modules.show_score_ring && (
+        {!isInsufficient && report_modules.show_score_ring && (
           <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
             <div className="mb-4 flex items-start justify-between gap-3">
               <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
@@ -998,7 +1000,7 @@ export function StockAnalysisReport({
 
         </>)}
 
-        {addendum}
+        {!isInsufficient && addendum}
 
         {/* ═══ 15. BEHAVIORAL FINANCE ALERT ═══ */}
         {nudge && (
