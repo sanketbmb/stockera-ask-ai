@@ -53,6 +53,30 @@ export function FreshEntryAddendum({
   tier: QueryType;
   validationReasons?: Partial<Record<keyof TradeLevels, string>>;
 }) {
+  // Wave 5e Fix 2 — collapse to a single muted line when ≥3 of the 4 fresh-
+  // entry fields are unavailable. Stops the card from rendering a 4×dash grid
+  // plus a generic "not derivable" footer that reads as a broken UI state.
+  const freshFields: Array<number | null | undefined> = [
+    levels.entry_zone, levels.stop_loss, levels.target_1, levels.target_2,
+  ];
+  const missing = freshFields.filter((v) => v == null).length;
+  if (missing >= 3) {
+    return (
+      <section
+        aria-label="Fresh Entry Plan"
+        className="rounded-2xl border border-border bg-card px-6 py-4 shadow-card"
+      >
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="font-display text-lg text-foreground">Fresh Entry Plan</h3>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Stockera Engine</p>
+        </div>
+        <p className="mt-2 text-sm italic text-muted-foreground">
+          Fresh entry plan unavailable — wait for fuller level coverage.
+        </p>
+      </section>
+    );
+  }
+
   const slClose = tier === "intraday" ? "15-min" : "daily";
   const invalidation = levels.stop_loss != null
     ? `View invalidates if a ${slClose} close prints below ${fmtPrice(levels.stop_loss)}.`

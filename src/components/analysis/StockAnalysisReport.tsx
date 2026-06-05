@@ -396,15 +396,20 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
 //   3. All positions are static (no hover-only state) so PDF capture is identical
 //      to the on-screen render. Tap-to-expand is unnecessary because every label
 //      is permanently visible.
-function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]; current: number | null }) {
+function PriceBand({
+  levels,
+  current,
+  partialNote,
+}: {
+  levels: StockAnalysisPayload["levels"];
+  current: number | null;
+  partialNote?: string | null;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
 
-  // Phase 4C — zone-mode rendering. Render a translucent band between
-  // entry_zone_lower/upper when the engine emits mode="zone" AND the band is
-  // visually meaningful (≥0.5% wide vs preferred_entry). Otherwise the Entry
-  // single dot stays exactly as before.
+  // Phase 4C — zone-mode rendering (unchanged from Wave 5c).
   const es = levels.entry_strategy ?? null;
   const zoneLo = es?.mode === "zone" ? es.entry_zone_lower : null;
   const zoneUp = es?.mode === "zone" ? es.entry_zone_upper : null;
@@ -425,8 +430,6 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
-  // When the zone band is shown, drop the single Entry dot (the band + a small
-  // preferred-entry marker take its place). Otherwise keep Entry as today.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
@@ -439,61 +442,82 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     { v: levels.target_2,     label: "T2" },
   ].filter((p) => p.v != null) as Array<{ v: number; label: string }>;
 
-  // 1) Merge exact-value collisions (rounded to paise so 1321.9 ≡ 1321.90).
-  const merged = new Map<string, { v: number; labels: string[] }>();
+  // 1) Exact-value merge (rounded to paise).
+  const exactMerged = new Map<string, { v: number; items: Array<{ label: string; v: number }> }>();
   for (const p of rawPoints) {
     const key = p.v.toFixed(2);
-    const slot = merged.get(key);
-    if (slot) slot.labels.push(p.label);
-    else merged.set(key, { v: p.v, labels: [p.label] });
+    const slot = exactMerged.get(key);
+    if (slot) slot.items.push(p);
+    else exactMerged.set(key, { v: p.v, items: [{ label: p.label, v: p.v }] });
   }
-  // Sort each merged group's labels by priority for stable display order.
-  const points = Array.from(merged.values())
+  const exactPoints = Array.from(exactMerged.values())
     .map((g) => {
-      g.labels.sort((a, b) => (priorityIndex[a] ?? 9) - (priorityIndex[b] ?? 9));
+      g.items.sort((a, b) => (priorityIndex[a.label] ?? 9) - (priorityIndex[b.label] ?? 9));
       return g;
     })
     .sort((a, b) => a.v - b.v);
 
-  if (points.length < 2) {
+  if (exactPoints.length < 2) {
     return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
   }
 
-  const min = points[0].v;
-  const max = points[points.length - 1].v;
+  const min = exactPoints[0].v;
+  const max = exactPoints[exactPoints.length - 1].v;
   const span = max - min || 1;
 
-  // 2) Magnetic spacing → vertical stagger fallback.
-  // Compute side (above/below) and an extra tier offset for each label.
-  const MIN_GAP_PCT = 9; // empirically large enough for 5-char "₹1,321"
-  type Slot = { v: number; labels: string[]; x: number; side: "top" | "bottom"; tier: 0 | 1 };
-  const slots: Slot[] = points.map((p, i) => ({
-    v: p.v,
-    labels: p.labels,
-    x: ((p.v - min) / span) * 100,
+  // 2) Wave 5e Fix 1 — near-value merge (cosmetic). When two adjacent groups
+  // sit within NEAR_PCT of rail width AND their price gap is ≤ NEAR_PRICE_PCT
+  // of the lower price, fold them into one rendered marker that PRESERVES
+  // both actual price values in the label (no synthetic midpoint price).
+  const NEAR_PCT = 1.5;
+  const NEAR_PRICE_PCT = 0.005; // 0.5%
+  type Group = { items: Array<{ label: string; v: number }>; v: number; x: number };
+  const groups: Group[] = [];
+  for (const ep of exactPoints) {
+    const xPctVal = ((ep.v - min) / span) * 100;
+    const last = groups[groups.length - 1];
+    if (last) {
+      const priceGapPct = Math.abs(ep.v - last.v) / Math.max(Math.abs(last.v), 1e-9);
+      if (Math.abs(xPctVal - last.x) < NEAR_PCT && priceGapPct <= NEAR_PRICE_PCT) {
+        last.items.push(...ep.items);
+        // Anchor x to the average of the now-merged group; keep each item's
+        // original price intact for the multi-line label.
+        last.x = (last.x + xPctVal) / 2;
+        last.v = (last.v + ep.v) / 2; // dot position only — never shown as a price
+        continue;
+      }
+    }
+    groups.push({ items: ep.items, v: ep.v, x: xPctVal });
+  }
+
+  // 3) Stagger walk — Wave 5e Fix 1 amendment: escalate to tier 1 whenever the
+  // opposite side already has a tier-0 neighbour within MIN_GAP_PCT, and
+  // rotate sides deterministically for 3+ consecutive collisions.
+  const MIN_GAP_PCT = 9;
+  type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1 };
+  const slots: Slot[] = groups.map((g, i) => ({
+    ...g,
     side: i % 2 === 0 ? "top" : "bottom",
     tier: 0,
   }));
-  // Walk neighbours within MIN_GAP_PCT and push the second one to the opposite
-  // side. If still colliding on the SAME side as the previous-previous, escalate
-  // to tier 1 (further offset + leader line).
   for (let i = 1; i < slots.length; i++) {
     const prev = slots[i - 1];
     const cur = slots[i];
     if (Math.abs(cur.x - prev.x) < MIN_GAP_PCT && cur.side === prev.side) {
       cur.side = prev.side === "top" ? "bottom" : "top";
     }
-    if (i >= 2) {
-      const prev2 = slots[i - 2];
-      if (cur.side === prev2.side && Math.abs(cur.x - prev2.x) < MIN_GAP_PCT) {
+    // Opposite-side tier-0 neighbour collision → escalate tier.
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      const other = slots[j];
+      if (other.side === cur.side && other.tier === cur.tier
+          && Math.abs(cur.x - other.x) < MIN_GAP_PCT) {
         cur.tier = 1;
+        break;
       }
     }
   }
 
-  // Zone-band geometry (Phase 4C). Position the translucent band between
-  // entry_zone_lower/upper on the same horizontal scale as the markers, clamped
-  // to the visible strip so wider zones do not bleed off.
+  // Zone-band geometry (Phase 4C) — unchanged.
   const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
   const bandLeft = showZoneBand ? xPct(zoneLo!) : 0;
   const bandRight = showZoneBand ? xPct(zoneUp!) : 0;
@@ -501,97 +525,123 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   const prefX = showZoneBand ? xPct(zonePref!) : 0;
 
   return (
-    <div ref={ref} className="relative my-6 h-24 print:h-24">
-      {showZoneBand && (
-        <div
-          aria-label="Entry accumulation zone"
-          className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
-          style={{
-            left: `${bandLeft}%`,
-            width: `${bandWidth}%`,
-            top: "calc(50% - 12px)",
-            height: "24px",
-          }}
-        />
-      )}
-      <motion.div
-        className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
-        variants={priceBandLine}
-        initial={reduce ? "visible" : "hidden"}
-        animate={inView ? "visible" : undefined}
-      />
-      {/* Tick marks anchored to each priced point so the rail reads as an axis */}
-      {slots.map((s, i) => (
-        <div
-          key={`tick-${i}`}
-          aria-hidden
-          className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
-          style={{ left: `${s.x}%` }}
-        />
-      ))}
-      {showZoneBand && (
-        <div
-          className="absolute -translate-x-1/2"
-          style={{ left: `${prefX}%`, top: 0 }}
-        >
+    <div className="my-6">
+      <div ref={ref} className="relative h-24 print:h-24">
+        {showZoneBand && (
           <div
-            className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
-            style={{ marginTop: "38px" }}
-            aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+            aria-label="Entry accumulation zone"
+            className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
+            style={{
+              left: `${bandLeft}%`,
+              width: `${bandWidth}%`,
+              top: "calc(50% - 12px)",
+              height: "24px",
+            }}
           />
-          <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
-            <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
-            <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
-          </div>
-        </div>
-      )}
-      {slots.map((s, i) => {
-        const primary = s.labels[0];
-        const order = priorityIndex[primary] ?? 9;
-        const delay = reduce ? 0 : 0.35 + order * 0.04;
-        const emphasized = s.labels.some((l) => highlightLabels.has(l));
-        const colorCls = dotColor[primary] ?? "bg-foreground";
-        const labelText = s.labels.join(" / ");
-        const isTop = s.side === "top";
-        // Label vertical offset: tier 0 sits close to the band, tier 1 is pushed
-        // further away with a subtle leader line.
-        const topPx = isTop ? (s.tier === 0 ? -2 : -22) : (s.tier === 0 ? 50 : 70);
-        const showLeader = s.tier === 1;
-        return (
-          <motion.div
-            key={`${primary}-${i}`}
+        )}
+        <motion.div
+          className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
+          variants={priceBandLine}
+          initial={reduce ? "visible" : "hidden"}
+          animate={inView ? "visible" : undefined}
+        />
+        {slots.map((s, i) => (
+          <div
+            key={`tick-${i}`}
+            aria-hidden
+            className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
+            style={{ left: `${s.x}%` }}
+          />
+        ))}
+        {showZoneBand && (
+          <div
             className="absolute -translate-x-1/2"
-            style={{ left: `${s.x}%`, top: 0 }}
-            initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
-            animate={inView ? { opacity: 1, y: 0 } : undefined}
-            transition={{ duration: duration.fast, ease: ease.entrance, delay }}
+            style={{ left: `${prefX}%`, top: 0 }}
           >
-            <motion.div
-              className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
-              style={{ marginTop: "38px" }}
-              whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
-              transition={{ duration: duration.fast, ease: ease.standard }}
-            />
-            {showLeader && (
-              <div
-                className="absolute left-1/2 w-px bg-border"
-                style={{
-                  top: isTop ? `${topPx + 28}px` : "44px",
-                  height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
-                }}
-                aria-hidden
-              />
-            )}
             <div
-              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
-              style={{ top: `${topPx}px` }}
-            >
-              <div className="font-mono text-[10px] uppercase text-muted-foreground">{labelText}</div>
-              <div className="font-display text-xs tabular-nums">{fmtPrice(s.v)}</div>
+              className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
+              style={{ marginTop: "38px" }}
+              aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+            />
+            <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
+              <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
+              <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
             </div>
-          </motion.div>
-        );
-      })}
+          </div>
+        )}
+        {slots.map((s, i) => {
+          const primary = s.items[0].label;
+          const order = priorityIndex[primary] ?? 9;
+          const delay = reduce ? 0 : 0.35 + order * 0.04;
+          const emphasized = s.items.some((it) => highlightLabels.has(it.label));
+          const colorCls = dotColor[primary] ?? "bg-foreground";
+          const isTop = s.side === "top";
+          // tier 0 sits close to band; tier 1 pushed further with leader line.
+          // Multi-item groups need extra vertical room for stacked lines.
+          const multi = s.items.length > 1;
+          const extra = multi ? (s.items.length - 1) * 14 : 0;
+          const topPx = isTop
+            ? (s.tier === 0 ? -2 - extra : -22 - extra)
+            : (s.tier === 0 ? 50 : 70);
+          const showLeader = s.tier === 1;
+          // Distinct prices? If all items share one price (exact-merge), show
+          // "LBL / LBL ₹price"; otherwise stack each "LBL ₹price" on its own
+          // line to PRESERVE both actual values (no synthetic midpoint).
+          const distinctPrices = new Set(s.items.map((it) => it.v.toFixed(2))).size > 1;
+          return (
+            <motion.div
+              key={`${primary}-${i}`}
+              className="absolute -translate-x-1/2"
+              style={{ left: `${s.x}%`, top: 0 }}
+              initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+              animate={inView ? { opacity: 1, y: 0 } : undefined}
+              transition={{ duration: duration.fast, ease: ease.entrance, delay }}
+            >
+              <motion.div
+                className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+                style={{ marginTop: "38px" }}
+                whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
+                transition={{ duration: duration.fast, ease: ease.standard }}
+              />
+              {showLeader && (
+                <div
+                  className="absolute left-1/2 w-px bg-border"
+                  style={{
+                    top: isTop ? `${topPx + 28}px` : "44px",
+                    height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
+                  }}
+                  aria-hidden
+                />
+              )}
+              <div
+                className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
+                style={{ top: `${topPx}px` }}
+              >
+                {distinctPrices ? (
+                  <div className="flex flex-col gap-0.5">
+                    {s.items.map((it, idx) => (
+                      <div key={idx}>
+                        <span className="font-mono text-[10px] uppercase text-muted-foreground">{it.label} </span>
+                        <span className="font-display text-xs tabular-nums">{fmtPrice(it.v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-mono text-[10px] uppercase text-muted-foreground">
+                      {s.items.map((it) => it.label).join(" / ")}
+                    </div>
+                    <div className="font-display text-xs tabular-nums">{fmtPrice(s.items[0].v)}</div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+      {partialNote && (
+        <p className="mt-1 text-xs italic text-muted-foreground">{partialNote}</p>
+      )}
     </div>
   );
 }
@@ -984,7 +1034,22 @@ export function StockAnalysisReport({
               <span>Long-term targets omitted — {targetsMeta.guardrails.guardrail_breach}.</span>
             </div>
           )}
-          <PriceBand levels={levels} current={price_context.current_price} />
+          {(() => {
+            // Wave 5e Fix 2 — partial-data note. When ≥5 of 9 candidate slots
+            // are null but the verdict is NOT INSUFFICIENT_DATA, show a single
+            // muted explanatory line under the rail so the sparse render reads
+            // as honest data-coverage, not "broken card".
+            const candidates = [
+              levels.entry_zone, levels.stop_loss, levels.target_1, levels.target_2,
+              levels.support_1, levels.support_2, levels.resistance_1, levels.resistance_2,
+              price_context.current_price,
+            ];
+            const nulls = candidates.filter((v) => v == null).length;
+            const partialNote = (!isInsufficient && nulls >= 5)
+              ? "Only partial level coverage available — full level set not derivable for this horizon."
+              : null;
+            return <PriceBand levels={levels} current={price_context.current_price} partialNote={partialNote} />;
+          })()}
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
             <EntryZoneCell levels={levels} reason={tradePlanReasons.entry_zone} />
             <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
@@ -2018,31 +2083,50 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
   return (
     <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       {/* Card 1 — Business Quality */}
-      <TierCard
-        eyebrow="Long-term · Card 1"
-        title="Business Quality"
-        icon={Sparkles}
-        score={s.fundamental_score}
-        copyKey="card_long_business_quality"
-        summary={businessQualityProse(q, flags.banking_override_applied)}
-        footnote={
-          q?.quality_label === "BANKING_ADJUSTED"
-            ? "Banking-adjusted view: EPS volatility suppressed; quality governed by ROE, leverage & promoter holding."
-            : null
-        }
-      >
-        <Metric label="ROE (5y)" value={q?.roe_5y_avg != null ? <AnimatedNumber value={q.roe_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roe_5y.measures} />
-        <Metric label="ROCE (5y)" value={q?.roce_5y_avg != null && q.roce_5y_avg !== 0 ? <AnimatedNumber value={q.roce_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roce_5y.measures} />
-        <Metric label="Debt / Equity" value={q?.debt_to_equity_current != null ? <AnimatedNumber value={q.debt_to_equity_current} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_debt_equity.measures} />
-        <Metric label="FCF yield" value={q?.fcf_yield != null ? fmtPct(q.fcf_yield, 1) : DASH} hint={METRIC_COPY.m_fcf_yield.measures} />
-        <Metric label="EPS CAGR (5y)" value={q?.eps_cagr_5y != null ? fmtPct(q.eps_cagr_5y, 1, true) : DASH} hint={METRIC_COPY.m_eps_cagr_5y.measures} />
-        <Metric label="Promoter %" value={q?.promoter_holding_pct != null ? fmtPct(q.promoter_holding_pct, 1) : DASH} hint={METRIC_COPY.m_promoter_holding.measures} />
-        {/* Move 4a — F-Score raw fallback. The long-quality composite suppresses Piotroski for the
-            banking carveout, but the raw 0–9 score should still surface here for transparency. */}
-        <Metric label="F-Score" value={(q?.piotroski_f_score ?? f.piotroski_f_score) != null ? `${q?.piotroski_f_score ?? f.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
-        <Metric label="Quality" value={q?.quality_label ? QUALITY_LABEL[q.quality_label] : DASH} hint={METRIC_COPY.m_quality_label.measures} />
-        <Metric label="Completeness" value={q?.data_completeness_pct != null ? `${q.data_completeness_pct}%` : DASH} hint="Share of quality fields populated for this stock." />
-      </TierCard>
+      {(() => {
+        // Wave 5e Fix 4a — banking honest empty-state. The composite-banking
+        // flag is a more reliable banking detector than quality_label (which
+        // requires upstream completeness thresholds — see Fix 4b root-cause
+        // note). Hide rows that are structurally null for banks rather than
+        // rendering a card that is ~60% dashes.
+        const isBankingAdj = q?.quality_label === "BANKING_ADJUSTED"
+          || flags.banking_override_applied === true;
+        const hideRoce = isBankingAdj && (q?.roce_5y_avg == null || q?.roce_5y_avg === 0);
+        const hideFcf  = isBankingAdj && q?.fcf_yield == null;
+        const hideEps  = isBankingAdj && q?.eps_cagr_5y == null;
+        const bankingFootnote = isBankingAdj
+          ? "Banking-adjusted: capex-based and EPS-growth metrics omitted by design. Quality governed by ROE, leverage, F-Score and earnings consistency."
+          : null;
+        return (
+          <TierCard
+            eyebrow="Long-term · Card 1"
+            title="Business Quality"
+            icon={Sparkles}
+            score={s.fundamental_score}
+            copyKey="card_long_business_quality"
+            summary={businessQualityProse(q, flags.banking_override_applied)}
+            footnote={bankingFootnote}
+          >
+            <Metric label="ROE (5y)" value={q?.roe_5y_avg != null ? <AnimatedNumber value={q.roe_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roe_5y.measures} />
+            {!hideRoce && (
+              <Metric label="ROCE (5y)" value={q?.roce_5y_avg != null && q.roce_5y_avg !== 0 ? <AnimatedNumber value={q.roce_5y_avg} decimals={1} suffix="%" duration={700} /> : DASH} hint={METRIC_COPY.m_roce_5y.measures} />
+            )}
+            <Metric label="Debt / Equity" value={q?.debt_to_equity_current != null ? <AnimatedNumber value={q.debt_to_equity_current} decimals={2} duration={700} /> : DASH} hint={METRIC_COPY.m_debt_equity.measures} />
+            {!hideFcf && (
+              <Metric label="FCF yield" value={q?.fcf_yield != null ? fmtPct(q.fcf_yield, 1) : DASH} hint={METRIC_COPY.m_fcf_yield.measures} />
+            )}
+            {!hideEps && (
+              <Metric label="EPS CAGR (5y)" value={q?.eps_cagr_5y != null ? fmtPct(q.eps_cagr_5y, 1, true) : DASH} hint={METRIC_COPY.m_eps_cagr_5y.measures} />
+            )}
+            <Metric label="Promoter %" value={q?.promoter_holding_pct != null ? fmtPct(q.promoter_holding_pct, 1) : DASH} hint={METRIC_COPY.m_promoter_holding.measures} />
+            {/* Move 4a — F-Score raw fallback. The long-quality composite suppresses Piotroski for the
+                banking carveout, but the raw 0–9 score should still surface here for transparency. */}
+            <Metric label="F-Score" value={(q?.piotroski_f_score ?? f.piotroski_f_score) != null ? `${q?.piotroski_f_score ?? f.piotroski_f_score} / 9` : DASH} hint={METRIC_COPY.m_piotroski.measures} />
+            <Metric label="Quality" value={q?.quality_label ? QUALITY_LABEL[q.quality_label] : DASH} hint={METRIC_COPY.m_quality_label.measures} />
+            <Metric label="Completeness" value={q?.data_completeness_pct != null ? `${q.data_completeness_pct}%` : DASH} hint="Share of quality fields populated for this stock." />
+          </TierCard>
+        );
+      })()}
 
       {/* Card 2 — Valuation & Fair Value */}
       <TierCard
