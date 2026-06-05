@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.compute-long-term-quality]
 verify_jwt = false
+
+[functions.probe-marketaux]
+verify_jwt = false
