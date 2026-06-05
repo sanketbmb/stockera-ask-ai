@@ -68,6 +68,9 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
 
   // Pending state
   if (!textAns && !videoAns) {
+    // Wave 5c — hide the pending "Expert analysis in progress" placeholder
+    // when the V1 flag is off. Real answers still render via the branch below.
+    if (!SHOW_PLACEHOLDER_MODULES) return null;
     const hoursSince = (Date.now() - new Date(queryCreatedAt).getTime()) / 3600000;
     const remaining = Math.max(0, 24 - hoursSince);
     return (
