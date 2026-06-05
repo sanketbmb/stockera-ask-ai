@@ -1709,7 +1709,8 @@ function TierShapedGrid({ data }: { data: StockAnalysisPayload }) {
   const tier = data.query_context.query_type;
   if (tier === "intraday")    return <IntradayGrid data={data} />;
   if (tier === "long-term")   return <LongTermGrid data={data} />;
-  return <MediumTermGrid data={data} />;
+  const tierLabel = tier === "short-term" ? "Short-term" : "Medium";
+  return <MediumTermGrid data={data} tierLabel={tierLabel} />;
 }
 
 function IntradayGrid({ data }: { data: StockAnalysisPayload }) {
