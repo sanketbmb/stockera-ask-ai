@@ -366,9 +366,31 @@ Deno.serve(async (req) => {
       score >= 40 ? "NEUTRAL" :
       score >= 25 ? "DOWN" : "STRONG_DOWN";
 
+    // Volume signal — derived from last bar's volume vs 20-day SMA.
+    // Mission 6.4 Move 3b: prior orchestrator consumer reads `volume_signal.label`
+    // (generate-stock-analysis/index.ts:511) and falls back to "NEUTRAL" when
+    // absent. This was always-NEUTRAL until now. Additive; not consumed by
+    // scoring path today, so no overall_score impact.
+    let volumeSignal: { label: "POSITIVE" | "NEUTRAL" | "NEGATIVE"; method: string; ratio: number | null; reason: string | null };
+    if (stockVolumes.length < 21) {
+      volumeSignal = { label: "NEUTRAL", method: "volume_ratio_20d_v1", ratio: null, reason: "insufficient_history" };
+    } else {
+      const volSma20 = sma(stockVolumes, 20);
+      const lastVol = stockVolumes[stockVolumes.length - 1];
+      if (!(volSma20 > 0) || !Number.isFinite(lastVol)) {
+        volumeSignal = { label: "NEUTRAL", method: "volume_ratio_20d_v1", ratio: null, reason: "no_volume" };
+      } else {
+        const ratio = lastVol / volSma20;
+        const label: "POSITIVE" | "NEUTRAL" | "NEGATIVE" =
+          ratio >= 1.5 ? "POSITIVE" : ratio <= 0.7 ? "NEGATIVE" : "NEUTRAL";
+        volumeSignal = { label, method: "volume_ratio_20d_v1", ratio: Math.round(ratio * 100) / 100, reason: null };
+      }
+    }
+
     return json({
       success: true,
       symbol,
+      volume_signal: volumeSignal,
       as_of_date: asOf,
       returns: {
         "1w":  r2(ret1w),
