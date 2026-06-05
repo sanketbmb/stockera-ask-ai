@@ -396,15 +396,20 @@ function ScoreRing({ score, action }: { score: number | null | undefined; action
 //   3. All positions are static (no hover-only state) so PDF capture is identical
 //      to the on-screen render. Tap-to-expand is unnecessary because every label
 //      is permanently visible.
-function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]; current: number | null }) {
+function PriceBand({
+  levels,
+  current,
+  partialNote,
+}: {
+  levels: StockAnalysisPayload["levels"];
+  current: number | null;
+  partialNote?: string | null;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const inView = useInView(ref, { once: true, amount: 0.3 });
   const reduce = useReducedMotion();
 
-  // Phase 4C — zone-mode rendering. Render a translucent band between
-  // entry_zone_lower/upper when the engine emits mode="zone" AND the band is
-  // visually meaningful (≥0.5% wide vs preferred_entry). Otherwise the Entry
-  // single dot stays exactly as before.
+  // Phase 4C — zone-mode rendering (unchanged from Wave 5c).
   const es = levels.entry_strategy ?? null;
   const zoneLo = es?.mode === "zone" ? es.entry_zone_lower : null;
   const zoneUp = es?.mode === "zone" ? es.entry_zone_upper : null;
@@ -425,8 +430,6 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
-  // When the zone band is shown, drop the single Entry dot (the band + a small
-  // preferred-entry marker take its place). Otherwise keep Entry as today.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
@@ -439,61 +442,82 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
     { v: levels.target_2,     label: "T2" },
   ].filter((p) => p.v != null) as Array<{ v: number; label: string }>;
 
-  // 1) Merge exact-value collisions (rounded to paise so 1321.9 ≡ 1321.90).
-  const merged = new Map<string, { v: number; labels: string[] }>();
+  // 1) Exact-value merge (rounded to paise).
+  const exactMerged = new Map<string, { v: number; items: Array<{ label: string; v: number }> }>();
   for (const p of rawPoints) {
     const key = p.v.toFixed(2);
-    const slot = merged.get(key);
-    if (slot) slot.labels.push(p.label);
-    else merged.set(key, { v: p.v, labels: [p.label] });
+    const slot = exactMerged.get(key);
+    if (slot) slot.items.push(p);
+    else exactMerged.set(key, { v: p.v, items: [{ label: p.label, v: p.v }] });
   }
-  // Sort each merged group's labels by priority for stable display order.
-  const points = Array.from(merged.values())
+  const exactPoints = Array.from(exactMerged.values())
     .map((g) => {
-      g.labels.sort((a, b) => (priorityIndex[a] ?? 9) - (priorityIndex[b] ?? 9));
+      g.items.sort((a, b) => (priorityIndex[a.label] ?? 9) - (priorityIndex[b.label] ?? 9));
       return g;
     })
     .sort((a, b) => a.v - b.v);
 
-  if (points.length < 2) {
+  if (exactPoints.length < 2) {
     return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
   }
 
-  const min = points[0].v;
-  const max = points[points.length - 1].v;
+  const min = exactPoints[0].v;
+  const max = exactPoints[exactPoints.length - 1].v;
   const span = max - min || 1;
 
-  // 2) Magnetic spacing → vertical stagger fallback.
-  // Compute side (above/below) and an extra tier offset for each label.
-  const MIN_GAP_PCT = 9; // empirically large enough for 5-char "₹1,321"
-  type Slot = { v: number; labels: string[]; x: number; side: "top" | "bottom"; tier: 0 | 1 };
-  const slots: Slot[] = points.map((p, i) => ({
-    v: p.v,
-    labels: p.labels,
-    x: ((p.v - min) / span) * 100,
+  // 2) Wave 5e Fix 1 — near-value merge (cosmetic). When two adjacent groups
+  // sit within NEAR_PCT of rail width AND their price gap is ≤ NEAR_PRICE_PCT
+  // of the lower price, fold them into one rendered marker that PRESERVES
+  // both actual price values in the label (no synthetic midpoint price).
+  const NEAR_PCT = 1.5;
+  const NEAR_PRICE_PCT = 0.005; // 0.5%
+  type Group = { items: Array<{ label: string; v: number }>; v: number; x: number };
+  const groups: Group[] = [];
+  for (const ep of exactPoints) {
+    const xPctVal = ((ep.v - min) / span) * 100;
+    const last = groups[groups.length - 1];
+    if (last) {
+      const priceGapPct = Math.abs(ep.v - last.v) / Math.max(Math.abs(last.v), 1e-9);
+      if (Math.abs(xPctVal - last.x) < NEAR_PCT && priceGapPct <= NEAR_PRICE_PCT) {
+        last.items.push(...ep.items);
+        // Anchor x to the average of the now-merged group; keep each item's
+        // original price intact for the multi-line label.
+        last.x = (last.x + xPctVal) / 2;
+        last.v = (last.v + ep.v) / 2; // dot position only — never shown as a price
+        continue;
+      }
+    }
+    groups.push({ items: ep.items, v: ep.v, x: xPctVal });
+  }
+
+  // 3) Stagger walk — Wave 5e Fix 1 amendment: escalate to tier 1 whenever the
+  // opposite side already has a tier-0 neighbour within MIN_GAP_PCT, and
+  // rotate sides deterministically for 3+ consecutive collisions.
+  const MIN_GAP_PCT = 9;
+  type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1 };
+  const slots: Slot[] = groups.map((g, i) => ({
+    ...g,
     side: i % 2 === 0 ? "top" : "bottom",
     tier: 0,
   }));
-  // Walk neighbours within MIN_GAP_PCT and push the second one to the opposite
-  // side. If still colliding on the SAME side as the previous-previous, escalate
-  // to tier 1 (further offset + leader line).
   for (let i = 1; i < slots.length; i++) {
     const prev = slots[i - 1];
     const cur = slots[i];
     if (Math.abs(cur.x - prev.x) < MIN_GAP_PCT && cur.side === prev.side) {
       cur.side = prev.side === "top" ? "bottom" : "top";
     }
-    if (i >= 2) {
-      const prev2 = slots[i - 2];
-      if (cur.side === prev2.side && Math.abs(cur.x - prev2.x) < MIN_GAP_PCT) {
+    // Opposite-side tier-0 neighbour collision → escalate tier.
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      const other = slots[j];
+      if (other.side === cur.side && other.tier === cur.tier
+          && Math.abs(cur.x - other.x) < MIN_GAP_PCT) {
         cur.tier = 1;
+        break;
       }
     }
   }
 
-  // Zone-band geometry (Phase 4C). Position the translucent band between
-  // entry_zone_lower/upper on the same horizontal scale as the markers, clamped
-  // to the visible strip so wider zones do not bleed off.
+  // Zone-band geometry (Phase 4C) — unchanged.
   const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
   const bandLeft = showZoneBand ? xPct(zoneLo!) : 0;
   const bandRight = showZoneBand ? xPct(zoneUp!) : 0;
@@ -501,97 +525,123 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
   const prefX = showZoneBand ? xPct(zonePref!) : 0;
 
   return (
-    <div ref={ref} className="relative my-6 h-24 print:h-24">
-      {showZoneBand && (
-        <div
-          aria-label="Entry accumulation zone"
-          className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
-          style={{
-            left: `${bandLeft}%`,
-            width: `${bandWidth}%`,
-            top: "calc(50% - 12px)",
-            height: "24px",
-          }}
-        />
-      )}
-      <motion.div
-        className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
-        variants={priceBandLine}
-        initial={reduce ? "visible" : "hidden"}
-        animate={inView ? "visible" : undefined}
-      />
-      {/* Tick marks anchored to each priced point so the rail reads as an axis */}
-      {slots.map((s, i) => (
-        <div
-          key={`tick-${i}`}
-          aria-hidden
-          className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
-          style={{ left: `${s.x}%` }}
-        />
-      ))}
-      {showZoneBand && (
-        <div
-          className="absolute -translate-x-1/2"
-          style={{ left: `${prefX}%`, top: 0 }}
-        >
+    <div className="my-6">
+      <div ref={ref} className="relative h-24 print:h-24">
+        {showZoneBand && (
           <div
-            className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
-            style={{ marginTop: "38px" }}
-            aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+            aria-label="Entry accumulation zone"
+            className="absolute rounded-md bg-primary/20 ring-1 ring-primary/30"
+            style={{
+              left: `${bandLeft}%`,
+              width: `${bandWidth}%`,
+              top: "calc(50% - 12px)",
+              height: "24px",
+            }}
           />
-          <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
-            <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
-            <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
-          </div>
-        </div>
-      )}
-      {slots.map((s, i) => {
-        const primary = s.labels[0];
-        const order = priorityIndex[primary] ?? 9;
-        const delay = reduce ? 0 : 0.35 + order * 0.04;
-        const emphasized = s.labels.some((l) => highlightLabels.has(l));
-        const colorCls = dotColor[primary] ?? "bg-foreground";
-        const labelText = s.labels.join(" / ");
-        const isTop = s.side === "top";
-        // Label vertical offset: tier 0 sits close to the band, tier 1 is pushed
-        // further away with a subtle leader line.
-        const topPx = isTop ? (s.tier === 0 ? -2 : -22) : (s.tier === 0 ? 50 : 70);
-        const showLeader = s.tier === 1;
-        return (
-          <motion.div
-            key={`${primary}-${i}`}
+        )}
+        <motion.div
+          className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
+          variants={priceBandLine}
+          initial={reduce ? "visible" : "hidden"}
+          animate={inView ? "visible" : undefined}
+        />
+        {slots.map((s, i) => (
+          <div
+            key={`tick-${i}`}
+            aria-hidden
+            className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
+            style={{ left: `${s.x}%` }}
+          />
+        ))}
+        {showZoneBand && (
+          <div
             className="absolute -translate-x-1/2"
-            style={{ left: `${s.x}%`, top: 0 }}
-            initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
-            animate={inView ? { opacity: 1, y: 0 } : undefined}
-            transition={{ duration: duration.fast, ease: ease.entrance, delay }}
+            style={{ left: `${prefX}%`, top: 0 }}
           >
-            <motion.div
-              className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
-              style={{ marginTop: "38px" }}
-              whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
-              transition={{ duration: duration.fast, ease: ease.standard }}
-            />
-            {showLeader && (
-              <div
-                className="absolute left-1/2 w-px bg-border"
-                style={{
-                  top: isTop ? `${topPx + 28}px` : "44px",
-                  height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
-                }}
-                aria-hidden
-              />
-            )}
             <div
-              className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
-              style={{ top: `${topPx}px` }}
-            >
-              <div className="font-mono text-[10px] uppercase text-muted-foreground">{labelText}</div>
-              <div className="font-display text-xs tabular-nums">{fmtPrice(s.v)}</div>
+              className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
+              style={{ marginTop: "38px" }}
+              aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
+            />
+            <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
+              <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
+              <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
             </div>
-          </motion.div>
-        );
-      })}
+          </div>
+        )}
+        {slots.map((s, i) => {
+          const primary = s.items[0].label;
+          const order = priorityIndex[primary] ?? 9;
+          const delay = reduce ? 0 : 0.35 + order * 0.04;
+          const emphasized = s.items.some((it) => highlightLabels.has(it.label));
+          const colorCls = dotColor[primary] ?? "bg-foreground";
+          const isTop = s.side === "top";
+          // tier 0 sits close to band; tier 1 pushed further with leader line.
+          // Multi-item groups need extra vertical room for stacked lines.
+          const multi = s.items.length > 1;
+          const extra = multi ? (s.items.length - 1) * 14 : 0;
+          const topPx = isTop
+            ? (s.tier === 0 ? -2 - extra : -22 - extra)
+            : (s.tier === 0 ? 50 : 70);
+          const showLeader = s.tier === 1;
+          // Distinct prices? If all items share one price (exact-merge), show
+          // "LBL / LBL ₹price"; otherwise stack each "LBL ₹price" on its own
+          // line to PRESERVE both actual values (no synthetic midpoint).
+          const distinctPrices = new Set(s.items.map((it) => it.v.toFixed(2))).size > 1;
+          return (
+            <motion.div
+              key={`${primary}-${i}`}
+              className="absolute -translate-x-1/2"
+              style={{ left: `${s.x}%`, top: 0 }}
+              initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+              animate={inView ? { opacity: 1, y: 0 } : undefined}
+              transition={{ duration: duration.fast, ease: ease.entrance, delay }}
+            >
+              <motion.div
+                className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+                style={{ marginTop: "38px" }}
+                whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
+                transition={{ duration: duration.fast, ease: ease.standard }}
+              />
+              {showLeader && (
+                <div
+                  className="absolute left-1/2 w-px bg-border"
+                  style={{
+                    top: isTop ? `${topPx + 28}px` : "44px",
+                    height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
+                  }}
+                  aria-hidden
+                />
+              )}
+              <div
+                className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
+                style={{ top: `${topPx}px` }}
+              >
+                {distinctPrices ? (
+                  <div className="flex flex-col gap-0.5">
+                    {s.items.map((it, idx) => (
+                      <div key={idx}>
+                        <span className="font-mono text-[10px] uppercase text-muted-foreground">{it.label} </span>
+                        <span className="font-display text-xs tabular-nums">{fmtPrice(it.v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-mono text-[10px] uppercase text-muted-foreground">
+                      {s.items.map((it) => it.label).join(" / ")}
+                    </div>
+                    <div className="font-display text-xs tabular-nums">{fmtPrice(s.items[0].v)}</div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+      {partialNote && (
+        <p className="mt-1 text-xs italic text-muted-foreground">{partialNote}</p>
+      )}
     </div>
   );
 }
