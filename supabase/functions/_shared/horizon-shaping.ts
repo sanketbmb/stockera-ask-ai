@@ -18,6 +18,10 @@ export const SHAPING_ACTIVE = HORIZON_SHAPING_VERSION === "shape_v1";
 // post falsification-audit). Shaping + carve-out remain active independently.
 export const PROMOTION_RULES_ENABLED =
   (Deno.env.get("PROMOTION_RULES_ENABLED") ?? "false").toLowerCase() === "true";
+// Mission 6.4 Move 3c — distressed-liquidity falsification clamp (R<50).
+// Default ON; flip to "false" to roll back without redeploying.
+export const LIQUIDITY_GATE_ENABLED =
+  (Deno.env.get("LIQUIDITY_GATE_ENABLED") ?? "true").toLowerCase() === "true";
 
 export type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 export type PillarKey = "technical" | "fundamental" | "risk" | "momentum" | "sentiment";
