@@ -222,7 +222,11 @@ Deno.serve(async (req) => {
   // signals, dampened to 0.5x intensity vs neutral 50. Surfaced on every
   // long-quality response so the orchestrator can decide whether to blend.
   // For non-banks the value is informational only (orchestrator ignores it).
-  const { bankingLongQualityComposite } = await import("../_shared/horizon-shaping.ts");
+  const long_quality_composite_banking = bankingLongQualityComposite(
+    piotroski_f_score,
+    earnings_consistency_label,
+  );
+
   const long_quality_composite_banking = bankingLongQualityComposite(
     piotroski_f_score,
     earnings_consistency_label,
