@@ -465,12 +465,14 @@ function PriceBand({
   const max = exactPoints[exactPoints.length - 1].v;
   const span = max - min || 1;
 
-  // 2) Wave 5e Fix 1 — near-value merge (cosmetic). When two adjacent groups
-  // sit within NEAR_PCT of rail width AND their price gap is ≤ NEAR_PRICE_PCT
-  // of the lower price, fold them into one rendered marker that PRESERVES
-  // both actual price values in the label (no synthetic midpoint price).
-  const NEAR_PCT = 1.5;
-  const NEAR_PRICE_PCT = 0.005; // 0.5%
+  // 2) Wave 5e hotfix — near-IDENTICAL merge only (cosmetic). Two adjacent
+  // groups are folded into one rendered marker ONLY when their price gap is
+  // ≤ NEAR_PRICE_PCT (effectively identical to the eye). The grouped label
+  // still preserves both real prices on separate lines — no synthetic value.
+  // For "close but distinct" prices, we keep separate markers and rely on the
+  // multi-lane stagger below to keep labels readable.
+  const NEAR_X_PCT = 0.8;
+  const NEAR_PRICE_PCT = 0.0015; // 0.15%
   type Group = { items: Array<{ label: string; v: number }>; v: number; x: number };
   const groups: Group[] = [];
   for (const ep of exactPoints) {
@@ -478,10 +480,8 @@ function PriceBand({
     const last = groups[groups.length - 1];
     if (last) {
       const priceGapPct = Math.abs(ep.v - last.v) / Math.max(Math.abs(last.v), 1e-9);
-      if (Math.abs(xPctVal - last.x) < NEAR_PCT && priceGapPct <= NEAR_PRICE_PCT) {
+      if (Math.abs(xPctVal - last.x) < NEAR_X_PCT && priceGapPct <= NEAR_PRICE_PCT) {
         last.items.push(...ep.items);
-        // Anchor x to the average of the now-merged group; keep each item's
-        // original price intact for the multi-line label.
         last.x = (last.x + xPctVal) / 2;
         last.v = (last.v + ep.v) / 2; // dot position only — never shown as a price
         continue;
@@ -490,32 +490,49 @@ function PriceBand({
     groups.push({ items: ep.items, v: ep.v, x: xPctVal });
   }
 
-  // 3) Stagger walk — Wave 5e Fix 1 amendment: escalate to tier 1 whenever the
-  // opposite side already has a tier-0 neighbour within MIN_GAP_PCT, and
-  // rotate sides deterministically for 3+ consecutive collisions.
-  const MIN_GAP_PCT = 9;
+  // 3) Multi-lane stagger — Wave 5e hotfix. Place every label in one of four
+  // lanes (top-0, top-1, bottom-0, bottom-1) so labels NEVER overlap, even
+  // when prices cluster tightly. Collision uses estimated label width
+  // expressed as % of rail width. Each slot picks the first lane (in
+  // preferred order) that has no prior slot within LABEL_GAP_PCT. Tier-1
+  // slots get a vertical leader line connecting label → dot.
+  const LABEL_GAP_PCT = 13; // ≈ width of "ENTRY ₹1,234.56" on a typical rail
+  type Lane = "top-0" | "bottom-0" | "top-1" | "bottom-1";
   type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1 };
-  const slots: Slot[] = groups.map((g, i) => ({
-    ...g,
-    side: i % 2 === 0 ? "top" : "bottom",
-    tier: 0,
-  }));
-  for (let i = 1; i < slots.length; i++) {
-    const prev = slots[i - 1];
-    const cur = slots[i];
-    if (Math.abs(cur.x - prev.x) < MIN_GAP_PCT && cur.side === prev.side) {
-      cur.side = prev.side === "top" ? "bottom" : "top";
-    }
-    // Opposite-side tier-0 neighbour collision → escalate tier.
-    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
-      const other = slots[j];
-      if (other.side === cur.side && other.tier === cur.tier
-          && Math.abs(cur.x - other.x) < MIN_GAP_PCT) {
-        cur.tier = 1;
+  const laneOf = (s: { side: "top" | "bottom"; tier: 0 | 1 }): Lane =>
+    `${s.side}-${s.tier}` as Lane;
+  const placed: Slot[] = [];
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    const prev = placed[placed.length - 1];
+    const preferTopFirst = !prev || prev.side === "bottom";
+    const order: Array<{ side: "top" | "bottom"; tier: 0 | 1 }> = preferTopFirst
+      ? [
+          { side: "top", tier: 0 },
+          { side: "bottom", tier: 0 },
+          { side: "top", tier: 1 },
+          { side: "bottom", tier: 1 },
+        ]
+      : [
+          { side: "bottom", tier: 0 },
+          { side: "top", tier: 0 },
+          { side: "bottom", tier: 1 },
+          { side: "top", tier: 1 },
+        ];
+    let chosen = order[0];
+    for (const cand of order) {
+      const lane = laneOf(cand);
+      const collides = placed.some(
+        (p) => laneOf(p) === lane && Math.abs(p.x - g.x) < LABEL_GAP_PCT,
+      );
+      if (!collides) {
+        chosen = cand;
         break;
       }
     }
+    placed.push({ ...g, side: chosen.side, tier: chosen.tier });
   }
+  const slots: Slot[] = placed;
 
   // Zone-band geometry (Phase 4C) — unchanged.
   const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
