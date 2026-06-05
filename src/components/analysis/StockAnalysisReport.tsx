@@ -542,7 +542,7 @@ function PriceBand({
   const prefX = showZoneBand ? xPct(zonePref!) : 0;
 
   return (
-    <div className="my-6">
+    <div className="mt-14 mb-12">
       <div ref={ref} className="relative h-24 print:h-24">
         {showZoneBand && (
           <div
