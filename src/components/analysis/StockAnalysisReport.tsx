@@ -598,8 +598,8 @@ function PriceBand({
           const multi = s.items.length > 1;
           const extra = multi ? (s.items.length - 1) * 14 : 0;
           const topPx = isTop
-            ? (s.tier === 0 ? -2 - extra : -22 - extra)
-            : (s.tier === 0 ? 50 : 70);
+            ? (s.tier === 0 ? -2 - extra : -32 - extra)
+            : (s.tier === 0 ? 50 : 80);
           const showLeader = s.tier === 1;
           // Distinct prices? If all items share one price (exact-merge), show
           // "LBL / LBL ₹price"; otherwise stack each "LBL ₹price" on its own
@@ -622,11 +622,12 @@ function PriceBand({
               />
               {showLeader && (
                 <div
-                  className="absolute left-1/2 w-px bg-border"
-                  style={{
-                    top: isTop ? `${topPx + 28}px` : "44px",
-                    height: isTop ? `${-topPx - 6}px` : `${topPx - 44}px`,
-                  }}
+                  className="absolute left-1/2 w-px -translate-x-1/2 bg-border"
+                  style={
+                    isTop
+                      ? { top: `${topPx + 18 + extra}px`, height: `${Math.abs(topPx) + 22 - extra}px` }
+                      : { top: "44px", height: `${topPx - 44}px` }
+                  }
                   aria-hidden
                 />
               )}
@@ -634,6 +635,7 @@ function PriceBand({
                 className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
                 style={{ top: `${topPx}px` }}
               >
+
                 {distinctPrices ? (
                   <div className="flex flex-col gap-0.5">
                     {s.items.map((it, idx) => (
