@@ -1,7 +1,7 @@
 /* Architecture Encyclopedia — premium print stylesheet.
    Scoped via .ae-doc root class so it does not bleed into the app. */
 
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Fonts loaded via <link> in src/routes/__root.tsx — Lightning CSS cannot resolve remote @import URLs at build time. */
 
 .ae-doc {
   --ae-navy: #0b1b2b;
