@@ -4,6 +4,8 @@
 // promoter holding signal via finedge "shareholdings/ownership-history".
 // Stateless; never throws; degrades to nulls with diagnostic trail.
 
+import { bankingLongQualityComposite } from "../_shared/horizon-shaping.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -215,6 +217,21 @@ Deno.serve(async (req) => {
   const present = fields.filter((v) => v != null).length;
   const data_completeness_pct = Math.round((present / fields.length) * 100);
 
+  // Wave 3 (Mission 6.4) — banking-applicable long-quality composite.
+  // Always computed from the RAW (pre-suppression) Piotroski + earnings
+  // signals, dampened to 0.5x intensity vs neutral 50. Surfaced on every
+  // long-quality response so the orchestrator can decide whether to blend.
+  // For non-banks the value is informational only (orchestrator ignores it).
+  const long_quality_composite_banking = bankingLongQualityComposite(
+    piotroski_f_score,
+    earnings_consistency_label,
+  );
+
+  const long_quality_composite_banking = bankingLongQualityComposite(
+    piotroski_f_score,
+    earnings_consistency_label,
+  );
+
   const snapshot = {
     roe_5y_avg,
     roce_5y_avg,
@@ -228,7 +245,9 @@ Deno.serve(async (req) => {
     margin_trend_label,
     market_share_trend_label,
     data_completeness_pct,
+    long_quality_composite_banking,
   };
+
 
   return json({
     success: true,

@@ -32,6 +32,16 @@ import {
   type Action as BucketAction,
 } from "../_shared/action-buckets.ts";
 import { findBaseline } from "../_shared/regression-baseline.ts";
+import {
+  HORIZON_SHAPING_VERSION,
+  SHAPING_ACTIVE,
+  shapeScoresByHorizon,
+  applyBankingCarveout,
+  evaluatePromotion,
+  computeOverall,
+  type PillarScores,
+  type PromotionAction,
+} from "../_shared/horizon-shaping.ts";
 
 type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 type Action = BucketAction;
@@ -611,7 +621,7 @@ function computeVerdict(
     else if (w > 0) missingCount += 1;
   });
   const overall = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
-  let action = actionFromScore(overall);
+  let action: Action = actionFromScore(overall);
   let demotions = 0;
   let confidencePenalty = 0;
 
@@ -622,31 +632,24 @@ function computeVerdict(
   }
 
   if (queryType === "intraday") {
-    // Intraday: weak technicals/momentum matter heavily.
     if (scores.technical != null && scores.technical < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("intraday weak technical demotes");
     }
     if (scores.momentum != null && scores.momentum < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("intraday weak momentum demotes");
     }
-    // High beta / volatility hits confidence hard intraday; minor demotion on extreme.
     if (riskSnap?.beta != null && riskSnap.beta > 1.5) confidencePenalty += 10;
     if (riskSnap?.volatility_1y != null && riskSnap.volatility_1y > 45) confidencePenalty += 10;
     if (riskSnap?.beta != null && riskSnap.beta > 2.0 && action === "BUY") {
       action = "HOLD"; demotions++; guardrailNotes.push("intraday beta>2 demotes BUY");
     }
-    // Missing fundamentals must NOT cap action for intraday (weight is 0 anyway).
   } else if (queryType === "long-term") {
-    // Long-term: missing fundamental is a hard cap — but a successful sector
-    // fallback (Mission 6.2 Fix #2) lifts the cap. The fallback is honest
-    // sector-derived context, not a fabricated company score.
     if (scores.fundamental == null && !opts.fundamentalFallbackApplied && (action === "BUY" || action === "HOLD")) {
       action = "WATCHLIST"; demotions++; guardrailNotes.push("long-term missing fundamental caps→WATCHLIST");
     }
     if (scores.fundamental == null && opts.fundamentalFallbackApplied) {
       guardrailNotes.push("long-term fundamental: sector_fallback applied (no hard cap)");
     }
-    // Weak fundamentals materially demote.
     if (scores.fundamental != null && scores.fundamental < 35 && (action === "BUY" || action === "HOLD")) {
       action = demote(action); demotions++; guardrailNotes.push("long-term weak fundamental demotes");
     }
@@ -658,7 +661,6 @@ function computeVerdict(
       if (action === "BUY") { action = "HOLD"; demotions++; guardrailNotes.push("long-term high beta+weak risk demotes"); }
     }
   } else {
-    // Medium-term: balanced baseline.
     if (riskSnap && ((riskSnap.max_drawdown != null && riskSnap.max_drawdown < -50) || (riskSnap.beta != null && riskSnap.beta > 2.0))) {
       if (action === "BUY")  { action = "HOLD"; demotions++; guardrailNotes.push("medium drawdown/beta demotes BUY"); }
       else if (action === "HOLD") { action = "WATCHLIST"; demotions++; guardrailNotes.push("medium drawdown/beta demotes HOLD"); }
@@ -680,8 +682,6 @@ function computeVerdict(
     action = "AVOID"; demotions++; guardrailNotes.push("≥3 modules missing → AVOID");
   }
 
-  // Legacy confidence retained internally for guardrail telemetry only; final
-  // confidence_pct is computed by computeConfidence() (5-factor engine).
   const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10 - confidencePenalty));
   return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes };
 }
@@ -942,16 +942,58 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4. Compute verdict
-    const scores = {
+    // 4. Compute verdict (Wave 3 Option A+ pipeline)
+    //    raw → banking carve-out (long-term banks only) → horizon shaping → promotion
+    const rawScores: PillarScores = {
       technical:   tech?.score ?? null,
       fundamental: fund?.score ?? null,
       risk:        risk?.score ?? null,
       momentum:    mom?.score ?? null,
       sentiment:   sent?.score ?? null,
     };
+    const tierWeights = WEIGHT_PRESETS[queryType];
+
+    // 4a. raw overall (pre-everything) — drift-free counterfactual baseline.
+    const overall_score_raw = computeOverall(rawScores, tierWeights);
+
+    // 4b. Banking carve-out — long-term banks only. Reads the banking-applicable
+    // long-quality composite from compute-long-term-quality (always emitted now).
+    const lqSnap = (lqRes.data?.long_term_quality_snapshot as Record<string, unknown> | undefined) ?? null;
+    const longQualityCompositeBanking =
+      lqSnap && typeof lqSnap.long_quality_composite_banking === "number"
+        ? (lqSnap.long_quality_composite_banking as number)
+        : null;
+    const sectorLower = (sector ?? "").toLowerCase();
+    const isBanking = sectorLower.includes("bank") || sectorLower.includes("financial");
+    const carveout = applyBankingCarveout(
+      rawScores.fundamental,
+      longQualityCompositeBanking,
+      queryType,
+      isBanking,
+    );
+    const postCarveoutScores: PillarScores = {
+      ...rawScores,
+      fundamental: carveout.applied ? carveout.fundamentalBlended : rawScores.fundamental,
+    };
+    const overall_score_pre_carveout = carveout.applied
+      ? computeOverall(postCarveoutScores, tierWeights)
+      : overall_score_raw;
+    // Naming note: per spec the field "overall_score_pre_carveout" is the
+    // value AFTER carve-out and BEFORE shaping. Deltas defined accordingly:
+    //   carveout_delta = overall_score_pre_carveout - overall_score_raw
+    //   shaping_delta  = overall_score - overall_score_pre_carveout
+
+    // 4c. Horizon shaping — bounded ±3 per pillar, ±4 total weighted overall.
+    const shaping = shapeScoresByHorizon(postCarveoutScores, tierWeights, queryType);
+    const finalScores: PillarScores = shaping.shapedScores;
+    // Alias for downstream payload assembly. `scores` always reflects the
+    // post-carveout, post-shaping values used to compute the verdict.
+    // Raw pre-shaping pillars are persisted in audit_meta.horizon_shaping.
+    const scores = finalScores;
+
+
     const verdict = computeVerdict(
-      scores,
+      finalScores,
       risk?.snapshot ?? null,
       queryType,
       { fundamentalFallbackApplied: fundamentalFallbackMeta != null },
@@ -965,15 +1007,34 @@ Deno.serve(async (req) => {
       incomplete_data: verdict.missingCount >= 2,
     };
 
-    // 5b. Confidence engine (new — replaces legacy verdict.confidence_pct)
+    // 5b. Confidence engine
     const confidence = computeConfidence(
-      scores,
+      finalScores,
       risk?.snapshot ?? null,
       { news_data_limited: flags.news_data_limited, benchmark_fallback_used: flags.benchmark_fallback_used },
       sent?.snapshot.article_count ?? null,
       queryType,
-      WEIGHT_PRESETS[queryType],
+      tierWeights,
     );
+
+    // 5c. Symmetric one-bucket promotion — runs AFTER confidence is known.
+    const promotion = evaluatePromotion(
+      verdict.action as PromotionAction,
+      verdict.overall_score,
+      finalScores,
+      queryType,
+      {
+        confidenceBand: confidence.band,
+        missingPillars: verdict.missingCount,
+        fundamentalFallbackApplied: fundamentalFallbackMeta != null,
+        volumeConfirmation: mom?.volume_confirmation ?? null,
+      },
+    );
+    if (promotion.promoted) {
+      verdict.action = promotion.newAction as Action;
+      verdict.guardrailNotes.push(`promotion: ${promotion.reason} (${promotion.newAction})`);
+    }
+
 
     // 6. Assemble payload
     const asOfDate = tech?.as_of || fund?.as_of || risk?.as_of || mom?.as_of || sent?.as_of || new Date().toISOString();
@@ -1090,6 +1151,26 @@ Deno.serve(async (req) => {
         confidence_band: confidence.band,
         modules_invoked: settled.filter((s) => s.trace.ok).map((s) => s.trace.module),
         tier_modules_added_version: "tier_shaped_v1",
+        // Wave 3 (Mission 6.4) — horizon shaping + banking carve-out provenance.
+        overall_score_raw,
+        overall_score_pre_carveout,
+        horizon_shaping: {
+          version: HORIZON_SHAPING_VERSION || null,
+          active: SHAPING_ACTIVE,
+          per_pillar_delta: shaping.perPillarDelta,
+          total_delta: shaping.totalDelta,
+          carveout_delta: overall_score_pre_carveout - overall_score_raw,
+          shaping_delta: verdict.overall_score - overall_score_pre_carveout,
+          promotion_applied: promotion.promoted,
+          promotion_reason: promotion.reason,
+          banking_carveout_applied: carveout.applied,
+          banking_carveout_reason: carveout.reason,
+          fundamental_original: carveout.fundamentalOriginal,
+          fundamental_blended: carveout.fundamentalBlended,
+          long_quality_composite_banking: longQualityCompositeBanking,
+          raw_scores: rawScores,
+          shaped_scores: finalScores,
+        },
         // Fix 3 + 4: DCF and banking-override audit surface (from normalizer).
         dcf_status: fund?.dcf_status ?? "DCF_UNAVAILABLE",
         dcf_method_used: fund?.dcf_method_used ?? "DCF_SKIPPED",
