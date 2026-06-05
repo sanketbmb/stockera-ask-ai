@@ -1,271 +1,215 @@
-# Wave 5b — PLAN ONLY
+# Wave 5c — Visual Polish (PLAN ONLY)
 
-Two independent sub-tracks. Both are data + small-resolver changes. No scoring, weights, RLS, UI, or stock-picker changes.
+Frontend-only. No backend, no scoring, no weights, no RLS, no sentiment pipeline, no stock-picker. `PROMOTION_RULES_ENABLED` stays `false`. Landing page untouched.
 
 ---
 
-## Sub-track A — NSDL / stock_master exchange-row gap
+## Pre-plan flag — needs founder decision
 
-### Evidence
+**Returns-strip schema gap.** `returns_snapshot` (src/types/stock-analysis.ts L70-77) exposes `one_week`, `one_month`, `three_month`, `one_year`, `vs_nifty_one_month`, `vs_nifty_three_month`. **There is no `six_month` field** in the orchestrator payload or in compute-momentum. The brief asks for "1M / 3M / 6M / 1Y / vs Nifty".
 
-`stock_master` query confirms:
+Two options — pick one before Build:
 
-- **NSDL** → 1 row only, `BSE / BSE_EQ`, dhan_security_id `544467`, company "National Securities Depos" (truncated).
-- ICICIBANK / NESTLEIND / IDFCFIRSTB → both NSE + BSE rows present (these are NOT a master-data gap; their issue is Marketaux, sub-track B).
+- **(A) Drop 6M** and render `1M / 3M / 1Y / 1M vs Nifty / 3M vs Nifty`. Stays frontend-only. **Recommended.**
+- **(B) Keep 6M** which requires adding a field in compute-momentum + orchestrator + types. That violates the "no backend" guardrail of Wave 5c and should be its own wave.
 
-Resolver (`supabase/functions/generate-stock-analysis/index.ts` L150–158):
+Plan below assumes (A).
 
-1. L152 — exact symbol + `exchange=NSE` `limit=1` → miss for NSDL.
-2. L156 — exact symbol any-exchange `limit=1` → returns the BSE row. Order is non-deterministic but for NSDL only BSE exists, so it always returns BSE.
+---
 
-So the resolver itself is correct given the data. NSDL fails downstream because callers (Dhan LTP fetch, intraday microstructure, news entity matching with `.NS` suffix) assume an NSE listing.
+## Item 1 — Restore horizontal price-zone axis
 
-### Root cause hypothesis
+### Current code
 
-`seed-stock-master/index.ts` filter (L93–98):
+File: `src/components/analysis/StockAnalysisReport.tsx`
+
+- `PriceBand` component: L398–595 (declared L398, returns at L502)
+- Horizontal axis line: **already present** at L516–521 (`motion.div` with `bg-gradient-to-r from-rose-300 via-border to-emerald-300`, `h-px`).
+- Empty/insufficient short-circuit: L457–459 returns the italic paragraph and renders no axis.
+- Dots: L538–595.
+
+### Diagnosis
+
+The axis element exists but is a single `h-px` (1-CSS-pixel) gradient between three muted stops on `bg-card`. Against the surrounding 24px zone band (L504–515) and the dot ring shadows, it visually disappears on the populated state — which matches the user-reported regression even though no line was deleted. There is no git evidence of a removal; this is a perceived disappearance from contrast loss.
+
+### Change (purely presentational)
+
+L516–521 only. Replace the single hairline with a clearly visible rail:
+
+- Bump from `h-px` to `h-0.5` (2px) and switch to a solid `bg-border` mid-section with rose→emerald end-cap gradients (or keep gradient but raise alpha — `from-rose-400/70 via-border to-emerald-400/70`).
+- Add tick-marks at each `slots[i].x` percentage (2px-wide × 6px-tall divs absolutely positioned, color `bg-border`) so the rail reads as a true axis even when dots collide.
+- Keep the empty-state branch (L457–459) untouched.
+- No prop changes, no data contract change, no animation timing change beyond reusing `priceBandLine` variant already in motion-variants.
+
+### Citations
+
+- src/components/analysis/StockAnalysisReport.tsx L398, L457–459, L502–521, L538–595.
+
+### Credit estimate
+
+~3–5 credits (single component, ~15 LOC changed, visual-only).
+
+### Deploy surface
+
+Frontend Publish only. No edge function redeploy.
+
+---
+
+## Item 2 — Returns-at-a-glance strip on every horizon
+
+### Current state in TierShapedGrid
+
+File: `src/components/analysis/StockAnalysisReport.tsx`
+
+- `TierShapedGrid` router: L1708–1714.
+- `IntradayGrid` L1716–1817 — **no returns metrics surfaced anywhere**.
+- `MediumTermGrid` L1827–1941 — exposes `3M return` (L1848), `1M vs Nifty` (L1849), `1M return` (L1864), `3M vs Nifty` (L1865) scattered across cards. No unified strip.
+- `LongTermGrid` L1943– end — returns scattered across L2028–2035.
+- Short-term reuses `MediumTermGrid` via L1712–1713 with `tierLabel="Short-term"`.
+
+### Change
+
+Introduce a single presentational `ReturnsStrip` component in the **same file** (keep diff scoped), placed in the report flow at the existing slot **immediately below the verdict block, above the metric grid**, i.e. just before `<TierShapedGrid data={data} />` at L888. This way it renders for every horizon without touching the per-grid card layouts.
+
+Strip layout (assumes Option A above): five tabular cells — `1M`, `3M`, `1Y`, `1M vs NIFTY`, `3M vs NIFTY` — each pulling from `data.returns_snapshot`.
+
+Behaviour:
+
+- If `returns_snapshot` has at least one non-null populated field → render the strip with `DASH` for any individual null cell.
+- If **all five** fields are null → render a single muted placeholder row: "Return history not available for this horizon." Same wrapper, same height, so the layout does not jump.
+
+Do **not** remove the existing per-grid `Metric` cells inside MediumTermGrid/LongTermGrid in this wave — that is a separate dedup pass. Wave 5c is additive.
+
+### Citations to touch
+
+- src/components/analysis/StockAnalysisReport.tsx L617 (destructure already includes `returns_snapshot`), L887–888 (insert point), new `ReturnsStrip` declared near the other small presentational helpers (e.g. just above `TierShapedGrid` at L1707).
+- src/types/stock-analysis.ts L70–77 (read-only reference for available fields).
+
+### Credit estimate
+
+~6–8 credits (one new in-file component ~40 LOC, one insertion point, light styling).
+
+### Deploy surface
+
+Frontend Publish only.
+
+---
+
+## Item 3 — Hide or honestly label placeholder modules
+
+### Flag
+
+File: `src/lib/feature-flags.ts` — add a single new export at the bottom of the existing flag block:
 
 ```ts
-if (instr !== "EQUITY") continue;   // SEM_INSTRUMENT_NAME
-if (seg !== "E")        continue;   // SEM_SEGMENT
-if (exch !== "NSE" && exch !== "BSE") continue;
+export const SHOW_PLACEHOLDER_MODULES = false; // Wave 5c: default OFF for V1
 ```
 
-NSDL IPO'd on NSE in Aug-2025. Either:
+No other flag semantics change.
 
-- (a) Dhan's CSV currently does not list an NSE EQUITY row for NSDL (upstream gap), or
-- (b) the NSE row exists but uses `SEM_INSTRUMENT_NAME` ≠ "EQUITY" (e.g. `EQ`) or `SEM_SEGMENT` ≠ "E" so our filter drops it.
+### Block A — "Peers in the same sector"
 
-### Step A1 — Verification (no code change, ~0 credits)
+File: `src/components/analysis/StockAnalysisReport.tsx`
 
-1. `curl -s https://images.dhan.co/api-data/api-scrip-master.csv | head -1` to confirm header order.
-2. `curl … | awk -F, '$… == "NSDL" {print}'` filtered on `SEM_TRADING_SYMBOL=NSDL` to print every Dhan row for NSDL across both exchanges and inspect `SEM_EXM_EXCH_ID / SEM_INSTRUMENT_NAME / SEM_SEGMENT`.
-3. Same scan for a control set of confirmed recent NSE listings (e.g. SWIGGY, OLAELEC, NTPCGREEN, BAJAJHFL, HEXT) to see whether the filter is dropping NSE EQUITY rows for a class of recent listings.
+- Section block: L1025–1033 (the whole `<motion.section>` wrapping `SectionTitle eyebrow="Also consider"`).
+- Change: wrap the entire section in `{SHOW_PLACEHOLDER_MODULES && (…)}`. When ON, current copy at L1031 stays verbatim. When OFF, nothing renders (no empty card, no spacing artifact — the surrounding sections already carry their own `space-y` from the parent at higher level).
 
-Outcome decides A2.
+### Block B — "Expert analysis in progress"
 
-### Step A2 — Smallest safe fix
+File: `src/components/report/ExpertAnswerSection.tsx`
 
+- Placeholder/in-progress state: L72–98 (the `<section id="expert-analysis">` returned when no answer exists yet).
+- Change: at the top of that branch, early-return `null` when `SHOW_PLACEHOLDER_MODULES` is false. The "answered" branch starting at L101 is unaffected — real analyst answers always render.
+- Import `SHOW_PLACEHOLDER_MODULES` from `@/lib/feature-flags`.
 
-| Verification outcome                                             | Fix                                                                                                                                                                                    | File(s)                                                       | Migration? | Deploy surface                                           |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------- | -------------------------------------------------------- |
-| Upstream Dhan CSV truly has no NSE row for NSDL                  | One-shot manual insert of the NSE row in `stock_master` (Amendment 1)                                                                                                                  | none (data-only via `supabase--insert`)                       | no schema  | DB write only — no publish, no function redeploy         |
-| Dhan CSV has the NSE row but uses different `instr`/`seg` values | Loosen filter in `seed-stock-master` (e.g. accept `EQUITY` OR `EQ`; accept `seg` ∈ {`E`,`EQ`}) **plus** one-shot backfill row for NSDL so today's reports don't wait for the next cron | `supabase/functions/seed-stock-master/index.ts` + data insert | no         | Edge function redeploy (`seed-stock-master`) + DB insert |
-| Mixed (some recent listings missing, filter is fine)             | Schedule a one-shot manual reseed (`POST seed-stock-master` with `x-cron-secret`) plus targeted insert for NSDL                                                                        | none                                                          | no         | Function invocation + DB insert                          |
+Both blocks must be guarded by the **same** flag so a single toggle controls V1 behaviour.
 
+### Citations
 
-Recommended default before A1 runs: assume (a). Plan the one-shot insert as the baseline; promote to (b) if A1 shows otherwise.
+- src/lib/feature-flags.ts (new export, ~1 LOC).
+- src/components/analysis/StockAnalysisReport.tsx L1025–1033.
+- src/components/report/ExpertAnswerSection.tsx L72–98 (early return) + new import at file head.
 
-### Step A3 — Defer L156 hardening
+### Credit estimate
 
-Per Amendment 1, the `limit=2 + find(NSE)` hardening at orchestrator L156–173 stays deferred — only revisit when a second dual-listed symbol reproduces the same failure mode. Not in 5b scope.
+~3–4 credits (one flag, two wraps).
 
-### Credit estimate (A)
+### Deploy surface
 
-- A1 verification: 0 (curl + awk, no LLM, no Marketaux).
-- A2 insert: 0.
-- A2 filter loosening + redeploy: ~0 runtime credits (one redeploy).
-
-### Verification checklist (A)
-
-After A2 lands:
-
-1. `SELECT * FROM stock_master WHERE symbol='NSDL'` shows both NSE + BSE rows.
-2. Regenerate NSDL intraday report. Confirm:
-  - resolver picks NSE row (`audit_meta.exchange='NSE'`),
-  - Dhan LTP path returns a quote (no `LTP_UNAVAILABLE`),
-  - intraday microstructure module returns numbers instead of `NO_DATA`,
-  - hero may still be gray "Insufficient Data" if news/sentiment is empty — that's sub-track B.
-3. Re-run a control NSE-only name (`HDFCBANK`) to confirm no regression in resolver order.
+Frontend Publish only.
 
 ---
 
-## Sub-track B — Marketaux alias map
+## Combined verification checklist (post-Publish)
 
-### Evidence (`sentiment_cache` last 7 days)
+Regenerate and visually inspect:
 
-Zero-article rows on bluechips with obvious recent news flow:
+1. **HDFCBANK short-term** — eyebrows still read `SHORT-TERM · CARD n` (Step 3 carry-over check), price-zone rail visibly horizontal, returns strip renders with 1M/3M/1Y + vs-NIFTY values, no "Peers" section, no "Expert analysis in progress" card.
+2. **HDFCBANK medium-term** — same checks; verdict prose differs from short-term (Wave 5a Step 2 carry-over).
+3. **HDFCBANK long-term** — rail visible, returns strip populated, placeholders hidden.
+4. **HDFCBANK intraday (data present)** — rail visible on populated levels, returns strip populated, placeholders hidden, intraday microstructure cards unchanged.
+5. **NSDL intraday (no data)** — verdict still renders `NO_COVERAGE_NEW_LISTING` cleanly, price-zone falls into existing insufficient-data branch (L457–459) unchanged, returns strip shows the muted placeholder row (not the populated grid), no "Peers" / "Expert" placeholders.
+6. Toggle `SHOW_PLACEHOLDER_MODULES = true` locally on one horizon and confirm both blocks reappear with original copy intact (regression escape hatch).
 
-- `NESTLEIND.NS` → 0
-- `ICICIBANK.NS` → 0
-- `IDFCFIRSTB.NS` → 0
-- `HAVELLS.NS` → 0, `VOLTAS.NS` → 0, `KAYNES.NS` → 0, `JYOTHYLAB.NS` → 0, `DEEPAKNTR.NS` → 0, `LICI.NS` → 0, `BPCL.NS` → 0
-- `NSDL.NS` → 0 (also affected by sub-track A)
+## Out of scope (do not touch in 5c)
 
-Comparable peers return full quota (`HDFCBANK.NS=20`, `KOTAKBANK.NS=20`, `INFY.NS=20`, `TCS.NS=20`, `PNB.NS=20`). So the Marketaux API is healthy and quota is fine — these symbols are entity-mapping misses.
+- Verdict logic, suppression, INSUFFICIENT_DATA gray state.
+- MediumTermGrid eyebrow routing (already shipped Step 3).
+- supabase/functions/**.
+- Landing page.
+- Stock picker, Move 4b, Marketaux alias map.
+- Dedup of per-card return metrics inside MediumTermGrid / LongTermGrid (additive only this wave).
 
-### Current fetch path
+## STOP
 
-`supabase/functions/compute-sentiment/index.ts`:
+Plan only. Awaiting approval + decision on the 6M question (Option A vs B) before Build.  
+  
+Approve Wave 5c for BUILD with Option A.
 
-- L411–431: tries `${symbol}.NS` first, falls back to bare `${symbol}` if zero articles.
-- L201–217 `pickEntitySentiment`: matches entity by `.NS`, then bare, then `${symbol}.` prefix.
+Founder decision on returns strip:
 
-Failure modes Marketaux is known to use for Indian equities:
+- Choose Option A.
 
-- ICICI Bank: `IBN` (NYSE ADR) and `ICICIBANK.BO` rather than `ICICIBANK.NS`.
-- Nestle India: `NEST.BO` / `NESTLEIND.BO`.
-- IDFC First Bank: occasionally `IDFCFIRSTB.BO` only; the bare `IDFCFIRSTB` query may collide with delisted IDFC entries.
-- LIC India: `LICI.BO` only.
-- BPCL: `BPCL.BO` only.
-- NSDL: too new — likely genuinely absent (mark as `NO_NEWS_NEW_LISTING`).
+- Do NOT add 6M in this wave.
 
-### Step B1 — Audit (no code change, ~30–50 Marketaux calls = ~30–50 credits)
+- Use only existing frontend-available fields:
 
-For each zero-article symbol above, manually probe Marketaux with three query shapes and record which (if any) returns articles:
+  1M / 3M / 1Y / 1M vs NIFTY / 3M vs NIFTY
 
-- `SYMBOL.NS`
-- `SYMBOL.BO`
-- `SYMBOL` bare
-Plus one `entity_types=equity&search=<company name>` call to detect Marketaux's preferred symbol string.
+Approved scope:
 
-Output: a candidate alias table `{ canonical_symbol → marketaux_query_string }` for confirmed mismappings, and a residual list of "true NO_NEWS" or "RECENTLY_LISTED" symbols.
+1) Restore the visible horizontal price-zone axis in populated states only.
 
-### Step B2 — Alias map + multi-format fetch (code change)
+2) Add the unified ReturnsStrip below the verdict block and above TierShapedGrid using existing returns_snapshot fields only.
 
-New file: `**supabase/functions/_shared/marketaux-aliases.ts**`
+3) Hide placeholder modules by default using SHOW_PLACEHOLDER_MODULES = false.
 
-```ts
-// Canonical NSE symbol → ordered list of Marketaux query strings to try.
-// Only add an entry when B1 confirmed the default `.NS` → bare path fails.
-export const MARKETAUX_ALIASES: Record<string, string[]> = {
-  ICICIBANK:  ["ICICIBANK.BO", "IBN"],
-  NESTLEIND:  ["NESTLEIND.BO", "NEST.BO"],
-  IDFCFIRSTB: ["IDFCFIRSTB.BO"],
-  LICI:       ["LICI.BO"],
-  BPCL:       ["BPCL.BO"],
-  HAVELLS:    ["HAVELLS.BO"],
-  VOLTAS:     ["VOLTAS.BO"],
-  // …populated from B1 audit output
-};
+Guardrails remain:
 
-// Symbols where Marketaux genuinely has no coverage — short-circuit, no API call.
-export const MARKETAUX_NO_COVERAGE: Set<string> = new Set([
-  "NSDL", // listed Aug-2025, not yet indexed
-]);
-```
+- frontend only
 
-Patch `**supabase/functions/compute-sentiment/index.ts**` L411–431:
+- no supabase/functions changes
 
-1. If symbol ∈ `MARKETAUX_NO_COVERAGE` → set `warning = "NO_COVERAGE_NEW_LISTING"`, write empty cache with longer TTL (e.g. 7 d), return.
-2. Build ordered query list: `[${symbol}.NS, ...MARKETAUX_ALIASES[symbol] ?? [], symbol]` (dedup).
-3. Iterate; stop on first non-empty result. Record actual successful format in `symbol_format_used` (already exists). Cap at 3 calls per request to bound credit burn.
-4. Extend `pickEntitySentiment` (L201–217) to also accept entity symbols matching any alias from the same map (case-insensitive), so the sentiment score from a `.BO` article actually lands on the canonical symbol.
+- no scoring / weights / buckets / RLS changes
 
-No schema migration. No new env var. Both files are inside `supabase/functions/`.
-
-### Step B3 — Cache invalidation
-
-After deploy, one-shot delete of poisoned cache rows so the new format is exercised immediately:
-
-```sql
-DELETE FROM sentiment_cache
-WHERE jsonb_array_length(articles) = 0
-  AND symbol = ANY(ARRAY['ICICIBANK','NESTLEIND','IDFCFIRSTB','LICI','BPCL','HAVELLS','VOLTAS','NSDL', …]);
-```
-
-Run via `supabase--insert` (DELETE allowed).
-
-### Deploy surface (B)
-
-- B1: no deploy, ad-hoc curl scripts only.
-- B2: edge function redeploy (`compute-sentiment` + new `_shared/marketaux-aliases.ts`). No frontend publish.
-- B3: DB delete.
-
-### Credit estimate (B)
-
-- B1 audit: ~30–50 Marketaux calls (well inside the 2,500/day budget; ~2% of cap).
-- B2 runtime: same or *fewer* calls in steady state — most symbols still resolve on `.NS`; aliased symbols cost +1 call once per TTL cycle.
-- B3: 0.
-
-### Verification checklist (B)
-
-After B2 deploy + B3 cache clear:
-
-1. Regenerate medium-term reports for ICICIBANK, NESTLEIND, IDFCFIRSTB. Confirm `sentiment_cache.symbol_format_used` is no longer `…NS`, and `jsonb_array_length(articles) > 0`.
-2. Spot-check `audit_meta.sentiment_module` shows numeric `news_sentiment` instead of `NO_NEWS`.
-3. Regenerate HDFCBANK / INFY / TCS to confirm no regression on healthy symbols (still `.NS`, ≥1 article).
-4. NSDL report still gray "Insufficient Data" but with reason now including `NO_COVERAGE_NEW_LISTING` rather than empty-cache from a failed fetch.
-5. `SELECT call_count FROM marketaux_usage_log WHERE date=CURRENT_DATE` shows total daily calls within historical envelope (no runaway alias loop).
-
----
-
-## Cross-track summary
-
-
-| Step                           | Files                                                                                                    | Migration | Deploy           | Credits                  |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------- | --------- | ---------------- | ------------------------ |
-| A1 verify                      | (curl only)                                                                                              | —         | —                | 0                        |
-| A2 insert NSDL NSE row         | `supabase--insert`                                                                                       | none      | DB only          | 0                        |
-| A2 (conditional) filter loosen | `supabase/functions/seed-stock-master/index.ts`                                                          | none      | edge fn redeploy | 0                        |
-| B1 audit                       | (curl only)                                                                                              | —         | —                | ~30–50 Marketaux         |
-| B2 alias map                   | `supabase/functions/_shared/marketaux-aliases.ts` (new), `supabase/functions/compute-sentiment/index.ts` | none      | edge fn redeploy | 0 build, neutral runtime |
-| B3 cache purge                 | `supabase--insert` (DELETE)                                                                              | none      | DB only          | 0                        |
-
-
-## Out of scope (unchanged deferrals)
-
-- Scoring logic, weights, action buckets, RLS.
-- Stock picker (still deferred until 5a/5b ship).
-- UI/frontend polish, gray-state copy.
-- Move 4b (banking carveout sign).
-- L156 `limit=2 + find(NSE)` resolver hardening — deferred until a second dual-listed failure surfaces.
-- `PROMOTION_RULES_ENABLED=false` — unchanged.
-- RECENTLY_LISTED flag, returns strip, trade-plan diagnostic — these are Wave 5c.
-
-**STOP — awaiting founder approval before BUILD.** 
-
-Approve Wave 5b PLAN.
-
-This is approved as a gated plan with evidence-first execution, not as a blanket build.
-
-Execution rules:
-
-1) Sub-track A:
-
-- Run A1 verification first.
-
-- If Dhan CSV truly has no NSE row for NSDL, do the one-shot NSDL NSE insert only.
-
-- If Dhan CSV has an NSE row but our filter drops it, then loosen the seed-stock-master filter and do the one-shot backfill.
-
-- Do NOT pull L156 resolver hardening into Wave 5b.
-
-2) Sub-track B:
-
-- Run B1 audit first.
-
-- Only add aliases for symbols explicitly confirmed by the audit.
-
-- Keep the alias list narrow and evidence-based.
-
-- If NSDL is confirmed as genuinely unindexed/new-listing no-coverage, keep it in NO_COVERAGE_NEW_LISTING rather than forcing a fake alias.
-
-Guardrails remain unchanged:
-
-- no scoring changes
-
-- no weights/buckets changes
-
-- no RLS changes
-
-- no UI/frontend changes
+- no sentiment pipeline changes
 
 - no stock-picker work
 
-- no PROMOTION_RULES_ENABLED change
+- no landing page work
 
-After the audit/build proposal is finalized, return:
+- no dedup pass on existing per-card returns in this wave
 
-- exact files to change
+Build and then return:
 
-- deploy surface
+- exact files changed
 
-- whether A2 is insert-only or filter+backfill
+- publish confirmation
 
-- final alias list from B1
+- visual verification against:
 
-- verification checklist
+  HDFCBANK short-term, medium-term, long-term, one populated intraday, and NSDL intraday
 
-STOP before any out-of-scope work.
+STOP after Wave 5c build report and verification.
 
-&nbsp;
+Do not start stock-picker or any next wave automatically.
