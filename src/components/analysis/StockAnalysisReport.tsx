@@ -1912,8 +1912,7 @@ function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPay
         <Metric label="EMA stack" value={labelize(t.ema_stack)} hint="50DMA vs 200DMA position" />
         <Metric label="Trend" value={labelize(t.trend_label)} />
         <Metric label="ADX" value={<AnimatedNumber value={t.adx} decimals={1} duration={700} />} />
-        <Metric label="3M return" value={ret.three_month != null ? fmtPct(ret.three_month, 1, true) : DASH} hint={METRIC_COPY.m_returns_window.measures} />
-        <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} />
+        {/* Wave 5d dedup — 3M return / 1M vs Nifty moved to ReturnsStrip */}
       </TierCard>
 
       <TierCard
@@ -1928,8 +1927,7 @@ function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPay
         <Metric label="Trend strength" value={labelize(mom.trend_strength)} />
         <Metric label="Regime" value={labelize(mom.momentum_label)} />
         <Metric label="Volume" value={labelize(mom.volume_confirmation) || DASH} hint="Volume confirmation of the move" />
-        <Metric label="1M return" value={ret.one_month != null ? fmtPct(ret.one_month, 1, true) : DASH} />
-        <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
+        {/* Wave 5d dedup — 1M return / 3M vs Nifty moved to ReturnsStrip */}
       </TierCard>
 
       <TierCard
@@ -2094,11 +2092,7 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
         copyKey="card_long_returns"
         summary={`1Y return ${fmtPct(ret.one_year, 1, true)}; 3M ${fmtPct(ret.three_month, 1, true)}.`}
       >
-        <Metric label="1Y return" value={ret.one_year != null ? fmtPct(ret.one_year, 1, true) : DASH} hint={METRIC_COPY.m_returns_window.measures} />
-        <Metric label="3M return" value={ret.three_month != null ? fmtPct(ret.three_month, 1, true) : DASH} />
-        <Metric label="1M return" value={ret.one_month != null ? fmtPct(ret.one_month, 1, true) : DASH} />
-        <Metric label="1M vs Nifty" value={ret.vs_nifty_one_month != null ? fmtPct(ret.vs_nifty_one_month, 1, true) : DASH} hint={METRIC_COPY.m_rs_vs_nifty.measures} />
-        <Metric label="3M vs Nifty" value={ret.vs_nifty_three_month != null ? fmtPct(ret.vs_nifty_three_month, 1, true) : DASH} />
+        {/* Wave 5d dedup — 1Y/3M/1M return + 1M/3M vs Nifty moved to ReturnsStrip */}
         <Metric label="RS vs Nifty" value={mom.relative_strength_vs_nifty != null ? fmtPct(mom.relative_strength_vs_nifty, 2, true) : DASH} />
         <RecentNewsBlock sent={sent} />
       </TierCard>
