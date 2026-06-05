@@ -677,14 +677,25 @@ function computeVerdict(
     }
   }
 
-  // Universal: too many missing modules → AVOID.
+  // Universal: too many missing modules → AVOID + INSUFFICIENT_DATA marker.
+  // Trigger mirrors the existing insufficient-data guardrail EXACTLY so the
+  // gray UI state and the AVOID stamp fire on the same condition. The
+  // all-pillars-null / score-0 case is added as a redundant safety net.
   const totalModulesConsidered = (Object.values(weights).filter((w) => w > 0)).length;
-  if (missingCount >= 3 || missingCount >= Math.ceil(totalModulesConsidered * 0.6)) {
+  const allPillarsNull = (["technical","fundamental","risk","momentum","sentiment"] as const)
+    .every((k) => scores[k] == null);
+  const insufficientData =
+    missingCount >= 3 ||
+    missingCount >= Math.ceil(totalModulesConsidered * 0.6) ||
+    (overall === 0 && allPillarsNull);
+  let verdict_reason: "INSUFFICIENT_DATA" | null = null;
+  if (insufficientData) {
     action = "AVOID"; demotions++; guardrailNotes.push("≥3 modules missing → AVOID");
+    verdict_reason = "INSUFFICIENT_DATA";
   }
 
   const confidence = Math.max(20, Math.min(95, 100 - missingCount * 15 - demotions * 10 - confidencePenalty));
-  return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes };
+  return { action, overall_score: overall, confidence_pct: confidence, missingCount, demotions, guardrailNotes, verdict_reason };
 }
 
 // ─── Confidence engine (5-factor, deterministic) ──────────────────────────
@@ -1075,6 +1086,7 @@ Deno.serve(async (req) => {
         risk_label: riskLabel(scores.risk),
         time_horizon: timeHorizonLabel(queryType),
         summary_reason: summaryReason(scores, queryType),
+        verdict_reason: verdict.verdict_reason ?? null,
       },
       score_breakdown: {
         // Preserve null so the UI can render "—" instead of fabricating a 0.

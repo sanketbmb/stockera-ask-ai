@@ -25,6 +25,12 @@ export interface FinalVerdict {
   risk_label: string;
   time_horizon: string;
   summary_reason: string;
+  /**
+   * Structured override emitted when the orchestrator could not gather enough
+   * evidence to issue a meaningful verdict. UI uses this to render a neutral
+   * gray "Insufficient Data" state instead of the red AVOID styling.
+   */
+  verdict_reason?: "INSUFFICIENT_DATA" | null;
 }
 
 export interface ScoreBreakdown {
