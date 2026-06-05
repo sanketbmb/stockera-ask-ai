@@ -1034,15 +1034,17 @@ export function StockAnalysisReport({
           </motion.section>
         )}
 
-        {/* ═══ 16. STOCKS IN FOCUS (scaffolded) ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-7">
-          <SectionTitle eyebrow="Also consider" title="Peers in the same sector" icon={Sparkles} />
-          {report_modules.show_stocks_in_focus ? (
-            <p className="text-sm text-muted-foreground">Loading peer set…</p>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Peer comparison rolling out in the next release — we'll surface 3 alternative names in {stock.sector || "this sector"} with side-by-side scores.</p>
-          )}
-        </motion.section>
+        {/* ═══ 16. STOCKS IN FOCUS (scaffolded) — Wave 5c: hidden behind SHOW_PLACEHOLDER_MODULES ═══ */}
+        {SHOW_PLACEHOLDER_MODULES && (
+          <motion.section variants={sectionFadeUp} className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-7">
+            <SectionTitle eyebrow="Also consider" title="Peers in the same sector" icon={Sparkles} />
+            {report_modules.show_stocks_in_focus ? (
+              <p className="text-sm text-muted-foreground">Loading peer set…</p>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Peer comparison rolling out in the next release — we'll surface 3 alternative names in {stock.sector || "this sector"} with side-by-side scores.</p>
+            )}
+          </motion.section>
+        )}
 
         {/* ═══ 17. SUMMARY RECOMMENDATION ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
