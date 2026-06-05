@@ -1891,7 +1891,7 @@ function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPay
   );
 }
 
-function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: StockAnalysisPayload["sentiment_snapshot"]; score: number | null }) {
+function CatalystCalendarCard({ symbol, sent, score, tierLabel = "Medium" }: { symbol: string; sent: StockAnalysisPayload["sentiment_snapshot"]; score: number | null; tierLabel?: string }) {
   const fetcher = useServerFn(getUpcomingCorporateActions);
   const { data: ca, isLoading } = useQuery({
     queryKey: ["corporate-actions", symbol],
@@ -1903,7 +1903,7 @@ function CatalystCalendarCard({ symbol, sent, score }: { symbol: string; sent: S
 
   return (
     <TierCard
-      eyebrow="Medium · Card 4"
+      eyebrow={`${tierLabel} · Card 4`}
       title="Catalyst Calendar & Sentiment"
       icon={Calendar}
       score={score}
