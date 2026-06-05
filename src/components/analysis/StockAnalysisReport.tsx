@@ -88,6 +88,16 @@ const VERDICT_STYLES: Record<VerdictAction, { label: string; ring: string; chip:
   AVOID:     { label: "Avoid",      ring: "from-red-700/30 to-red-300/10",       chip: "bg-red-700/10 text-red-900 border-red-700/30",               accent: "text-red-800",     dot: "bg-red-700",     stroke: "#c0392b" },
 };
 
+// Neutral gray styling for INSUFFICIENT_DATA — never alarmist; never red.
+const INSUFFICIENT_DATA_STYLE = {
+  label: "Insufficient Data",
+  ring:  "from-slate-400/20 to-slate-200/5",
+  chip:  "bg-slate-500/10 text-slate-700 border-slate-400/40",
+  accent:"text-slate-700",
+  dot:   "bg-slate-500",
+  stroke:"#64748b",
+} as const;
+
 const TIER_LABEL: Record<QueryType, string> = {
   "intraday": "Intraday view",
   "short-term": "Short-term swing view",
@@ -610,8 +620,12 @@ export function StockAnalysisReport({
   } = data;
 
   const tier = query_context.query_type;
-  const verdictStyle = VERDICT_STYLES[final_verdict.action];
-  const nudge = useMemo(() => behavioralNudge(final_verdict.action, tier, final_verdict.risk_label), [final_verdict.action, tier, final_verdict.risk_label]);
+  const isInsufficient = final_verdict.verdict_reason === "INSUFFICIENT_DATA";
+  const verdictStyle = isInsufficient ? INSUFFICIENT_DATA_STYLE : VERDICT_STYLES[final_verdict.action];
+  const nudge = useMemo(
+    () => (isInsufficient ? null : behavioralNudge(final_verdict.action, tier, final_verdict.risk_label)),
+    [isInsufficient, final_verdict.action, tier, final_verdict.risk_label],
+  );
   const weights = audit_meta.tier_weights;
   const pulsePillars = TIER_PULSE_PILLARS[tier];
 
@@ -641,9 +655,9 @@ export function StockAnalysisReport({
 
   // Presentation-only verdict label. PDF (printMode) always shows the raw
   // orchestrator action verbatim so SEBI audit trails stay unchanged.
-  const displayVerdict = printMode
-    ? verdictRawLabel(final_verdict.action)
-    : verdictUILabel(final_verdict.action);
+  const displayVerdict = isInsufficient
+    ? "Insufficient Data"
+    : (printMode ? verdictRawLabel(final_verdict.action) : verdictUILabel(final_verdict.action));
 
 
   // Print mode: disable all motion deterministically. MotionConfig forces
