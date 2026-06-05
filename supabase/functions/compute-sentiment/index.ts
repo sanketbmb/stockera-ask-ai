@@ -9,6 +9,12 @@
 // SEBI auditability: pure JS. No external NLP. Uses Marketaux per-entity
 // sentiment_score (Composite of Tetlock 2007, Garcia 2013, Da-Engelberg-Gao 2011).
 
+import {
+  MARKETAUX_NO_COVERAGE,
+  marketauxSymbolChain,
+  marketauxEntityAliases,
+} from "../_shared/marketaux-aliases.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -200,17 +206,19 @@ function normalize(x: number, min: number, max: number): number {
 
 function pickEntitySentiment(article: Article, sym: string): number | null {
   if (!article.entities || !article.entities.length) return null;
-  const upper = sym.toUpperCase();
+  const aliases = marketauxEntityAliases(sym).map((s) => s.toUpperCase());
   const candidates = article.entities.filter(
     (e) =>
       typeof e?.sentiment_score === "number" &&
       typeof e?.symbol === "string",
   );
-  // Priority: exact .NS match → exact bare match → name contains symbol
-  const exactNS = candidates.find((e) => e.symbol!.toUpperCase() === `${upper}.NS`);
-  if (exactNS) return exactNS.sentiment_score!;
-  const exactBare = candidates.find((e) => e.symbol!.toUpperCase() === upper);
-  if (exactBare) return exactBare.sentiment_score!;
+  // Priority: exact alias match (in declared order: .NS, alias .BO, bare)
+  for (const a of aliases) {
+    const hit = candidates.find((e) => e.symbol!.toUpperCase() === a);
+    if (hit) return hit.sentiment_score!;
+  }
+  // Fallback: any symbol that starts with `${sym}.` (catches other listings)
+  const upper = sym.toUpperCase();
   const startsWith = candidates.find((e) => e.symbol!.toUpperCase().startsWith(`${upper}.`));
   if (startsWith) return startsWith.sentiment_score!;
   return null;
@@ -407,27 +415,34 @@ Deno.serve(async (req) => {
       // No cache, no budget — empty
       articles = [];
       warning = "DAILY_BUDGET_CONSERVATION_MODE";
+    } else if (MARKETAUX_NO_COVERAGE.has(symbol.toUpperCase())) {
+      // Wave 5b: symbols with confirmed zero upstream coverage skip the fetch
+      // chain entirely. Cache an empty result with normal TTL so we do not
+      // re-probe daily, and surface the explicit classification downstream.
+      articles = [];
+      symbol_format_used = "NO_COVERAGE_NEW_LISTING";
+      warning = "NO_COVERAGE_NEW_LISTING";
+      await upsertCache(symbol, [], symbol_format_used, LOW_VOLUME_TTL_HOURS);
     } else {
-      // Cache miss path → call Marketaux. Try .NS first, then bare.
+      // Cache miss path → call Marketaux through the alias chain.
+      // Order: .NS first, then any declared aliases (e.g. .BO), then bare.
+      const chain = marketauxSymbolChain(symbol);
       const formatsTried: string[] = [];
       let fetched: Article[] = [];
 
       try {
-        formatsTried.push(`${symbol}.NS`);
-        fetched = await fetchMarketaux(`${symbol}.NS`);
-        callsThisRequest += 1;
-        articlesThisRequest += fetched.length;
-        symbol_format_used = `${symbol}.NS`;
-
-        if (fetched.length === 0) {
-          formatsTried.push(symbol);
-          const fallback = await fetchMarketaux(symbol);
+        for (const fmt of chain) {
+          formatsTried.push(fmt);
+          const res = await fetchMarketaux(fmt);
           callsThisRequest += 1;
-          articlesThisRequest += fallback.length;
-          if (fallback.length > 0) {
-            fetched = fallback;
-            symbol_format_used = symbol;
+          articlesThisRequest += res.length;
+          if (res.length > 0) {
+            fetched = res;
+            symbol_format_used = fmt;
+            break;
           }
+          // Remember the first format we tried so cache row is non-null.
+          if (symbol_format_used === null) symbol_format_used = fmt;
         }
       } catch (e) {
         console.error(`[compute-sentiment] fetch failed for ${symbol}:`, e);
@@ -450,7 +465,9 @@ Deno.serve(async (req) => {
 
     const compute = computeFromArticles(articles ?? [], symbol);
     const classification =
-      articles && articles.length === 0 && !cache_hit && !warning
+      warning === "NO_COVERAGE_NEW_LISTING"
+        ? "NO_COVERAGE_NEW_LISTING"
+        : articles && articles.length === 0 && !cache_hit && !warning
         ? "SYMBOL_UNRECOGNIZED"
         : classify(compute.sentiment_score, compute.counts["30d"].total);
 
