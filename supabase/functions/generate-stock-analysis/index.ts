@@ -39,7 +39,6 @@ import {
   applyBankingCarveout,
   evaluatePromotion,
   computeOverall,
-  emptyDelta,
   type PillarScores,
   type PromotionAction,
 } from "../_shared/horizon-shaping.ts";
