@@ -893,6 +893,9 @@ export function StockAnalysisReport({
           </motion.section>
         )}
 
+        {/* ═══ 5b. RETURNS AT A GLANCE (Wave 5c) ═══ */}
+        <ReturnsStrip data={data} />
+
         {/* ═══ 6. TIER-SHAPED METRIC GRID ═══ */}
         <TierShapedGrid data={data} />
 
