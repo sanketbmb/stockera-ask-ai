@@ -14,6 +14,10 @@ import type { PillarWeights } from "./weighting-profiles.ts";
 
 export const HORIZON_SHAPING_VERSION = Deno.env.get("HORIZON_SHAPING_VERSION") ?? "";
 export const SHAPING_ACTIVE = HORIZON_SHAPING_VERSION === "shape_v1";
+// Mission 6.4 Move 1 — promotion rule kill-switch (default OFF until re-spec'd
+// post falsification-audit). Shaping + carve-out remain active independently.
+export const PROMOTION_RULES_ENABLED =
+  (Deno.env.get("PROMOTION_RULES_ENABLED") ?? "false").toLowerCase() === "true";
 
 export type QueryType = "intraday" | "short-term" | "medium-term" | "long-term";
 export type PillarKey = "technical" | "fundamental" | "risk" | "momentum" | "sentiment";
@@ -190,6 +194,7 @@ export function evaluatePromotion(
   opts: PromotionOpts,
 ): PromotionResult {
   if (!SHAPING_ACTIVE) return { promoted: false, newAction: action, reason: null };
+  if (!PROMOTION_RULES_ENABLED) return { promoted: false, newAction: action, reason: "promotion_rules_disabled" };
   const threshold = NEXT_BUCKET_THRESHOLD[action];
   if (threshold == null) return { promoted: false, newAction: action, reason: null };
   if (opts.missingPillars > 0) return { promoted: false, newAction: action, reason: "missing_pillars" };
