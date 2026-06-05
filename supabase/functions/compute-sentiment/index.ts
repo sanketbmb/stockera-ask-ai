@@ -465,7 +465,9 @@ Deno.serve(async (req) => {
 
     const compute = computeFromArticles(articles ?? [], symbol);
     const classification =
-      articles && articles.length === 0 && !cache_hit && !warning
+      warning === "NO_COVERAGE_NEW_LISTING"
+        ? "NO_COVERAGE_NEW_LISTING"
+        : articles && articles.length === 0 && !cache_hit && !warning
         ? "SYMBOL_UNRECOGNIZED"
         : classify(compute.sentiment_score, compute.counts["30d"].total);
 
