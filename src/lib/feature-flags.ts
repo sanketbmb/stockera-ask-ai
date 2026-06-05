@@ -22,6 +22,10 @@ export const ENABLE_SECTOR_VIEW = true;
 // the broader Phase 3 unlock. "Other" stays gated to RoutedPendingPanel.
 export const ENABLE_EDUCATIONAL = true;
 
+// Wave 5c — placeholder modules (Peers, pending Expert-analysis pane)
+// hidden by default for V1. Flip to true to re-expose the existing copy.
+export const SHOW_PLACEHOLDER_MODULES = false;
+
 // Canonical list of intents whose end-to-end Brain flow is wired in production.
 // Intake (form, server functions) MUST reject anything outside this allowlist
 // when ENABLE_PHASE3_QUERY_TYPES is false.

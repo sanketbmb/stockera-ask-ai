@@ -24,6 +24,7 @@ import type {
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
 import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
+import { SHOW_PLACEHOLDER_MODULES } from "@/lib/feature-flags";
 
 import { METRIC_COPY, type MetricCopy } from "@/lib/metric-copy";
 import { getUpcomingCorporateActions, type UpcomingCorporateAction } from "@/lib/corporate-actions.functions";
@@ -514,11 +515,20 @@ function PriceBand({ levels, current }: { levels: StockAnalysisPayload["levels"]
         />
       )}
       <motion.div
-        className="absolute top-1/2 left-0 right-0 h-px origin-left bg-gradient-to-r from-rose-300 via-border to-emerald-300"
+        className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
         variants={priceBandLine}
         initial={reduce ? "visible" : "hidden"}
         animate={inView ? "visible" : undefined}
       />
+      {/* Tick marks anchored to each priced point so the rail reads as an axis */}
+      {slots.map((s, i) => (
+        <div
+          key={`tick-${i}`}
+          aria-hidden
+          className="absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-border"
+          style={{ left: `${s.x}%` }}
+        />
+      ))}
       {showZoneBand && (
         <div
           className="absolute -translate-x-1/2"
@@ -884,6 +894,9 @@ export function StockAnalysisReport({
           </motion.section>
         )}
 
+        {/* ═══ 5b. RETURNS AT A GLANCE (Wave 5c) ═══ */}
+        <ReturnsStrip data={data} />
+
         {/* ═══ 6. TIER-SHAPED METRIC GRID ═══ */}
         <TierShapedGrid data={data} />
 
@@ -1022,15 +1035,17 @@ export function StockAnalysisReport({
           </motion.section>
         )}
 
-        {/* ═══ 16. STOCKS IN FOCUS (scaffolded) ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-7">
-          <SectionTitle eyebrow="Also consider" title="Peers in the same sector" icon={Sparkles} />
-          {report_modules.show_stocks_in_focus ? (
-            <p className="text-sm text-muted-foreground">Loading peer set…</p>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Peer comparison rolling out in the next release — we'll surface 3 alternative names in {stock.sector || "this sector"} with side-by-side scores.</p>
-          )}
-        </motion.section>
+        {/* ═══ 16. STOCKS IN FOCUS (scaffolded) — Wave 5c: hidden behind SHOW_PLACEHOLDER_MODULES ═══ */}
+        {SHOW_PLACEHOLDER_MODULES && (
+          <motion.section variants={sectionFadeUp} className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-7">
+            <SectionTitle eyebrow="Also consider" title="Peers in the same sector" icon={Sparkles} />
+            {report_modules.show_stocks_in_focus ? (
+              <p className="text-sm text-muted-foreground">Loading peer set…</p>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Peer comparison rolling out in the next release — we'll surface 3 alternative names in {stock.sector || "this sector"} with side-by-side scores.</p>
+            )}
+          </motion.section>
+        )}
 
         {/* ═══ 17. SUMMARY RECOMMENDATION ═══ */}
         <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
@@ -1703,6 +1718,58 @@ function RecentNewsBlock({ sent }: { sent: StockAnalysisPayload["sentiment_snaps
     </div>
   );
 }
+
+// Wave 5c — Unified returns strip rendered on every horizon, immediately
+// below the verdict block and above the tier-shaped metric grid. Reads only
+// existing returns_snapshot fields; renders a muted placeholder row when
+// nothing is populated so the layout never collapses.
+function ReturnsStrip({ data }: { data: StockAnalysisPayload }) {
+  const r = data.returns_snapshot;
+  const cells: Array<{ label: string; value: number | null }> = [
+    { label: "1M", value: r.one_month },
+    { label: "3M", value: r.three_month },
+    { label: "1Y", value: r.one_year },
+    { label: "1M vs NIFTY", value: r.vs_nifty_one_month },
+    { label: "3M vs NIFTY", value: r.vs_nifty_three_month },
+  ];
+  const allNull = cells.every((c) => c.value == null);
+
+  if (allNull) {
+    return (
+      <motion.section
+        variants={sectionFadeUp}
+        className="rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-4"
+      >
+        <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Returns at a glance</p>
+        <p className="mt-1 text-sm italic text-muted-foreground">Return history not available for this horizon.</p>
+      </motion.section>
+    );
+  }
+
+  return (
+    <motion.section
+      variants={sectionFadeUp}
+      className="rounded-2xl border border-border bg-card px-6 py-4"
+    >
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Returns at a glance</p>
+      <div className="mt-3 grid grid-cols-3 gap-4 md:grid-cols-5">
+        {cells.map((c) => {
+          const v = c.value;
+          const tone = v == null ? "text-muted-foreground" : v >= 0 ? "text-emerald-700" : "text-rose-700";
+          return (
+            <div key={c.label} className="flex flex-col">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{c.label}</span>
+              <span className={`mt-0.5 font-display text-base tabular-nums ${tone}`}>
+                {v != null ? fmtPct(v, 1, true) : DASH}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </motion.section>
+  );
+}
+
 
 
 function TierShapedGrid({ data }: { data: StockAnalysisPayload }) {
