@@ -1034,7 +1034,22 @@ export function StockAnalysisReport({
               <span>Long-term targets omitted — {targetsMeta.guardrails.guardrail_breach}.</span>
             </div>
           )}
-          <PriceBand levels={levels} current={price_context.current_price} />
+          {(() => {
+            // Wave 5e Fix 2 — partial-data note. When ≥5 of 9 candidate slots
+            // are null but the verdict is NOT INSUFFICIENT_DATA, show a single
+            // muted explanatory line under the rail so the sparse render reads
+            // as honest data-coverage, not "broken card".
+            const candidates = [
+              levels.entry_zone, levels.stop_loss, levels.target_1, levels.target_2,
+              levels.support_1, levels.support_2, levels.resistance_1, levels.resistance_2,
+              price_context.current_price,
+            ];
+            const nulls = candidates.filter((v) => v == null).length;
+            const partialNote = (!isInsufficient && nulls >= 5)
+              ? "Only partial level coverage available — full level set not derivable for this horizon."
+              : null;
+            return <PriceBand levels={levels} current={price_context.current_price} partialNote={partialNote} />;
+          })()}
           <motion.div variants={innerStaggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true }} className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-4">
             <EntryZoneCell levels={levels} reason={tradePlanReasons.entry_zone} />
             <LevelCell label="Stop loss" value={levels.stop_loss} tone="text-red-700" reason={tradePlanReasons.stop_loss} footer={<SlMethodFooter method={targetsMeta?.sl_method ?? null} />} />
