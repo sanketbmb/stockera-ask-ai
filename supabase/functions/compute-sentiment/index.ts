@@ -9,6 +9,12 @@
 // SEBI auditability: pure JS. No external NLP. Uses Marketaux per-entity
 // sentiment_score (Composite of Tetlock 2007, Garcia 2013, Da-Engelberg-Gao 2011).
 
+import {
+  MARKETAUX_NO_COVERAGE,
+  marketauxSymbolChain,
+  marketauxEntityAliases,
+} from "../_shared/marketaux-aliases.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
