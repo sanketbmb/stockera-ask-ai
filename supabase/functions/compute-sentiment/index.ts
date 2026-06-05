@@ -206,17 +206,19 @@ function normalize(x: number, min: number, max: number): number {
 
 function pickEntitySentiment(article: Article, sym: string): number | null {
   if (!article.entities || !article.entities.length) return null;
-  const upper = sym.toUpperCase();
+  const aliases = marketauxEntityAliases(sym).map((s) => s.toUpperCase());
   const candidates = article.entities.filter(
     (e) =>
       typeof e?.sentiment_score === "number" &&
       typeof e?.symbol === "string",
   );
-  // Priority: exact .NS match → exact bare match → name contains symbol
-  const exactNS = candidates.find((e) => e.symbol!.toUpperCase() === `${upper}.NS`);
-  if (exactNS) return exactNS.sentiment_score!;
-  const exactBare = candidates.find((e) => e.symbol!.toUpperCase() === upper);
-  if (exactBare) return exactBare.sentiment_score!;
+  // Priority: exact alias match (in declared order: .NS, alias .BO, bare)
+  for (const a of aliases) {
+    const hit = candidates.find((e) => e.symbol!.toUpperCase() === a);
+    if (hit) return hit.sentiment_score!;
+  }
+  // Fallback: any symbol that starts with `${sym}.` (catches other listings)
+  const upper = sym.toUpperCase();
   const startsWith = candidates.find((e) => e.symbol!.toUpperCase().startsWith(`${upper}.`));
   if (startsWith) return startsWith.sentiment_score!;
   return null;
