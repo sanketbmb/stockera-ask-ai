@@ -804,7 +804,40 @@ const TIER_REASON_PREFIX: Record<QueryType, string> = {
   "long-term":   "Long-horizon view prioritizing business quality, valuation support and risk profile",
 };
 
-function summaryReason(scores: Record<string, number | null>, queryType: QueryType): string {
+// Wave 5e Fix 3 — driver-aware long-term opener. Grounded ONLY in already-
+// computed pillar scores. No NIM/GNPA/CASA/CAR or other unavailable banking
+// metrics referenced. Banking overlay swaps wording but still sources from
+// fundamental/risk/momentum/technical scores already present in `scores`.
+function longTermOpener(scores: Record<string, number | null>, isBanking: boolean): string {
+  const f = scores.fundamental, r = scores.risk, m = scores.momentum, t = scores.technical;
+  if (f != null && f < 40) {
+    return isBanking
+      ? "Long-term banking view weighed down by weakening fundamental quality"
+      : "Long-term thesis weakened by deteriorating fundamentals";
+  }
+  if (r != null && r < 40) {
+    return isBanking
+      ? "Long-term banking view constrained by an elevated risk profile"
+      : "Long-term risk profile is elevated";
+  }
+  if (m != null && m < 35 && t != null && t < 45) {
+    return "Long-term trend is rolling over — defer fresh accumulation until a durable base forms";
+  }
+  if (f != null && f >= 60 && r != null && r >= 50) {
+    return isBanking
+      ? "Long-term banking view supported by durable return profile and contained leverage"
+      : "Valuation and balance-sheet quality support a long-horizon stance";
+  }
+  return isBanking
+    ? "Long-term banking view governed by return-on-equity durability and balance-sheet quality"
+    : TIER_REASON_PREFIX["long-term"];
+}
+
+function summaryReason(
+  scores: Record<string, number | null>,
+  queryType: QueryType,
+  isBanking: boolean = false,
+): string {
   const labels: string[] = [];
   const order: Array<[string, string]> =
     queryType === "intraday"
@@ -820,9 +853,12 @@ function summaryReason(scores: Record<string, number | null>, queryType: QueryTy
     const tag = v >= 70 ? "strong" : v >= 50 ? "moderate" : v >= 30 ? "weak" : "very weak";
     labels.push(`${tag} ${lbl.toLowerCase()} (${v})`);
   }
-  const prefix = TIER_REASON_PREFIX[queryType];
+  const prefix = queryType === "long-term" ? longTermOpener(scores, isBanking) : TIER_REASON_PREFIX[queryType];
   if (labels.length === 0) return `${prefix}. Insufficient data to generate a verdict.`;
-  return `${prefix}. ${labels.join(", ")}.`;
+  // Wave 5e Fix 3 — limit tail to top 2 pillar drivers so the sentence reads
+  // as analysis, not a five-pillar score dump.
+  const tail = queryType === "long-term" ? labels.slice(0, 2) : labels;
+  return `${prefix}. ${tail.join(", ")}.`;
 }
 
 // ─── Main handler ───
