@@ -1000,7 +1000,7 @@ export function StockAnalysisReport({
 
         </>)}
 
-        {addendum}
+        {!isInsufficient && addendum}
 
         {/* ═══ 15. BEHAVIORAL FINANCE ALERT ═══ */}
         {nudge && (
