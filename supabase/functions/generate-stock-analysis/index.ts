@@ -1197,6 +1197,9 @@ Deno.serve(async (req) => {
           liquidity_gate_ivpl: ivpl,
           banking_carveout_applied: carveout.applied,
           banking_carveout_reason: carveout.reason,
+          // Move 4b — explicit skipped-reason field only populated when the
+          // asymmetric guard fired (composite would have dragged F down).
+          banking_carveout_skipped_reason: !carveout.applied && carveout.reason === "composite_would_drag" ? "composite_would_drag" : null,
           fundamental_original: carveout.fundamentalOriginal,
           fundamental_blended: carveout.fundamentalBlended,
           long_quality_composite_banking: longQualityCompositeBanking,
