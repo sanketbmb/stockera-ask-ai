@@ -610,6 +610,12 @@ function PriceBand({
   const bandWidth = Math.max(0, bandRight - bandLeft);
   const prefX = showZoneBand ? xPct(zonePref!) : 0;
 
+  // Insufficient data — early return AFTER all hooks have been called so that
+  // hook order stays stable across renders (rules of hooks).
+  if (insufficient) {
+    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
+  }
+
   return (
     <div className="mt-14 mb-12">
       <div ref={(el) => { ref.current = el; railRef.current = el; }} className="relative h-24 print:h-24">
