@@ -721,6 +721,9 @@ function PriceBand({
           const topPx = LANE_OFFSETS[s.lane];
           const showLeader = s.tier === 1;
           const distinctPrices = new Set(s.items.map((it) => it.v.toFixed(2))).size > 1;
+          // Wave 5j — diamond renders separately for the zone-preferred Entry;
+          // suppress the round dot here to avoid a doubled marker at the same x.
+          const suppressDot = showZoneBand && s.items.length === 1 && primary === "Entry";
           return (
             <motion.div
               key={`${primary}-${i}`}
@@ -730,14 +733,15 @@ function PriceBand({
               animate={inView ? { opacity: 1, y: 0 } : undefined}
               transition={{ duration: duration.fast, ease: ease.entrance, delay }}
             >
-              <motion.div
-                className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
-                style={{ marginTop: "38px" }}
-                whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
-                transition={{ duration: duration.fast, ease: ease.standard }}
-              />
-              {!tableMode && showLeader && (
-                <div
+              {!suppressDot && (
+                <motion.div
+                  className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+                  style={{ marginTop: "38px" }}
+                  whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
+                  transition={{ duration: duration.fast, ease: ease.standard }}
+                />
+              )}
+              {suppressDot && <div className="h-3 w-3" style={{ marginTop: "38px" }} aria-hidden />}
                   className="absolute left-1/2 w-px -translate-x-1/2 bg-border"
                   style={
                     isTop
