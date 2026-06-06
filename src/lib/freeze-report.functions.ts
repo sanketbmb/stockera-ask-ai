@@ -18,6 +18,8 @@ import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
 import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 import { isSymbolAmbiguousError, synthesizeAmbiguousPayload } from "@/lib/symbol-ambiguous-normalize";
+import { detectAmbiguousStem, matchStemBySymbol } from "@/lib/symbol-ambiguity-gate";
+
 
 const HORIZONS = ["intraday", "short-term", "medium-term", "long-term"] as const;
 
@@ -250,6 +252,49 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
     const horizon: QueryType = (HORIZONS as readonly string[]).includes(horizonRaw)
       ? (horizonRaw as QueryType)
       : "medium-term";
+
+    // Wave 5h Sub-track B — ambiguity short-circuit. If the persisted
+    // stock_symbol is a bare family stem (QueryForm wrote it that way on
+    // detecting an ambiguous user phrase), OR the raw user text matches a
+    // stem AND the current symbol is not one of its concrete candidates,
+    // synthesize a SYMBOL_AMBIGUOUS payload and skip the orchestrator.
+    // We do NOT persist this into ai_report (mirrors UNSUPPORTED_SYMBOL).
+    const rawTextForGate = `${row.query_text ?? ""} ${row.custom_question ?? ""}`;
+    const stemFromSymbol = matchStemBySymbol(symbol);
+    const stemFromText = detectAmbiguousStem(rawTextForGate);
+    const ambiguityMatch = stemFromSymbol
+      ?? (stemFromText && !stemFromText.candidates.some((c) => c.symbol === symbol)
+          ? stemFromText
+          : null);
+    if (ambiguityMatch) {
+      const payload = synthesizeAmbiguousPayload(
+        {
+          success: false,
+          error: "SYMBOL_AMBIGUOUS",
+          symbol: ambiguityMatch.stem,
+          candidates: ambiguityMatch.candidates,
+          hint: "Multiple matches — pick the ticker you meant.",
+        },
+        ambiguityMatch.stem,
+      );
+      await supabaseAdmin.from("audit_events").insert({
+        event_type: "symbol_ambiguous_short_circuit",
+        actor_id: userId,
+        resource_type: "query",
+        resource_id: row.id,
+        payload: {
+          stem: ambiguityMatch.stem,
+          persisted_symbol: symbol,
+          candidate_count: ambiguityMatch.candidates.length,
+          source: stemFromSymbol ? "symbol_field" : "raw_text",
+        },
+      }).then(({ error }) => {
+        if (error) console.warn("[freezeOrReadReport] ambiguous-audit failed:", error);
+      });
+      return payload as unknown as StockAnalysisPayload;
+    }
+
+
 
     // Phase 2 — read user-supplied position context (additive columns).
     const rowExtra = row as unknown as {

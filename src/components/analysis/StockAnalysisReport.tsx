@@ -500,13 +500,14 @@ function PriceBand({
   // First paint uses a 13% heuristic to avoid layout shift; measured widths
   // override on the next frame.
   const HEURISTIC_PCT = 13;
-  const PAD_PCT = 1.5;
+  const PAD_PCT = 2.0;
   type Lane = "top-0" | "bottom-0" | "top-1" | "bottom-1";
   type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1; lane: Lane; overflow: boolean };
 
   const railRef = useRef<HTMLDivElement | null>(null);
   const labelRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [realPct, setRealPct] = useState<number[] | null>(null);
+  const lastGroupsKeyRef = useRef<string>("");
 
   // Content hash so polled LTP / re-renders that change prices (but not group
   // count) still re-trigger the measurement pass.
@@ -516,17 +517,40 @@ function PriceBand({
   );
 
   useIsoLayoutEffect(() => {
-    // Invalidate any prior measurement when prices/group count change so the
-    // next paint re-measures with the fresh DOM.
+    // Stable invalidator — only reset measurement when content hash actually
+    // changes. Polled LTP re-renders that don't change groupsKey must not
+    // reset measurement (avoids oscillation, Wave 5h fix #2).
+    if (lastGroupsKeyRef.current === groupsKey) return;
+    lastGroupsKeyRef.current = groupsKey;
     setRealPct(null);
   }, [groupsKey]);
 
   useIsoLayoutEffect(() => {
     const rail = railRef.current;
     if (!rail || groups.length === 0) return;
+    let io: IntersectionObserver | null = null;
     const measure = () => {
       const railW = rail.getBoundingClientRect().width;
-      if (railW <= 0) return;
+      if (railW <= 0) {
+        // Wave 5h fix #1 — tab-aware remeasure: rail is hidden (Tabs panel,
+        // collapsed accordion, off-screen). Install a one-shot
+        // IntersectionObserver and remeasure once it becomes visible.
+        if (!io && typeof IntersectionObserver !== "undefined") {
+          io = new IntersectionObserver((entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting && e.target === rail) {
+                io?.disconnect();
+                io = null;
+                // Defer to next frame so the layout has settled.
+                requestAnimationFrame(() => measure());
+                break;
+              }
+            }
+          }, { threshold: 0.01 });
+          io.observe(rail);
+        }
+        return;
+      }
       const widths: number[] = [];
       for (let i = 0; i < groups.length; i++) {
         const el = labelRefs.current[i];
@@ -547,7 +571,10 @@ function PriceBand({
     measure();
     const ro = new ResizeObserver(() => measure());
     ro.observe(rail);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      io?.disconnect();
+    };
   }, [groupsKey]);
 
   // PASS 3 — lane assignment using either measured or heuristic widths.
@@ -577,9 +604,9 @@ function PriceBand({
       let chosen: { side: "top" | "bottom"; tier: 0 | 1 } | null = null;
       for (const cand of order) {
         const lane = laneOf(cand);
-        const collides = placed.some((p) => {
+        const collides = placed.some((p, pi) => {
           if (p.lane !== lane) return false;
-          const wj = widthsPct[placed.indexOf(p)] ?? HEURISTIC_PCT;
+          const wj = widthsPct[pi] ?? HEURISTIC_PCT;
           const minGap = (wi + wj) / 2 + PAD_PCT;
           return Math.abs(p.x - g.x) < minGap;
         });
@@ -599,9 +626,12 @@ function PriceBand({
   const heuristicWidths = useMemo(() => groups.map(() => HEURISTIC_PCT), [groups.length]);
   const widthsForAssign = realPct ?? heuristicWidths;
   const { slots, overflow } = assignLanes(widthsForAssign);
-  // PASS 4 — density gate. Only trip TABLE_MODE after we've actually measured;
-  // a heuristic overflow on first paint would cause unnecessary flips.
-  const tableMode = overflow && realPct !== null;
+  // PASS 4 — density gate. Wave 5h fix #3: also trip when heuristic at high
+  // density (>=5 groups) confirms overflow, so we don't depend on label refs
+  // surviving the TABLE_MODE flip (avoids oscillation when refs orphan).
+  const stableHeuristicConfirmed = groups.length >= 5;
+  const tableMode = overflow && (realPct !== null || stableHeuristicConfirmed);
+
 
   // Zone-band geometry (Phase 4C) — unchanged.
   const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));

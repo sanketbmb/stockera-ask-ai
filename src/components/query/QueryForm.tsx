@@ -57,6 +57,8 @@ import {
 } from "lucide-react";
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
+import { detectAmbiguousStem } from "@/lib/symbol-ambiguity-gate";
+
 
 type Intent = AnyIntent;
 
@@ -620,11 +622,26 @@ export function QueryForm() {
         intent === "buy_decision" ? "fresh_entry" : isAveraging ? "averaging" : "existing_position";
       const trimmedExtra = anythingElse.trim();
 
+      // Wave 5h Sub-track B — ambiguity gate. If the raw text contains a
+      // family stem (ICICI, Tata Motors, Reliance, Adani) AND the user did
+      // not explicitly pick a ticker via StockAutocomplete (which sets
+      // stockExchange), override the symbol with the bare stem so the
+      // freeze fn renders the picker instead of silently auto-resolving.
+      const ambiguity = usesV1Engine
+        ? detectAmbiguousStem(`${trimmedQueryText} ${trimmedExtra}`)
+        : null;
+      const userPickedTicker = !!stockExchange;
+      const useStemOverride = !!ambiguity && !userPickedTicker;
+      const effectiveStockSymbol = useStemOverride ? ambiguity!.stem : (stockSymbol || null);
+      const effectiveStockName = useStemOverride
+        ? ambiguity!.stem
+        : stockName.trim();
+
       const insertPayload = usesV1Engine
         ? {
             ...commonInsert,
-            stock_name: stockName.trim(),
-            stock_symbol: stockSymbol || null,
+            stock_name: effectiveStockName,
+            stock_symbol: effectiveStockSymbol,
             buy_price: buyPrice
               ? Number(buyPrice)
               : showPhase2Fields && entryPrice
@@ -643,6 +660,7 @@ export function QueryForm() {
             ...(isAveraging && qty ? { qty: Number(qty) } : {}),
             ...(showPhase2Fields ? { position_state: isAveraging ? "averaging" : null } : {}),
           }
+
         : isSector
           ? {
               // Phase 3B — sector view. SectorViewReport's server fn freezes
