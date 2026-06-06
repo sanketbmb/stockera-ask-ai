@@ -34,6 +34,7 @@ import {
   priceBandLine, tabContent, nudgeReveal, footerFade,
   duration, ease,
 } from "./motion-variants";
+import { ShortHistoryHint } from "@/components/report/ShortHistoryHint";
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
