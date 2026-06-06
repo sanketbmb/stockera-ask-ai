@@ -435,11 +435,15 @@ function PriceBand({
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
+  // Wave 5j — Entry always participates in collision/lane reflow. When the
+  // zone band is shown the marker is rendered as a diamond instead of a dot,
+  // but the label still flows through the slot system so it can't overlap
+  // LTP/SL labels at adjacent x positions.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
     { v: levels.stop_loss,    label: "SL" },
-    ...(showZoneBand ? [] : [{ v: levels.entry_zone, label: "Entry" }]),
+    { v: showZoneBand ? zonePref : levels.entry_zone, label: "Entry" },
     { v: current,             label: "LTP" },
     { v: levels.resistance_1, label: "R1" },
     { v: levels.target_1,     label: "T1" },
