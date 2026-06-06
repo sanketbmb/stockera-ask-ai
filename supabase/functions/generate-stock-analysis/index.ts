@@ -25,6 +25,7 @@ import {
   profileIdForTier,
   type PillarWeights,
 } from "../_shared/weighting-profiles.ts";
+import { lookupSuccessor, type SymbolSuccessorEntry } from "../_shared/symbol-successors.ts";
 import {
   ACTION_BUCKETS,
   ACTIVE_ACTION_BUCKET,
@@ -207,7 +208,54 @@ async function resolveStock(rawSymbol: string): Promise<ResolveOk | ResolveAmbig
     return { ok: false, ambiguous: true, original_input: original, candidates: containsName.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })) };
   }
 
+  // 5) Wave 5f — Whitespace-normalized fuzzy. Live company_name values
+  // contain spaces / punctuation ("TATA MOTORS LIMITED") that the
+  // contains-name probe misses for compact inputs like "TATAMOTORS".
+  // Pull a wider shortlist by first 4 chars, then filter in-memory on
+  // a compact form so the match becomes whitespace-insensitive.
+  if (sym.length >= 4) {
+    const compact = sym.replace(/[^A-Z0-9]/g, "");
+    const seed = compact.slice(0, 4);
+    const wideRaw = await sbSelect<StockMaster[]>(
+      `stock_master?company_name=ilike.${encodeURIComponent("%" + seed + "%")}&select=symbol,company_name,exchange,segment&limit=200`,
+    );
+    if (Array.isArray(wideRaw) && wideRaw.length > 0) {
+      const normMatches = wideRaw.filter((r) => {
+        const cn = (r.company_name ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        return cn.includes(compact);
+      });
+      const deduped = dedupeNsePreferred(normMatches);
+      if (deduped.length === 1) {
+        return { ok: true, stock: deduped[0], match_type: "contains_name", original_input: original };
+      }
+      if (deduped.length >= 2 && deduped.length <= 5) {
+        return {
+          ok: false,
+          ambiguous: true,
+          original_input: original,
+          candidates: deduped.map((r) => ({ symbol: r.symbol, company_name: r.company_name, exchange: r.exchange })),
+        };
+      }
+    }
+  }
+
   return { ok: false, ambiguous: false, original_input: original, hint: containsName.length > 5 || containsSym.length > 5 || prefRows.length > 5 ? "Too many matches — refine your input" : "No matching symbol or company name" };
+}
+
+// Wave 5f — Resolve successor symbols to enriched rows for the
+// UNSUPPORTED_SYMBOL payload. Best-effort; missing rows are skipped.
+async function resolveSuccessorRows(successors: string[]): Promise<Array<{ symbol: string; company_name: string | null; exchange: string }>> {
+  const out: Array<{ symbol: string; company_name: string | null; exchange: string }> = [];
+  for (const s of successors) {
+    const rows = await sbSelect<StockMaster[]>(
+      `stock_master?symbol=eq.${encodeURIComponent(s)}&select=symbol,company_name,exchange&limit=2`,
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      const pick = rows.find((r) => r.exchange === "NSE") ?? rows[0];
+      out.push({ symbol: pick.symbol, company_name: pick.company_name, exchange: pick.exchange });
+    }
+  }
+  return out;
 }
 
 // ─── Sector-derived fundamentals fallback ───
