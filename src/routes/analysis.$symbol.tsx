@@ -87,7 +87,7 @@ function AnalysisPage() {
         </Link>
         {isFetching && <span className="ml-2 text-[11px] text-muted-foreground">refreshing…</span>}
         <div className="ml-auto">
-          <DownloadPdfButton symbol={symbol} horizon={horizon} includeNews={includeNews} disabled={!data} />
+          <DownloadPdfButton symbol={symbol} horizon={horizon} includeNews={includeNews} disabled={!data || isUnsupported} />
         </div>
       </div>
 
