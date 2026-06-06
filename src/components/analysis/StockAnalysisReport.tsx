@@ -435,11 +435,15 @@ function PriceBand({
   };
   const highlightLabels = new Set(["SL", "T1", "T2", "Entry"]);
 
+  // Wave 5j — Entry always participates in collision/lane reflow. When the
+  // zone band is shown the marker is rendered as a diamond instead of a dot,
+  // but the label still flows through the slot system so it can't overlap
+  // LTP/SL labels at adjacent x positions.
   const rawPoints = [
     { v: levels.support_2,    label: "S2" },
     { v: levels.support_1,    label: "S1" },
     { v: levels.stop_loss,    label: "SL" },
-    ...(showZoneBand ? [] : [{ v: levels.entry_zone, label: "Entry" }]),
+    { v: showZoneBand ? zonePref : levels.entry_zone, label: "Entry" },
     { v: current,             label: "LTP" },
     { v: levels.resistance_1, label: "R1" },
     { v: levels.target_1,     label: "T1" },
@@ -661,8 +665,16 @@ function PriceBand({
             }}
           />
         )}
+        {/* Wave 5j — Persistent base rail. Always rendered, never animated, so
+            label-mode / hybrid / table-mode can never visually erase it. The
+            gradient overlay below adds the cinematic reveal but is decorative. */}
+        <div
+          aria-hidden
+          className="absolute top-1/2 left-0 right-0 h-[2px] -translate-y-1/2 rounded-full bg-foreground/25 dark:bg-foreground/30"
+        />
         <motion.div
-          className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
+          aria-hidden
+          className="absolute top-1/2 left-0 right-0 h-[2px] origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/80 via-foreground/40 to-emerald-400/80"
           variants={priceBandLine}
           initial={reduce ? "visible" : "hidden"}
           animate={inView ? "visible" : undefined}
@@ -677,20 +689,15 @@ function PriceBand({
         ))}
         {showZoneBand && (
           <div
-            className="absolute -translate-x-1/2"
+            className="absolute -translate-x-1/2 pointer-events-none"
             style={{ left: `${prefX}%`, top: 0 }}
+            aria-hidden
           >
             <div
               className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
               style={{ marginTop: "38px" }}
               aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
             />
-            {!tableMode && (
-              <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
-                <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
-                <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
-              </div>
-            )}
           </div>
         )}
         {slots.map((s, i) => {
@@ -714,6 +721,9 @@ function PriceBand({
           const topPx = LANE_OFFSETS[s.lane];
           const showLeader = s.tier === 1;
           const distinctPrices = new Set(s.items.map((it) => it.v.toFixed(2))).size > 1;
+          // Wave 5j — diamond renders separately for the zone-preferred Entry;
+          // suppress the round dot here to avoid a doubled marker at the same x.
+          const suppressDot = showZoneBand && s.items.length === 1 && primary === "Entry";
           return (
             <motion.div
               key={`${primary}-${i}`}
@@ -723,12 +733,15 @@ function PriceBand({
               animate={inView ? { opacity: 1, y: 0 } : undefined}
               transition={{ duration: duration.fast, ease: ease.entrance, delay }}
             >
-              <motion.div
-                className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
-                style={{ marginTop: "38px" }}
-                whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
-                transition={{ duration: duration.fast, ease: ease.standard }}
-              />
+              {!suppressDot && (
+                <motion.div
+                  className={`mx-auto h-3 w-3 rounded-full ${colorCls} ring-2 ring-background`}
+                  style={{ marginTop: "38px" }}
+                  whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
+                  transition={{ duration: duration.fast, ease: ease.standard }}
+                />
+              )}
+              {suppressDot && <div className="h-3 w-3" style={{ marginTop: "38px" }} aria-hidden />}
               {!tableMode && showLeader && (
                 <div
                   className="absolute left-1/2 w-px -translate-x-1/2 bg-border"
