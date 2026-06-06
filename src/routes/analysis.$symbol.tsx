@@ -48,6 +48,24 @@ function AnalysisPage() {
       // Wave 5f — UNSUPPORTED_SYMBOL comes back with success:true and the
       // verdict_reason discriminator; treat as a clean payload.
       if (isUnsupportedSymbolPayload(data)) return data;
+      // Wave 5f hotfix — SYMBOL_AMBIGUOUS arrives as success:false with a
+      // `candidates` array. Synthesize an UnsupportedSymbolPayload so the
+      // same friendly panel renders (instead of the red error screen).
+      if (data && data.error === "SYMBOL_AMBIGUOUS") {
+        const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+        return {
+          success: true,
+          verdict_reason: "SYMBOL_AMBIGUOUS",
+          symbol: data.symbol ?? symbol,
+          successor_candidates: [],
+          fuzzy_candidates: candidates.map((c: { symbol: string; company_name: string | null; exchange: string }) => ({
+            symbol: c.symbol,
+            company_name: c.company_name,
+            exchange: c.exchange,
+          })),
+          hint: data.hint ?? "Multiple matches — pick a specific ticker.",
+        } satisfies StockAnalysisPayload | import("@/types/stock-analysis").UnsupportedSymbolPayload as StockAnalysisPayload;
+      }
       if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
       return data as StockAnalysisPayload;
     },
