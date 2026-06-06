@@ -18,6 +18,8 @@ import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
 import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 import { isSymbolAmbiguousError, synthesizeAmbiguousPayload } from "@/lib/symbol-ambiguous-normalize";
+import { detectAmbiguousStem, matchStemBySymbol } from "@/lib/symbol-ambiguity-gate";
+
 
 const HORIZONS = ["intraday", "short-term", "medium-term", "long-term"] as const;
 
