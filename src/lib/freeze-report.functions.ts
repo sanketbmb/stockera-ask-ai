@@ -49,6 +49,10 @@ async function callOrchestrator(
   const json = JSON.parse(text);
   // Wave 5f — UNSUPPORTED_SYMBOL is a structured success payload, not an error.
   if (isUnsupportedSymbolPayload(json)) return json as UnsupportedSymbolPayload;
+  // Wave 5f Problem 1b — SYMBOL_AMBIGUOUS comes back as success:false with a
+  // `candidates` array. Normalize to UnsupportedSymbolPayload so /report and
+  // /analysis both render the friendly picker (no generic red error screen).
+  if (isSymbolAmbiguousError(json)) return synthesizeAmbiguousPayload(json, symbol);
   if (!json?.success) throw new Error(`Orchestrator returned error: ${json?.error ?? "unknown"}`);
   return json as StockAnalysisPayload;
 }
