@@ -9,10 +9,12 @@ import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import type { StockAnalysisPayload, QueryType, OrchestratorResponse } from "@/types/stock-analysis";
+import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 import { supabase } from "@/integrations/supabase/client";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
+import { UnsupportedSymbolPanel } from "@/components/report/UnsupportedSymbolPanel";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
@@ -36,18 +38,23 @@ function AnalysisPage() {
   const horizon: QueryType = search.horizon ?? "medium-term";
   const includeNews = search.news !== false;
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery<StockAnalysisPayload>({
+  const { data, isLoading, error, refetch, isFetching } = useQuery<OrchestratorResponse>({
     queryKey: ["stock-analysis", "v2", symbol, horizon, includeNews],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("generate-stock-analysis", {
         body: { symbol, query_type: horizon, include_news: includeNews },
       });
       if (error) throw new Error(error.message);
+      // Wave 5f — UNSUPPORTED_SYMBOL comes back with success:true and the
+      // verdict_reason discriminator; treat as a clean payload.
+      if (isUnsupportedSymbolPayload(data)) return data;
       if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
       return data as StockAnalysisPayload;
     },
     staleTime: 30_000,
   });
+
+  const isUnsupported = data ? isUnsupportedSymbolPayload(data) : false;
 
   return (
     <div className="min-h-screen bg-mesh">
