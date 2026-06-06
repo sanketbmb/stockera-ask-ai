@@ -53,7 +53,7 @@ function AnalysisPage() {
       // same friendly panel renders (instead of the red error screen).
       if (data && data.error === "SYMBOL_AMBIGUOUS") {
         const candidates = Array.isArray(data.candidates) ? data.candidates : [];
-        return {
+        const synthetic: import("@/types/stock-analysis").UnsupportedSymbolPayload = {
           success: true,
           verdict_reason: "SYMBOL_AMBIGUOUS",
           symbol: data.symbol ?? symbol,
@@ -64,7 +64,8 @@ function AnalysisPage() {
             exchange: c.exchange,
           })),
           hint: data.hint ?? "Multiple matches — pick a specific ticker.",
-        } satisfies StockAnalysisPayload | import("@/types/stock-analysis").UnsupportedSymbolPayload as StockAnalysisPayload;
+        };
+        return synthetic as unknown as StockAnalysisPayload;
       }
       if (!data?.success) throw new Error(data?.error ?? "Analysis failed");
       return data as StockAnalysisPayload;
