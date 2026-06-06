@@ -742,6 +742,8 @@ function PriceBand({
                 />
               )}
               {suppressDot && <div className="h-3 w-3" style={{ marginTop: "38px" }} aria-hidden />}
+              {!tableMode && showLeader && (
+                <div
                   className="absolute left-1/2 w-px -translate-x-1/2 bg-border"
                   style={
                     isTop
