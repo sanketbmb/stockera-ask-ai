@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
 import { UnsupportedSymbolPanel } from "@/components/report/UnsupportedSymbolPanel";
+import { isSymbolAmbiguousError, synthesizeAmbiguousPayload } from "@/lib/symbol-ambiguous-normalize";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
