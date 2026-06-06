@@ -3,7 +3,7 @@
 // Premium, editorial, tier-aware. No backend logic, pure presentation.
 // Motion layer: framer-motion + useCountUp. Honors prefers-reduced-motion.
 
-import { useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
   Clock, Compass, Eye, Gauge, HelpCircle, Info, LineChart, Newspaper,
@@ -11,6 +11,10 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
 import { useRef, useState } from "react";
+
+// SSR-safe useLayoutEffect — falls back to useEffect on the server so the
+// measurement pass for PriceBand does not warn during hydration.
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
