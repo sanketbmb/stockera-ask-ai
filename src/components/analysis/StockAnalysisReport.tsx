@@ -830,9 +830,17 @@ export function StockAnalysisReport({
                 </motion.div>
               </div>
               {isInsufficient ? (
-                <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">
-                  We don't have enough recent data to issue a reliable verdict for this horizon.
-                </p>
+                <>
+                  <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">
+                    We don't have enough recent data to issue a reliable verdict for this horizon.
+                  </p>
+                  <ShortHistoryHint
+                    symbol={stock.symbol}
+                    companyName={stock.company_name}
+                    tier={tier}
+                    audit={audit_meta}
+                  />
+                </>
               ) : (
                 <p className="mt-4 max-w-2xl text-base leading-relaxed text-foreground/85">{final_verdict.summary_reason}</p>
               )}
