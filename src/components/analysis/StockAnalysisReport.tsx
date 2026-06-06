@@ -462,12 +462,9 @@ function PriceBand({
     })
     .sort((a, b) => a.v - b.v);
 
-  if (exactPoints.length < 2) {
-    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
-  }
-
-  const min = exactPoints[0].v;
-  const max = exactPoints[exactPoints.length - 1].v;
+  const insufficient = exactPoints.length < 2;
+  const min = insufficient ? 0 : exactPoints[0].v;
+  const max = insufficient ? 1 : exactPoints[exactPoints.length - 1].v;
   const span = max - min || 1;
 
   // 2) Wave 5e hotfix — near-IDENTICAL merge only (cosmetic). Two adjacent
