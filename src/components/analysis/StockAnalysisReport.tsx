@@ -665,8 +665,16 @@ function PriceBand({
             }}
           />
         )}
+        {/* Wave 5j — Persistent base rail. Always rendered, never animated, so
+            label-mode / hybrid / table-mode can never visually erase it. The
+            gradient overlay below adds the cinematic reveal but is decorative. */}
+        <div
+          aria-hidden
+          className="absolute top-1/2 left-0 right-0 h-[2px] -translate-y-1/2 rounded-full bg-foreground/25 dark:bg-foreground/30"
+        />
         <motion.div
-          className="absolute top-1/2 left-0 right-0 h-0.5 origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/70 via-border to-emerald-400/70"
+          aria-hidden
+          className="absolute top-1/2 left-0 right-0 h-[2px] origin-left -translate-y-1/2 rounded-full bg-gradient-to-r from-rose-400/80 via-foreground/40 to-emerald-400/80"
           variants={priceBandLine}
           initial={reduce ? "visible" : "hidden"}
           animate={inView ? "visible" : undefined}
@@ -681,20 +689,15 @@ function PriceBand({
         ))}
         {showZoneBand && (
           <div
-            className="absolute -translate-x-1/2"
+            className="absolute -translate-x-1/2 pointer-events-none"
             style={{ left: `${prefX}%`, top: 0 }}
+            aria-hidden
           >
             <div
               className="mx-auto h-3 w-3 rotate-45 bg-primary ring-2 ring-background"
               style={{ marginTop: "38px" }}
               aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
             />
-            {!tableMode && (
-              <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
-                <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
-                <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
-              </div>
-            )}
           </div>
         )}
         {slots.map((s, i) => {
