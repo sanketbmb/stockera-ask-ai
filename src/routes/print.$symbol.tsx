@@ -9,6 +9,7 @@ import { StockAnalysisReport } from "@/components/analysis/StockAnalysisReport";
 import { getPrintAnalysisPayload } from "@/lib/pdf.functions";
 import { FIRM } from "@/lib/firm-details";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]),
@@ -33,6 +34,10 @@ export const Route = createFileRoute("/print/$symbol")({
           token: deps.token,
         },
       });
+      // Wave 5f — unsupported symbol cannot be rendered as a report.
+      if (isUnsupportedSymbolPayload(res)) {
+        return { ok: false, message: `Symbol ${params.symbol} is not in our coverage universe.` };
+      }
       return { ok: true, payload: res as StockAnalysisPayload };
     } catch (err) {
       return { ok: false, message: (err as Error).message || "Failed to load print payload" };
