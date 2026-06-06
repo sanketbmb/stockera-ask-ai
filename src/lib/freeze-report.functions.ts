@@ -13,7 +13,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import type { StockAnalysisPayload, QueryType, UnsupportedSymbolPayload } from "@/types/stock-analysis";
+import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 import { meteringFor, METERING_MODE, type ReportPath } from "@/lib/credit-metering";
 import { ensureSecondaryAnswers } from "@/lib/mixed-query.server";
 
@@ -29,7 +30,7 @@ async function callOrchestrator(
   symbol: string,
   horizon: QueryType,
   includeNews: boolean,
-): Promise<StockAnalysisPayload> {
+): Promise<StockAnalysisPayload | UnsupportedSymbolPayload> {
   const url = process.env.SUPABASE_URL;
   const serviceKey = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) throw new Error("Missing Supabase server env");
@@ -45,6 +46,8 @@ async function callOrchestrator(
   const text = await res.text();
   if (!res.ok) throw new Error(`Orchestrator HTTP ${res.status}: ${text.slice(0, 300)}`);
   const json = JSON.parse(text);
+  // Wave 5f — UNSUPPORTED_SYMBOL is a structured success payload, not an error.
+  if (isUnsupportedSymbolPayload(json)) return json as UnsupportedSymbolPayload;
   if (!json?.success) throw new Error(`Orchestrator returned error: ${json?.error ?? "unknown"}`);
   return json as StockAnalysisPayload;
 }
@@ -319,6 +322,32 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
 
     // ─── First generation (or forced refresh) ───
     const fresh = await callOrchestrator(symbol, horizon, true);
+
+    // Wave 5f — UNSUPPORTED_SYMBOL short-circuit. Do NOT persist into
+    // queries.ai_report (cache poisoning under the original ticker would
+    // make future requests render a stale-looking unsupported state).
+    // Do NOT run secondary asks. Do NOT call applyVerdictSuppression /
+    // enrichAuditMeta (those expect a full StockAnalysisPayload). Still
+    // write a single audit_events row so admin/analytics can track ticker
+    // miss frequency. Return the structured payload as-is.
+    if (isUnsupportedSymbolPayload(fresh)) {
+      await supabaseAdmin.from("audit_events").insert({
+        event_type: "unsupported_symbol_returned",
+        actor_id: userId,
+        resource_type: "query",
+        resource_id: row.id,
+        payload: {
+          symbol,
+          horizon,
+          successor_count: fresh.successor_candidates.length,
+          hint: fresh.hint,
+        },
+      }).then(({ error }) => {
+        if (error) console.warn("[freezeOrReadReport] unsupported-audit failed:", error);
+      });
+      return fresh as unknown as StockAnalysisPayload;
+    }
+
     const frozenAt = new Date().toISOString();
     const artifactStatus: "frozen" | "regenerated" = data.forceRefresh ? "regenerated" : "frozen";
 

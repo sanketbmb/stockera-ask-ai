@@ -6,7 +6,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import type { StockAnalysisPayload, QueryType, UnsupportedSymbolPayload } from "@/types/stock-analysis";
+import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 
 const HORIZONS = ["intraday", "medium-term", "long-term"] as const;
 const SYMBOL_RE = /^[A-Z0-9._-]{1,20}$/;
@@ -145,7 +146,7 @@ async function ensurePrintUrlIsPublic(printUrl: string): Promise<void> {
     console.warn("[pdf] preflight check failed (non-fatal):", err);
   }
 }
-async function callOrchestrator(symbol: string, horizon: QueryType, includeNews: boolean): Promise<StockAnalysisPayload> {
+async function callOrchestrator(symbol: string, horizon: QueryType, includeNews: boolean): Promise<StockAnalysisPayload | UnsupportedSymbolPayload> {
   const url = process.env.SUPABASE_URL;
   const serviceKey = process.env.SB_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) throw new Error("Missing Supabase server env for orchestrator call");
@@ -161,6 +162,8 @@ async function callOrchestrator(symbol: string, horizon: QueryType, includeNews:
   const text = await res.text();
   if (!res.ok) throw new Error(`Orchestrator HTTP ${res.status}: ${text.slice(0, 300)}`);
   const json = JSON.parse(text);
+  // Wave 5f — UNSUPPORTED_SYMBOL is a structured success payload, not an error.
+  if (isUnsupportedSymbolPayload(json)) return json as UnsupportedSymbolPayload;
   if (!json?.success) throw new Error(`Orchestrator returned error: ${json?.error ?? "unknown"}`);
   return json as StockAnalysisPayload;
 }

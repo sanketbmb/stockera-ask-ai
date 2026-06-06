@@ -16,8 +16,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { StockAnalysisPayload, QueryType } from "@/types/stock-analysis";
+import { isUnsupportedSymbolPayload } from "@/types/stock-analysis";
 import { buildInterpretation } from "@/lib/query-intake-parser";
 import { freezeOrReadReport } from "@/lib/freeze-report.functions";
+import { UnsupportedSymbolPanel } from "@/components/report/UnsupportedSymbolPanel";
 import { composePositionContext } from "@/lib/position-context";
 import { isMfOrPortfolioQuestion } from "@/lib/position-copy";
 import { ProfitReviewAddendum } from "@/components/report/ProfitReviewAddendum";
@@ -95,6 +97,16 @@ function TierShapedReportContent({
           <p className="text-muted-foreground mt-2 text-sm">{(error as Error)?.message ?? "Unknown error"}</p>
           <Button className="mt-4" onClick={() => refetch()}>Retry</Button>
         </div>
+      </div>
+    );
+  }
+
+  // Wave 5f — UNSUPPORTED_SYMBOL friendly empty-state.
+  if (isUnsupportedSymbolPayload(data)) {
+    return (
+      <div className="min-h-screen bg-mesh">
+        <Navbar />
+        <UnsupportedSymbolPanel payload={data} horizon={horizon} />
       </div>
     );
   }

@@ -276,3 +276,40 @@ export interface StockAnalysisPayload {
   audit_meta: AuditMeta;
   user_context: string | null;
 }
+
+// Wave 5f — Structured empty-state payload returned by the orchestrator
+// when the user-typed symbol has no row in stock_master (delisting,
+// rename, post-corporate-action, very new listing). Distinguished from
+// a successful StockAnalysisPayload by the top-level `verdict_reason`
+// discriminator. Frontend renders a friendly panel with one-click
+// successor suggestions instead of a red error page.
+export interface UnsupportedSymbolPayload {
+  success: true;
+  verdict_reason: "UNSUPPORTED_SYMBOL";
+  symbol: string;
+  successor_candidates: Array<{
+    symbol: string;
+    company_name: string | null;
+    exchange: string;
+    reason: string | null;
+    effective_date: string | null;
+  }>;
+  fuzzy_candidates: Array<{
+    symbol: string;
+    company_name: string | null;
+    exchange: string;
+  }>;
+  hint: string | null;
+}
+
+export type OrchestratorResponse = StockAnalysisPayload | UnsupportedSymbolPayload;
+
+export function isUnsupportedSymbolPayload(
+  p: unknown,
+): p is UnsupportedSymbolPayload {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    (p as { verdict_reason?: unknown }).verdict_reason === "UNSUPPORTED_SYMBOL"
+  );
+}
