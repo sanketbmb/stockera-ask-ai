@@ -1,178 +1,226 @@
-## Wave 5e — Pre-Stock-Picker Cleanup (PLAN ONLY)
+## Wave 5f — Pre-Stock-Picker Hardening (PLAN ONLY)
 
-Four scoped fixes. Each ships independently with founder approval. No bundling. PROMOTION_RULES_ENABLED and SHOW_PLACEHOLDER_MODULES stay false.
-
----
-
-### Fix 1 — PriceBand adjacent-marker collision
-
-**Evidence:** ICICIBANK long-term ENTRY ₹966.28 vs LTP ₹977.75; SBIN long-term LTP ₹747.35 vs ENTRY ₹761.74 → labels overlap into unreadable blob. Wave 5c thickened the rail but the collision walker only triggers when `cur.side === prev.side` (line 483), so the alternating top/bottom pattern leaves *adjacent* labels both rendered at the same vertical position with the labels themselves still horizontally overlapping (a 9% MIN_GAP_PCT is enforced for re-flipping but not for actual label width on the alternating side).
-
-**File:** `src/components/analysis/StockAnalysisReport.tsx` — `PriceBand` function L399–597.
-
-- Slot positioning + collision walk: L466–492.
-- Label render with `topPx` math: L548–594.
-
-**Proposed change (frontend only, no data contract change):**
-
-1. **Near-value merge (extend existing exact-merge at L443–456):** if two adjacent slot x-percentages are within 1.5% of rail width, merge into one dot with combined label `"ENTRY / LTP ₹972.02"` using the midpoint price — apply only when the price gap is ≤0.5% (cosmetic merge, not semantic). For ICICIBANK and SBIN cases above (≈1.2% price gap), this is the primary fix.
-2. **Stagger fallback (rewrite L480–492 walker):** when within MIN_GAP_PCT, push to opposite side AND bump to `tier: 1` if the opposite side already has a tier-0 neighbour within MIN_GAP_PCT. Today only same-side collisions escalate to tier 1.
-3. **3+ cluster guard:** if ≥3 consecutive slots fall within MIN_GAP_PCT, assign them rotating sides (top-tier0, bottom-tier0, top-tier1, bottom-tier1) deterministically.
-4. Keep monotonic left-to-right order intact (already enforced by L456 sort).
-
-**Credit estimate:** ~6 credits (single function, ~40 lines changed, no new components).
-**Deploy surface:** Frontend Publish.
-**Falsification:** Regenerate ICICIBANK long-term and SBIN long-term. ENTRY+LTP must render either as one merged dot with combined label, or as two non-overlapping labels on opposite sides.
+Two independent problems. No bundling. PROMOTION_RULES_ENABLED stays false. SHOW_PLACEHOLDER_MODULES stays false. Stock Picker remains deferred until both ship and visually verify.
 
 ---
 
-### Fix 2 — Sparse PriceBand + empty Fresh Entry Plan partial-data state
+### Problem 1 — Symbol resolution is brittle for corporate-action / renamed / delisted tickers
 
-**Evidence:** HDFCBANK long-term renders only S2 + LTP on the rail (every other slot dash); Fresh Entry Plan below is 4× dash with the generic "Invalidation level not derivable…" line. Visually broken.
+#### A) Audit findings (live `stock_master` query)
 
-**Files:**
 
-- `src/components/analysis/StockAnalysisReport.tsx` — `PriceBand` L399–597 (rawPoints filter L430–440 already drops nulls; the "<2 points" early return at L458 is the only existing partial-data branch).
-- `src/components/analysis/StockAnalysisReport.tsx` — `LongTermGrid` PriceBand call site L987 (and equivalent in MediumTermGrid/IntradayGrid — to confirm by grep before build).
-- `src/components/report/FreshEntryAddendum.tsx` L49–82 — Fresh Entry Plan card; renders all four `LevelCell`s unconditionally (L72–75).
+| User-typed symbol | NSE row               | BSE row          | Notes                                                                    |
+| ----------------- | --------------------- | ---------------- | ------------------------------------------------------------------------ |
+| TATAMOTORS        | **MISSING**           | **MISSING**      | Removed post-demerger (1 Oct 2025). Legacy ticker is gone.               |
+| TMPV              | present (sec_id 3456) | present (500570) | Tata Motors Passenger Vehicles successor.                                |
+| TMCV              | present (759782)      | present (544569) | Tata Motors Commercial Vehicles successor.                               |
+| TMLCV             | **MISSING**           | **MISSING**      | Founder note used `TMLCV`; live Dhan master uses `TMCV`. Update aliases. |
+| TATAMTRDVR        | MISSING               | MISSING          | DVR shares ceased 2023; expected.                                        |
+| RELIANCEJF        | MISSING               | MISSING          | Never a live ticker (demerged to JIOFIN).                                |
+| JIOFIN            | present               | present          | OK.                                                                      |
+| ITC               | present               | present          | OK.                                                                      |
+| ITCHOTELS         | present (29251)       | present (544325) | OK.                                                                      |
+| VEDL              | present               | present          | OK.                                                                      |
+| RAYMOND           | present               | present          | OK.                                                                      |
+| RAYMONDLSL        | present (25073)       | present (544240) | OK.                                                                      |
+| PIRAMALENT        | MISSING               | MISSING          | Likely renamed; needs follow-up.                                         |
+| GODREJIND         | present               | present          | OK.                                                                      |
 
-**Proposed change (frontend only):**
 
-1. **PriceBand sparse state:** count populated slots from the 9 candidate fields (entry_zone, stop_loss, target_1, target_2, support_1, support_2, resistance_1, resistance_2, current). If ≥5 of 9 are null AND verdict ≠ INSUFFICIENT_DATA, still render populated dots but append a single muted line under the rail: *"Only support/current level available — full level set unavailable for this horizon."* Pass `verdict` flag in (PriceBand currently receives only `levels` + `current`, so add an optional `partialNote?: string` prop computed by the caller — keeps PriceBand presentation-only).
-2. **FreshEntryAddendum collapse:** in `FreshEntryAddendum` (L49), count nulls across `entry_zone`, `stop_loss`, `target_1`, `target_2`. If ≥3 are null, return a compact muted single-line card: *"Fresh entry plan unavailable — wait for fuller level coverage."* instead of the 4-cell grid + invalidation prose. Keep the section heading and "Stockera Engine" eyebrow for layout consistency.
+**Root cause of the user's "SYMBOL_NOT_FOUND" on TATAMOTORS**: `resolveStock()` in `supabase/functions/generate-stock-analysis/index.ts` L146-211 runs exact → reverse-prefix → prefix → contains-symbol → contains-name. For input `TATAMOTORS`, the contains-name probe at L201 uses `ilike '%TATAMOTORS%'` against `company_name` — but live rows store `"TATA MOTORS LIMITED"` (with space), so no match. Falls through to L210 → orchestrator L898 returns `SYMBOL_NOT_FOUND`.
 
-**Credit estimate:** ~5 credits.
-**Deploy surface:** Frontend Publish.
-**Falsification:** HDFCBANK long-term shows the explanatory line under the rail; Fresh Entry Plan collapses to the single muted line. Stocks with full level coverage (e.g. INFY long-term) render unchanged.
+`**seed-stock-master` filter** at `supabase/functions/seed-stock-master/index.ts` L122-149: keeps rows where `SEM_INSTRUMENT_NAME === "EQUITY"` AND `SEM_SEGMENT === "E"` AND exchange ∈ {NSE, BSE}. TATAMOTORS is absent from Dhan's current master — not a filter bug, an upstream delisting/replacement.
+
+#### B) Symbol resolver hardening (orchestrator)
+
+File: `supabase/functions/generate-stock-analysis/index.ts`
+
+1. **Normalize whitespace before fuzzy probes** (L201): strip non-alphanumerics from the user-typed symbol AND from `company_name` in a new normalized fuzzy probe so `"TATAMOTORS"` matches `"TATA MOTORS LIMITED"`. Implementation: compute `symCompact = sym.replace(/[^A-Z0-9]/g, "")`, add a `company_name=ilike.%T%A%T%A...%` style probe OR (cheaper) keep an in-memory normalize on a `company_name` shortlist already returned by a wider `ilike '%<first 4 chars>%'` probe. Keep cost ≤1 extra query.
+2. **Replace `SYMBOL_NOT_FOUND` hard error with structured `UNSUPPORTED_SYMBOL` verdict** (L898). New payload shape:
+  ```
+   { success: true, verdict_reason: "UNSUPPORTED_SYMBOL",
+     symbol: rawSymbol,
+     successor_candidates: [{symbol,company_name,reason}],
+     fuzzy_candidates: [...], hint: "..." }
+  ```
+   `success: true` so the frontend renders the friendly state instead of the red error page. Mirrors how `INSUFFICIENT_DATA` / `NO_COVERAGE_NEW_LISTING` are handled.
+3. **Consult successor map before declaring miss** (new step between L210 and L898): if `SUCCESSOR_MAP[sym]` exists, return `UNSUPPORTED_SYMBOL` with those successor symbols pre-attached. If exactly one successor exists and policy allows, optionally hint a single-click re-query (do not auto-redirect).
+
+#### C) Successor / alias map (data-only)
+
+New file: `supabase/functions/_shared/symbol-successors.ts` — typed `Record<string, { successors: string[]; reason: string; effective_date: string }>`. Seed:
+
+```
+TATAMOTORS  → [TMPV, TMCV]       reason: "Demerger 2025-10-01"
+TATAMTRDVR  → [TMPV, TMCV]       reason: "DVR collapsed + parent demerger"
+RELIANCEJF  → [JIOFIN]           reason: "Spinoff 2023"
+PIRAMALENT  → []                 reason: "Renamed/merged — verify"
+```
+
+Also surface in frontend so the `UNSUPPORTED_SYMBOL` panel can render names alongside tickers. No new DB table for v1 — pure code constant; promote to a `symbol_successors` table only if the list grows past ~30 entries.
+
+#### D) Frontend friendly empty-state
+
+File: `src/routes/report.$queryId.tsx` L90-100 and L330-340 currently render `"Couldn't load this report"` for any thrown error. Branch:
+
+- If payload comes back `success: true, verdict_reason: "UNSUPPORTED_SYMBOL"` → render new `<UnsupportedSymbolPanel />` (new component under `src/components/report/`) explaining:
+  - what we searched
+  - likely reasons (delisted / renamed / post-corporate-action / very new listing)
+  - successor candidates rendered as one-click `Link`s to `/post-query?symbol=<successor>` (or the existing re-query route)
+  - "Post a new query" CTA
+- If error is genuinely network/timeout → keep current `Couldn't load this report` block.
+
+Also update `src/lib/pdf.functions.ts` L164 and `src/lib/freeze-report.functions.ts` L48 to treat `UNSUPPORTED_SYMBOL` as a clean payload, not a throw.
+
+#### E) Stock Picker hard exclusion gate (reaffirmation, no build)
+
+Documented constraint for the future Stock Picker work: it MUST filter out any symbol whose orchestrator response returns `verdict_reason ∈ {UNSUPPORTED_SYMBOL, INSUFFICIENT_DATA, NO_COVERAGE_NEW_LISTING}`. This check happens BEFORE the picker scores a candidate; it is not a scoring penalty.
+
+#### Credit / surface / sequencing
+
+- **Credits**: ~10 (backend resolver + successor map + frontend panel + 2 thin error-path edits)
+- **Deploy surface**: Backend (`generate-stock-analysis`) auto-live + Frontend Publish
+- **Falsification**:
+  - Type `TATAMOTORS` → friendly `UNSUPPORTED_SYMBOL` panel with TMPV + TMCV as one-click successors
+  - Type `tata motors` (typed company name) → resolver finds TMPV/TMCV via normalized fuzzy or returns same panel
+  - Type `INFY` → unchanged successful report
+  - Type `RANDOMXYZ123` → friendly panel, no successors, fuzzy=[]
 
 ---
 
-### Fix 3 — Banking long-term verdict prose templating leak
+### Problem 2 — PriceBand still cramped in dense clusters
 
-**Evidence:** HDFCBANK and SBIN long-term both open with *"Long-horizon view prioritizing business quality, valuation support and risk profile. weak fundamentals (X), …"* — identical prose, only numbers swapped. ICICIBANK long-term shows different/better prose because its verdict is suppressed via `applyVerdictSuppression`.
+#### Current state
 
-**Root cause located:**
+File: `src/components/analysis/StockAnalysisReport.tsx`
 
-- `supabase/functions/generate-stock-analysis/index.ts` L800–805: `TIER_REASON_PREFIX` hard-codes the long-term opening.
-- `supabase/functions/generate-stock-analysis/index.ts` L807–826: `summaryReason()` is a pure score-dump — concatenates `${tag} ${pillar} (${score})` per pillar in tier-specific order. No driver narrative, no banking branch.
-- L1088: `summary_reason: summaryReason(scores, queryType)` — written into final_verdict before `applyVerdictSuppression` has any chance to rewrite long-term banking prose (suppression is INSUFFICIENT_DATA-shaped, not banking-shaped).
+- `PriceBand` component: L399-700 (header L390-398)
+- `rawPoints` build + filter: L433-443
+- Exact-value merge: L445-458
+- Near-identical merge (Wave 5e): L468-491 with `NEAR_X_PCT=0.8`, `NEAR_PRICE_PCT=0.0015`
+- 4-lane stagger walker (Wave 5e): L493-535 with `LABEL_GAP_PCT=13` (single hard-coded value)
+- Render block (rail, ticks, dots, labels): L544-700
+- `topPx` math + leader lines: L600-633
 
-**Proposed change (backend, text-only, no scoring/weight change):**
+**Why the current 4-lane fix still fails on TMPV-style clusters**:
 
-1. **Replace `TIER_REASON_PREFIX["long-term"]**` with a driver-aware composer for long-term. Add a small helper `longTermNarrative(scores, isBanking)` that picks the dominant driver:
-  - If `fundamental < 40` → *"Long-term thesis weakened by deteriorating fundamentals"*
-  - Else if `risk < 40` → *"Long-term risk profile is elevated"*
-  - Else if `momentum < 35 && technical < 45` → *"Long-term trend is rolling over — defer fresh accumulation until a durable base forms"*
-  - Else if `fundamental >= 60 && risk >= 50` → *"Valuation and balance-sheet quality support a long-horizon stance"*
-  - Else → keep today's neutral prefix.
-2. **Banking-specific overlay:** when `isBanking && queryType === "long-term"`, override with NIM/asset-quality-flavoured driver prose (e.g. *"Banking long-term view governed by ROE durability and balance-sheet leverage"*) — text-only, sourced from pillar scores already in `scores`.
-3. Keep the score-dump tail (L817–822 `labels`) but limit to top 2 pillar drivers (not all five), so the sentence reads as analysis, not a dump.
-4. `isBanking` is already known at this call site (banking carveout audit, L980 area per Wave 5d) — thread it into `summaryReason`.
+1. `LABEL_GAP_PCT = 13` is a fixed constant assuming `"ENTRY ₹1,234.56"`-sized labels. Multi-line stacked labels (after near-merge) are taller but no wider, but adjacent distinct labels with longer prices (`₹3,894.99`) still exceed 13% on a 100% rail when 5 markers crowd one half.
+2. The walker only checks `placed[]` — it never re-balances. Once top-0 + bottom-0 are taken by markers 1-2, marker 3 hops to top-1 even if there is room for it at top-0 further right; this works left-to-right but leaves later markers (T1, LTP) with nowhere to go and they end up overlapping at bottom-1.
+3. Leader lines render only for `tier === 1` (L603). Tier-0 markers crammed shoulder-to-shoulder have no visual separator.
+4. Multi-item near-merged groups push `topPx` further with `extra` (L599-602) but the **horizontal** label width still occupies the same slot — collision math doesn't widen the exclusion zone for stacked groups.
 
-**Credit estimate:** ~7 credits (one function rewrite, one call-site change, banking flag plumbing already in scope).
-**Deploy surface:** Backend (`generate-stock-analysis`) auto-live.
-**Falsification:** Regenerate HDFCBANK long-term and SBIN long-term. Opening sentences must differ in *prose*, not just numbers, and neither should reuse *"Long-horizon view prioritizing…"*. ICICIBANK long-term unchanged (already suppressed elsewhere). INFY long-term (non-banking) prose still composed from driver logic.
+#### Required redesign
 
----
+Rewrite the stagger block (L493-535) and the label render block (L600-637) so:
 
-### Fix 4 — Business Quality card honest empty-state for banking
+1. **Width-aware collision** — compute per-slot label width using a character-count heuristic on the rendered label string (length × ~0.95% per char of rail width, clamped 6%-22%). Store as `slot.widthPct`. Two slots collide on the same lane iff `|x_a − x_b| < (widthPct_a + widthPct_b) / 2 + 1` (1% margin).
+2. **4 lanes** — `top-1` (close, 14px above rail), `top-2` (46px above), `bottom-1` (14px below), `bottom-2` (46px below). Drop the leader line on tier 1; keep it on tier 2 (longer reach). Existing tier-0/tier-1 naming is renamed to tier-1/tier-2 for clarity.
+3. **Deterministic position-based tier assignment** — replace the greedy "first lane that fits" walker with: (a) compute desired lane order per slot from x-position parity (`i % 4` → top1, bot1, top2, bot2); (b) for each slot, fall back to next lane in the rotation if width-aware collision detected against any previously placed slot in the same lane; (c) guarantee placement by allowing tier-2 lanes as last-resort.
+4. **Vertical leader line on every marker** — short stub (8px) for tier-1, longer (40px) for tier-2. Removes the visual ambiguity of "which label belongs to which dot".
+5. **Near-identical x merge (≤0.5% price gap)** keeps the existing behavior of stacking distinct prices vertically on one label, sharing a single dot + leader stub (unchanged from Wave 5e, retighten threshold to 0.5% to match the spec).
+6. **No synthetic midpoints** — keep `last.v = (last.v + ep.v) / 2` for **dot position only** (already commented L486); label preserves real prices via the `distinctPrices` branch L639.
+7. **Monotonic left-to-right order** preserved by `exactPoints` sort L458 and the walker iterating in `groups[]` order.
+8. **Empty / sparse rail branch unchanged** (L460-462 early return, L1070 `partialNote` prop).
 
-**Investigation findings:**
+Container height bumped from `mt-14 mb-12 … h-24` (L545-546) to `mt-20 mb-16 … h-32` to absorb tier-2 vertical reach without truncating labels under the next card.
 
-- `supabase/functions/compute-long-term-quality/index.ts` is the producer for `long_term_quality_snapshot`:
-  - **fcf_yield is hard-coded null** at L120–121 with reason `fcf_yield_requires_capex_history_not_exposed_by_fundamentals` — **genuine upstream gap, not a silent drop.**
-  - **eps_cagr_5y is intentionally suppressed under banking override** at L183–190 (`suppressed_under_banking_override`) — **by design.**
-  - **promoter_holding_pct** L149–163: fetched from a shareholdings source; null reason `shareholdings_unavailable` when missing — **upstream gap.**
-  - **roce_5y_avg** L91, with fallback at L106 — populated when available; banks often have it null because FinEdge does not expose `returnOnCapital` consistently for banks.
-- `compute-fundamentals/index.ts` L394 populates `roce` from `returnOnCapital` ratio — also a real upstream gap for banks.
+#### Credit / surface / sequencing
 
-**Conclusion:** All four fields are genuinely unavailable for banks (provider gap + intentional banking suppression). Not a silent drop.
-
-**Proposed change (frontend only):**
-
-1. **Hide upstream-null rows for banking stocks.** In `LongTermGrid` Business Quality card (`src/components/analysis/StockAnalysisReport.tsx` L2033–2044), when `q?.quality_label === "BANKING_ADJUSTED"`, suppress the rows that are structurally null for banks: FCF yield (L2037), EPS CAGR (L2038), and ROCE (L2035) only if null. Keep Promoter % visible — render with explicit dash + "Shareholdings unavailable" tooltip if null (it's not banking-specific, just data gap).
-2. **Replace with banking-relevant metrics ONLY if already computed.** Per guardrail (no new pillars): grep confirms NIM/GNPA/CASA/CAR are NOT computed today. So this fix is **suppress-only**, no substitution. Add a single muted line at the bottom of the card: *"Banking-adjusted: capex-based and EPS-growth metrics omitted by design. Quality governed by ROE, leverage, F-Score and earnings consistency."*
-3. **Banking-adjusted label consistency.** Footnote at L2028–2032 gates on `q?.quality_label === "BANKING_ADJUSTED"`. Verify in `compute-long-term-quality` why HDFCBANK and ICICIBANK don't get this label while SBIN does — likely a gating threshold in the banking detector. **Investigation-only in this plan** — if it's a sector-detection miss (e.g. HDFCBANK's sector string mismatches the banking trigger list), the fix is one-line in the sector-match set; if it's a data-completeness threshold (e.g. needs Piotroski ≥ N), document and propose threshold relaxation in the build phase. Cite `supabase/functions/compute-long-term-quality/index.ts` banking detection block (to pinpoint exact lines during build).
-
-**Credit estimate:** ~6 credits frontend + ~3 credits backend (banking-label gating fix), split-deployable.
-**Deploy surface:** 
-
-- Frontend Publish for row suppression + footnote text.
-- Backend auto-live for banking-label gating fix (if needed).
-
-**Falsification:** All three banks (HDFCBANK, ICICIBANK, SBIN) long-term Business Quality cards either show populated rows or honestly hide unavailable rows with the single explanatory line. "Banking-adjusted" footnote renders on all three.
+- **Credits**: ~9 (single function, ~80 lines rewritten, no new components)
+- **Deploy surface**: Frontend Publish only
+- **Falsification**:
+  - ICICIBANK long-term → ENTRY ₹966.28 and LTP ₹977.75 placed on different tiers with both prices clearly visible
+  - SBIN long-term → 4-marker center cluster spread across 4 lanes, no overlap
+  - TMPV (once Problem 1 ships) or saved TMPV-style payload → SL / S2 / ENTRY / T1 / LTP cluster all readable, T2 unchanged on right
+  - INFY long-term → sparse rail unchanged
+  - HDFCBANK long-term → partial-data rail with `partialNote` unchanged
 
 ---
 
-### Summary table
+### Build sequencing
 
+**Problem 1 first, then Problem 2.** Reasons:
 
-| Fix                         | Surface            | Credits | Falsification stocks                  |
-| --------------------------- | ------------------ | ------- | ------------------------------------- |
-| 1 — Marker collision        | Frontend           | ~6      | ICICIBANK LT, SBIN LT                 |
-| 2 — Sparse rail + empty FEP | Frontend           | ~5      | HDFCBANK LT                           |
-| 3 — Banking verdict prose   | Backend            | ~7      | HDFCBANK LT, SBIN LT, INFY LT control |
-| 4 — Banking Quality card    | Frontend + Backend | ~9      | HDFCBANK LT, ICICIBANK LT, SBIN LT    |
+1. Problem 1 unblocks the TMPV/TMCV test case Problem 2 needs for its hardest cluster falsification.
+2. Problem 1 fixes a hard user-visible crash; Problem 2 is a polish issue on an already-working page.
+3. The two surfaces are independent (no shared files, no shared deploy bundle), so split deployment is safe.
 
+### Deferred work pulled forward into this wave
 
-**STOP after plan. Founder approves each fix separately before any build. Stock Picker remains deferred until Wave 5e closes.**  
+- None pulled forward. Wave 5e deferrals (banking quality band canonicalization Fix 4b, 6M returns field, RECENTLY_LISTED flag, L156 resolver hardening, Move 4c dampening calibration) remain deferred. Note: the L156 hardening was originally listed as the simple "NSE preferred" branch; that block is now superseded by Problem 1's resolver work — close that deferral as part of Problem 1 build.
+
+### Guardrails
+
+- No scoring weight changes
+- No new pillars
+- No RLS changes
+- No stock-picker work
+- No bundling between Problem 1 and Problem 2
+
+STOP. Founder approves each problem separately before any build.  
   
-Approve Wave 5e PLAN with 3 mandatory amendments and split approval for Fix 4.
+Approve Wave 5f PLAN with three mandatory amendments and confirm sequencing.
 
-1) Fix 1 amendment
+Amendment 1 — UNSUPPORTED_SYMBOL downstream consumers must be enumerated in the same build, not discovered later.
 
-- Do NOT use a synthetic midpoint merged price label like "ENTRY / LTP ₹972.02".
+The plan proposes orchestrator returns success: true with verdict_reason: "UNSUPPORTED_SYMBOL". Before approving the build, list every downstream consumer that must skip or specially handle this payload. At minimum:
 
-- If two markers are merged, preserve both actual values in the label, e.g.:
+- ai_report DB insert path: must NOT insert a row for UNSUPPORTED_SYMBOL responses (or must insert with explicit verdict_reason so future reads can filter)
 
-  "ENTRY ₹966.28 / LTP ₹977.75"
+- PDF export (src/lib/pdf.functions.ts L164): must short-circuit gracefully
 
-  or a stacked two-line label.
+- freeze-report (src/lib/freeze-report.functions.ts L48): must short-circuit gracefully
 
-- No invented midpoint value.
+- sentiment_cache writes: must not be triggered
 
-2) Fix 3 amendment
+- Future Stock Picker reads: must exclude rows where verdict_reason = UNSUPPORTED_SYMBOL
 
-- Banking long-term prose must remain grounded only in already-computed signals.
+- Any caching or memoization layer that keys off symbol: must NOT poison-cache the unsupported response under the original ticker
 
-- Do NOT introduce wording that implies unavailable banking metrics (NIM, GNPA, CASA, CAR, asset-quality specifics, etc.) unless those fields are already present in the payload.
+- Any analytics / observability / Marketaux quota counters: must NOT consume quota when the resolver returns UNSUPPORTED_SYMBOL
 
-- Narrative should be driven from existing pillar scores / long-term-quality fields only.
+Return the full list with file + line citations before any build.
 
-3) Fix 4 split
+Amendment 2 — PriceBand width calculation must not rely solely on a character-count heuristic.
 
-- Approve Fix 4a now: frontend-only honest empty-state cleanup for banking Business Quality card.
+The plan's "length × ~0.95% per char of rail width, clamped 6-22%" is fragile across fonts, DPIs, and label content variations. Preferred implementation: measure actual rendered label width with refs + getBoundingClientRect() in a useEffect after first render, then reassign tiers in a second pass using measured widths.
 
-- Do NOT auto-approve Fix 4b backend banking-label consistency fix yet.
+If that is rejected as too costly, then the character-count heuristic is acceptable ONLY if a fallback "table mode" is added: when 5+ markers cluster within 30% of rail width AND total estimated widthPct exceeds 100%, render a compact horizontal table below the rail listing those clustered levels as labeled rows, with the rail showing only their dots. This is the escape hatch — without it, the worst case still breaks.
 
-- First return the exact root cause and file/line citation for why HDFCBANK and ICICIBANK are missing the Banking-adjusted label while SBIN shows it.
+Pick one approach in the revised plan and commit to it.
 
-- Then founder will approve Fix 4b separately if needed.
+Amendment 3 — Successor map cleanup before seeding.
 
-Build sequencing requested:
+The plan currently seeds PIRAMALENT → [] with reason "Renamed/merged — verify". Production data should not contain TODOs. Either:
 
-- Fix 3 first
+- find the actual successor and ship it
 
-- then Fix 1
+- drop PIRAMALENT from the seed map entirely and add it to a separate "to-verify" comment block in the file
 
-- then Fix 2
+Either is fine, but don't ship an empty-successors entry to users.
 
-- then Fix 4a
+Additional guardrails to confirm:
 
-- then STOP and return root-cause note for possible Fix 4b approval
+- Do NOT widen the seed-stock-master EQUITY filter as a side effect of Problem 1. ETF / REIT / InvIT inclusion is a separate wave.
 
-Guardrails unchanged:
+- Do NOT auto-redirect on single-successor cases. The plan correctly says "do not auto-redirect" — confirm this stays in the build.
 
-- no new pillars
+Sequencing confirmed:
 
-- no scoring weight changes
+- Problem 1 first
 
-- no RLS changes
+- Problem 2 second
 
-- no stock-picker work
+- No bundling
 
-- no bundling
+- Each problem ships and verifies independently
 
-STOP after revised plan / build sequencing confirmation.
+After amendments are incorporated, return revised plan with file + line citations for the additional downstream-consumer touches.
+
+STOP. Founder will approve the revised plan before any BUILD.
+
+Do not start any build on the unrevised plan.
+
+Do not start Stock Picker.
 
 &nbsp;
