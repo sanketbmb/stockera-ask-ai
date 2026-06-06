@@ -3,7 +3,7 @@
 // Premium, editorial, tier-aware. No backend logic, pure presentation.
 // Motion layer: framer-motion + useCountUp. Honors prefers-reduced-motion.
 
-import { useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Brain, Building2, Calendar, CheckCircle2,
   Clock, Compass, Eye, Gauge, HelpCircle, Info, LineChart, Newspaper,
@@ -11,6 +11,10 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion, useInView, MotionConfig } from "framer-motion";
 import { useRef, useState } from "react";
+
+// SSR-safe useLayoutEffect — falls back to useEffect on the server so the
+// measurement pass for PriceBand does not warn during hydration.
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
@@ -458,12 +462,9 @@ function PriceBand({
     })
     .sort((a, b) => a.v - b.v);
 
-  if (exactPoints.length < 2) {
-    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
-  }
-
-  const min = exactPoints[0].v;
-  const max = exactPoints[exactPoints.length - 1].v;
+  const insufficient = exactPoints.length < 2;
+  const min = insufficient ? 0 : exactPoints[0].v;
+  const max = insufficient ? 1 : exactPoints[exactPoints.length - 1].v;
   const span = max - min || 1;
 
   // 2) Wave 5e hotfix — near-IDENTICAL merge only (cosmetic). Two adjacent
@@ -491,49 +492,116 @@ function PriceBand({
     groups.push({ items: ep.items, v: ep.v, x: xPctVal });
   }
 
-  // 3) Multi-lane stagger — Wave 5e hotfix. Place every label in one of four
-  // lanes (top-0, top-1, bottom-0, bottom-1) so labels NEVER overlap, even
-  // when prices cluster tightly. Collision uses estimated label width
-  // expressed as % of rail width. Each slot picks the first lane (in
-  // preferred order) that has no prior slot within LABEL_GAP_PCT. Tier-1
-  // slots get a vertical leader line connecting label → dot.
-  const LABEL_GAP_PCT = 13; // ≈ width of "ENTRY ₹1,234.56" on a typical rail
+  // 3) Wave 5g Sub-track B — measurement-based 4-lane reflow with TABLE_MODE
+  // escape hatch. PASS 1 (above) produced `groups[]`. We now:
+  //   PASS 2: measure each rendered label's width vs the rail (useLayoutEffect)
+  //   PASS 3: assign 4 lanes using measured widths (not a 13% heuristic)
+  //   PASS 4: if any group still has no collision-free lane, flip to TABLE_MODE
+  // First paint uses a 13% heuristic to avoid layout shift; measured widths
+  // override on the next frame.
+  const HEURISTIC_PCT = 13;
+  const PAD_PCT = 1.5;
   type Lane = "top-0" | "bottom-0" | "top-1" | "bottom-1";
-  type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1 };
-  const laneOf = (s: { side: "top" | "bottom"; tier: 0 | 1 }): Lane =>
-    `${s.side}-${s.tier}` as Lane;
-  const placed: Slot[] = [];
-  for (let i = 0; i < groups.length; i++) {
-    const g = groups[i];
-    const prev = placed[placed.length - 1];
-    const preferTopFirst = !prev || prev.side === "bottom";
-    const order: Array<{ side: "top" | "bottom"; tier: 0 | 1 }> = preferTopFirst
-      ? [
-          { side: "top", tier: 0 },
-          { side: "bottom", tier: 0 },
-          { side: "top", tier: 1 },
-          { side: "bottom", tier: 1 },
-        ]
-      : [
-          { side: "bottom", tier: 0 },
-          { side: "top", tier: 0 },
-          { side: "bottom", tier: 1 },
-          { side: "top", tier: 1 },
-        ];
-    let chosen = order[0];
-    for (const cand of order) {
-      const lane = laneOf(cand);
-      const collides = placed.some(
-        (p) => laneOf(p) === lane && Math.abs(p.x - g.x) < LABEL_GAP_PCT,
-      );
-      if (!collides) {
-        chosen = cand;
-        break;
+  type Slot = Group & { side: "top" | "bottom"; tier: 0 | 1; lane: Lane; overflow: boolean };
+
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const labelRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [realPct, setRealPct] = useState<number[] | null>(null);
+
+  // Content hash so polled LTP / re-renders that change prices (but not group
+  // count) still re-trigger the measurement pass.
+  const groupsKey = useMemo(
+    () => `${groups.length}|${groups.map((g) => g.v.toFixed(2)).join("|")}`,
+    [groups],
+  );
+
+  useIsoLayoutEffect(() => {
+    // Invalidate any prior measurement when prices/group count change so the
+    // next paint re-measures with the fresh DOM.
+    setRealPct(null);
+  }, [groupsKey]);
+
+  useIsoLayoutEffect(() => {
+    const rail = railRef.current;
+    if (!rail || groups.length === 0) return;
+    const measure = () => {
+      const railW = rail.getBoundingClientRect().width;
+      if (railW <= 0) return;
+      const widths: number[] = [];
+      for (let i = 0; i < groups.length; i++) {
+        const el = labelRefs.current[i];
+        if (!el) {
+          widths.push(HEURISTIC_PCT);
+          continue;
+        }
+        const w = el.getBoundingClientRect().width;
+        widths.push(Math.max(2, (w / railW) * 100));
       }
+      setRealPct((prev) => {
+        if (prev && prev.length === widths.length && prev.every((v, i) => Math.abs(v - widths[i]) < 0.25)) {
+          return prev;
+        }
+        return widths;
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(rail);
+    return () => ro.disconnect();
+  }, [groupsKey]);
+
+  // PASS 3 — lane assignment using either measured or heuristic widths.
+  function assignLanes(widthsPct: number[]): { slots: Slot[]; overflow: boolean } {
+    const laneOf = (s: { side: "top" | "bottom"; tier: 0 | 1 }): Lane =>
+      `${s.side}-${s.tier}` as Lane;
+    const placed: Slot[] = [];
+    let anyOverflow = false;
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const wi = widthsPct[i] ?? HEURISTIC_PCT;
+      const prev = placed[placed.length - 1];
+      const preferTopFirst = !prev || prev.side === "bottom";
+      const order: Array<{ side: "top" | "bottom"; tier: 0 | 1 }> = preferTopFirst
+        ? [
+            { side: "top", tier: 0 },
+            { side: "bottom", tier: 0 },
+            { side: "top", tier: 1 },
+            { side: "bottom", tier: 1 },
+          ]
+        : [
+            { side: "bottom", tier: 0 },
+            { side: "top", tier: 0 },
+            { side: "bottom", tier: 1 },
+            { side: "top", tier: 1 },
+          ];
+      let chosen: { side: "top" | "bottom"; tier: 0 | 1 } | null = null;
+      for (const cand of order) {
+        const lane = laneOf(cand);
+        const collides = placed.some((p) => {
+          if (p.lane !== lane) return false;
+          const wj = widthsPct[placed.indexOf(p)] ?? HEURISTIC_PCT;
+          const minGap = (wi + wj) / 2 + PAD_PCT;
+          return Math.abs(p.x - g.x) < minGap;
+        });
+        if (!collides) {
+          chosen = cand;
+          break;
+        }
+      }
+      const overflow = chosen == null;
+      if (overflow) anyOverflow = true;
+      const pick = chosen ?? order[0];
+      placed.push({ ...g, side: pick.side, tier: pick.tier, lane: laneOf(pick), overflow });
     }
-    placed.push({ ...g, side: chosen.side, tier: chosen.tier });
+    return { slots: placed, overflow: anyOverflow };
   }
-  const slots: Slot[] = placed;
+
+  const heuristicWidths = useMemo(() => groups.map(() => HEURISTIC_PCT), [groups.length]);
+  const widthsForAssign = realPct ?? heuristicWidths;
+  const { slots, overflow } = assignLanes(widthsForAssign);
+  // PASS 4 — density gate. Only trip TABLE_MODE after we've actually measured;
+  // a heuristic overflow on first paint would cause unnecessary flips.
+  const tableMode = overflow && realPct !== null;
 
   // Zone-band geometry (Phase 4C) — unchanged.
   const xPct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
@@ -542,9 +610,15 @@ function PriceBand({
   const bandWidth = Math.max(0, bandRight - bandLeft);
   const prefX = showZoneBand ? xPct(zonePref!) : 0;
 
+  // Insufficient data — early return AFTER all hooks have been called so that
+  // hook order stays stable across renders (rules of hooks).
+  if (insufficient) {
+    return <p className="text-sm text-muted-foreground italic">Insufficient level data for visualization.</p>;
+  }
+
   return (
     <div className="mt-14 mb-12">
-      <div ref={ref} className="relative h-24 print:h-24">
+      <div ref={(el) => { ref.current = el; railRef.current = el; }} className="relative h-24 print:h-24">
         {showZoneBand && (
           <div
             aria-label="Entry accumulation zone"
@@ -581,10 +655,12 @@ function PriceBand({
               style={{ marginTop: "38px" }}
               aria-label={`Preferred entry ${fmtPrice(zonePref)}`}
             />
-            <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
-              <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
-              <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
-            </div>
+            {!tableMode && (
+              <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center" style={{ top: "-2px" }}>
+                <div className="font-mono text-[10px] uppercase text-primary">Entry</div>
+                <div className="font-display text-xs tabular-nums">{fmtPrice(zonePref)}</div>
+              </div>
+            )}
           </div>
         )}
         {slots.map((s, i) => {
@@ -594,17 +670,19 @@ function PriceBand({
           const emphasized = s.items.some((it) => highlightLabels.has(it.label));
           const colorCls = dotColor[primary] ?? "bg-foreground";
           const isTop = s.side === "top";
-          // tier 0 sits close to band; tier 1 pushed further with leader line.
-          // Multi-item groups need extra vertical room for stacked lines.
+          // Per-lane vertical anchors (label `top` in px relative to rail box).
+          // Tier-0 sits close to rail; tier-1 is pushed further with a leader line.
+          // Multi-item exact-merge groups get extra room for stacked lines.
           const multi = s.items.length > 1;
           const extra = multi ? (s.items.length - 1) * 14 : 0;
-          const topPx = isTop
-            ? (s.tier === 0 ? -2 - extra : -32 - extra)
-            : (s.tier === 0 ? 50 : 80);
+          const LANE_OFFSETS: Record<Lane, number> = {
+            "top-0": -2 - extra,
+            "top-1": -32 - extra,
+            "bottom-0": 50,
+            "bottom-1": 80,
+          };
+          const topPx = LANE_OFFSETS[s.lane];
           const showLeader = s.tier === 1;
-          // Distinct prices? If all items share one price (exact-merge), show
-          // "LBL / LBL ₹price"; otherwise stack each "LBL ₹price" on its own
-          // line to PRESERVE both actual values (no synthetic midpoint).
           const distinctPrices = new Set(s.items.map((it) => it.v.toFixed(2))).size > 1;
           return (
             <motion.div
@@ -621,7 +699,7 @@ function PriceBand({
                 whileHover={emphasized ? { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--accent) / 0.15)" } : { scale: 1.1 }}
                 transition={{ duration: duration.fast, ease: ease.standard }}
               />
-              {showLeader && (
+              {!tableMode && showLeader && (
                 <div
                   className="absolute left-1/2 w-px -translate-x-1/2 bg-border"
                   style={
@@ -632,11 +710,13 @@ function PriceBand({
                   aria-hidden
                 />
               )}
+              {/* Label is always mounted (for measurement) but hidden in tableMode. */}
               <div
-                className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center"
+                ref={(el) => { labelRefs.current[i] = el; }}
+                className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-center ${tableMode ? "invisible pointer-events-none" : ""}`}
                 style={{ top: `${topPx}px` }}
+                aria-hidden={tableMode}
               >
-
                 {distinctPrices ? (
                   <div className="flex flex-col gap-0.5">
                     {s.items.map((it, idx) => (
@@ -659,6 +739,34 @@ function PriceBand({
           );
         })}
       </div>
+      {tableMode && (
+        <div className="mt-4 rounded-xl border border-border bg-card/50 p-3">
+          <p className="mb-2 text-[11px] italic text-muted-foreground">
+            Levels are tightly clustered — shown in table for clarity.
+          </p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+            {slots.flatMap((s) =>
+              s.items.map((it, idx) => {
+                const color =
+                  it.label === "SL" || it.label === "S1" || it.label === "S2"
+                    ? "text-rose-500"
+                    : it.label === "T1" || it.label === "T2" || it.label === "R1" || it.label === "R2"
+                    ? "text-emerald-500"
+                    : "text-primary";
+                return (
+                  <div
+                    key={`tm-${s.x}-${idx}-${it.label}`}
+                    className="flex items-center justify-between border-b border-border/40 py-1 last:border-b-0"
+                  >
+                    <span className={`font-mono text-[10px] uppercase ${color}`}>{it.label}</span>
+                    <span className="font-display text-xs tabular-nums">{fmtPrice(it.v)}</span>
+                  </div>
+                );
+              }),
+            )}
+          </div>
+        </div>
+      )}
       {partialNote && (
         <p className="mt-1 text-xs italic text-muted-foreground">{partialNote}</p>
       )}
