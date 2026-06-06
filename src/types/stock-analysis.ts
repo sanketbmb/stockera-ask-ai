@@ -285,7 +285,7 @@ export interface StockAnalysisPayload {
 // successor suggestions instead of a red error page.
 export interface UnsupportedSymbolPayload {
   success: true;
-  verdict_reason: "UNSUPPORTED_SYMBOL";
+  verdict_reason: "UNSUPPORTED_SYMBOL" | "SYMBOL_AMBIGUOUS";
   symbol: string;
   successor_candidates: Array<{
     symbol: string;
@@ -307,9 +307,7 @@ export type OrchestratorResponse = StockAnalysisPayload | UnsupportedSymbolPaylo
 export function isUnsupportedSymbolPayload(
   p: unknown,
 ): p is UnsupportedSymbolPayload {
-  return (
-    !!p &&
-    typeof p === "object" &&
-    (p as { verdict_reason?: unknown }).verdict_reason === "UNSUPPORTED_SYMBOL"
-  );
+  if (!p || typeof p !== "object") return false;
+  const reason = (p as { verdict_reason?: unknown }).verdict_reason;
+  return reason === "UNSUPPORTED_SYMBOL" || reason === "SYMBOL_AMBIGUOUS";
 }
