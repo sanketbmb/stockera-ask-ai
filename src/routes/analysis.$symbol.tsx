@@ -99,7 +99,12 @@ function AnalysisPage() {
           <Button className="mt-4" onClick={() => refetch()}>Retry</Button>
         </div>
       )}
-      {data && <StockAnalysisReport data={data} />}
+      {data && isUnsupportedSymbolPayload(data) && (
+        <UnsupportedSymbolPanel payload={data} horizon={horizon} />
+      )}
+      {data && !isUnsupportedSymbolPayload(data) && (
+        <StockAnalysisReport data={data as StockAnalysisPayload} />
+      )}
     </div>
   );
 }
