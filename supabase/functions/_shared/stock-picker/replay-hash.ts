@@ -27,9 +27,9 @@ import type {
   UniverseCanonicalInput,
   LiquidityCanonicalInput,
   ExclusionCanonicalInput,
-} from './types';
+} from './types.ts';
 
-import { EXCLUSION_CHECK_IDS } from './types';
+import { EXCLUSION_CHECK_IDS } from './types.ts';
 
 // ---------------------------------------------------------------------------
 // Schema version (must match SP1_REPLAY_SCHEMA_VERSION in types.ts)
