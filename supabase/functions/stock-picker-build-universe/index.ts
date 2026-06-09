@@ -186,7 +186,7 @@ async function upsertSnapshot(
   const BATCH_SIZE = 500;
   for (let i = 0; i < args.members.length; i += BATCH_SIZE) {
     const slice = args.members.slice(i, i + BATCH_SIZE);
-    const memberRows = slice.map(m => ({
+    const memberRows = slice.map((m, idx) => ({
       universe_snapshot_id: snapshotId,
       symbol: m.symbol,
       exchange: m.exchange,
@@ -196,11 +196,12 @@ async function upsertSnapshot(
       sector_canonical: m.sector_canonical,
       alternate_listings: m.alternate_listings,
       successor_applied: m.successor_applied,
+      canonical_rank: i + idx + 1,
     }));
     const { error: memErr } = await supabase
       .from('stock_picker_universe_snapshot_member')
       .insert(memberRows);
-    if (memErr) throw new Error(`build-universe: member insert failed at batch ${i}`);
+    if (memErr) throw new Error(`build-universe: member insert failed at batch ${i}: ${memErr.message}`);
   }
 
   return { id: snapshotId, reused: false };
