@@ -241,6 +241,9 @@ async function sleep(ms: number): Promise<void> {
 async function fetchLiquidityForSymbol(args: {
   symbol: string;
   exchange: Exchange;
+  dhanSecurityId: string | null;
+  fromDateIso: string;
+  toDateIso: string;
   dhanFetchUrl: string;
   serviceKey: string;
   maxRetries: number;
@@ -256,10 +259,14 @@ async function fetchLiquidityForSymbol(args: {
           'Authorization': `Bearer ${args.serviceKey}`,
         },
         body: JSON.stringify({
-          op: 'historical',
-          symbol: args.symbol,
-          exchange: args.exchange,
-          days: 20,
+          endpoint: 'historical',
+          securityId: args.dhanSecurityId,
+          exchangeSegment: args.exchange === 'BSE' ? 'BSE_EQ' : 'NSE_EQ',
+          params: {
+            fromDate: args.fromDateIso,
+            toDate: args.toDateIso,
+            instrument: 'EQUITY',
+          },
         }),
       });
       if (res.status === 429) {
@@ -317,7 +324,9 @@ async function fetchLiquidityForSymbol(args: {
 }
 
 async function fetchLiquidityForUniverse(args: {
-  members: Array<{ symbol: string; exchange: Exchange }>;
+  members: Array<{ symbol: string; exchange: Exchange; dhan_security_id: string | null }>;
+  fromDateIso: string;
+  toDateIso: string;
   dhanFetchUrl: string;
   serviceKey: string;
 }): Promise<LiquidityFetchOutcome[]> {
@@ -330,6 +339,9 @@ async function fetchLiquidityForUniverse(args: {
       const outcome = await fetchLiquidityForSymbol({
         symbol: m.symbol,
         exchange: m.exchange,
+        dhanSecurityId: m.dhan_security_id,
+        fromDateIso: args.fromDateIso,
+        toDateIso: args.toDateIso,
         dhanFetchUrl: args.dhanFetchUrl,
         serviceKey: args.serviceKey,
         maxRetries: 5,
@@ -579,6 +591,11 @@ serve(async (req: Request) => {
     // ---- Phase 3: liquidity fetch + append ----
     const tLiquidity = Date.now();
     const dhanFetchUrl = `${SUPABASE_URL}/functions/v1/dhan-fetch`;
+    const today = new Date();
+    const toDateIso = today.toISOString().slice(0, 10);
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 30);
+    const fromDateIso = fromDate.toISOString().slice(0, 10);
 
     if (body.mode === 'bootstrap') {
       // --- DETERMINISTIC CHUNKED BOOTSTRAP BRANCH ---
@@ -602,7 +619,9 @@ serve(async (req: Request) => {
       const isFinalChunk = (startIndex + chunk.length) >= sortedUniverse.length;
 
       const outcomes = await fetchLiquidityForUniverse({
-        members: chunk.map(m => ({ symbol: m.symbol, exchange: m.exchange })),
+        members: chunk.map(m => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
+        fromDateIso,
+        toDateIso,
         dhanFetchUrl,
         serviceKey: SUPABASE_SERVICE_ROLE_KEY,
       });
@@ -656,7 +675,9 @@ serve(async (req: Request) => {
     // and chained appendLiquidity + markPhase. Mirrors the bootstrap branch
     // pattern but runs against the FULL universe (no chunking).
     const fetchOutcomes = await fetchLiquidityForUniverse({
-      members: canonicalMembers.map(m => ({ symbol: m.symbol, exchange: m.exchange })),
+      members: canonicalMembers.map(m => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
+      fromDateIso,
+      toDateIso,
       dhanFetchUrl,
       serviceKey: SUPABASE_SERVICE_ROLE_KEY,
     });
@@ -817,20 +838,11 @@ serve(async (req: Request) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const finishedAt = new Date().toISOString();
-    await logCronRun(supabase, {
-      batch_id: batchId,
-      mode: body.mode,
-      status: 'error',
-      started_at: startedAt,
-      finished_at: finishedAt,
-      error: msg,
-      metrics: phaseMs,
+    const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
+    console.error('cron fatal:', msg, e);
+    return new Response(JSON.stringify({ ok: false, error: msg ?? 'unknown_error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
     });
-    return new Response(
-      JSON.stringify({ ok: false, batch_id: batchId, error: msg }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
   }
 });
