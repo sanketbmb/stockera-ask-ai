@@ -185,7 +185,7 @@ export function canonUniverseMembers(input: UniverseCanonicalInput): string {
 
   const FIELD_SEP_CHAR = String.fromCharCode(0x1E);
   const LIST_SEP_CHAR = String.fromCharCode(0x1F);
-  const NULL_TOK = String.fromCharCode(0x00) + 'NULL';
+  const NULL_TOK = 'NULL';
 
   return sorted.map(member => {
     const isin: string = member.isin ?? NULL_TOK;
