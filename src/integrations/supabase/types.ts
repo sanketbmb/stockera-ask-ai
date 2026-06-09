@@ -1131,12 +1131,20 @@ export type Database = {
       }
       stock_master: {
         Row: {
+          alternate_listings: Json | null
           company_name: string | null
           dhan_security_id: string
           exchange: string
           id: string
+          is_asm: boolean | null
+          is_gsm: boolean | null
+          is_suspended: boolean | null
+          is_t2t: boolean | null
           isin: string | null
           lot_size: number | null
+          pledged_pct: number | null
+          sector_canonical: string | null
+          seed_version: string | null
           segment: string
           symbol: string
           tick_size: number | null
@@ -1144,12 +1152,20 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          alternate_listings?: Json | null
           company_name?: string | null
           dhan_security_id: string
           exchange: string
           id?: string
+          is_asm?: boolean | null
+          is_gsm?: boolean | null
+          is_suspended?: boolean | null
+          is_t2t?: boolean | null
           isin?: string | null
           lot_size?: number | null
+          pledged_pct?: number | null
+          sector_canonical?: string | null
+          seed_version?: string | null
           segment: string
           symbol: string
           tick_size?: number | null
@@ -1157,12 +1173,20 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          alternate_listings?: Json | null
           company_name?: string | null
           dhan_security_id?: string
           exchange?: string
           id?: string
+          is_asm?: boolean | null
+          is_gsm?: boolean | null
+          is_suspended?: boolean | null
+          is_t2t?: boolean | null
           isin?: string | null
           lot_size?: number | null
+          pledged_pct?: number | null
+          sector_canonical?: string | null
+          seed_version?: string | null
           segment?: string
           symbol?: string
           tick_size?: number | null
@@ -1401,30 +1425,92 @@ export type Database = {
       }
       stock_picker_universe_snapshot: {
         Row: {
+          code_commit_sha: string
           created_at: string
-          members: Json
+          id: string
+          invoked_by: string
           run_date_ist: string
+          seed_source_doc_sha: string
           seed_version: string
-          snapshot_hash: string
-          snapshot_id: string
+          universe_size: number
+          universe_snapshot_hash: string
         }
         Insert: {
+          code_commit_sha: string
           created_at?: string
-          members: Json
+          id?: string
+          invoked_by: string
           run_date_ist: string
+          seed_source_doc_sha: string
           seed_version: string
-          snapshot_hash: string
-          snapshot_id?: string
+          universe_size: number
+          universe_snapshot_hash: string
         }
         Update: {
+          code_commit_sha?: string
           created_at?: string
-          members?: Json
+          id?: string
+          invoked_by?: string
           run_date_ist?: string
+          seed_source_doc_sha?: string
           seed_version?: string
-          snapshot_hash?: string
-          snapshot_id?: string
+          universe_size?: number
+          universe_snapshot_hash?: string
         }
         Relationships: []
+      }
+      stock_picker_universe_snapshot_member: {
+        Row: {
+          alternate_listings: Json | null
+          canonical_rank: number
+          created_at: string
+          dhan_security_id: string | null
+          exchange: string
+          id: number
+          isin: string | null
+          sector_canonical: string | null
+          segment: string
+          successor_applied: boolean | null
+          symbol: string
+          universe_snapshot_id: string
+        }
+        Insert: {
+          alternate_listings?: Json | null
+          canonical_rank: number
+          created_at?: string
+          dhan_security_id?: string | null
+          exchange: string
+          id?: number
+          isin?: string | null
+          sector_canonical?: string | null
+          segment: string
+          successor_applied?: boolean | null
+          symbol: string
+          universe_snapshot_id: string
+        }
+        Update: {
+          alternate_listings?: Json | null
+          canonical_rank?: number
+          created_at?: string
+          dhan_security_id?: string | null
+          exchange?: string
+          id?: number
+          isin?: string | null
+          sector_canonical?: string | null
+          segment?: string
+          successor_applied?: boolean | null
+          symbol?: string
+          universe_snapshot_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_picker_universe_snapshot_member_universe_snapshot_id_fkey"
+            columns: ["universe_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "stock_picker_universe_snapshot"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_portfolio: {
         Row: {
