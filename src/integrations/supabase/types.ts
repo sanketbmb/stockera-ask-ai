@@ -437,27 +437,39 @@ export type Database = {
       }
       cron_run_log: {
         Row: {
-          details: Json | null
+          batch_id: string | null
+          created_at: string
+          error_message: string | null
+          finished_at: string
+          function_name: string
           id: number
-          job_name: string
-          rows_affected: number
-          run_at: string
+          metrics: Json | null
+          mode: string | null
+          started_at: string
           status: string
         }
         Insert: {
-          details?: Json | null
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          finished_at: string
+          function_name: string
           id?: number
-          job_name: string
-          rows_affected?: number
-          run_at?: string
-          status?: string
+          metrics?: Json | null
+          mode?: string | null
+          started_at: string
+          status: string
         }
         Update: {
-          details?: Json | null
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string
+          function_name?: string
           id?: number
-          job_name?: string
-          rows_affected?: number
-          run_at?: string
+          metrics?: Json | null
+          mode?: string | null
+          started_at?: string
           status?: string
         }
         Relationships: []
@@ -1159,6 +1171,261 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_batch_rejection: {
+        Row: {
+          batch_id: string
+          batch_state: string
+          batch_type: string
+          code_commit_sha: string
+          created_at: string
+          data_gaps_at_generation: Json | null
+          id: number
+          insufficient_count: number
+          insufficient_data_symbols: Json | null
+          legal_name: string
+          near_miss_symbols: Json | null
+          picks_issued_count: number
+          reg_no: string
+          regulatory_status_at_generation: string
+          rejected_count: number
+          rejected_symbols: Json | null
+          replay_payload_hash: string | null
+          replay_payload_hash_version: string
+          run_at: string
+          total_universe_count: number
+          universe_snapshot_id: string
+        }
+        Insert: {
+          batch_id: string
+          batch_state: string
+          batch_type: string
+          code_commit_sha: string
+          created_at?: string
+          data_gaps_at_generation?: Json | null
+          id?: number
+          insufficient_count: number
+          insufficient_data_symbols?: Json | null
+          legal_name: string
+          near_miss_symbols?: Json | null
+          picks_issued_count: number
+          reg_no: string
+          regulatory_status_at_generation: string
+          rejected_count: number
+          rejected_symbols?: Json | null
+          replay_payload_hash?: string | null
+          replay_payload_hash_version: string
+          run_at: string
+          total_universe_count: number
+          universe_snapshot_id: string
+        }
+        Update: {
+          batch_id?: string
+          batch_state?: string
+          batch_type?: string
+          code_commit_sha?: string
+          created_at?: string
+          data_gaps_at_generation?: Json | null
+          id?: number
+          insufficient_count?: number
+          insufficient_data_symbols?: Json | null
+          legal_name?: string
+          near_miss_symbols?: Json | null
+          picks_issued_count?: number
+          reg_no?: string
+          regulatory_status_at_generation?: string
+          rejected_count?: number
+          rejected_symbols?: Json | null
+          replay_payload_hash?: string | null
+          replay_payload_hash_version?: string
+          run_at?: string
+          total_universe_count?: number
+          universe_snapshot_id?: string
+        }
+        Relationships: []
+      }
+      stock_picker_liquidity_20d: {
+        Row: {
+          adt_20d_rs: number | null
+          adv_20d: number | null
+          close: number
+          created_at: string
+          data_snapshot_at: string
+          exchange: string
+          fetch_status: string
+          id: number
+          record_date: string
+          source_response_hash: string | null
+          symbol: string
+          turnover_rs: number
+          volume: number
+        }
+        Insert: {
+          adt_20d_rs?: number | null
+          adv_20d?: number | null
+          close: number
+          created_at?: string
+          data_snapshot_at: string
+          exchange: string
+          fetch_status: string
+          id?: number
+          record_date: string
+          source_response_hash?: string | null
+          symbol: string
+          turnover_rs: number
+          volume: number
+        }
+        Update: {
+          adt_20d_rs?: number | null
+          adv_20d?: number | null
+          close?: number
+          created_at?: string
+          data_snapshot_at?: string
+          exchange?: string
+          fetch_status?: string
+          id?: number
+          record_date?: string
+          source_response_hash?: string | null
+          symbol?: string
+          turnover_rs?: number
+          volume?: number
+        }
+        Relationships: []
+      }
+      stock_picker_pick_audit: {
+        Row: {
+          batch_id: string
+          batch_type: string
+          code_commit_sha: string
+          composite_score: number | null
+          created_at: string
+          data_gaps_at_generation: Json | null
+          exchange: string
+          generated_at: string
+          id: number
+          legal_name: string
+          pillar_scores: Json | null
+          reg_no: string
+          regulatory_status_at_generation: string
+          replay_payload_hash: string | null
+          replay_payload_hash_version: string
+          symbol: string
+          universe_snapshot_id: string
+          verdict: string
+        }
+        Insert: {
+          batch_id: string
+          batch_type: string
+          code_commit_sha: string
+          composite_score?: number | null
+          created_at?: string
+          data_gaps_at_generation?: Json | null
+          exchange: string
+          generated_at: string
+          id?: number
+          legal_name: string
+          pillar_scores?: Json | null
+          reg_no: string
+          regulatory_status_at_generation: string
+          replay_payload_hash?: string | null
+          replay_payload_hash_version: string
+          symbol: string
+          universe_snapshot_id: string
+          verdict: string
+        }
+        Update: {
+          batch_id?: string
+          batch_type?: string
+          code_commit_sha?: string
+          composite_score?: number | null
+          created_at?: string
+          data_gaps_at_generation?: Json | null
+          exchange?: string
+          generated_at?: string
+          id?: number
+          legal_name?: string
+          pillar_scores?: Json | null
+          reg_no?: string
+          regulatory_status_at_generation?: string
+          replay_payload_hash?: string | null
+          replay_payload_hash_version?: string
+          symbol?: string
+          universe_snapshot_id?: string
+          verdict?: string
+        }
+        Relationships: []
+      }
+      stock_picker_runtime_config: {
+        Row: {
+          config_key: string
+          config_value: Json
+          description: string | null
+          kind: string
+          updated_at: string
+        }
+        Insert: {
+          config_key: string
+          config_value: Json
+          description?: string | null
+          kind: string
+          updated_at?: string
+        }
+        Update: {
+          config_key?: string
+          config_value?: Json
+          description?: string | null
+          kind?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stock_picker_trading_calendar: {
+        Row: {
+          calendar_date: string
+          created_at: string
+          description: string | null
+          is_trading_day: boolean
+        }
+        Insert: {
+          calendar_date: string
+          created_at?: string
+          description?: string | null
+          is_trading_day?: boolean
+        }
+        Update: {
+          calendar_date?: string
+          created_at?: string
+          description?: string | null
+          is_trading_day?: boolean
+        }
+        Relationships: []
+      }
+      stock_picker_universe_snapshot: {
+        Row: {
+          created_at: string
+          members: Json
+          run_date_ist: string
+          seed_version: string
+          snapshot_hash: string
+          snapshot_id: string
+        }
+        Insert: {
+          created_at?: string
+          members: Json
+          run_date_ist: string
+          seed_version: string
+          snapshot_hash: string
+          snapshot_id?: string
+        }
+        Update: {
+          created_at?: string
+          members?: Json
+          run_date_ist?: string
+          seed_version?: string
+          snapshot_hash?: string
+          snapshot_id?: string
+        }
+        Relationships: []
+      }
       user_portfolio: {
         Row: {
           added_from_query_id: string | null
@@ -1279,6 +1546,24 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_liquidity_20d_latest: {
+        Row: {
+          adt_20d_rs: number | null
+          adv_20d: number | null
+          close: number | null
+          created_at: string | null
+          data_snapshot_at: string | null
+          exchange: string | null
+          fetch_status: string | null
+          id: number | null
+          record_date: string | null
+          source_response_hash: string | null
+          symbol: string | null
+          turnover_rs: number | null
+          volume: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_demo_credits: { Args: { _amount: number }; Returns: Json }
@@ -1306,6 +1591,51 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      stock_picker_write_audit_row: {
+        Args: {
+          p_batch_id: string
+          p_batch_type: string
+          p_code_commit_sha: string
+          p_composite_score: number
+          p_data_gaps_at_generation: string
+          p_exchange: string
+          p_generated_at: string
+          p_legal_name: string
+          p_pillar_scores: string
+          p_reg_no: string
+          p_regulatory_status_at_generation: string
+          p_replay_payload_hash: string
+          p_replay_payload_hash_version: string
+          p_symbol: string
+          p_universe_snapshot_id: string
+          p_verdict: string
+        }
+        Returns: string
+      }
+      stock_picker_write_batch_rejection_row: {
+        Args: {
+          p_batch_id: string
+          p_batch_state: string
+          p_batch_type: string
+          p_code_commit_sha: string
+          p_data_gaps_at_generation: string
+          p_insufficient_count: number
+          p_insufficient_data_symbols: string
+          p_legal_name: string
+          p_near_miss_symbols: string
+          p_picks_issued_count: number
+          p_reg_no: string
+          p_regulatory_status_at_generation: string
+          p_rejected_count: number
+          p_rejected_symbols: string
+          p_replay_payload_hash: string
+          p_replay_payload_hash_version: string
+          p_run_at: string
+          p_total_universe_count: number
+          p_universe_snapshot_id: string
+        }
+        Returns: string
       }
     }
     Enums: {
