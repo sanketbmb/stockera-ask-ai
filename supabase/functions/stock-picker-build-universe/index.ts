@@ -201,7 +201,7 @@ async function upsertSnapshot(
     const { error: memErr } = await supabase
       .from('stock_picker_universe_snapshot_member')
       .insert(memberRows);
-    if (memErr) throw new Error(`build-universe: member insert failed at batch ${i}`);
+    if (memErr) throw new Error(`build-universe: member insert failed at batch ${i}: ${memErr.message}`);
   }
 
   return { id: snapshotId, reused: false };
