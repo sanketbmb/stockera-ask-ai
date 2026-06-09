@@ -108,8 +108,8 @@ function dedupByIsin(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
 
 function canonicalSort(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
   return [...rows].sort((a, b) => {
-    const aKey: string = a.isin ?? '\u0000';
-    const bKey: string = b.isin ?? '\u0000';
+    const aKey: string = a.isin ?? 'NULL';
+    const bKey: string = b.isin ?? 'NULL';
     const aCPs = [...aKey];
     const bCPs = [...bKey];
     const maxLen = Math.max(aCPs.length, bCPs.length);
