@@ -54,7 +54,9 @@ import {
   Sparkles,
   Wallet,
   CheckCircle2,
+  Wand2,
 } from "lucide-react";
+
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
 import { detectAmbiguousStem } from "@/lib/symbol-ambiguity-gate";
