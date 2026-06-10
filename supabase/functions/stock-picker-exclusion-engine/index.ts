@@ -151,7 +151,7 @@ serve(async (req: Request) => {
       rejected_symbols: rejected,
       insufficient_data_symbols: insufficient,
       per_symbol_verdicts: verdicts,
-      liquidity_records_for_hash: liq.map(r => ({ symbol: r.symbol, exchange: r.exchange, record_date: r.latest_date, close: String(r.close), volume: String(r.volume), turnover_rs: String(r.turnover_rs) })),
+      liquidity_records_for_hash: filteredLiq.map(r => ({ symbol: r.symbol, exchange: r.exchange, record_date: r.record_date, close: formatFixed2(Number(r.close)), volume: formatInteger(Number(r.volume)), turnover_rs: formatFixed2(Number(r.turnover_rs)) })),
       exclusion_checks_for_hash: checkOrder.map(id => ({ check_id: id, threshold_value: config.get(CHECK_CONFIG_MAP[id].thresholdKey!)?.toString() ?? 'NULL', enabled: jsonbBool(config.get(CHECK_CONFIG_MAP[id].enableKey)) }))
     }), { status: 200 });
   } catch (e) {
