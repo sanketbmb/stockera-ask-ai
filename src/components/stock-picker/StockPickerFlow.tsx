@@ -168,8 +168,8 @@ export function StockPickerFlow() {
     const body: StockPickerRequest = {
       horizon,
       risk_profile: risk,
-      sector: proOn ? sector : "All Sectors",
-      index: proOn ? indexName : "All Indices",
+      sector: SECTOR_DATA_LOADED ? sector : "All Sectors",
+      index: INDEX_DATA_LOADED ? indexName : "All Indices",
       stock_count: Math.max(1, Math.min(5, stockCount)),
       is_pro: proOn,
     };
