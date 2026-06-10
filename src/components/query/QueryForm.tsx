@@ -54,7 +54,9 @@ import {
   Sparkles,
   Wallet,
   CheckCircle2,
+  Wand2,
 } from "lucide-react";
+
 import { StockAutocomplete } from "@/components/common/StockAutocomplete";
 import type { NseStock } from "@/data/nseStocks";
 import { detectAmbiguousStem } from "@/lib/symbol-ambiguity-gate";
@@ -1039,10 +1041,29 @@ export function QueryForm() {
                           </button>
                         );
                       })}
+                      {group === "stock" && (
+                        <button
+                          key="stock_picker_nav"
+                          type="button"
+                          aria-label="Which Stock Should I Buy? — AI-picked stocks (SP-1 verified)"
+                          title="AI-picked stocks (SP-1 verified)"
+                          onClick={() => navigate({ to: "/stock-picker" })}
+                          className="group rounded-xl border px-3 py-2 text-left transition min-w-[160px] border-border hover:border-primary/40"
+                        >
+                          <div className="flex items-center gap-1.5 text-sm font-medium">
+                            <Wand2 className="h-3.5 w-3.5" />
+                            <span>Which Stock Should I Buy?</span>
+                          </div>
+                          <p className="text-[11px] mt-0.5 leading-snug text-muted-foreground">
+                            AI-picked stocks (SP-1 verified)
+                          </p>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
               })}
+
             </div>
 
             {routerLoading && (
