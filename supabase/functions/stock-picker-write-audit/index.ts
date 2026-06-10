@@ -2,45 +2,13 @@
 // SP-1 Write Audit — THE ONLY WRITER to append-only audit tables
 // Location: supabase/functions/stock-picker-write-audit/index.ts
 //
-// SINGLE-WRITER INVARIANT:
-//   This is the ONLY edge function that writes to stock_picker_pick_audit and
-//   stock_picker_batch_rejection. All other SP-1 functions (build-universe,
-//   exclusion-engine, daily-cron) call THIS function — never the tables.
-//
-// WRITE PATH:
-//   This function calls the SECURITY DEFINER RPCs:
-//     - stock_picker_write_audit_row()
-//     - stock_picker_write_batch_rejection_row()
-//   These RPCs use set_config('app.writer_role', ..., true) + INSERT atomically
-//   within a single function-call transaction. The BEFORE INSERT trigger sees
-//   the role in the same transaction and permits the write.
-//
-//   NEVER do a bare .from('stock_picker_pick_audit').insert(...) — the trigger
-//   will reject it because SET LOCAL is transaction-scoped and a separate
-//   supabase-js call uses a different pooled connection.
-//
-// REQUIRED PARAMETERS (no defaults):
-//   p_generated_at                          — caller-supplied ISO 8601 (NOT now())
-//   p_replay_payload_hash_version           — caller-supplied SP1ReplaySchemaVersion
-//   p_regulatory_status_at_generation       — from currentRegulatoryStamp()
-//   p_reg_no                                — from currentRegulatoryStamp()
-//   p_legal_name                            — from currentRegulatoryStamp()
-//
-// DRY-RUN ROUTING:
-//   This writer does NOT decide dry-run. The cron decides. When called with
-//   batch_type='dry_run', this writer still writes — the rows are tagged so
-//   downstream readers (SP-2/SP-5) filter via the SP1-A25 reader contract:
-//     WHERE batch_type NOT IN ('dry_run','bootstrap')
-//
-// RETURN CONTRACT:
-//   - Success → { ok: true, id: uuid }
-//   - Refusal (kill-switch in RPC, missing fields, validation) → HTTP 4xx/5xx
-//   - Never returns NULL or distinguishes success by null/undefined
-//
-// HASH NULLABILITY (DEFECT 4):
-//   p_replay_payload_hash may be NULL when batch_state='aborted' (data
-//   incomplete → hash is not a replay anchor). When non-null, it must be
-//   64-char lowercase hex.
+// SP-1.6 Step 4 hardening:
+//   - Schema version locked to REPLAY_SCHEMA_VERSION from replay-hash.
+//   - Internal-secret gate (x-sp1-internal-secret).
+//   - (batch_type, batch_state) matrix enforcement.
+//   - Async regulatory stamp + composite-score runtime flag.
+//   - Idempotent writes: 23505 unique_violation -> ok+deduped, not error.
+//   - Per-op result rows with { op, ok, id?, deduped?, error? }.
 // =============================================================================
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
@@ -48,10 +16,31 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import type {
   WriteAuditRowParams,
   WriteBatchRejectionParams,
-  WriteAuditRowResult,
-  WriteBatchRejectionResult,
 } from '../_shared/stock-picker/types.ts';
-import { SP1_REPLAY_SCHEMA_VERSION } from '../_shared/stock-picker/types.ts';
+import { REPLAY_SCHEMA_VERSION } from '../_shared/stock-picker/replay-hash.ts';
+import {
+  currentRegulatoryStamp,
+  isCompositeScoreWritesEnabled,
+} from '../_shared/stock-picker/regulatory-status.ts';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const UQ_PICK_AUDIT = 'uq_pick_audit_batch_symbol';
+const UQ_BATCH_REJECTION = 'uq_batch_rejection_batch_id';
+
+const ALLOWED_MATRIX: ReadonlySet<string> = new Set<string>([
+  'live/completed',
+  'live/aborted',
+  'dry_run/completed',
+  'dry_run/aborted',
+  'bootstrap/completed',
+  'bootstrap/aborted',
+]);
+
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const LOWER_HEX_64 = /^[0-9a-f]{64}$/;
 
 // ---------------------------------------------------------------------------
 // Request envelope
@@ -61,55 +50,55 @@ type WriteOp =
   | { op: 'write_batch_rejection'; params: WriteBatchRejectionParams };
 
 interface WriteAuditRequest {
-  invoked_by: string;
+  invoked_by?: string;
   operations: WriteOp[];
 }
 
+interface OpResult {
+  op: string;
+  ok: boolean;
+  id?: string;
+  deduped?: boolean;
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
-// Validation helpers — fail-loud, no silent acceptance
+// Response helpers
 // ---------------------------------------------------------------------------
-function requireString(value: unknown, fieldName: string): string {
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
+function assertNonEmptyString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`write-audit: required string field missing/empty: ${fieldName}`);
   }
   return value;
 }
 
-function requireHashVersion(value: unknown): string {
-  const v = requireString(value, 'p_replay_payload_hash_version');
-  if (v !== SP1_REPLAY_SCHEMA_VERSION) {
-    throw new Error(
-      `write-audit: p_replay_payload_hash_version must be ${SP1_REPLAY_SCHEMA_VERSION}, got '${v}'`
-    );
+function assertUuid(value: unknown, fieldName: string): string {
+  const v = assertNonEmptyString(value, fieldName);
+  if (!UUID_RE.test(v)) {
+    throw new Error(`write-audit: ${fieldName} must be a valid UUID, got '${v}'`);
   }
   return v;
 }
 
-function requireIso8601(value: unknown, fieldName: string): string {
-  const v = requireString(value, fieldName);
-  const parsed = Date.parse(v);
-  if (Number.isNaN(parsed)) {
-    throw new Error(`write-audit: ${fieldName} must be ISO 8601, got '${v}'`);
+function assertLowerHex64(value: unknown, fieldName: string): string {
+  const v = assertNonEmptyString(value, fieldName);
+  if (!LOWER_HEX_64.test(v)) {
+    throw new Error(`write-audit: ${fieldName} must be 64-char lowercase hex SHA-256`);
   }
   return v;
 }
 
-function requireBatchType(value: unknown): 'live' | 'dry_run' {
-  if (value !== 'live' && value !== 'dry_run') {
-    throw new Error(`write-audit: p_batch_type must be 'live'|'dry_run', got ${JSON.stringify(value)}`);
-  }
-  return value;
-}
-
-function requireBatchState(value: unknown): 'running' | 'aborted' | 'completed' | 'dry_run' {
-  if (value !== 'running' && value !== 'aborted' && value !== 'completed' && value !== 'dry_run') {
-    throw new Error(`write-audit: p_batch_state invalid: ${JSON.stringify(value)}`);
-  }
-  return value;
-}
-
-// Allow NULL hash when batch_state='aborted' (DEFECT 4); otherwise require hex.
-function requireHashOrNullForAborted(
+function assertHashOrNullForAborted(
   hash: unknown,
   batchState: string,
   fieldName: string
@@ -118,48 +107,97 @@ function requireHashOrNullForAborted(
     if (batchState === 'aborted') return null;
     throw new Error(
       `write-audit: ${fieldName} cannot be null for batch_state='${batchState}' ` +
-      `(only batch_state='aborted' permits null hash — DEFECT 4 contract)`
+        `(only batch_state='aborted' permits null hash)`
     );
   }
-  if (typeof hash !== 'string') {
-    throw new Error(`write-audit: ${fieldName} must be string or null, got ${typeof hash}`);
-  }
-  if (!/^[0-9a-f]{64}$/.test(hash)) {
-    throw new Error(`write-audit: ${fieldName} must be 64-char lowercase hex SHA-256`);
-  }
-  return hash;
+  return assertLowerHex64(hash, fieldName);
 }
 
-// For pick_audit, hash is always required (per-stock verdicts have valid data).
-function requireLowerHexSha256(value: unknown, fieldName: string): string {
-  const v = requireString(value, fieldName);
-  if (!/^[0-9a-f]{64}$/.test(v)) {
-    throw new Error(`write-audit: ${fieldName} must be 64-char lowercase hex SHA-256`);
+function assertIso8601(value: unknown, fieldName: string): string {
+  const v = assertNonEmptyString(value, fieldName);
+  if (Number.isNaN(Date.parse(v))) {
+    throw new Error(`write-audit: ${fieldName} must be ISO 8601, got '${v}'`);
   }
   return v;
 }
 
+function assertSchemaVersion(value: unknown): string {
+  const v = assertNonEmptyString(value, 'p_replay_payload_hash_version');
+  if (v !== REPLAY_SCHEMA_VERSION) {
+    throw new Error(
+      `replay schema version mismatch: expected ${REPLAY_SCHEMA_VERSION}, got ${v}`
+    );
+  }
+  return v;
+}
+
+function assertMatrix(batchType: unknown, batchState: unknown): { type: string; state: string } {
+  if (typeof batchType !== 'string' || typeof batchState !== 'string') {
+    throw new Error(
+      `invalid (batch_type, batch_state): ${String(batchType)}/${String(batchState)}`
+    );
+  }
+  const key = `${batchType}/${batchState}`;
+  if (!ALLOWED_MATRIX.has(key)) {
+    throw new Error(`invalid (batch_type, batch_state): ${batchType}/${batchState}`);
+  }
+  return { type: batchType, state: batchState };
+}
+
 // ---------------------------------------------------------------------------
-// RPC callers
+// Idempotency / error classification
 // ---------------------------------------------------------------------------
-async function callWritePickAudit(
+interface PgErrorLike {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
+function isUniqueViolationOnConstraint(err: PgErrorLike | null | undefined, constraint: string): boolean {
+  if (!err || err.code !== '23505') return false;
+  const haystack = `${err.message ?? ''} ${err.details ?? ''} ${err.hint ?? ''}`;
+  return haystack.includes(constraint);
+}
+
+// ---------------------------------------------------------------------------
+// write_pick_audit
+// ---------------------------------------------------------------------------
+async function runWritePickAudit(
   supabase: SupabaseClient,
-  params: WriteAuditRowParams
-): Promise<WriteAuditRowResult> {
-  requireString(params.p_batch_id, 'p_batch_id');
-  requireBatchType(params.p_batch_type);
-  requireIso8601(params.p_generated_at, 'p_generated_at');
-  requireString(params.p_symbol, 'p_symbol');
-  requireString(params.p_exchange, 'p_exchange');
-  requireString(params.p_verdict, 'p_verdict');
-  requireString(params.p_code_commit_sha, 'p_code_commit_sha');
-  requireLowerHexSha256(params.p_replay_payload_hash, 'p_replay_payload_hash');
-  requireHashVersion(params.p_replay_payload_hash_version);
-  requireString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
-  // Regulatory stamp triple (BLOCKER 2)
-  requireString(params.p_regulatory_status_at_generation, 'p_regulatory_status_at_generation');
-  requireString(params.p_reg_no, 'p_reg_no');
-  requireString(params.p_legal_name, 'p_legal_name');
+  paramsIn: WriteAuditRowParams
+): Promise<OpResult> {
+  const params: WriteAuditRowParams = { ...paramsIn };
+
+  assertUuid(params.p_batch_id, 'p_batch_id');
+
+  // Matrix check: for pick_audit only batch_type is supplied; treat the row as
+  // "completed" (per-stock verdicts only exist on successful batches).
+  assertMatrix(params.p_batch_type, 'completed');
+
+  assertIso8601(params.p_generated_at, 'p_generated_at');
+  assertNonEmptyString(params.p_symbol, 'p_symbol');
+  assertNonEmptyString(params.p_exchange, 'p_exchange');
+  assertNonEmptyString(params.p_verdict, 'p_verdict');
+  assertNonEmptyString(params.p_code_commit_sha, 'p_code_commit_sha');
+  assertLowerHex64(params.p_replay_payload_hash, 'p_replay_payload_hash');
+  assertSchemaVersion(params.p_replay_payload_hash_version);
+  assertNonEmptyString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
+
+  // Source-of-truth regulatory stamp (async, runtime-config backed).
+  const stamp = await currentRegulatoryStamp();
+  params.p_regulatory_status_at_generation = stamp.regulatory_status_at_generation;
+  params.p_reg_no = stamp.sebi_reg_no;
+  params.p_legal_name = stamp.firm_legal_name;
+
+  // Composite-score runtime flag gate.
+  if (params.p_composite_score !== null && params.p_composite_score !== undefined) {
+    const allowed = await isCompositeScoreWritesEnabled();
+    if (!allowed) {
+      console.warn('composite_score forced to null by runtime flag');
+      params.p_composite_score = null;
+    }
+  }
 
   const { data, error } = await supabase.rpc('stock_picker_write_audit_row', {
     p_batch_id: params.p_batch_id,
@@ -181,39 +219,53 @@ async function callWritePickAudit(
   });
 
   if (error) {
-    throw new Error(
-      `write-audit: stock_picker_write_audit_row RPC failed: ` +
-      `${error.code ?? 'no-code'} ${error.message}`
-    );
+    if (isUniqueViolationOnConstraint(error as PgErrorLike, UQ_PICK_AUDIT)) {
+      return { op: 'write_pick_audit', ok: true, deduped: true };
+    }
+    return {
+      op: 'write_pick_audit',
+      ok: false,
+      error: `${error.code ?? 'no-code'} ${error.message}`,
+    };
   }
+
   if (typeof data !== 'string' || data.length === 0) {
-    throw new Error(
-      `write-audit: stock_picker_write_audit_row returned non-uuid: ${JSON.stringify(data)}`
-    );
+    return {
+      op: 'write_pick_audit',
+      ok: false,
+      error: `stock_picker_write_audit_row returned non-uuid: ${JSON.stringify(data)}`,
+    };
   }
-  return { id: data };
+  return { op: 'write_pick_audit', ok: true, id: data };
 }
 
-async function callWriteBatchRejection(
+// ---------------------------------------------------------------------------
+// write_batch_rejection
+// ---------------------------------------------------------------------------
+async function runWriteBatchRejection(
   supabase: SupabaseClient,
-  params: WriteBatchRejectionParams
-): Promise<WriteBatchRejectionResult> {
-  requireString(params.p_batch_id, 'p_batch_id');
-  requireBatchType(params.p_batch_type);
-  const batchState = requireBatchState(params.p_batch_state);
-  requireIso8601(params.p_run_at, 'p_run_at');
-  requireString(params.p_code_commit_sha, 'p_code_commit_sha');
-  // DEFECT 4: hash may be null when batch_state='aborted'
-  const hashOrNull = requireHashOrNullForAborted(
+  paramsIn: WriteBatchRejectionParams
+): Promise<OpResult> {
+  const params: WriteBatchRejectionParams = { ...paramsIn };
+
+  assertUuid(params.p_batch_id, 'p_batch_id');
+  const { state } = assertMatrix(params.p_batch_type, params.p_batch_state);
+  assertIso8601(params.p_run_at, 'p_run_at');
+  assertNonEmptyString(params.p_code_commit_sha, 'p_code_commit_sha');
+
+  const hashOrNull = assertHashOrNullForAborted(
     params.p_replay_payload_hash,
-    batchState,
+    state,
     'p_replay_payload_hash'
   );
-  requireHashVersion(params.p_replay_payload_hash_version);
-  requireString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
-  requireString(params.p_regulatory_status_at_generation, 'p_regulatory_status_at_generation');
-  requireString(params.p_reg_no, 'p_reg_no');
-  requireString(params.p_legal_name, 'p_legal_name');
+  assertSchemaVersion(params.p_replay_payload_hash_version);
+  assertNonEmptyString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
+
+  // Source-of-truth regulatory stamp.
+  const stamp = await currentRegulatoryStamp();
+  params.p_regulatory_status_at_generation = stamp.regulatory_status_at_generation;
+  params.p_reg_no = stamp.sebi_reg_no;
+  params.p_legal_name = stamp.firm_legal_name;
 
   const { data, error } = await supabase.rpc('stock_picker_write_batch_rejection_row', {
     p_batch_id: params.p_batch_id,
@@ -238,17 +290,24 @@ async function callWriteBatchRejection(
   });
 
   if (error) {
-    throw new Error(
-      `write-audit: stock_picker_write_batch_rejection_row RPC failed: ` +
-      `${error.code ?? 'no-code'} ${error.message}`
-    );
+    if (isUniqueViolationOnConstraint(error as PgErrorLike, UQ_BATCH_REJECTION)) {
+      return { op: 'write_batch_rejection', ok: true, deduped: true };
+    }
+    return {
+      op: 'write_batch_rejection',
+      ok: false,
+      error: `${error.code ?? 'no-code'} ${error.message}`,
+    };
   }
+
   if (typeof data !== 'string' || data.length === 0) {
-    throw new Error(
-      `write-audit: stock_picker_write_batch_rejection_row returned non-uuid: ${JSON.stringify(data)}`
-    );
+    return {
+      op: 'write_batch_rejection',
+      ok: false,
+      error: `stock_picker_write_batch_rejection_row returned non-uuid: ${JSON.stringify(data)}`,
+    };
   }
-  return { id: data };
+  return { op: 'write_batch_rejection', ok: true, id: data };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,18 +315,25 @@ async function callWriteBatchRejection(
 // ---------------------------------------------------------------------------
 serve(async (req: Request) => {
   if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'method_not_allowed' }),
-      { status: 405, headers: { 'Content-Type': 'application/json' } }
-    );
+    return jsonResponse(405, { ok: false, error: 'method_not_allowed' });
   }
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'missing_env' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    return jsonResponse(500, { ok: false, error: 'missing_env' });
+  }
+
+  // Internal-secret gate
+  const expectedSecret = Deno.env.get('SP1_INTERNAL_INVOCATION_SECRET');
+  if (expectedSecret && expectedSecret.length > 0) {
+    const headerSecret = req.headers.get('x-sp1-internal-secret');
+    if (headerSecret !== expectedSecret) {
+      return jsonResponse(401, { ok: false, error: 'unauthorized: invalid internal secret' });
+    }
+  } else {
+    console.warn(
+      'write-audit: SP1_INTERNAL_INVOCATION_SECRET not set; accepting request under migration grace period'
     );
   }
 
@@ -275,46 +341,70 @@ serve(async (req: Request) => {
   try {
     body = await req.json();
   } catch (_e) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'invalid_json' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
-    );
+    return jsonResponse(400, { ok: false, error: 'invalid_json' });
   }
 
   if (!body || typeof body !== 'object' || !Array.isArray(body.operations)) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'invalid_envelope' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
-    );
+    return jsonResponse(400, { ok: false, error: 'invalid_envelope' });
+  }
+
+  // Pre-flight: schema-version + matrix checks on every op -> HTTP 400 short-circuit
+  for (const op of body.operations) {
+    if (!op || typeof op !== 'object') {
+      return jsonResponse(400, { ok: false, error: 'invalid_envelope' });
+    }
+    const params = (op as { params?: Record<string, unknown> }).params ?? {};
+    const ver = params.p_replay_payload_hash_version;
+    if (typeof ver !== 'string' || ver !== REPLAY_SCHEMA_VERSION) {
+      return jsonResponse(400, {
+        ok: false,
+        error: `replay schema version mismatch: expected ${REPLAY_SCHEMA_VERSION}, got ${String(ver)}`,
+      });
+    }
+    if (op.op === 'write_pick_audit') {
+      try {
+        assertMatrix(params.p_batch_type, 'completed');
+      } catch (e) {
+        return jsonResponse(400, {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    } else if (op.op === 'write_batch_rejection') {
+      try {
+        assertMatrix(params.p_batch_type, params.p_batch_state);
+      } catch (e) {
+        return jsonResponse(400, {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    } else {
+      return jsonResponse(400, {
+        ok: false,
+        error: `invalid op: ${JSON.stringify((op as { op: string }).op)}`,
+      });
+    }
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const results: Array<{ op: string; id: string }> = [];
-  try {
-    for (const op of body.operations) {
+  const results: OpResult[] = [];
+  for (const op of body.operations) {
+    try {
       if (op.op === 'write_pick_audit') {
-        const r = await callWritePickAudit(supabase, op.params);
-        results.push({ op: 'write_pick_audit', id: r.id });
-      } else if (op.op === 'write_batch_rejection') {
-        const r = await callWriteBatchRejection(supabase, op.params);
-        results.push({ op: 'write_batch_rejection', id: r.id });
+        results.push(await runWritePickAudit(supabase, op.params));
       } else {
-        throw new Error(`write-audit: unknown op: ${JSON.stringify((op as { op: string }).op)}`);
+        results.push(await runWriteBatchRejection(supabase, op.params));
       }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      results.push({ op: op.op, ok: false, error: msg });
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return new Response(
-      JSON.stringify({ ok: false, error: msg, completed: results }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
   }
 
-  return new Response(
-    JSON.stringify({ ok: true, results }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  );
+  const allOk = results.every(r => r.ok === true);
+  return jsonResponse(allOk ? 200 : 207, { ok: allOk, results });
 });
