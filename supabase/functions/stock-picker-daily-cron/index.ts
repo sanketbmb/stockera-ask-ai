@@ -837,7 +837,13 @@ serve(async (req: Request) => {
 
     // BLOCKER 2: locked regulatory-status.ts shape — no arg; field names:
     //   regulatory_status_at_generation, sebi_reg_no, firm_legal_name.
-    const stamp = currentRegulatoryStamp();
+    // SP-1.6 Step 5: stamp is now async.
+    const stamp = await currentRegulatoryStamp();
+
+    // SP-1.6 Step 5: replay version constant moved to replay-hash and bumped.
+    // Cast to the existing params type (typed against the v1 string literal).
+    const replayHashVersionForParams =
+      replayHashVersion as unknown as WriteBatchRejectionParams['p_replay_payload_hash_version'];
 
     const rejectionParams: WriteBatchRejectionParams = {
       p_batch_id: batchId,
@@ -850,7 +856,7 @@ serve(async (req: Request) => {
       p_picks_issued_count: exclusion.survivors.length,
       p_code_commit_sha: CODE_COMMIT_SHA,
       p_replay_payload_hash: persistedHash,
-      p_replay_payload_hash_version: replayHashVersion,
+      p_replay_payload_hash_version: replayHashVersionForParams,
       p_data_gaps_at_generation: null,
       p_universe_snapshot_id: universe.universe_snapshot_id,
       p_rejected_count: exclusion.rejected_symbols.length,
