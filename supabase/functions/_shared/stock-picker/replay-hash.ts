@@ -1,29 +1,21 @@
 // =============================================================================
-// SP-1 Replay Payload Hash — Canonical Bundle Spec (4A binding)
+// SP-1 Replay Payload Hash — Canonical Bundle Spec (SP-1.6 Step 2 hardened)
 // Location: supabase/functions/_shared/stock-picker/replay-hash.ts
-// Frozen. DO NOT edit without phase-lead approval.
 //
-// Separator rules (per spec §4A):
-//   FIELD_SEP  = \u001E (0x1E) — separates the 9 top-level fields
-//   LIST_SEP   = \u001F (0x1F) — separates list elements within a field
-//   NULL_TOK   = '\u0000NULL' — literal string for absent ISIN
-//
-// Byte-faithfulness contract:
-//   - Caller pre-formats all numeric fields before passing to this module.
-//   - formatFixed2/formatInteger guard against negative/invalid inputs.
-//   - A14a/b/c tests call buildCanonicalString() directly (exported).
-//   - computeReplayPayloadHash() returns { hash, version } only (FIX 3).
-//
-// FIX 1: formatFixed2 / formatInteger reject negatives — dead branch removed.
-// FIX 2: assertNoSeparators() enforced on every emitted field in all canonicalizers.
-// FIX 3: computeReplayPayloadHash returns { hash, version } only (no canonical).
-// RULING A: canonExclusionChecks throws if any of the 8 checks are missing.
-// RULING B: re-validation regex in canonLiquidityBundle kept as caller-gate.
+// Changes vs. v1:
+//   - Schema version bumped to 'sp1-replay-v2' (v1 kept as DEPRECATED constant).
+//   - NULL sentinel changed from "\u0000NULL" to "@NULL".
+//   - ALLOW_NULL_FIELDS set: empty string "" instead of sentinel for listed fields.
+//   - Stable sort: isin ASC NULLS LAST, then symbol ASC, then exchange ASC.
+//   - Single SEP constant (U+001F); post-serialization collision asserts.
+//   - Asserts: batch_id (UUID-shaped), universe_snapshot_hash (lowercase hex 64),
+//              seed_version (non-empty).
+//   - formatFixed2 / formatInteger / record_date serialization unchanged.
+//   - Public API names unchanged.
 // =============================================================================
 
 import type {
   CanonicalBundle,
-  SP1ReplaySchemaVersion,
   UniverseCanonicalInput,
   LiquidityCanonicalInput,
   ExclusionCanonicalInput,
@@ -32,10 +24,27 @@ import type {
 import { EXCLUSION_CHECK_IDS } from './types.ts';
 
 // ---------------------------------------------------------------------------
-// Schema version (must match SP1_REPLAY_SCHEMA_VERSION in types.ts)
+// Schema versions
 // ---------------------------------------------------------------------------
 
-export const REPLAY_SCHEMA_VERSION: SP1ReplaySchemaVersion = 'sp1-replay-v1';
+/** DEPRECATED — kept for read-only reference. New writes MUST use REPLAY_SCHEMA_VERSION. */
+export const DEPRECATED_SP1_REPLAY_SCHEMA_VERSION = 'sp1-replay-v1' as const;
+
+export const REPLAY_SCHEMA_VERSION = 'sp1-replay-v2' as const;
+export type ReplaySchemaVersion = typeof REPLAY_SCHEMA_VERSION;
+
+// ---------------------------------------------------------------------------
+// Separators & sentinels
+// ---------------------------------------------------------------------------
+
+const SEP = '\u001f'; // unit separator — single source of truth
+const NULL_TOK = '@NULL';
+
+/**
+ * Fields where a null/undefined/empty value must serialize to "" (empty string)
+ * rather than the NULL_TOK sentinel. Add field names sparingly.
+ */
+const ALLOW_NULL_FIELDS: ReadonlySet<string> = new Set<string>([]);
 
 // ---------------------------------------------------------------------------
 // Error class
@@ -49,14 +58,9 @@ class ReplayHashError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// FIX 1 — Number formatters: reject negatives; no dead negative branch
+// Number formatters (UNCHANGED)
 // ---------------------------------------------------------------------------
 
-/**
- * Format a non-negative number as a fixed-2-decimal string.
- * Examples: 0 -> '0.00', 100 -> '100.00', 0.5 -> '0.50', 1.234 -> '1.23'
- * Throws on negative or non-finite input.
- */
 export function formatFixed2(value: number): string {
   if (!Number.isFinite(value)) {
     throw new ReplayHashError('replay-hash: value is not finite: ' + value);
@@ -68,10 +72,6 @@ export function formatFixed2(value: number): string {
   return rounded.toFixed(2);
 }
 
-/**
- * Format a non-negative integer as a plain string.
- * Throws on negative, non-finite, or non-integer input.
- */
 export function formatInteger(value: number): string {
   if (!Number.isFinite(value)) {
     throw new ReplayHashError('replay-hash: value is not finite: ' + value);
@@ -86,238 +86,227 @@ export function formatInteger(value: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// FIX 2 — Separator collision guard
+// Serialization helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Forbidden separator characters (per spec §4A).
- * ':' is the intra-tuple separator; 0x1E/0x1F/0x00 are structural separators.
- * Any field value containing one of these must throw — not silently escape.
+ * Serialize a value per the null/sentinel/allow-null rules and assert it does
+ * not contain the SEP byte. Returns the serialized string.
  */
-const FORBIDDEN_CHARS: string[] = [
-  String.fromCharCode(0x3A), // ':'
-  String.fromCharCode(0x1E), // FIELD_SEP
-  String.fromCharCode(0x1F), // LIST_SEP
-  String.fromCharCode(0x00), // NULL
-];
-
-/**
- * Throws if value contains any forbidden separator character.
- * Fail-loud at emit time — not at audit time three years later.
- */
-function assertNoSeparators(value: string, fieldName: string): void {
-  for (let fi = 0; fi < FORBIDDEN_CHARS.length; fi++) {
-    if (value.indexOf(FORBIDDEN_CHARS[fi]) !== -1) {
-      const code = FORBIDDEN_CHARS[fi].charCodeAt(0).toString(16).toUpperCase().padStart(4, '0');
-      throw new ReplayHashError(
-        'replay-hash: field \u2018' + fieldName + '\u2019 contains forbidden separator ' +
-        'U+' + code + ': value=\u2018' + value + '\u2019'
-      );
-    }
+function serializeField(name: string, value: string | null | undefined): string {
+  let out: string;
+  if (value === null || value === undefined || value === '') {
+    out = ALLOW_NULL_FIELDS.has(name) ? '' : NULL_TOK;
+  } else {
+    out = value;
   }
+  if (out.indexOf(SEP) !== -1) {
+    throw new Error('replay-hash: separator collision in field ' + name);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Date validation — build YYYY-MM-DD regex via String.fromCharCode
+// Format validators
 // ---------------------------------------------------------------------------
 
-// Numeric range checks (0x30–0x39)
-const NUM = String.fromCharCode(0x30) + '-' + String.fromCharCode(0x39);
-const DIGIT = '[' + NUM + ']';
-const YMD_PATTERN = new RegExp(
-  '^' +                    // start of string
-  DIGIT + '{4}' +          // YYYY
-  String.fromCharCode(0x2D) + // '-'
-  DIGIT + '{2}' +          // MM
-  String.fromCharCode(0x2D) + // '-'
-  DIGIT + '{2}' +          // DD
-  '$'
-);
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const RE_FIXED2 = /^\d*\.\d{2}$/;
+const RE_INTEGER = /^\d+$/;
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const LOWER_HEX_64_RE = /^[0-9a-f]{64}$/;
 
 function assertYmd(value: string, fieldName: string): void {
-  if (!YMD_PATTERN.test(value)) {
+  if (!YMD_RE.test(value)) {
     throw new ReplayHashError(
-      'replay-hash: field \u2018' + fieldName + '\u2019 must be YYYY-MM-DD: \u2018' + value + '\u2019'
+      'replay-hash: field ' + fieldName + ' must be YYYY-MM-DD: ' + value
     );
   }
 }
 
+function assertBatchId(value: string): void {
+  if (typeof value !== 'string' || value.length === 0 || !UUID_RE.test(value)) {
+    throw new ReplayHashError('replay-hash: batch_id must be a non-empty UUID-shaped string');
+  }
+}
+
+function assertUniverseSnapshotHash(value: string): void {
+  if (typeof value !== 'string' || !LOWER_HEX_64_RE.test(value)) {
+    throw new ReplayHashError(
+      'replay-hash: universe_snapshot_hash must be lowercase hex (64 chars)'
+    );
+  }
+}
+
+function assertSeedVersion(value: string): void {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ReplayHashError('replay-hash: seed_version must be a non-empty string');
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Number format validation — build regexes via String.fromCharCode
+// Stable comparators
 // ---------------------------------------------------------------------------
 
-// Fixed-2-decimal: optional leading digits, decimal point, exactly 2 digits
-const RE_FIXED2 = new RegExp(
-  '^' + DIGIT + '*' +            // optional leading digits
-  String.fromCharCode(0x2E) +    // '.'
-  DIGIT + '{2}' +                // exactly 2 decimal digits
-  '$'
-);
+function cmpStr(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
 
-// Integer: digits only, no decimal point
-const RE_INTEGER = new RegExp('^' + DIGIT + '+$');
+/** isin ASC NULLS LAST, then symbol ASC, then exchange ASC. */
+function cmpByIsinSymbolExchange(
+  aIsin: string | null,
+  aSymbol: string,
+  aExchange: string,
+  bIsin: string | null,
+  bSymbol: string,
+  bExchange: string
+): number {
+  // NULLS LAST
+  if (aIsin === null && bIsin !== null) return 1;
+  if (aIsin !== null && bIsin === null) return -1;
+  if (aIsin !== null && bIsin !== null) {
+    const c = cmpStr(aIsin, bIsin);
+    if (c !== 0) return c;
+  }
+  const s = cmpStr(aSymbol, bSymbol);
+  if (s !== 0) return s;
+  return cmpStr(aExchange, bExchange);
+}
 
 // ---------------------------------------------------------------------------
 // Field-level canonicalizers
 // ---------------------------------------------------------------------------
 
-/**
- * Sort universe members by ISIN code-point order (not localeCompare).
- * Emit: isin:symbol:exchange per member, joined by LIST_SEP (\u001F).
- * Absent ISIN -> NULL_TOK ('\u0000NULL').
- * FIX 2: assertNoSeparators on every emitted field.
- */
 export function canonUniverseMembers(input: UniverseCanonicalInput): string {
-  // Code-point sort — stable, not locale-sensitive
-  const sorted = [...input.members].sort((a, b) => {
-    const aKey: string = a.isin ?? String.fromCharCode(0x00);
-    const bKey: string = b.isin ?? String.fromCharCode(0x00);
-    const aCPs = [...aKey];
-    const bCPs = [...bKey];
-    const maxLen = Math.max(aCPs.length, bCPs.length);
-    for (let i = 0; i < maxLen; i++) {
-      const aCp = i < aCPs.length ? aCPs[i].codePointAt(0)! : 0;
-      const bCp = i < bCPs.length ? bCPs[i].codePointAt(0)! : 0;
-      if (aCp !== bCp) return aCp - bCp;
-    }
-    return 0;
-  });
+  const sorted = [...input.members].sort((a, b) =>
+    cmpByIsinSymbolExchange(a.isin, a.symbol, a.exchange, b.isin, b.symbol, b.exchange)
+  );
 
-  const FIELD_SEP_CHAR = String.fromCharCode(0x1E);
-  const LIST_SEP_CHAR = String.fromCharCode(0x1F);
-  const NULL_TOK = 'NULL';
-
-  return sorted.map(member => {
-    const isin: string = member.isin ?? NULL_TOK;
-    assertNoSeparators(isin, 'isin');
-    assertNoSeparators(member.symbol, 'symbol');
-    assertNoSeparators(member.exchange, 'exchange');
-    return isin + ':' + member.symbol + ':' + member.exchange;
-  }).join(LIST_SEP_CHAR);
+  return sorted
+    .map(member => {
+      const isin = serializeField('isin', member.isin);
+      const symbol = serializeField('symbol', member.symbol);
+      const exchange = serializeField('exchange', member.exchange);
+      return isin + ':' + symbol + ':' + exchange;
+    })
+    .join(SEP);
 }
 
-/**
- * Canonicalise liquidity bundle.
- * Caller de-duplicates to latest snapshot per (symbol, record_date).
- * Sort by symbol then record_date.
- * Emit: symbol:record_date:close:volume:turnover_rs per record.
- * FIX 2: assertNoSeparators on every emitted field.
- * RULING B: re-validate number formats to catch caller formatting errors.
- */
 export function canonLiquidityBundle(input: LiquidityCanonicalInput): string {
+  // Liquidity records have no isin; sort by symbol ASC then exchange ASC then record_date ASC.
   const sorted = [...input.records].sort((a, b) => {
-    if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1;
-    return a.record_date < b.record_date ? -1 : a.record_date > b.record_date ? 1 : 0;
+    const s = cmpStr(a.symbol, b.symbol);
+    if (s !== 0) return s;
+    const e = cmpStr(a.exchange, b.exchange);
+    if (e !== 0) return e;
+    return cmpStr(a.record_date, b.record_date);
   });
 
-  const LIST_SEP_CHAR = String.fromCharCode(0x1F);
+  return sorted
+    .map(rec => {
+      if (!RE_FIXED2.test(rec.close)) {
+        throw new ReplayHashError(
+          'replay-hash: close field ' + rec.close + ' for ' +
+            rec.symbol + '/' + rec.record_date + ' does not match fixed-2-decimal format'
+        );
+      }
+      if (!RE_FIXED2.test(rec.turnover_rs)) {
+        throw new ReplayHashError(
+          'replay-hash: turnover_rs field ' + rec.turnover_rs + ' for ' +
+            rec.symbol + '/' + rec.record_date + ' does not match fixed-2-decimal format'
+        );
+      }
+      if (!RE_INTEGER.test(rec.volume)) {
+        throw new ReplayHashError(
+          'replay-hash: volume field ' + rec.volume + ' for ' +
+            rec.symbol + '/' + rec.record_date + ' does not match integer format'
+        );
+      }
 
-  return sorted.map(rec => {
-    // RULING B: re-validate caller formatting
-    if (!RE_FIXED2.test(rec.close)) {
-      throw new ReplayHashError(
-        'replay-hash: close field \u2018' + rec.close + '\u2019 for ' +
-        rec.symbol + '/' + rec.record_date + ' does not match fixed-2-decimal format'
-      );
-    }
-    if (!RE_FIXED2.test(rec.turnover_rs)) {
-      throw new ReplayHashError(
-        'replay-hash: turnover_rs field \u2018' + rec.turnover_rs + '\u2019 for ' +
-        rec.symbol + '/' + rec.record_date + ' does not match fixed-2-decimal format'
-      );
-    }
-    if (!RE_INTEGER.test(rec.volume)) {
-      throw new ReplayHashError(
-        'replay-hash: volume field \u2018' + rec.volume + '\u2019 for ' +
-        rec.symbol + '/' + rec.record_date + ' does not match integer format'
-      );
-    }
+      const symbol = serializeField('symbol', rec.symbol);
+      const exchange = serializeField('exchange', rec.exchange);
+      const record_date = serializeField('record_date', rec.record_date);
+      const close = serializeField('close', rec.close);
+      const volume = serializeField('volume', rec.volume);
+      const turnover_rs = serializeField('turnover_rs', rec.turnover_rs);
 
-    // FIX 2: assert no forbidden separators in every emitted field
-    assertNoSeparators(rec.symbol, 'symbol');
-    assertNoSeparators(rec.record_date, 'record_date');
-    assertNoSeparators(rec.close, 'close');
-    assertNoSeparators(rec.volume, 'volume');
-    assertNoSeparators(rec.turnover_rs, 'turnover_rs');
-
-    return rec.symbol + ':' + rec.record_date + ':' + rec.close + ':' + rec.volume + ':' + rec.turnover_rs;
-  }).join(LIST_SEP_CHAR);
+      return symbol + ':' + exchange + ':' + record_date + ':' + close + ':' + volume + ':' + turnover_rs;
+    })
+    .join(SEP);
 }
 
-/**
- * Canonicalise exclusion checks in fixed enum order EX-ASM-1 ... EX-SEGMENT-1.
- * RULING A: throw if any of the 8 required checks are missing.
- * Emit: check_id:threshold_value:enabled_flag per check, joined by LIST_SEP.
- * FIX 2: assertNoSeparators on every emitted field.
- */
 export function canonExclusionChecks(input: ExclusionCanonicalInput): string {
   const provided = new Map<string, typeof input.checks[number]>();
-
   for (const check of input.checks) {
     provided.set(check.check_id, check);
   }
 
-  // RULING A: all 8 checks must be present
   for (const requiredId of EXCLUSION_CHECK_IDS) {
     if (!provided.has(requiredId)) {
       throw new ReplayHashError(
-        'replay-hash: exclusion check \u2018' + requiredId + '\u2019 is missing from bundle; ' +
-        'all eight checks are required'
+        'replay-hash: exclusion check ' + requiredId + ' is missing from bundle; ' +
+          'all eight checks are required'
       );
     }
   }
 
-  const LIST_SEP_CHAR = String.fromCharCode(0x1F);
-
   return EXCLUSION_CHECK_IDS.map(checkId => {
     const check = provided.get(checkId)!;
-    assertNoSeparators(check.check_id, 'check_id');
-    assertNoSeparators(check.threshold_value, 'threshold_value');
-    return check.check_id + ':' + check.threshold_value + ':' + (check.enabled ? '1' : '0');
-  }).join(LIST_SEP_CHAR);
+    const check_id = serializeField('check_id', check.check_id);
+    const threshold_value = serializeField('threshold_value', check.threshold_value);
+    const enabled = check.enabled ? '1' : '0';
+    return check_id + ':' + threshold_value + ':' + enabled;
+  }).join(SEP);
 }
 
 // ---------------------------------------------------------------------------
-// buildCanonicalString — exported for A14a/b/c tests
+// buildCanonicalString
 // ---------------------------------------------------------------------------
 
 export function buildCanonicalString(bundle: CanonicalBundle): string {
+  assertBatchId(bundle.batch_id);
+  assertSeedVersion(bundle.seed_version);
   assertYmd(bundle.run_date_ist, 'run_date_ist');
   assertYmd(bundle.data_freshness_date, 'data_freshness_date');
+  assertUniverseSnapshotHash(bundle.universe_snapshot_hash);
 
   const universeCanon = canonUniverseMembers(bundle.universe_members);
   const liquidityCanon = canonLiquidityBundle(bundle.liquidity_bundle);
   const exclusionCanon = canonExclusionChecks(bundle.exclusion_checks);
 
-  const FIELD_SEP_CHAR = String.fromCharCode(0x1E);
+  // Always emit the hardened schema version, regardless of what the caller passed.
+  const schemaVersion = REPLAY_SCHEMA_VERSION;
 
-  return [
-    bundle.schema_version,
-    bundle.batch_id,
-    bundle.seed_version,
-    bundle.run_date_ist.normalize('NFC'),
-    bundle.universe_snapshot_hash,
-    universeCanon,
-    liquidityCanon,
-    exclusionCanon,
-    bundle.data_freshness_date.normalize('NFC'),
-  ].join(FIELD_SEP_CHAR);
+  const fields: Array<{ name: string; value: string }> = [
+    { name: 'schema_version', value: schemaVersion },
+    { name: 'batch_id', value: bundle.batch_id },
+    { name: 'seed_version', value: bundle.seed_version },
+    { name: 'run_date_ist', value: bundle.run_date_ist.normalize('NFC') },
+    { name: 'universe_snapshot_hash', value: bundle.universe_snapshot_hash },
+    { name: 'universe_members', value: universeCanon },
+    { name: 'liquidity_bundle', value: liquidityCanon },
+    { name: 'exclusion_checks', value: exclusionCanon },
+    { name: 'data_freshness_date', value: bundle.data_freshness_date.normalize('NFC') },
+  ];
+
+  return fields.map(f => serializeField(f.name, f.value)).join(SEP);
 }
 
 // ---------------------------------------------------------------------------
-// computeReplayPayloadHash — FIX 3: returns { hash, version } only
+// computeReplayPayloadHash
 // ---------------------------------------------------------------------------
 
 export async function computeReplayPayloadHash(
   bundle: CanonicalBundle
-): Promise<{ hash: string; version: SP1ReplaySchemaVersion }> {
+): Promise<{ hash: string; version: ReplaySchemaVersion }> {
   const canonicalString = buildCanonicalString(bundle);
   const hash = await sha256Hex(canonicalString);
-  return { hash, version: bundle.schema_version };
+  return { hash, version: REPLAY_SCHEMA_VERSION };
 }
 
 // ---------------------------------------------------------------------------
-// sha256 -> lowercase hex (pure TypeScript, no external deps)
+// sha256 -> lowercase hex
 // ---------------------------------------------------------------------------
 
 async function sha256Hex(input: string): Promise<string> {
