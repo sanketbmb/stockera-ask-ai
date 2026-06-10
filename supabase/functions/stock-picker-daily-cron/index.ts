@@ -57,8 +57,11 @@ import type {
   WriteAuditRowParams,
   BuildUniverseResponse,
 } from '../_shared/stock-picker/types.ts';
-import { SP1_REPLAY_SCHEMA_VERSION, CFG } from '../_shared/stock-picker/types.ts';
-import { computeReplayPayloadHash } from '../_shared/stock-picker/replay-hash.ts';
+import { CFG } from '../_shared/stock-picker/types.ts';
+import {
+  computeReplayPayloadHash,
+  REPLAY_SCHEMA_VERSION,
+} from '../_shared/stock-picker/replay-hash.ts';
 import { currentRegulatoryStamp } from '../_shared/stock-picker/regulatory-status.ts';
 
 // ---------------------------------------------------------------------------
@@ -197,15 +200,22 @@ async function invokeFunction<T>(
   supabaseUrl: string,
   serviceKey: string,
   name: string,
-  body: unknown
+  body: unknown,
+  extraHeaders?: Record<string, string>
 ): Promise<T> {
   const url = `${supabaseUrl}/functions/v1/${name}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${serviceKey}`,
+  };
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      if (typeof v === 'string' && v.length > 0) headers[k] = v;
+    }
+  }
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
   const text = await res.text();
@@ -767,9 +777,27 @@ serve(async (req: Request) => {
     // SINGLE SOURCE OF TRUTH FOR MEMBERS = build-universe response.
     // BLOCKER 1 fix: pass canonicalMembers verbatim — same array build-universe
     // hashed into universe_snapshot_hash.
+    // SP-1.6 Step 5 — freshness pin: single canonical date for this run.
+    const dataFreshnessDate = runDateIst;
+
+    // SP-1.6 Step 5 — freshness pin check: no liquidity row may post-date the run.
+    for (const rec of exclusion.liquidity_records_for_hash) {
+      if (typeof rec.record_date === 'string' && rec.record_date > dataFreshnessDate) {
+        throw new Error('freshness-pin violation: future-dated record_date detected');
+      }
+    }
+
+    // SP-1.6 Step 5 — row-count assert before hashing.
+    const N_excl = exclusion.per_symbol_verdicts.length;
+    const N_hash = canonicalMembers.length;
+    if (N_excl !== N_hash) {
+      throw new Error(`row-count mismatch: exclusion=${N_excl} hash=${N_hash}`);
+    }
+    console.log(`row-count ok: ${N_hash}`);
+
     const tHash = Date.now();
     const bundle: CanonicalBundle = {
-      schema_version: SP1_REPLAY_SCHEMA_VERSION,
+      schema_version: REPLAY_SCHEMA_VERSION as unknown as CanonicalBundle['schema_version'],
       batch_id: batchId,
       seed_version: seedVersion,
       run_date_ist: runDateIst,
@@ -777,7 +805,7 @@ serve(async (req: Request) => {
       universe_members: { members: canonicalMembers },
       liquidity_bundle: { records: exclusion.liquidity_records_for_hash },
       exclusion_checks: { checks: exclusion.exclusion_checks_for_hash },
-      data_freshness_date: runDateIst,
+      data_freshness_date: dataFreshnessDate,
     };
     const { hash: computedReplayHash, version: replayHashVersion } =
       await computeReplayPayloadHash(bundle);
@@ -809,7 +837,13 @@ serve(async (req: Request) => {
 
     // BLOCKER 2: locked regulatory-status.ts shape — no arg; field names:
     //   regulatory_status_at_generation, sebi_reg_no, firm_legal_name.
-    const stamp = currentRegulatoryStamp();
+    // SP-1.6 Step 5: stamp is now async.
+    const stamp = await currentRegulatoryStamp();
+
+    // SP-1.6 Step 5: replay version constant moved to replay-hash and bumped.
+    // Cast to the existing params type (typed against the v1 string literal).
+    const replayHashVersionForParams =
+      replayHashVersion as unknown as WriteBatchRejectionParams['p_replay_payload_hash_version'];
 
     const rejectionParams: WriteBatchRejectionParams = {
       p_batch_id: batchId,
@@ -822,7 +856,7 @@ serve(async (req: Request) => {
       p_picks_issued_count: exclusion.survivors.length,
       p_code_commit_sha: CODE_COMMIT_SHA,
       p_replay_payload_hash: persistedHash,
-      p_replay_payload_hash_version: replayHashVersion,
+      p_replay_payload_hash_version: replayHashVersionForParams,
       p_data_gaps_at_generation: null,
       p_universe_snapshot_id: universe.universe_snapshot_id,
       p_rejected_count: exclusion.rejected_symbols.length,
@@ -853,7 +887,7 @@ serve(async (req: Request) => {
         p_data_gaps_at_generation: null,
         p_code_commit_sha: CODE_COMMIT_SHA,
         p_replay_payload_hash: computedReplayHash,
-        p_replay_payload_hash_version: replayHashVersion,
+        p_replay_payload_hash_version: replayHashVersionForParams,
         p_universe_snapshot_id: universe.universe_snapshot_id,
         p_regulatory_status_at_generation: stamp.regulatory_status_at_generation,
         p_reg_no: stamp.sebi_reg_no,
@@ -861,6 +895,13 @@ serve(async (req: Request) => {
       };
       return { op: 'write_pick_audit' as const, params };
     });
+
+    // SP-1.6 Step 5: forward internal invocation secret to write-audit when set.
+    const internalSecret = Deno.env.get('SP1_INTERNAL_INVOCATION_SECRET') ?? '';
+    const writeAuditHeaders: Record<string, string> = {};
+    if (internalSecret.length > 0) {
+      writeAuditHeaders['x-sp1-internal-secret'] = internalSecret;
+    }
 
     const writeResults = await invokeFunction<WriteAuditResponse>(
       SUPABASE_URL,
@@ -872,7 +913,8 @@ serve(async (req: Request) => {
           { op: 'write_batch_rejection', params: rejectionParams },
           ...pickAuditOps,
         ],
-      }
+      },
+      writeAuditHeaders
     );
     if (!writeResults.ok) {
       throw new Error(`cron: write-audit failed: ${writeResults.error}`);
