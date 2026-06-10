@@ -59,31 +59,36 @@ serve(async (req: Request) => {
     // Build set of allowed universe keys
     const universeKeys = new Set<string>(members.map(m => `${m.symbol}|${m.exchange}`));
 
-    // 2. Load liquidity rows (raw daily rows so we can compute real 20d metrics)
-    const { data: liq, error: liqErr } = await supabase.from('stock_picker_liquidity_20d').select('*');
+    // 2. Load raw daily liquidity rows directly from base table (NOT the *_latest view).
+    //    We compute 20d metrics ourselves; nullable view fields must not drive eligibility.
+    const universeSymbols = Array.from(new Set(members.map(m => m.symbol)));
+    const { data: liq, error: liqErr } = await supabase
+      .from('stock_picker_liquidity_20d')
+      .select('id, symbol, exchange, record_date, close, volume, turnover_rs, fetch_status, data_snapshot_at')
+      .eq('fetch_status', 'ok')
+      .in('symbol', universeSymbols);
     if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
 
-    // Filter to current universe + ok status + non-null required fields
-    const filteredLiq = (liq ?? []).filter(r =>
-      r.symbol != null &&
-      r.exchange != null &&
-      universeKeys.has(`${r.symbol}|${r.exchange}`) &&
-      r.fetch_status === 'ok' &&
-      r.record_date != null &&
-      r.close != null &&
-      r.turnover_rs != null &&
-      r.volume != null
-    );
+    // Filter to current universe + ok + finite numeric guards
+    const filteredLiq = (liq ?? []).filter(r => {
+      if (r.symbol == null || r.exchange == null) return false;
+      if (!universeKeys.has(`${r.symbol}|${r.exchange}`)) return false;
+      if (r.fetch_status !== 'ok') return false;
+      if (r.record_date == null) return false;
+      const c = Number(r.close), v = Number(r.volume), t = Number(r.turnover_rs);
+      if (!Number.isFinite(c) || c <= 0) return false;
+      if (!Number.isFinite(v) || v < 0) return false;
+      if (!Number.isFinite(t) || t < 0) return false;
+      return true;
+    });
 
-    // Group by symbol|exchange, sort desc by record_date (tie-break: data_snapshot_at desc, id desc),
-    // keep latest 20 rows, then compute adv_20d / adt_20d_rs / latest row.
+    // Group by symbol|exchange
     const grouped = new Map<string, any[]>();
     for (const r of filteredLiq) {
       const k = `${r.symbol}|${r.exchange}`;
       const arr = grouped.get(k);
       if (arr) arr.push(r); else grouped.set(k, [r]);
     }
-    const liqMap = new Map<string, any>();
     const cmpDesc = (a: any, b: any) => {
       if (a.record_date !== b.record_date) return a.record_date < b.record_date ? 1 : -1;
       const aSnap = a.data_snapshot_at ?? '';
@@ -94,14 +99,18 @@ serve(async (req: Request) => {
       if (aId !== bId) return aId < bId ? 1 : -1;
       return 0;
     };
+
+    // Per-symbol computed 20d metrics + window rows used for hash payload
+    const liqMap = new Map<string, { adv_20d: number; adt_20d_rs: number; latest: any }>();
+    const hashRows: any[] = [];
     for (const [k, rows] of grouped) {
       rows.sort(cmpDesc);
-      const window = rows.slice(0, 20);
-      if (window.length === 0) continue;
-      const adv_20d = window.reduce((s, x) => s + Number(x.volume), 0) / window.length;
-      const adt_20d_rs = window.reduce((s, x) => s + Number(x.turnover_rs), 0) / window.length;
-      const latest = window[0];
-      liqMap.set(k, { ...latest, adv_20d, adt_20d_rs, active_days_count: window.length });
+      const window20 = rows.slice(0, 20);
+      if (window20.length < 1) continue;
+      const adv_20d = window20.reduce((s, x) => s + Number(x.volume), 0) / window20.length;
+      const adt_20d_rs = window20.reduce((s, x) => s + Number(x.turnover_rs), 0) / window20.length;
+      liqMap.set(k, { adv_20d, adt_20d_rs, latest: window20[0] });
+      for (const r of window20) hashRows.push(r);
     }
 
     // 3. Load flags from master
