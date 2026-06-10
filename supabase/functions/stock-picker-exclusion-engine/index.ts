@@ -12,6 +12,7 @@ import type {
   ExclusionCheckConfig,
 } from '../_shared/stock-picker/types.ts';
 import { CHECK_CONFIG_MAP, CFG } from '../_shared/stock-picker/types.ts';
+import { formatFixed2, formatInteger } from '../_shared/stock-picker/replay-hash.ts';
 
 interface ExclusionRequest {
   batch_id: string;
@@ -55,10 +56,25 @@ serve(async (req: Request) => {
       .eq('universe_snapshot_id', universe_snapshot_id);
     if (memErr) throw new Error(`exclusion: load members failed: ${memErr.message}`);
 
+    // Build set of allowed universe keys
+    const universeKeys = new Set<string>(members.map(m => `${m.symbol}|${m.exchange}`));
+
     // 2. Load latest liquidity
     const { data: liq, error: liqErr } = await supabase.from('stock_picker_liquidity_20d_latest').select('*');
     if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
-    const liqMap = new Map(liq.map(r => [`${r.symbol}|${r.exchange}`, r]));
+
+    // Filter to current universe + ok status + non-null required fields
+    const filteredLiq = (liq ?? []).filter(r =>
+      r.symbol != null &&
+      r.exchange != null &&
+      universeKeys.has(`${r.symbol}|${r.exchange}`) &&
+      r.fetch_status === 'ok' &&
+      r.record_date != null &&
+      r.close != null &&
+      r.turnover_rs != null &&
+      r.volume != null
+    );
+    const liqMap = new Map(filteredLiq.map(r => [`${r.symbol}|${r.exchange}`, r]));
 
     // 3. Load flags from master
     const { data: flags, error: flagErr } = await supabase.from('stock_master').select('symbol,exchange,is_asm,is_gsm,is_t2t,is_suspended,pledged_pct');
@@ -135,7 +151,7 @@ serve(async (req: Request) => {
       rejected_symbols: rejected,
       insufficient_data_symbols: insufficient,
       per_symbol_verdicts: verdicts,
-      liquidity_records_for_hash: liq.map(r => ({ symbol: r.symbol, exchange: r.exchange, record_date: r.latest_date, close: String(r.close), volume: String(r.volume), turnover_rs: String(r.turnover_rs) })),
+      liquidity_records_for_hash: filteredLiq.map(r => ({ symbol: r.symbol, exchange: r.exchange, record_date: r.record_date, close: formatFixed2(Number(r.close)), volume: formatInteger(Number(r.volume)), turnover_rs: formatFixed2(Number(r.turnover_rs)) })),
       exclusion_checks_for_hash: checkOrder.map(id => ({ check_id: id, threshold_value: config.get(CHECK_CONFIG_MAP[id].thresholdKey!)?.toString() ?? 'NULL', enabled: jsonbBool(config.get(CHECK_CONFIG_MAP[id].enableKey)) }))
     }), { status: 200 });
   } catch (e) {
