@@ -54,6 +54,7 @@ import type {
   Exchange,
   UniverseMember,
   WriteBatchRejectionParams,
+  WriteAuditRowParams,
   BuildUniverseResponse,
 } from '../_shared/stock-picker/types.ts';
 import { SP1_REPLAY_SCHEMA_VERSION, CFG } from '../_shared/stock-picker/types.ts';
