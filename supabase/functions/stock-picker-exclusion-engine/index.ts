@@ -59,8 +59,8 @@ serve(async (req: Request) => {
     // Build set of allowed universe keys
     const universeKeys = new Set<string>(members.map(m => `${m.symbol}|${m.exchange}`));
 
-    // 2. Load latest liquidity
-    const { data: liq, error: liqErr } = await supabase.from('stock_picker_liquidity_20d_latest').select('*');
+    // 2. Load liquidity rows (raw daily rows so we can compute real 20d metrics)
+    const { data: liq, error: liqErr } = await supabase.from('stock_picker_liquidity_20d').select('*');
     if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
 
     // Filter to current universe + ok status + non-null required fields
@@ -74,7 +74,35 @@ serve(async (req: Request) => {
       r.turnover_rs != null &&
       r.volume != null
     );
-    const liqMap = new Map(filteredLiq.map(r => [`${r.symbol}|${r.exchange}`, r]));
+
+    // Group by symbol|exchange, sort desc by record_date (tie-break: data_snapshot_at desc, id desc),
+    // keep latest 20 rows, then compute adv_20d / adt_20d_rs / latest row.
+    const grouped = new Map<string, any[]>();
+    for (const r of filteredLiq) {
+      const k = `${r.symbol}|${r.exchange}`;
+      const arr = grouped.get(k);
+      if (arr) arr.push(r); else grouped.set(k, [r]);
+    }
+    const liqMap = new Map<string, any>();
+    const cmpDesc = (a: any, b: any) => {
+      if (a.record_date !== b.record_date) return a.record_date < b.record_date ? 1 : -1;
+      const aSnap = a.data_snapshot_at ?? '';
+      const bSnap = b.data_snapshot_at ?? '';
+      if (aSnap !== bSnap) return aSnap < bSnap ? 1 : -1;
+      const aId = a.id ?? '';
+      const bId = b.id ?? '';
+      if (aId !== bId) return aId < bId ? 1 : -1;
+      return 0;
+    };
+    for (const [k, rows] of grouped) {
+      rows.sort(cmpDesc);
+      const window = rows.slice(0, 20);
+      if (window.length === 0) continue;
+      const adv_20d = window.reduce((s, x) => s + Number(x.volume), 0) / window.length;
+      const adt_20d_rs = window.reduce((s, x) => s + Number(x.turnover_rs), 0) / window.length;
+      const latest = window[0];
+      liqMap.set(k, { ...latest, adv_20d, adt_20d_rs, active_days_count: window.length });
+    }
 
     // 3. Load flags from master
     const { data: flags, error: flagErr } = await supabase.from('stock_master').select('symbol,exchange,is_asm,is_gsm,is_t2t,is_suspended,pledged_pct');
