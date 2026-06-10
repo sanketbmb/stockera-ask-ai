@@ -833,6 +833,35 @@ serve(async (req: Request) => {
       p_legal_name: stamp.firm_legal_name,
     };
 
+    // SP-1.5 audit integrity fix: include one write_pick_audit op per
+    // included survivor so stock_picker_pick_audit is populated alongside
+    // stock_picker_batch_rejection. Source survivors from per_symbol_verdicts
+    // (which carry exchange) filtered to verdict === 'include'.
+    const includedSurvivors = exclusion.per_symbol_verdicts.filter(
+      (v) => v.verdict === 'include'
+    );
+    const pickAuditOps = includedSurvivors.map((survivor) => {
+      const params: WriteAuditRowParams = {
+        p_batch_id: batchId,
+        p_batch_type: batchType,
+        p_generated_at: generatedAt,
+        p_symbol: survivor.symbol,
+        p_exchange: survivor.exchange,
+        p_verdict: 'include',
+        p_composite_score: null,
+        p_pillar_scores: null,
+        p_data_gaps_at_generation: null,
+        p_code_commit_sha: CODE_COMMIT_SHA,
+        p_replay_payload_hash: computedReplayHash,
+        p_replay_payload_hash_version: replayHashVersion,
+        p_universe_snapshot_id: universe.universe_snapshot_id,
+        p_regulatory_status_at_generation: stamp.regulatory_status_at_generation,
+        p_reg_no: stamp.sebi_reg_no,
+        p_legal_name: stamp.firm_legal_name,
+      };
+      return { op: 'write_pick_audit' as const, params };
+    });
+
     const writeResults = await invokeFunction<WriteAuditResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -841,7 +870,7 @@ serve(async (req: Request) => {
         invoked_by: body.invoked_by,
         operations: [
           { op: 'write_batch_rejection', params: rejectionParams },
-          // SP-2 will add per-pick write_pick_audit ops here.
+          ...pickAuditOps,
         ],
       }
     );
