@@ -887,7 +887,7 @@ serve(async (req: Request) => {
         p_data_gaps_at_generation: null,
         p_code_commit_sha: CODE_COMMIT_SHA,
         p_replay_payload_hash: computedReplayHash,
-        p_replay_payload_hash_version: replayHashVersion,
+        p_replay_payload_hash_version: replayHashVersionForParams,
         p_universe_snapshot_id: universe.universe_snapshot_id,
         p_regulatory_status_at_generation: stamp.regulatory_status_at_generation,
         p_reg_no: stamp.sebi_reg_no,
@@ -895,6 +895,13 @@ serve(async (req: Request) => {
       };
       return { op: 'write_pick_audit' as const, params };
     });
+
+    // SP-1.6 Step 5: forward internal invocation secret to write-audit when set.
+    const internalSecret = Deno.env.get('SP1_INTERNAL_INVOCATION_SECRET') ?? '';
+    const writeAuditHeaders: Record<string, string> = {};
+    if (internalSecret.length > 0) {
+      writeAuditHeaders['x-sp1-internal-secret'] = internalSecret;
+    }
 
     const writeResults = await invokeFunction<WriteAuditResponse>(
       SUPABASE_URL,
@@ -906,7 +913,8 @@ serve(async (req: Request) => {
           { op: 'write_batch_rejection', params: rejectionParams },
           ...pickAuditOps,
         ],
-      }
+      },
+      writeAuditHeaders
     );
     if (!writeResults.ok) {
       throw new Error(`cron: write-audit failed: ${writeResults.error}`);
