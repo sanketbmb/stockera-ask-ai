@@ -290,20 +290,77 @@ async function fetchLiquidityForSymbol(args: {
         };
       }
       const json = await res.json();
-      if (!json.ok || !Array.isArray(json.rows)) {
+      if (json?.success !== true) {
         return {
           symbol: args.symbol,
           exchange: args.exchange,
           status: 'error',
           rows: [],
-          error: json.error ?? 'malformed_response',
+          error: json?.error ?? json?.message ?? 'dhan_fetch_unsuccessful',
+        };
+      }
+      // dhan-fetch returns { success, data, endpoint, securityId }.
+      // Historical arrays may sit at json.data or json.data.data depending on upstream nesting.
+      const outer = json.data;
+      const inner = (outer && typeof outer === 'object' && 'data' in outer && outer.data && typeof outer.data === 'object')
+        ? outer.data
+        : outer;
+      const missing: string[] = [];
+      if (!inner || typeof inner !== 'object') missing.push('data');
+      const ts = inner?.timestamp;
+      const closeArr = inner?.close;
+      const volArr = inner?.volume;
+      const turnoverArr = inner?.turnover ?? inner?.value;
+      if (!Array.isArray(ts)) missing.push('timestamp');
+      if (!Array.isArray(closeArr)) missing.push('close');
+      if (!Array.isArray(volArr)) missing.push('volume');
+      if (missing.length > 0) {
+        return {
+          symbol: args.symbol,
+          exchange: args.exchange,
+          status: 'error',
+          rows: [],
+          error: `malformed_historical_payload: missing ${missing.join(',')}`,
+        };
+      }
+      if (closeArr.length !== ts.length || volArr.length !== ts.length) {
+        return {
+          symbol: args.symbol,
+          exchange: args.exchange,
+          status: 'error',
+          rows: [],
+          error: `malformed_historical_payload: length_mismatch ts=${ts.length} close=${closeArr.length} volume=${volArr.length}`,
+        };
+      }
+      const parsedRows: DhanHistoricalRow[] = [];
+      for (let i = 0; i < ts.length; i++) {
+        const t = Number(ts[i]);
+        const c = Number(closeArr[i]);
+        const v = Number(volArr[i] ?? 0);
+        if (!Number.isFinite(t) || t <= 0) continue;
+        if (!Number.isFinite(c) || c <= 0) continue;
+        const vol = Number.isFinite(v) ? v : 0;
+        const upstreamTurnover = Array.isArray(turnoverArr) ? Number(turnoverArr[i]) : NaN;
+        const turnover_rs = Number.isFinite(upstreamTurnover) && upstreamTurnover > 0
+          ? upstreamTurnover
+          : c * vol;
+        const record_date = new Date((t + 19800) * 1000).toISOString().slice(0, 10);
+        parsedRows.push({ record_date, close: c, volume: vol, turnover_rs });
+      }
+      if (parsedRows.length === 0) {
+        return {
+          symbol: args.symbol,
+          exchange: args.exchange,
+          status: 'error',
+          rows: [],
+          error: 'no_valid_candles',
         };
       }
       return {
         symbol: args.symbol,
         exchange: args.exchange,
         status: 'ok',
-        rows: json.rows as DhanHistoricalRow[],
+        rows: parsedRows,
       };
     } catch (e) {
       attempt++;
