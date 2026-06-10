@@ -200,15 +200,22 @@ async function invokeFunction<T>(
   supabaseUrl: string,
   serviceKey: string,
   name: string,
-  body: unknown
+  body: unknown,
+  extraHeaders?: Record<string, string>
 ): Promise<T> {
   const url = `${supabaseUrl}/functions/v1/${name}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${serviceKey}`,
+  };
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      if (typeof v === 'string' && v.length > 0) headers[k] = v;
+    }
+  }
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
   const text = await res.text();
