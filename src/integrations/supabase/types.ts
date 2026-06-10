@@ -1129,20 +1129,54 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_index_membership: {
+        Row: {
+          as_of_date: string
+          created_at: string
+          exchange: string
+          id: number
+          index_name: string
+          source: string | null
+          symbol: string
+        }
+        Insert: {
+          as_of_date: string
+          created_at?: string
+          exchange: string
+          id?: number
+          index_name: string
+          source?: string | null
+          symbol: string
+        }
+        Update: {
+          as_of_date?: string
+          created_at?: string
+          exchange?: string
+          id?: number
+          index_name?: string
+          source?: string | null
+          symbol?: string
+        }
+        Relationships: []
+      }
       stock_master: {
         Row: {
           alternate_listings: Json | null
+          cap_band: string | null
           company_name: string | null
           dhan_security_id: string
           exchange: string
           id: string
+          industry: string | null
           is_asm: boolean | null
           is_gsm: boolean | null
           is_suspended: boolean | null
           is_t2t: boolean | null
           isin: string | null
           lot_size: number | null
+          market_cap_rs: number | null
           pledged_pct: number | null
+          sector: string | null
           sector_canonical: string | null
           seed_version: string | null
           segment: string
@@ -1153,17 +1187,21 @@ export type Database = {
         }
         Insert: {
           alternate_listings?: Json | null
+          cap_band?: string | null
           company_name?: string | null
           dhan_security_id: string
           exchange: string
           id?: string
+          industry?: string | null
           is_asm?: boolean | null
           is_gsm?: boolean | null
           is_suspended?: boolean | null
           is_t2t?: boolean | null
           isin?: string | null
           lot_size?: number | null
+          market_cap_rs?: number | null
           pledged_pct?: number | null
+          sector?: string | null
           sector_canonical?: string | null
           seed_version?: string | null
           segment: string
@@ -1174,17 +1212,21 @@ export type Database = {
         }
         Update: {
           alternate_listings?: Json | null
+          cap_band?: string | null
           company_name?: string | null
           dhan_security_id?: string
           exchange?: string
           id?: string
+          industry?: string | null
           is_asm?: boolean | null
           is_gsm?: boolean | null
           is_suspended?: boolean | null
           is_t2t?: boolean | null
           isin?: string | null
           lot_size?: number | null
+          market_cap_rs?: number | null
           pledged_pct?: number | null
+          sector?: string | null
           sector_canonical?: string | null
           seed_version?: string | null
           segment?: string
