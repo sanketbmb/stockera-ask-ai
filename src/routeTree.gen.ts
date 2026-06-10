@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as StockPickerRouteImport } from './routes/stock-picker'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
@@ -56,6 +57,11 @@ const WalletRoute = WalletRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StockPickerRoute = StockPickerRouteImport.update({
+  id: '/stock-picker',
+  path: '/stock-picker',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignupRoute = SignupRouteImport.update({
@@ -260,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -341,6 +349,7 @@ export interface FileRoutesById {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
@@ -383,6 +392,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/stock-picker'
     | '/terms'
     | '/wallet'
     | '/admin/apply'
@@ -423,6 +433,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/stock-picker'
     | '/terms'
     | '/wallet'
     | '/admin/apply'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/stock-picker'
     | '/terms'
     | '/wallet'
     | '/admin/apply'
@@ -504,6 +516,7 @@ export interface RootRouteChildren {
   SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  StockPickerRoute: typeof StockPickerRoute
   TermsRoute: typeof TermsRoute
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
@@ -540,6 +553,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stock-picker': {
+      id: '/stock-picker'
+      path: '/stock-picker'
+      fullPath: '/stock-picker'
+      preLoaderRoute: typeof StockPickerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/signup': {
@@ -816,6 +836,7 @@ const rootRouteChildren: RootRouteChildren = {
   SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  StockPickerRoute: StockPickerRoute,
   TermsRoute: TermsRoute,
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
