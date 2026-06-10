@@ -57,8 +57,11 @@ import type {
   WriteAuditRowParams,
   BuildUniverseResponse,
 } from '../_shared/stock-picker/types.ts';
-import { SP1_REPLAY_SCHEMA_VERSION, CFG } from '../_shared/stock-picker/types.ts';
-import { computeReplayPayloadHash } from '../_shared/stock-picker/replay-hash.ts';
+import { CFG } from '../_shared/stock-picker/types.ts';
+import {
+  computeReplayPayloadHash,
+  REPLAY_SCHEMA_VERSION,
+} from '../_shared/stock-picker/replay-hash.ts';
 import { currentRegulatoryStamp } from '../_shared/stock-picker/regulatory-status.ts';
 
 // ---------------------------------------------------------------------------
