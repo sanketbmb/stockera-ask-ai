@@ -107,6 +107,9 @@ const SECTOR_OPTIONS = [
   "Consumer Durables",
 ];
 
+const SECTOR_DATA_LOADED = false;
+const INDEX_DATA_LOADED = false;
+
 const INDEX_OPTIONS = [
   "All Indices",
   "Nifty 50",
@@ -165,8 +168,8 @@ export function StockPickerFlow() {
     const body: StockPickerRequest = {
       horizon,
       risk_profile: risk,
-      sector: proOn ? sector : "All Sectors",
-      index: proOn ? indexName : "All Indices",
+      sector: SECTOR_DATA_LOADED ? sector : "All Sectors",
+      index: INDEX_DATA_LOADED ? indexName : "All Indices",
       stock_count: Math.max(1, Math.min(5, stockCount)),
       is_pro: proOn,
     };
@@ -329,7 +332,11 @@ export function StockPickerFlow() {
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                     Sector
                   </Label>
-                  <Select value={sector} onValueChange={setSector}>
+                  <Select
+                    value={SECTOR_DATA_LOADED ? sector : "All Sectors"}
+                    onValueChange={setSector}
+                    disabled={!SECTOR_DATA_LOADED}
+                  >
                     <SelectTrigger aria-label="Sector filter" className="mt-1">
                       <SelectValue />
                     </SelectTrigger>
@@ -341,13 +348,22 @@ export function StockPickerFlow() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!SECTOR_DATA_LOADED && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Sector filter locked — pending Phase 2A data load.
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                     Index
                   </Label>
-                  <Select value={indexName} onValueChange={setIndexName}>
+                  <Select
+                    value={INDEX_DATA_LOADED ? indexName : "All Indices"}
+                    onValueChange={setIndexName}
+                    disabled={!INDEX_DATA_LOADED}
+                  >
                     <SelectTrigger aria-label="Index filter" className="mt-1">
                       <SelectValue />
                     </SelectTrigger>
@@ -359,6 +375,11 @@ export function StockPickerFlow() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!INDEX_DATA_LOADED && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Index filter locked — pending Phase 2A data load.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
