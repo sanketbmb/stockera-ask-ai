@@ -12,6 +12,7 @@ import type {
   ExclusionCheckConfig,
 } from '../_shared/stock-picker/types.ts';
 import { CHECK_CONFIG_MAP, CFG } from '../_shared/stock-picker/types.ts';
+import { formatFixed2, formatInteger } from '../_shared/stock-picker/replay-hash.ts';
 
 interface ExclusionRequest {
   batch_id: string;
