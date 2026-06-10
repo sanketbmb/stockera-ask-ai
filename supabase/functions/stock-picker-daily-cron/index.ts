@@ -777,9 +777,27 @@ serve(async (req: Request) => {
     // SINGLE SOURCE OF TRUTH FOR MEMBERS = build-universe response.
     // BLOCKER 1 fix: pass canonicalMembers verbatim — same array build-universe
     // hashed into universe_snapshot_hash.
+    // SP-1.6 Step 5 — freshness pin: single canonical date for this run.
+    const dataFreshnessDate = runDateIst;
+
+    // SP-1.6 Step 5 — freshness pin check: no liquidity row may post-date the run.
+    for (const rec of exclusion.liquidity_records_for_hash) {
+      if (typeof rec.record_date === 'string' && rec.record_date > dataFreshnessDate) {
+        throw new Error('freshness-pin violation: future-dated record_date detected');
+      }
+    }
+
+    // SP-1.6 Step 5 — row-count assert before hashing.
+    const N_excl = exclusion.per_symbol_verdicts.length;
+    const N_hash = canonicalMembers.length;
+    if (N_excl !== N_hash) {
+      throw new Error(`row-count mismatch: exclusion=${N_excl} hash=${N_hash}`);
+    }
+    console.log(`row-count ok: ${N_hash}`);
+
     const tHash = Date.now();
     const bundle: CanonicalBundle = {
-      schema_version: SP1_REPLAY_SCHEMA_VERSION,
+      schema_version: REPLAY_SCHEMA_VERSION as unknown as CanonicalBundle['schema_version'],
       batch_id: batchId,
       seed_version: seedVersion,
       run_date_ist: runDateIst,
@@ -787,7 +805,7 @@ serve(async (req: Request) => {
       universe_members: { members: canonicalMembers },
       liquidity_bundle: { records: exclusion.liquidity_records_for_hash },
       exclusion_checks: { checks: exclusion.exclusion_checks_for_hash },
-      data_freshness_date: runDateIst,
+      data_freshness_date: dataFreshnessDate,
     };
     const { hash: computedReplayHash, version: replayHashVersion } =
       await computeReplayPayloadHash(bundle);
