@@ -151,8 +151,8 @@ serve(async (req: Request) => {
         } else if (checkId === 'EX-LIQ-1') {
           const threshold = jsonbNum(config.get(cfg.thresholdKey!));
           if (!l) { symbolVerdict = { ...symbolVerdict, verdict: 'insufficient_data' }; break; }
-          if (l.active_days_count < threshold) {
-            symbolVerdict = { ...symbolVerdict, verdict: 'exclude', failed_check: checkId, reason: `Active days ${l.active_days_count} < ${threshold}` };
+          if (l.adv_20d < threshold) {
+            symbolVerdict = { ...symbolVerdict, verdict: 'exclude', failed_check: checkId, reason: `ADV ${l.adv_20d} < ${threshold}` };
             break;
           }
         } else if (checkId === 'EX-LIQ-2') {
