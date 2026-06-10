@@ -107,6 +107,9 @@ const SECTOR_OPTIONS = [
   "Consumer Durables",
 ];
 
+const SECTOR_DATA_LOADED = false;
+const INDEX_DATA_LOADED = false;
+
 const INDEX_OPTIONS = [
   "All Indices",
   "Nifty 50",
