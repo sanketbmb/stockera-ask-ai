@@ -862,7 +862,7 @@ Deno.serve(async (req) => {
     const stocks: StockOut[] = limited.map((r) => {
       const sym = r.symbol as string;
       const cmp = buildCmp(sym);
-      const tech = buildTechnicals(sym);
+      const tech = buildTechnicals(sym, cmp.value);
       const fund = buildFundamentals(sym);
       const zones = buildZones(cmp.value, tech);
       const compositePreview = previewComposite(cmp.value, tech);
