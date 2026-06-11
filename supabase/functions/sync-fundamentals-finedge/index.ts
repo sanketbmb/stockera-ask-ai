@@ -140,6 +140,25 @@ Deno.serve(async (req) => {
       updated++;
     }
 
+    // Telemetry — mirror shape used by sync-ltp-dhan / sync-news-marketaux.
+    try {
+      await supabase
+        .from("stock_picker_runtime_config")
+        .upsert(
+          {
+            config_key: "last_sync_fundamentals_finedge",
+            kind: "operational",
+            config_value: {
+              ok: true,
+              symbols_updated: updated,
+              errors_count: errors.length,
+              ran_at: new Date().toISOString(),
+            },
+          },
+          { onConflict: "config_key" },
+        );
+    } catch { /* telemetry best-effort */ }
+
     return json({ ok: true, symbols_updated: updated, errors });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);

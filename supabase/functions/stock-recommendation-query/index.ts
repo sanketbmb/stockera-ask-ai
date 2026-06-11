@@ -335,13 +335,20 @@ Deno.serve(async (req) => {
     const { data: cacheCfgRows } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_key, config_value")
-      .in("config_key", ["ltp_cache_ttl_seconds"]);
+      .in("config_key", [
+        "ltp_cache_ttl_seconds",
+        "fundamentals_cache_ttl_seconds",
+        "news_cache_ttl_seconds",
+      ]);
     let ltpTtlSec = 60;
+    let fundTtlSec = 86400;
+    let newsTtlSec = 1800;
     for (const r of cacheCfgRows ?? []) {
-      if (r.config_key === "ltp_cache_ttl_seconds") {
-        const v = Number(r.config_value);
-        if (Number.isFinite(v) && v > 0) ltpTtlSec = v;
-      }
+      const v = Number(r.config_value);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      if (r.config_key === "ltp_cache_ttl_seconds") ltpTtlSec = v;
+      else if (r.config_key === "fundamentals_cache_ttl_seconds") fundTtlSec = v;
+      else if (r.config_key === "news_cache_ttl_seconds") newsTtlSec = v;
     }
     const nowMs = Date.now();
 
