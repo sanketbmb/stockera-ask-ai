@@ -47,11 +47,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-interface MasterRow {
-  symbol: string;
-  dhan_security_id: string;
-  segment: string | null;
-}
+// (work-set typing inlined inside the handler — see Phase 2V.2)
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
