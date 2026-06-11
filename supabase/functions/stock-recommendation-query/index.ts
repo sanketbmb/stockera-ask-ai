@@ -401,10 +401,25 @@ Deno.serve(async (req) => {
     }
     const nowMs = Date.now();
 
-    // Phase 2V — load ALL valid ltp_cache rows (no TTL gate). TTL governs the
-    // cmp_fresh health flag and inline-refresh trigger, NOT whether we expose
-    // the value. Priority 1: live LTP during market hours; Priority 2: latest
-    // post-close LTP; Priority 3: liquidity_20d_close fallback (last resort).
+    // Phase 2V.2 — picker is a pure consumer of public.ltp_cache. No inline
+    // calls to sync-ltp-dhan or Dhan from the request path. Freshness gate
+    // for CACHE label is driven by runtime_config ltp_freshness_max_minutes
+    // (default 5). Resolution priority:
+    //   1) dhan_close (frozen post-bell snapshot) -> label CLOSE
+    //   2) dhan_live  + fresh (<= maxMin)         -> label LIVE
+    //   3) dhan_live  + stale                     -> label CACHE
+    //   4) liquidity_20d latest close (fallback)  -> label EOD FALLBACK
+    const { data: freshCfgRow } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_value")
+      .eq("config_key", "ltp_freshness_max_minutes")
+      .maybeSingle();
+    let ltpFreshMaxMin = 5;
+    if (freshCfgRow?.config_value != null) {
+      const n = Number(freshCfgRow.config_value);
+      if (Number.isFinite(n) && n > 0) ltpFreshMaxMin = n;
+    }
+
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
       .select("symbol, ltp, fetched_at, as_of, source")
@@ -428,7 +443,7 @@ Deno.serve(async (req) => {
       }
     }
     const cmpWindowPhase = marketWindowPhase();
-    const refreshedSet = new Set<string>();
+    const refreshedSet = new Set<string>(); // Phase 2V.2: picker no longer refreshes inline; always false.
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
