@@ -80,19 +80,23 @@ Deno.serve(async (req) => {
 
       const payload = rows
         .filter((r) => r.close != null && r.volume != null && r.record_date)
-        .map((r) => ({
-          symbol: r.symbol,
-          exchange: r.exchange,
-          record_date: r.record_date as string,
-          close: Number(r.close),
-          volume: Number(r.volume),
-          turnover_rs: null,
-          adv_20d: null,
-          adt_20d_rs: null,
-          fetch_status: "ok",
-          data_snapshot_at: SNAPSHOT_TAG,
-          source_response_hash: null,
-        }));
+        .map((r) => {
+          const close = Number(r.close);
+          const volume = Number(r.volume);
+          return {
+            symbol: r.symbol,
+            exchange: r.exchange,
+            record_date: r.record_date as string,
+            close,
+            volume,
+            turnover_rs: close * volume,
+            adv_20d: null,
+            adt_20d_rs: null,
+            fetch_status: "ok",
+            data_snapshot_at: SNAPSHOT_TAG,
+            source_response_hash: null,
+          };
+        });
       if (payload.length === 0) continue;
 
       const { error: upErr, count } = await supabase
