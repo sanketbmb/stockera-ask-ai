@@ -40,6 +40,8 @@ interface CmpBlock {
   value: number | null;
   as_of: string | null;
   source: "ltp_cache" | "liquidity_20d_close" | null;
+  window_phase: "open" | "post_close" | "pre_open" | "weekend";
+  refresh_attempted: boolean;
 }
 
 interface TechnicalsBlock {
