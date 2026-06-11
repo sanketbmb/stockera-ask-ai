@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
 
     let ok = 0, fail = 0;
     const nowIso = new Date().toISOString();
-    const BATCH = 8;
+    const BATCH = 2;
     for (let i = 0; i < tasks.length; i += BATCH) {
       const slice = tasks.slice(i, i + BATCH);
       const results = await Promise.all(slice.map(async (t) => {
