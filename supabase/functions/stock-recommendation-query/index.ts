@@ -158,21 +158,68 @@ Deno.serve(async (req) => {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
     }
 
-    // Step 3 — sector/industry lookup via stock_master
+    // Step 3 — fundamentals lookup via stock_master (collapse multi-row dupes;
+    // prefer first non-null per field; never invent missing values).
     const symbols = Array.from(new Set(auditRows.map((r) => r.symbol as string)));
     const { data: masterRows, error: masterErr } = await supabase
       .from("stock_master")
-      .select("symbol, sector, industry, market_cap_rs, cap_band")
+      .select(
+        "symbol, company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
+      )
       .in("symbol", symbols);
 
     if (masterErr) {
       return json({ ok: false, error: masterErr.message }, 500);
     }
-    const masterBySymbol = new Map<string, { sector: string | null }>();
+
+    interface MasterAgg {
+      company_name: string | null;
+      sector: string | null;
+      industry: string | null;
+      market_cap_rs: number | null;
+      cap_band: string | null;
+      lot_size: number | null;
+      tick_size: number | null;
+      is_asm: boolean | null;
+      is_gsm: boolean | null;
+      is_t2t: boolean | null;
+      is_suspended: boolean | null;
+      pledged_pct: number | null;
+    }
+    const masterBySymbol = new Map<string, MasterAgg>();
+    function preferNonNull<T>(prev: T | null, next: T | null | undefined): T | null {
+      if (prev !== null && prev !== undefined) return prev;
+      return (next ?? null) as T | null;
+    }
     for (const m of masterRows ?? []) {
-      if (!masterBySymbol.has(m.symbol as string)) {
-        masterBySymbol.set(m.symbol as string, { sector: (m.sector as string | null) ?? null });
-      }
+      const sym = m.symbol as string;
+      const cur: MasterAgg = masterBySymbol.get(sym) ?? {
+        company_name: null,
+        sector: null,
+        industry: null,
+        market_cap_rs: null,
+        cap_band: null,
+        lot_size: null,
+        tick_size: null,
+        is_asm: null,
+        is_gsm: null,
+        is_t2t: null,
+        is_suspended: null,
+        pledged_pct: null,
+      };
+      cur.company_name = preferNonNull(cur.company_name, m.company_name as string | null);
+      cur.sector = preferNonNull(cur.sector, m.sector as string | null);
+      cur.industry = preferNonNull(cur.industry, m.industry as string | null);
+      cur.market_cap_rs = preferNonNull(cur.market_cap_rs, m.market_cap_rs as number | null);
+      cur.cap_band = preferNonNull(cur.cap_band, m.cap_band as string | null);
+      cur.lot_size = preferNonNull(cur.lot_size, m.lot_size as number | null);
+      cur.tick_size = preferNonNull(cur.tick_size, m.tick_size as number | null);
+      cur.is_asm = preferNonNull(cur.is_asm, m.is_asm as boolean | null);
+      cur.is_gsm = preferNonNull(cur.is_gsm, m.is_gsm as boolean | null);
+      cur.is_t2t = preferNonNull(cur.is_t2t, m.is_t2t as boolean | null);
+      cur.is_suspended = preferNonNull(cur.is_suspended, m.is_suspended as boolean | null);
+      cur.pledged_pct = preferNonNull(cur.pledged_pct, m.pledged_pct as number | null);
+      masterBySymbol.set(sym, cur);
     }
 
     // Index membership set (latest as_of_date per symbol+exchange for index)
