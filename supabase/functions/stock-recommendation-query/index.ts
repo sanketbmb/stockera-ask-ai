@@ -523,7 +523,21 @@ Deno.serve(async (req) => {
 
     function buildTechnicals(sym: string, cmpValue: number | null): TechnicalsBlock {
       const rows = closesBySymbol.get(sym) ?? [];
+      // MASTER FIX — graceful fallback when liquidity_20d history is empty
+      // (e.g. ITI). If we have a displayed CMP, use it as the SMA/High/Low
+      // anchor so the card shows real numbers instead of "Pending". Δ% and
+      // realized vol remain null (cannot be computed without a window).
       if (rows.length === 0) {
+        if (cmpValue != null) {
+          return {
+            sma_20d: round2(cmpValue),
+            high_20d: round2(cmpValue),
+            low_20d: round2(cmpValue),
+            pct_change_20d: null,
+            realized_vol_20d: null,
+            sample_size: 0,
+          };
+        }
         return {
           sma_20d: null, high_20d: null, low_20d: null,
           pct_change_20d: null, realized_vol_20d: null, sample_size: 0,
@@ -535,8 +549,6 @@ Deno.serve(async (req) => {
       const lo = Math.min(...closes);
       // Phase 2V — pct_change uses the SAME CMP displayed on the card when
       // available; falls back to newest close in window if CMP is null.
-      // first_close_in_20d_window = oldest record in the descending-sorted
-      // closesBySymbol array (rows[rows.length - 1]).
       const newest = rows[0].close;
       const oldest = rows[rows.length - 1].close;
       const numerator = cmpValue != null ? cmpValue : newest;
