@@ -741,13 +741,29 @@ function StockCard({
   const [techOpen, setTechOpen] = useState(false);
   const [fundOpen, setFundOpen] = useState(false);
 
-  const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
-  const cmpSourceLabel =
-    cmp.source === "liquidity_20d_close"
-      ? "EOD CLOSE"
-      : ch.cmp_fresh
+  // Phase 2V.2 — badge label/color driven by cmp.label from the API.
+  // Fallback inference only if label missing (legacy responses).
+  const cmpLabel: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null =
+    cmp.label ??
+    (cmp.source === "liquidity_20d_close"
+      ? "EOD FALLBACK"
+      : cmp.source === "dhan_close"
+      ? "CLOSE"
+      : cmp.source === "dhan_cache_stale"
+      ? "CACHE"
+      : cmp.source === "dhan_live" || cmp.source === "ltp_cache"
       ? "LIVE"
-      : "LAST TRADED";
+      : null);
+  const cmpBadgeClass =
+    cmpLabel === "LIVE"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : cmpLabel === "CLOSE"
+      ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+      : cmpLabel === "CACHE"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-border bg-muted text-muted-foreground";
+  const cmpBadgeText =
+    cmpLabel === "EOD FALLBACK" ? "EOD" : (cmpLabel ?? "—");
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
