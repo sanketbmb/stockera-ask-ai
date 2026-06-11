@@ -204,10 +204,11 @@ Deno.serve(async (req) => {
 
     const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
     await supabase.from("cron_run_log").insert({
-      job_name: "snapshot-ltp-close",
+      function_name: "snapshot-ltp-close",
       status,
-      rows_affected: ok,
-      details: {
+      finished_at: new Date().toISOString(),
+      metrics: {
+        rows_affected: ok,
         failed: fail,
         total_tasks: tasks.length,
         work_set_size: work.size,
