@@ -72,6 +72,13 @@ interface BuyZoneBlock {
   upper: number | null;
 }
 
+interface NewsItemOut {
+  headline: string;
+  url: string | null;
+  source: string;
+  published_at: string;
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
@@ -87,6 +94,7 @@ interface StockOut {
   buy_zone: BuyZoneBlock;
   target: number | null;
   stop_loss: number | null;
+  news: NewsItemOut[];
   data_completeness: DataCompleteness;
   pending: string[];
 }
