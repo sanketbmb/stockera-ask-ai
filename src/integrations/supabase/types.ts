@@ -1318,6 +1318,66 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_backtest_run: {
+        Row: {
+          avg_return_pct: number | null
+          composite_score_preview_avg: number | null
+          created_at: string
+          exchange: string
+          hit_rate: number | null
+          id: string
+          information_coefficient: number | null
+          max_drawdown_pct: number | null
+          median_return_pct: number | null
+          n_losses: number
+          n_signals: number
+          n_wins: number
+          risk_profile: string
+          run_id: string
+          symbol: string
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          avg_return_pct?: number | null
+          composite_score_preview_avg?: number | null
+          created_at?: string
+          exchange: string
+          hit_rate?: number | null
+          id?: string
+          information_coefficient?: number | null
+          max_drawdown_pct?: number | null
+          median_return_pct?: number | null
+          n_losses: number
+          n_signals: number
+          n_wins: number
+          risk_profile: string
+          run_id: string
+          symbol: string
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          avg_return_pct?: number | null
+          composite_score_preview_avg?: number | null
+          created_at?: string
+          exchange?: string
+          hit_rate?: number | null
+          id?: string
+          information_coefficient?: number | null
+          max_drawdown_pct?: number | null
+          median_return_pct?: number | null
+          n_losses?: number
+          n_signals?: number
+          n_wins?: number
+          risk_profile?: string
+          run_id?: string
+          symbol?: string
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       stock_picker_batch_rejection: {
         Row: {
           batch_id: string
