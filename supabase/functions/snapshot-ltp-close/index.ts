@@ -1,13 +1,10 @@
 /**
- * refresh-ltp — pg_cron-callable LTP refresher.
+ * snapshot-ltp-close — Phase 2V.2
  *
- * Iterates the most recently queried symbols (from ai_reports in the last 24h),
- * calls dhan-fetch /ltp for each, and upserts public.ltp_cache.
- *
- * Intended cadence: every minute during NSE market hours (09:15–15:30 IST, Mon–Fri).
- * Skips silently outside market hours.
- *
- * Auth: protected by Supabase apikey header (anon or service-role both accepted).
+ * Runs at 15:29 IST on NSE trading days. Calls Dhan /marketfeed/ltp for the
+ * bounded work set (ai_reports last 24h UNION universe_override_symbols) and
+ * upserts ltp_cache rows with source='dhan_close'. If Dhan returns null for a
+ * symbol, the existing row is left untouched (no fabrication).
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -27,17 +24,17 @@ const NSE_HOLIDAYS_2026 = new Set<string>([
   "2026-10-21", "2026-11-25", "2026-12-25",
 ]);
 
-function marketOpen(): { open: boolean; reason: string } {
+function inCloseWindow(): { ok: boolean; reason: string } {
   const now = new Date();
-  const istMs = now.getTime() + (5 * 60 + 30) * 60_000;
-  const ist = new Date(istMs);
+  const ist = new Date(now.getTime() + (5 * 60 + 30) * 60_000);
   const day = ist.getUTCDay();
-  if (day === 0 || day === 6) return { open: false, reason: "weekend" };
+  if (day === 0 || day === 6) return { ok: false, reason: "weekend" };
   const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
-  if (NSE_HOLIDAYS_2026.has(dateStr)) return { open: false, reason: "holiday" };
+  if (NSE_HOLIDAYS_2026.has(dateStr)) return { ok: false, reason: "holiday" };
   const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  if (mins < 9 * 60 + 15 || mins > 15 * 60 + 30) return { open: false, reason: "closed" };
-  return { open: true, reason: "open" };
+  // 15:28 -> 15:31 IST tolerance window
+  if (mins < 15 * 60 + 28 || mins > 15 * 60 + 31) return { ok: false, reason: "not_close_window" };
+  return { ok: true, reason: "close_window" };
 }
 
 function json(body: unknown, status = 200) {
@@ -46,8 +43,6 @@ function json(body: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
-
-// (work-set typing inlined inside the handler — see Phase 2V.2)
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
@@ -71,30 +66,47 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<number
   return typeof ltp === "number" && ltp > 0 ? ltp : null;
 }
 
+interface WorkItem { symbol: string; exchange: string; }
+interface MasterRow {
+  symbol: string;
+  exchange: string | null;
+  segment: string | null;
+  dhan_security_id: string;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   try {
+    let force = false;
+    let invokedBy = "cron";
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        if (body && (body.force === 1 || body.force === true || body.force === "1")) force = true;
+        if (body && typeof body.invoked_by === "string") invokedBy = body.invoked_by;
+      } catch { /* empty body ok */ }
+    }
     const url = new URL(req.url);
-    const force = url.searchParams.get("force") === "1";
-    const mkt = marketOpen();
-    if (!mkt.open && !force) {
-      return json({ success: true, skipped: true, reason: mkt.reason });
+    if (url.searchParams.get("force") === "1") force = true;
+
+    const win = inCloseWindow();
+    if (!win.ok && !force) {
+      return json({ success: true, skipped: true, reason: win.reason });
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Phase 2V.2 — work set = ai_reports last 24h (NSE) UNION universe_override_symbols
-    const work = new Map<string, { symbol: string; exchange: string }>();
+    // Build work set: ai_reports last 24h (NSE default) UNION universe_override_symbols
+    const work = new Map<string, WorkItem>(); // key = `${symbol}|${exchange}`
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: recent, error: recentErr } = await supabase
+    const { data: recent } = await supabase
       .from("ai_reports")
       .select("stock_symbol")
       .gte("created_at", since)
       .not("stock_symbol", "is", null)
       .limit(500);
-    if (recentErr) return json({ success: false, error: recentErr.message }, 500);
     for (const r of recent ?? []) {
       const sym = (r as { stock_symbol: string }).stock_symbol;
       if (!sym) continue;
@@ -102,12 +114,12 @@ Deno.serve(async (req) => {
       if (!work.has(key)) work.set(key, { symbol: sym, exchange: "NSE" });
     }
 
-    const { data: cfgRow } = await supabase
+    const { data: cfgRows } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_value")
       .eq("config_key", "universe_override_symbols")
       .maybeSingle();
-    const cfgVal = cfgRow?.config_value;
+    const cfgVal = cfgRows?.config_value;
     if (Array.isArray(cfgVal)) {
       for (const item of cfgVal as Array<{ symbol?: string; exchange?: string }>) {
         if (!item?.symbol) continue;
@@ -118,33 +130,38 @@ Deno.serve(async (req) => {
     }
 
     if (work.size === 0) {
-      return json({ success: true, refreshed: 0, reason: "no work" });
+      await supabase.from("cron_run_log").insert({
+        job_name: "snapshot-ltp-close",
+        status: "ok",
+        rows_affected: 0,
+        details: { reason: "empty_work_set", invoked_by: invokedBy, forced: force },
+      });
+      return json({ success: true, refreshed: 0, reason: "empty_work_set" });
     }
 
     const allSymbols = Array.from(new Set(Array.from(work.values()).map((w) => w.symbol)));
-    const { data: masters, error: masterErr } = await supabase
+    const { data: masters } = await supabase
       .from("stock_master")
-      .select("symbol, exchange, dhan_security_id, segment")
+      .select("symbol, exchange, segment, dhan_security_id")
       .in("symbol", allSymbols);
-    if (masterErr) return json({ success: false, error: masterErr.message }, 500);
 
-    // Prefer master rows with segment ending in _EQ per (symbol, exchange).
-    const masterByKey = new Map<string, { symbol: string; exchange: string; segment: string | null; dhan_security_id: string }>();
-    for (const m of (masters ?? []) as Array<{ symbol: string; exchange: string | null; segment: string | null; dhan_security_id: string }>) {
+    // Pick the best master row per (symbol, exchange): prefer segment ending in _EQ
+    const masterByKey = new Map<string, MasterRow>();
+    for (const m of (masters ?? []) as MasterRow[]) {
       if (!m.dhan_security_id || !m.exchange) continue;
       const key = `${m.symbol}|${m.exchange}`;
       const existing = masterByKey.get(key);
       const prefer = (m.segment || "").endsWith("_EQ");
       const existingPrefer = existing && (existing.segment || "").endsWith("_EQ");
-      if (!existing || (prefer && !existingPrefer)) {
-        masterByKey.set(key, { symbol: m.symbol, exchange: m.exchange, segment: m.segment, dhan_security_id: m.dhan_security_id });
-      }
+      if (!existing || (prefer && !existingPrefer)) masterByKey.set(key, m);
     }
 
     const tasks: Array<{ symbol: string; exchange: string; securityId: string; segment: string }> = [];
+    const noMaster: string[] = [];
     for (const w of work.values()) {
-      const m = masterByKey.get(`${w.symbol}|${w.exchange}`);
-      if (!m) continue;
+      const key = `${w.symbol}|${w.exchange}`;
+      const m = masterByKey.get(key);
+      if (!m) { noMaster.push(key); continue; }
       const seg = w.exchange === "BSE" ? "BSE_EQ" : "NSE_EQ";
       tasks.push({ symbol: w.symbol, exchange: w.exchange, securityId: m.dhan_security_id, segment: seg });
     }
@@ -154,19 +171,17 @@ Deno.serve(async (req) => {
     const BATCH = 8;
     for (let i = 0; i < tasks.length; i += BATCH) {
       const slice = tasks.slice(i, i + BATCH);
-      const results = await Promise.all(
-        slice.map(async (t) => {
-          const ltp = await fetchDhanLtp(t.securityId, t.segment);
-          return { symbol: t.symbol, exchange: t.exchange, ltp };
-        }),
-      );
+      const results = await Promise.all(slice.map(async (t) => {
+        const ltp = await fetchDhanLtp(t.securityId, t.segment);
+        return { ...t, ltp };
+      }));
       const upserts = results
         .filter((r) => r.ltp !== null)
         .map((r) => ({
           symbol: r.symbol,
           exchange: r.exchange,
           ltp: r.ltp!,
-          source: "dhan_live",
+          source: "dhan_close",
           fetched_at: nowIso,
           as_of: nowIso,
         }));
@@ -175,32 +190,47 @@ Deno.serve(async (req) => {
       if (upserts.length > 0) {
         const { error: upErr } = await supabase.from("ltp_cache").upsert(upserts, { onConflict: "symbol" });
         if (upErr) console.error("ltp_cache upsert error:", upErr.message);
-
         const historyRows = upserts.map((u) => ({
-          symbol: u.symbol, ltp: u.ltp, source: "dhan_live", recorded_at: u.fetched_at,
+          symbol: u.symbol, ltp: u.ltp, source: "dhan_close", recorded_at: u.fetched_at,
         }));
-        const { error: histErr } = await supabase.from("ltp_history").insert(historyRows);
-        if (histErr) console.error("ltp_history insert error:", histErr.message);
+        const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
+        if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
     }
 
-    // Audit log
+    const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
     await supabase.from("cron_run_log").insert({
-      job_name: "refresh-ltp-every-minute",
-      status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
+      job_name: "snapshot-ltp-close",
+      status,
       rows_affected: ok,
-      details: { failed: fail, total: tasks.length, work_set_size: work.size },
+      details: {
+        failed: fail,
+        total_tasks: tasks.length,
+        work_set_size: work.size,
+        no_master_keys: noMaster.slice(0, 20),
+        invoked_by: invokedBy,
+        forced: force,
+        window_reason: win.reason,
+      },
     });
 
-    return json({ success: true, refreshed: ok, failed: fail, total: tasks.length });
+    return json({
+      success: true,
+      rows_affected: ok,
+      errors_count: fail,
+      total_tasks: tasks.length,
+      work_set_size: work.size,
+      no_master_count: noMaster.length,
+      status,
+    });
   } catch (e) {
-    console.error("refresh-ltp error:", e);
+    console.error("snapshot-ltp-close error:", e);
     try {
       const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
       await supabase.from("cron_run_log").insert({
-        job_name: "refresh-ltp-every-minute",
+        job_name: "snapshot-ltp-close",
         status: "error",
         rows_affected: 0,
         details: { error: String(e) },

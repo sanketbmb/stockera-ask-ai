@@ -39,7 +39,15 @@ interface DataCompleteness {
 interface CmpBlock {
   value: number | null;
   as_of: string | null;
-  source: "ltp_cache" | "liquidity_20d_close" | null;
+  fetched_at: string | null;
+  source:
+    | "dhan_live"
+    | "dhan_close"
+    | "dhan_cache_stale"
+    | "liquidity_20d_close"
+    | null;
+  label: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null;
+  stale_minutes: number | null;
   window_phase: "open" | "post_close" | "pre_open" | "weekend";
   refresh_attempted: boolean;
 }
@@ -393,10 +401,25 @@ Deno.serve(async (req) => {
     }
     const nowMs = Date.now();
 
-    // Phase 2V — load ALL valid ltp_cache rows (no TTL gate). TTL governs the
-    // cmp_fresh health flag and inline-refresh trigger, NOT whether we expose
-    // the value. Priority 1: live LTP during market hours; Priority 2: latest
-    // post-close LTP; Priority 3: liquidity_20d_close fallback (last resort).
+    // Phase 2V.2 — picker is a pure consumer of public.ltp_cache. No inline
+    // calls to sync-ltp-dhan or Dhan from the request path. Freshness gate
+    // for CACHE label is driven by runtime_config ltp_freshness_max_minutes
+    // (default 5). Resolution priority:
+    //   1) dhan_close (frozen post-bell snapshot) -> label CLOSE
+    //   2) dhan_live  + fresh (<= maxMin)         -> label LIVE
+    //   3) dhan_live  + stale                     -> label CACHE
+    //   4) liquidity_20d latest close (fallback)  -> label EOD FALLBACK
+    const { data: freshCfgRow } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_value")
+      .eq("config_key", "ltp_freshness_max_minutes")
+      .maybeSingle();
+    let ltpFreshMaxMin = 5;
+    if (freshCfgRow?.config_value != null) {
+      const n = Number(freshCfgRow.config_value);
+      if (Number.isFinite(n) && n > 0) ltpFreshMaxMin = n;
+    }
+
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
       .select("symbol, ltp, fetched_at, as_of, source")
@@ -420,7 +443,7 @@ Deno.serve(async (req) => {
       }
     }
     const cmpWindowPhase = marketWindowPhase();
-    const refreshedSet = new Set<string>();
+    const refreshedSet = new Set<string>(); // Phase 2V.2: picker no longer refreshes inline; always false.
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
@@ -494,12 +517,43 @@ Deno.serve(async (req) => {
     function buildCmp(sym: string): CmpBlock {
       const live = ltpBySymbol.get(sym);
       if (live) {
+        const fetchedAt = live.fetched_at;
+        const ageMin = (nowMs - new Date(fetchedAt).getTime()) / 60_000;
+        const src = (live.source ?? "").toLowerCase();
+        if (src === "dhan_close") {
+          return {
+            value: round2(live.ltp),
+            as_of: fetchedAt,
+            fetched_at: fetchedAt,
+            source: "dhan_close",
+            label: "CLOSE",
+            stale_minutes: null,
+            window_phase: cmpWindowPhase,
+            refresh_attempted: false,
+          };
+        }
+        // Treat any live-style source as dhan_live for label purposes.
+        if (Number.isFinite(ageMin) && ageMin <= ltpFreshMaxMin) {
+          return {
+            value: round2(live.ltp),
+            as_of: fetchedAt,
+            fetched_at: fetchedAt,
+            source: "dhan_live",
+            label: "LIVE",
+            stale_minutes: null,
+            window_phase: cmpWindowPhase,
+            refresh_attempted: false,
+          };
+        }
         return {
           value: round2(live.ltp),
-          as_of: live.fetched_at,
-          source: "ltp_cache",
+          as_of: fetchedAt,
+          fetched_at: fetchedAt,
+          source: "dhan_cache_stale",
+          label: "CACHE",
+          stale_minutes: Math.max(0, Math.round(ageMin)),
           window_phase: cmpWindowPhase,
-          refresh_attempted: refreshedSet.has(sym),
+          refresh_attempted: false,
         };
       }
       const rows = closesBySymbol.get(sym);
@@ -507,17 +561,23 @@ Deno.serve(async (req) => {
         return {
           value: round2(rows[0].close),
           as_of: rows[0].record_date,
+          fetched_at: rows[0].record_date,
           source: "liquidity_20d_close",
+          label: "EOD FALLBACK",
+          stale_minutes: null,
           window_phase: cmpWindowPhase,
-          refresh_attempted: refreshedSet.has(sym),
+          refresh_attempted: false,
         };
       }
       return {
         value: null,
         as_of: null,
+        fetched_at: null,
         source: null,
+        label: null,
+        stale_minutes: null,
         window_phase: cmpWindowPhase,
-        refresh_attempted: refreshedSet.has(sym),
+        refresh_attempted: false,
       };
     }
 
@@ -656,62 +716,9 @@ Deno.serve(async (req) => {
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
 
-    // Phase 2V — Inline LTP refresh for survivor cards.
-    // Trigger sync-ltp-dhan with a `symbols` filter (≤10) when:
-    //   * market window phase is "open" or "post_close", AND
-    //   * any survivor's ltp_cache value is missing or stale (not in ltpFreshSet)
-    // After refresh succeeds, re-query ltp_cache for those symbols and
-    // overwrite ltpBySymbol entries so buildCmp surfaces the live value.
-    {
-      const refreshCandidates = limited
-        .map((r) => r.symbol as string)
-        .filter((s) => !ltpFreshSet.has(s))
-        .slice(0, 10);
-      // MASTER FIX — attempt LTP refresh in every non-weekend phase. Dhan
-      // serves last-traded values throughout the trading week, so refreshing
-      // during pre_open / post_close keeps the displayed CMP closer to the
-      // most recent live tick instead of yesterday's EOD close.
-      const phaseAllowsRefresh = cmpWindowPhase !== "weekend";
-      if (refreshCandidates.length > 0 && phaseAllowsRefresh) {
-        for (const s of refreshCandidates) refreshedSet.add(s);
-        try {
-          const refreshRes = await fetch(`${SUPABASE_URL}/functions/v1/sync-ltp-dhan`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              apikey: SERVICE_KEY,
-              authorization: `Bearer ${SERVICE_KEY}`,
-            },
-            body: JSON.stringify({ symbols: refreshCandidates }),
-          });
-          if (refreshRes.ok) {
-            const { data: freshRows } = await supabase
-              .from("ltp_cache")
-              .select("symbol, ltp, fetched_at, as_of, source")
-              .in("symbol", refreshCandidates);
-            const nowMs2 = Date.now();
-            for (const r of freshRows ?? []) {
-              const v = Number(r.ltp);
-              if (!Number.isFinite(v) || v <= 0) continue;
-              const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
-              if (!ts) continue;
-              const sym = r.symbol as string;
-              ltpBySymbol.set(sym, {
-                ltp: v,
-                fetched_at: ts,
-                source: (r.source as string | null) ?? null,
-              });
-              const ageSec = (nowMs2 - new Date(ts).getTime()) / 1000;
-              if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
-                ltpFreshSet.add(sym);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`phase2v: inline_refresh_failed ${String(e)}`);
-        }
-      }
-    }
+    // Phase 2V.2 — picker is a pure consumer of public.ltp_cache. The cache
+    // is refreshed every minute during market hours by refresh-ltp and frozen
+    // at 15:29 IST by snapshot-ltp-close. No inline Dhan calls happen here.
 
 
     // --- Phase 2D helpers (dev-preview math, deterministic, no fabrication) ---
@@ -960,8 +967,7 @@ Deno.serve(async (req) => {
         },
         pending,
         cache_health: {
-          cmp_fresh: cmp.source === "ltp_cache" && cmp.as_of != null &&
-            ((Date.now() - new Date(cmp.as_of).getTime()) / 1000) <= ltpTtlSec,
+          cmp_fresh: cmp.label === "LIVE" || cmp.label === "CLOSE",
           fundamentals_fresh: (() => {
             const f = fundCacheBySymbol.get(sym);
             if (!f?.as_of) return false;

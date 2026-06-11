@@ -55,7 +55,16 @@ interface StockDataCompleteness {
 interface CmpBlock {
   value: number | null;
   as_of: string | null;
-  source: "ltp_cache" | "liquidity_20d_close" | null;
+  fetched_at?: string | null;
+  source:
+    | "dhan_live"
+    | "dhan_close"
+    | "dhan_cache_stale"
+    | "liquidity_20d_close"
+    | "ltp_cache"
+    | null;
+  label?: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null;
+  stale_minutes?: number | null;
 }
 interface TechnicalsBlock {
   sma_20d: number | null;
@@ -732,13 +741,29 @@ function StockCard({
   const [techOpen, setTechOpen] = useState(false);
   const [fundOpen, setFundOpen] = useState(false);
 
-  const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
-  const cmpSourceLabel =
-    cmp.source === "liquidity_20d_close"
-      ? "EOD CLOSE"
-      : ch.cmp_fresh
+  // Phase 2V.2 — badge label/color driven by cmp.label from the API.
+  // Fallback inference only if label missing (legacy responses).
+  const cmpLabel: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null =
+    cmp.label ??
+    (cmp.source === "liquidity_20d_close"
+      ? "EOD FALLBACK"
+      : cmp.source === "dhan_close"
+      ? "CLOSE"
+      : cmp.source === "dhan_cache_stale"
+      ? "CACHE"
+      : cmp.source === "dhan_live" || cmp.source === "ltp_cache"
       ? "LIVE"
-      : "LAST TRADED";
+      : null);
+  const cmpBadgeClass =
+    cmpLabel === "LIVE"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : cmpLabel === "CLOSE"
+      ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+      : cmpLabel === "CACHE"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-border bg-muted text-muted-foreground";
+  const cmpBadgeText =
+    cmpLabel === "EOD FALLBACK" ? "EOD" : (cmpLabel ?? "—");
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -798,18 +823,30 @@ function StockCard({
         <div className="flex items-baseline gap-3 flex-wrap">
           <span className="text-[10px] uppercase text-muted-foreground font-mono">CMP</span>
           <span className="font-display text-lg">₹{fmt(cmp.value)}</span>
-          <span
-            data-testid="cmp-source-badge"
-            className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${
-              cmpLive
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                : "border-border bg-muted text-muted-foreground"
-            }`}
-          >
-            {cmpSourceLabel}
-          </span>
+          {cmpLabel === "CACHE" ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  data-testid="cmp-source-badge"
+                  className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border cursor-help ${cmpBadgeClass}`}
+                >
+                  {cmpBadgeText}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Cached {cmp.stale_minutes ?? "?"} min ago
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span
+              data-testid="cmp-source-badge"
+              className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${cmpBadgeClass}`}
+            >
+              {cmpBadgeText}
+            </span>
+          )}
           <span className="text-[10px] text-muted-foreground">
-            {cmp.source ?? "—"} · {cmp.as_of ? new Date(cmp.as_of).toLocaleString() : "—"}
+            {cmp.source ?? "—"} · {cmp.fetched_at ?? cmp.as_of ? new Date((cmp.fetched_at ?? cmp.as_of) as string).toLocaleString() : "—"}
           </span>
         </div>
       </div>
