@@ -517,12 +517,43 @@ Deno.serve(async (req) => {
     function buildCmp(sym: string): CmpBlock {
       const live = ltpBySymbol.get(sym);
       if (live) {
+        const fetchedAt = live.fetched_at;
+        const ageMin = (nowMs - new Date(fetchedAt).getTime()) / 60_000;
+        const src = (live.source ?? "").toLowerCase();
+        if (src === "dhan_close") {
+          return {
+            value: round2(live.ltp),
+            as_of: fetchedAt,
+            fetched_at: fetchedAt,
+            source: "dhan_close",
+            label: "CLOSE",
+            stale_minutes: null,
+            window_phase: cmpWindowPhase,
+            refresh_attempted: false,
+          };
+        }
+        // Treat any live-style source as dhan_live for label purposes.
+        if (Number.isFinite(ageMin) && ageMin <= ltpFreshMaxMin) {
+          return {
+            value: round2(live.ltp),
+            as_of: fetchedAt,
+            fetched_at: fetchedAt,
+            source: "dhan_live",
+            label: "LIVE",
+            stale_minutes: null,
+            window_phase: cmpWindowPhase,
+            refresh_attempted: false,
+          };
+        }
         return {
           value: round2(live.ltp),
-          as_of: live.fetched_at,
-          source: "ltp_cache",
+          as_of: fetchedAt,
+          fetched_at: fetchedAt,
+          source: "dhan_cache_stale",
+          label: "CACHE",
+          stale_minutes: Math.max(0, Math.round(ageMin)),
           window_phase: cmpWindowPhase,
-          refresh_attempted: refreshedSet.has(sym),
+          refresh_attempted: false,
         };
       }
       const rows = closesBySymbol.get(sym);
@@ -530,17 +561,23 @@ Deno.serve(async (req) => {
         return {
           value: round2(rows[0].close),
           as_of: rows[0].record_date,
+          fetched_at: rows[0].record_date,
           source: "liquidity_20d_close",
+          label: "EOD FALLBACK",
+          stale_minutes: null,
           window_phase: cmpWindowPhase,
-          refresh_attempted: refreshedSet.has(sym),
+          refresh_attempted: false,
         };
       }
       return {
         value: null,
         as_of: null,
+        fetched_at: null,
         source: null,
+        label: null,
+        stale_minutes: null,
         window_phase: cmpWindowPhase,
-        refresh_attempted: refreshedSet.has(sym),
+        refresh_attempted: false,
       };
     }
 
