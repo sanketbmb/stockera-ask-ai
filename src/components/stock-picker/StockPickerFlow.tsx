@@ -126,11 +126,18 @@ interface StockPickerResponse {
   stocks: PickedStock[];
   note?: string;
   error?: string;
+  regulatory_stamp?: {
+    firm_legal_name: string;
+    sebi_reg_no: string;
+    regulatory_status_at_generation: string;
+  };
 }
 
-// SEBI RA registration — authoritative values per Stockera Technology Private Limited.
-// Surfaced as a stamp on each result card; not fabricated.
+/** @deprecated Legacy fallback only. Authoritative stamp now comes from
+ *  stock-recommendation-query response (regulatory_stamp), sourced from
+ *  runtime_config via currentRegulatoryStamp(). */
 const SEBI_RA_FIRM = "Stockera Technology Private Limited";
+/** @deprecated See SEBI_RA_FIRM above. */
 const SEBI_RA_REGNO = "INH000019071";
 
 const HORIZONS: { id: Horizon; label: string }[] = [
