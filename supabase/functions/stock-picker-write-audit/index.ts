@@ -46,7 +46,15 @@ const LOWER_HEX_64 = /^[0-9a-f]{64}$/;
 // Request envelope
 // ---------------------------------------------------------------------------
 type WriteOp =
-  | { op: 'write_pick_audit'; params: WriteAuditRowParams }
+  | {
+      op: 'write_pick_audit';
+      params: WriteAuditRowParams;
+      // Phase 2R: per-batch persistence guard. NEVER persisted; never enters
+      // the replay-hash payload. write-audit uses it to decide whether
+      // composite_score becomes null (gate closed) or the supplied value
+      // (gate open) before invoking the RPC.
+      risk_profile_guard?: 'conservative' | 'moderate' | 'aggressive' | 'ultra';
+    }
   | { op: 'write_batch_rejection'; params: WriteBatchRejectionParams };
 
 interface WriteAuditRequest {
@@ -167,8 +175,13 @@ async function runWritePickAudit(
   supabase: SupabaseClient,
   paramsIn: WriteAuditRowParams,
   stamp: { regulatory_status_at_generation: string; sebi_reg_no: string; firm_legal_name: string },
-  compositeEnabled: boolean
+  effectiveCompositeOpen: boolean
 ): Promise<OpResult> {
+  // NOTE: risk_profile_guard is intentionally NOT passed into this function.
+  // The caller resolves the per-profile gate into effectiveCompositeOpen
+  // and strips the guard before we build any p_* params. The guard never
+  // enters the RPC, never enters the replay-hash payload, and never reaches
+  // stock_picker_pick_audit.
   const params: WriteAuditRowParams = { ...paramsIn };
 
   assertUuid(params.p_batch_id, 'p_batch_id');
@@ -192,9 +205,12 @@ async function runWritePickAudit(
   params.p_reg_no = stamp.sebi_reg_no;
   params.p_legal_name = stamp.firm_legal_name;
 
-  // Composite-score runtime flag gate (precomputed).
+  // Phase 2R: batch-level persistence gate. effectiveCompositeOpen is
+  //   global composite_score_writes_enabled
+  //   && composite_score_persist_<risk_profile_guard> === true
+  // If closed, force composite_score to null before the RPC call.
   if (params.p_composite_score !== null && params.p_composite_score !== undefined) {
-    if (!compositeEnabled) {
+    if (!effectiveCompositeOpen) {
       params.p_composite_score = null;
     }
   }
@@ -404,11 +420,43 @@ serve(async (req: Request) => {
     return jsonResponse(500, { ok: false, error: `regulatory-status: ${msg}` });
   }
 
+  // Phase 2R: ONE batched runtime_config read for per-profile persistence flags.
+  // No per-row roundtrip. Defaults to false on missing rows.
+  const persistByProfile: Record<string, boolean> = {
+    conservative: false, moderate: false, aggressive: false, ultra: false,
+  };
+  try {
+    const { data: cfgRows, error: cfgErr } = await supabase
+      .from('stock_picker_runtime_config')
+      .select('config_key, config_value')
+      .in('config_key', [
+        'composite_score_persist_conservative',
+        'composite_score_persist_moderate',
+        'composite_score_persist_aggressive',
+        'composite_score_persist_ultra',
+      ]);
+    if (!cfgErr && cfgRows) {
+      for (const r of cfgRows) {
+        const k = (r as { config_key: string }).config_key;
+        const v = (r as { config_value: unknown }).config_value;
+        const b = v === true || v === 'true';
+        const profile = k.replace('composite_score_persist_', '');
+        if (profile in persistByProfile) persistByProfile[profile] = b;
+      }
+    }
+  } catch (e) {
+    console.warn(`write-audit: per-profile flag load failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  console.log(`phase2r: gate global=${compositeEnabled} per_profile=${JSON.stringify(persistByProfile)}`);
+
   const results: OpResult[] = [];
   for (const op of body.operations) {
     try {
       if (op.op === 'write_pick_audit') {
-        results.push(await runWritePickAudit(supabase, op.params, stamp, compositeEnabled));
+        const guard = (op as { risk_profile_guard?: string }).risk_profile_guard;
+        const profileOpen = guard && guard in persistByProfile ? persistByProfile[guard] : false;
+        const effectiveCompositeOpen = compositeEnabled && profileOpen === true;
+        results.push(await runWritePickAudit(supabase, op.params, stamp, effectiveCompositeOpen));
       } else {
         results.push(await runWriteBatchRejection(supabase, op.params, stamp));
       }
