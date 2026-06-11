@@ -983,6 +983,24 @@ function KV({ k, v }: { k: string; v: string }) {
   );
 }
 
+function KVT({ k, v, tip }: { k: string; v: string; tip: string }) {
+  return (
+    <div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <p className="text-[10px] uppercase text-muted-foreground font-mono inline-flex items-center gap-1 cursor-help">
+            {k}
+            <Info className="h-3 w-3 opacity-60" />
+          </p>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[240px] text-xs">{tip}</TooltipContent>
+      </Tooltip>
+      <p className="text-xs font-mono break-words">{v}</p>
+    </div>
+  );
+}
+
+
 function FlagPill({ label }: { label: string }) {
   return (
     <span className="text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border border-destructive/40 bg-destructive/10 text-destructive">
