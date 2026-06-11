@@ -247,15 +247,14 @@ Deno.serve(async (req) => {
 
     for (const m of surviving) {
       try {
-        // Load chronological closes, dedupe per date (keep last close per date)
+        // Phase 2L: read deep history from stock_picker_ohlcv_history
         const { data: closesRaw, error: cErr } = await supabase
-          .from('stock_picker_liquidity_20d')
-          .select('record_date, close, data_snapshot_at')
+          .from('stock_picker_ohlcv_history')
+          .select('record_date, close')
           .eq('symbol', m.symbol)
           .eq('exchange', m.exchange)
           .not('close', 'is', null)
-          .order('record_date', { ascending: true })
-          .order('data_snapshot_at', { ascending: true });
+          .order('record_date', { ascending: true });
         if (cErr) throw new Error(cErr.message);
 
         const byDate = new Map<string, number>();
