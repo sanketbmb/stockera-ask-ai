@@ -447,10 +447,21 @@ Deno.serve(async (req) => {
       .in("symbol", filteredSymbols)
       .order("published_at", { ascending: false });
 
+    // MASTER FIX — 30-day news freshness cutoff. Headlines older than 30 days
+    // are excluded entirely; the UI renders "No recent news in our window"
+    // when nothing survives the cutoff, instead of surfacing stale 3-year-old
+    // items from the cache.
+    const NEWS_CUTOFF_MS = 30 * 24 * 60 * 60 * 1000;
+    const newsCutoffTs = Date.now() - NEWS_CUTOFF_MS;
+
     const newsBySymbol = new Map<string, NewsItemOut[]>();
     const newsLatestInsertedBySymbol = new Map<string, string>();
     for (const r of newsRows ?? []) {
       const sym = r.symbol as string;
+      const publishedAt = r.published_at as string | null;
+      if (!publishedAt) continue;
+      const pubMs = new Date(publishedAt).getTime();
+      if (!Number.isFinite(pubMs) || pubMs < newsCutoffTs) continue;
       const ins = (r.inserted_at as string | null) ?? null;
       if (ins && !newsLatestInsertedBySymbol.has(sym)) {
         // rows are ordered by published_at desc; track first-seen inserted_at as proxy.
@@ -467,7 +478,7 @@ Deno.serve(async (req) => {
         headline: r.headline as string,
         url: (r.url as string | null) ?? null,
         source: (r.source as string | null) ?? "marketaux",
-        published_at: r.published_at as string,
+        published_at: publishedAt,
       });
       newsBySymbol.set(sym, arr);
     }
