@@ -52,21 +52,73 @@ interface StockDataCompleteness {
   news: boolean;
 }
 
+interface CmpBlock {
+  value: number | null;
+  as_of: string | null;
+  source: "ltp_cache" | "liquidity_20d_close" | null;
+}
+interface TechnicalsBlock {
+  sma_20d: number | null;
+  high_20d: number | null;
+  low_20d: number | null;
+  pct_change_20d: number | null;
+  realized_vol_20d: number | null;
+  sample_size: number;
+}
+interface FundamentalsBlock {
+  company_name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap_rs: number | null;
+  cap_band: string | null;
+  lot_size: number | null;
+  tick_size: number | null;
+  regulatory_flags: {
+    is_asm: boolean | null;
+    is_gsm: boolean | null;
+    is_t2t: boolean | null;
+    is_suspended: boolean | null;
+    pledged_pct: number | null;
+  };
+}
+interface BuyZoneBlock { lower: number | null; upper: number | null; }
+interface NewsItemOut {
+  headline: string;
+  url: string | null;
+  source: string;
+  published_at: string;
+}
+interface CacheHealth {
+  cmp_fresh: boolean;
+  fundamentals_fresh: boolean;
+  news_fresh: boolean;
+}
+
 interface PickedStock {
   ticker: string;
   exchange: string;
   sector: string | null;
   verdict: string;
   composite_score: number | null;
+  composite_score_preview: number | null;
   batch_id: string;
   generated_at: string;
+  cmp: CmpBlock;
+  technicals: TechnicalsBlock;
+  fundamentals: FundamentalsBlock;
+  buy_zone: BuyZoneBlock;
+  target: number | null;
+  stop_loss: number | null;
+  news: NewsItemOut[];
   data_completeness: StockDataCompleteness;
+  pending: string[];
+  cache_health: CacheHealth;
 }
 
 interface StockPickerResponse {
   ok: boolean;
   horizon: string;
-  risk_profile: string;
+  risk_profile: "conservative" | "moderate" | "aggressive" | "ultra" | string;
   sector: string;
   index: string;
   generated_at: string;
@@ -75,6 +127,11 @@ interface StockPickerResponse {
   note?: string;
   error?: string;
 }
+
+// SEBI RA registration — authoritative values per Stockera Technology Private Limited.
+// Surfaced as a stamp on each result card; not fabricated.
+const SEBI_RA_FIRM = "Stockera Technology Private Limited";
+const SEBI_RA_REGNO = "INH000019071";
 
 const HORIZONS: { id: Horizon; label: string }[] = [
   { id: "intraday", label: "Intraday" },
@@ -563,7 +620,7 @@ function ResultsView({
     return (
       <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
         <p className="font-medium text-foreground">
-          No live survivors matched your selected filters.
+          No survivors for the current universe and risk profile
         </p>
         <p className="mt-1 text-xs">
           Try widening sector or index in Pro filters.
@@ -584,6 +641,7 @@ function ResultsView({
         <StockCard
           key={`${s.ticker}-${s.exchange}`}
           stock={s}
+          riskProfile={result.risk_profile}
           showCompletenessChips={showCompletenessChips}
         />
       ))}
@@ -591,63 +649,243 @@ function ResultsView({
   );
 }
 
+function fmt(n: number | null | undefined, dp = 2): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  return n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+function fmtCr(rs: number | null | undefined): string {
+  if (rs == null || Number.isNaN(rs)) return "—";
+  const cr = rs / 1e7;
+  return `₹${cr.toLocaleString(undefined, { maximumFractionDigits: 0 })} Cr`;
+}
+function relTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = Math.max(0, Date.now() - t);
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function HealthDot({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase text-muted-foreground">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+          />
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Indicates whether the displayed data is within refresh window.</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function StockCard({
   stock,
+  riskProfile,
   showCompletenessChips,
 }: {
   stock: PickedStock;
+  riskProfile: string;
   showCompletenessChips: boolean;
 }) {
   const shortBatch = stock.batch_id ? stock.batch_id.slice(0, 8) : "—";
+  const isConservative = riskProfile === "conservative";
+  const cmp = stock.cmp;
+  const tech = stock.technicals;
+  const fund = stock.fundamentals;
+  const dc = stock.data_completeness;
+  const ch = stock.cache_health;
+
+  const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
+  const cmpSourceLabel = cmpLive ? "Live" : "EOD";
+
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-display text-lg">{stock.ticker}</h3>
-            <Badge variant="outline" className="text-[10px]">
-              {stock.exchange}
-            </Badge>
-            <Badge variant="secondary" className="text-[10px] uppercase">
-              {stock.verdict}
-            </Badge>
+            <Badge variant="outline" className="text-[10px]">{stock.exchange}</Badge>
+            <Badge variant="secondary" className="text-[10px] uppercase">{stock.verdict}</Badge>
+            {stock.sector && (
+              <span className="text-[11px] text-muted-foreground">· {stock.sector}</span>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Sector: {stock.sector ?? "Unmapped"} · Batch {shortBatch} ·{" "}
-            {new Date(stock.generated_at).toLocaleString()}
+          <p className="text-[10px] text-muted-foreground mt-1">
+            SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO})
+          </p>
+          <p className="text-[10px] text-muted-foreground/80">
+            Batch {shortBatch} · {new Date(stock.generated_at).toLocaleString()}
           </p>
         </div>
-        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-mono">
-          SP-1 ONLY — MOCK SCORE PENDING BACKTEST
-        </Badge>
+        {/* Score block */}
+        <div className="text-right">
+          {isConservative ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-mono uppercase cursor-help">
+                  Score Pending Backtest
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                Conservative scoring is being validated. Other risk profiles already
+                pass our backtest gate.
+              </TooltipContent>
+            </Tooltip>
+          ) : stock.composite_score != null ? (
+            <div>
+              <p className="text-[10px] uppercase text-muted-foreground font-mono">Composite Score</p>
+              <p className="font-display text-xl">{stock.composite_score.toFixed(1)}</p>
+            </div>
+          ) : (
+            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-mono uppercase">
+              Score Pending Backtest
+            </Badge>
+          )}
+          {stock.composite_score_preview != null && (
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Preview: {stock.composite_score_preview.toFixed(1)}{" "}
+              <span className="italic">· Preview math; not backtest-validated.</span>
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-        <PendingTile label="CMP" phase="Phase 2C" />
-        <PendingTile label="Buy Zone" phase="Phase 2D" />
-        <PendingTile label="Target 1 / 2" phase="Phase 2D" />
-        <PendingTile label="Stop Loss" phase="Phase 2D" />
-        <PendingTile label="Technicals (RSI / MACD / EMA / ATR)" phase="Phase 2C" />
-        <PendingTile label="Fundamentals (PE / Mkt Cap / Beta)" phase="Phase 2C" />
-        <PendingTile label="Catalyst / News" phase="Phase 2E" />
-        <PendingTile label="Risk tier" phase="Phase 2B" />
+      {/* Price */}
+      <div className="rounded-lg border border-border p-3">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span className="text-[10px] uppercase text-muted-foreground font-mono">CMP</span>
+          <span className="font-display text-lg">₹{fmt(cmp.value)}</span>
+          <span
+            className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${
+              cmpLive
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "border-border bg-muted text-muted-foreground"
+            }`}
+          >
+            {cmpSourceLabel}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {cmp.source ?? "—"} · {cmp.as_of ? new Date(cmp.as_of).toLocaleString() : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Zones */}
+      <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="rounded-lg border border-border p-2">
-          <p className="text-[10px] uppercase text-muted-foreground">Composite Score</p>
-          <p className="text-sm font-mono">
-            {stock.composite_score == null ? "Pending Phase 2D" : stock.composite_score}
+          <p className="text-[10px] uppercase text-muted-foreground font-mono">Buy Zone</p>
+          <p className="font-mono">
+            {dc.zones && stock.buy_zone.lower != null && stock.buy_zone.upper != null
+              ? `₹${fmt(stock.buy_zone.lower)} – ₹${fmt(stock.buy_zone.upper)}`
+              : <span className="text-muted-foreground italic">Pending</span>}
           </p>
         </div>
+        <div className="rounded-lg border border-border p-2">
+          <p className="text-[10px] uppercase text-muted-foreground font-mono">Target</p>
+          <p className="font-mono">
+            {stock.target != null ? `₹${fmt(stock.target)}` : <span className="text-muted-foreground italic">Pending</span>}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-2">
+          <p className="text-[10px] uppercase text-muted-foreground font-mono">Stop Loss</p>
+          <p className="font-mono">
+            {stock.stop_loss != null ? `₹${fmt(stock.stop_loss)}` : <span className="text-muted-foreground italic">Pending</span>}
+          </p>
+        </div>
+      </div>
+
+      {/* Technicals */}
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-[10px] uppercase text-muted-foreground font-mono mb-2">Technicals (20d)</p>
+        {dc.technicals ? (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+            <KV k="SMA" v={`₹${fmt(tech.sma_20d)}`} />
+            <KV k="High" v={`₹${fmt(tech.high_20d)}`} />
+            <KV k="Low" v={`₹${fmt(tech.low_20d)}`} />
+            <KV k="Δ %" v={tech.pct_change_20d == null ? "—" : `${fmt(tech.pct_change_20d)}%`} />
+            <KV k="Vol" v={tech.realized_vol_20d == null ? "—" : fmt(tech.realized_vol_20d, 4)} />
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">Pending</p>
+        )}
+      </div>
+
+      {/* Fundamentals */}
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-[10px] uppercase text-muted-foreground font-mono mb-2">Fundamentals</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+          <KV k="Company" v={fund.company_name ?? "—"} />
+          <KV k="Sector" v={fund.sector ?? "—"} />
+          <KV k="Industry" v={fund.industry ?? "—"} />
+          <KV k="Market Cap" v={fmtCr(fund.market_cap_rs)} />
+          <KV k="Cap Band" v={fund.cap_band ?? "—"} />
+          <KV k="Lot / Tick" v={`${fund.lot_size ?? "—"} / ${fund.tick_size ?? "—"}`} />
+        </div>
+        {(fund.regulatory_flags.is_asm || fund.regulatory_flags.is_gsm ||
+          fund.regulatory_flags.is_t2t || fund.regulatory_flags.is_suspended) && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {fund.regulatory_flags.is_asm && <FlagPill label="ASM" />}
+            {fund.regulatory_flags.is_gsm && <FlagPill label="GSM" />}
+            {fund.regulatory_flags.is_t2t && <FlagPill label="T2T" />}
+            {fund.regulatory_flags.is_suspended && <FlagPill label="SUSPENDED" />}
+          </div>
+        )}
+      </div>
+
+      {/* News */}
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-[10px] uppercase text-muted-foreground font-mono mb-2">Recent News</p>
+        {dc.news && stock.news.length > 0 ? (
+          <ul className="space-y-1.5">
+            {stock.news.slice(0, 3).map((n, idx) => (
+              <li key={idx} className="text-xs">
+                {n.url ? (
+                  <a
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-primary"
+                  >
+                    {n.headline}
+                  </a>
+                ) : (
+                  <span>{n.headline}</span>
+                )}
+                <span className="text-muted-foreground"> · {n.source} · {relTime(n.published_at)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">No recent news in our window</p>
+        )}
+      </div>
+
+      {/* Cache health */}
+      <div className="flex items-center gap-4 pt-1">
+        <HealthDot ok={ch.cmp_fresh} label="CMP" />
+        <HealthDot ok={ch.fundamentals_fresh} label="Fundamentals" />
+        <HealthDot ok={ch.news_fresh} label="News" />
       </div>
 
       {showCompletenessChips && (
         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border">
           {(
             [
-              ["CMP", stock.data_completeness.cmp],
-              ["Technicals", stock.data_completeness.technicals],
-              ["Zones", stock.data_completeness.zones],
-              ["Fundamentals", stock.data_completeness.fundamentals],
-              ["News", stock.data_completeness.news],
+              ["CMP", dc.cmp],
+              ["Technicals", dc.technicals],
+              ["Zones", dc.zones],
+              ["Fundamentals", dc.fundamentals],
+              ["News", dc.news],
             ] as const
           ).map(([label, ready]) => (
             <span
@@ -667,12 +905,20 @@ function StockCard({
   );
 }
 
-function PendingTile({ label, phase }: { label: string; phase: string }) {
+function KV({ k, v }: { k: string; v: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-border p-2">
-      <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
-      <p className="text-[11px] text-muted-foreground/80 italic">Pending {phase}</p>
+    <div>
+      <p className="text-[10px] uppercase text-muted-foreground font-mono">{k}</p>
+      <p className="text-xs font-mono break-words">{v}</p>
     </div>
+  );
+}
+
+function FlagPill({ label }: { label: string }) {
+  return (
+    <span className="text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border border-destructive/40 bg-destructive/10 text-destructive">
+      {label}
+    </span>
   );
 }
 
@@ -680,10 +926,16 @@ function DisclaimerFooter() {
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground flex items-start gap-2">
       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-      <p>
-        AI-generated. SEBI-registered analyst review recommended. SP-1 layer
-        live; risk / technicals / zones / news pending later phases.
-      </p>
+      <div className="space-y-1">
+        <p>
+          AI-generated. SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO}). Independent
+          analyst review recommended before acting on any pick.
+        </p>
+        <p>
+          Composite scores shown are dev-preview math unless this card carries a
+          backtest-validated score.
+        </p>
+      </div>
     </div>
   );
 }
