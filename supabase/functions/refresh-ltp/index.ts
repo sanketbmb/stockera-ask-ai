@@ -89,7 +89,8 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Symbols queried in last 24h — bounded set, scales with real usage
+    // Phase 2V.2 — work set = ai_reports last 24h (NSE) UNION universe_override_symbols
+    const work = new Map<string, { symbol: string; exchange: string }>();
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recent, error: recentErr } = await supabase
       .from("ai_reports")
@@ -98,44 +99,89 @@ Deno.serve(async (req) => {
       .not("stock_symbol", "is", null)
       .limit(500);
     if (recentErr) return json({ success: false, error: recentErr.message }, 500);
-
-    const symbols = Array.from(new Set((recent ?? []).map((r) => (r as { stock_symbol: string }).stock_symbol).filter(Boolean)));
-    if (symbols.length === 0) {
-      return json({ success: true, refreshed: 0, reason: "no recent symbols" });
+    for (const r of recent ?? []) {
+      const sym = (r as { stock_symbol: string }).stock_symbol;
+      if (!sym) continue;
+      const key = `${sym}|NSE`;
+      if (!work.has(key)) work.set(key, { symbol: sym, exchange: "NSE" });
     }
 
+    const { data: cfgRow } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_value")
+      .eq("config_key", "universe_override_symbols")
+      .maybeSingle();
+    const cfgVal = cfgRow?.config_value;
+    if (Array.isArray(cfgVal)) {
+      for (const item of cfgVal as Array<{ symbol?: string; exchange?: string }>) {
+        if (!item?.symbol) continue;
+        const ex = (item.exchange || "NSE").toUpperCase();
+        const key = `${item.symbol}|${ex}`;
+        if (!work.has(key)) work.set(key, { symbol: item.symbol, exchange: ex });
+      }
+    }
+
+    if (work.size === 0) {
+      return json({ success: true, refreshed: 0, reason: "no work" });
+    }
+
+    const allSymbols = Array.from(new Set(Array.from(work.values()).map((w) => w.symbol)));
     const { data: masters, error: masterErr } = await supabase
       .from("stock_master")
-      .select("symbol, dhan_security_id, segment")
-      .in("symbol", symbols);
+      .select("symbol, exchange, dhan_security_id, segment")
+      .in("symbol", allSymbols);
     if (masterErr) return json({ success: false, error: masterErr.message }, 500);
 
-    const rows = (masters ?? []) as MasterRow[];
+    // Prefer master rows with segment ending in _EQ per (symbol, exchange).
+    const masterByKey = new Map<string, { symbol: string; exchange: string; segment: string | null; dhan_security_id: string }>();
+    for (const m of (masters ?? []) as Array<{ symbol: string; exchange: string | null; segment: string | null; dhan_security_id: string }>) {
+      if (!m.dhan_security_id || !m.exchange) continue;
+      const key = `${m.symbol}|${m.exchange}`;
+      const existing = masterByKey.get(key);
+      const prefer = (m.segment || "").endsWith("_EQ");
+      const existingPrefer = existing && (existing.segment || "").endsWith("_EQ");
+      if (!existing || (prefer && !existingPrefer)) {
+        masterByKey.set(key, { symbol: m.symbol, exchange: m.exchange, segment: m.segment, dhan_security_id: m.dhan_security_id });
+      }
+    }
+
+    const tasks: Array<{ symbol: string; exchange: string; securityId: string; segment: string }> = [];
+    for (const w of work.values()) {
+      const m = masterByKey.get(`${w.symbol}|${w.exchange}`);
+      if (!m) continue;
+      const seg = w.exchange === "BSE" ? "BSE_EQ" : "NSE_EQ";
+      tasks.push({ symbol: w.symbol, exchange: w.exchange, securityId: m.dhan_security_id, segment: seg });
+    }
+
     let ok = 0, fail = 0;
     const nowIso = new Date().toISOString();
-    // Throttle in small batches to avoid Dhan rate limit
     const BATCH = 8;
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const slice = rows.slice(i, i + BATCH);
+    for (let i = 0; i < tasks.length; i += BATCH) {
+      const slice = tasks.slice(i, i + BATCH);
       const results = await Promise.all(
-        slice.map(async (m) => {
-          const seg = (m.segment === "BSE_EQ" ? "BSE_EQ" : "NSE_EQ");
-          const ltp = await fetchDhanLtp(m.dhan_security_id, seg);
-          return { symbol: m.symbol, ltp };
+        slice.map(async (t) => {
+          const ltp = await fetchDhanLtp(t.securityId, t.segment);
+          return { symbol: t.symbol, exchange: t.exchange, ltp };
         }),
       );
       const upserts = results
         .filter((r) => r.ltp !== null)
-        .map((r) => ({ symbol: r.symbol, ltp: r.ltp!, source: "dhan", fetched_at: nowIso }));
+        .map((r) => ({
+          symbol: r.symbol,
+          exchange: r.exchange,
+          ltp: r.ltp!,
+          source: "dhan_live",
+          fetched_at: nowIso,
+          as_of: nowIso,
+        }));
       ok += upserts.length;
       fail += results.length - upserts.length;
       if (upserts.length > 0) {
         const { error: upErr } = await supabase.from("ltp_cache").upsert(upserts, { onConflict: "symbol" });
         if (upErr) console.error("ltp_cache upsert error:", upErr.message);
 
-        // Append to ltp_history (7-day retention, cleaned by cleanup-ltp-history-daily cron)
         const historyRows = upserts.map((u) => ({
-          symbol: u.symbol, ltp: u.ltp, source: u.source, recorded_at: u.fetched_at,
+          symbol: u.symbol, ltp: u.ltp, source: "dhan_live", recorded_at: u.fetched_at,
         }));
         const { error: histErr } = await supabase.from("ltp_history").insert(historyRows);
         if (histErr) console.error("ltp_history insert error:", histErr.message);
