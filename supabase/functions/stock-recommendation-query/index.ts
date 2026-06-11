@@ -633,6 +633,61 @@ Deno.serve(async (req) => {
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
 
+    // Phase 2V — Inline LTP refresh for survivor cards.
+    // Trigger sync-ltp-dhan with a `symbols` filter (≤10) when:
+    //   * market window phase is "open" or "post_close", AND
+    //   * any survivor's ltp_cache value is missing or stale (not in ltpFreshSet)
+    // After refresh succeeds, re-query ltp_cache for those symbols and
+    // overwrite ltpBySymbol entries so buildCmp surfaces the live value.
+    {
+      const refreshCandidates = limited
+        .map((r) => r.symbol as string)
+        .filter((s) => !ltpFreshSet.has(s))
+        .slice(0, 10);
+      const phaseAllowsRefresh =
+        cmpWindowPhase === "open" || cmpWindowPhase === "post_close";
+      if (refreshCandidates.length > 0 && phaseAllowsRefresh) {
+        for (const s of refreshCandidates) refreshedSet.add(s);
+        try {
+          const refreshRes = await fetch(`${SUPABASE_URL}/functions/v1/sync-ltp-dhan`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SERVICE_KEY,
+              authorization: `Bearer ${SERVICE_KEY}`,
+            },
+            body: JSON.stringify({ symbols: refreshCandidates }),
+          });
+          if (refreshRes.ok) {
+            const { data: freshRows } = await supabase
+              .from("ltp_cache")
+              .select("symbol, ltp, fetched_at, as_of, source")
+              .in("symbol", refreshCandidates);
+            const nowMs2 = Date.now();
+            for (const r of freshRows ?? []) {
+              const v = Number(r.ltp);
+              if (!Number.isFinite(v) || v <= 0) continue;
+              const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
+              if (!ts) continue;
+              const sym = r.symbol as string;
+              ltpBySymbol.set(sym, {
+                ltp: v,
+                fetched_at: ts,
+                source: (r.source as string | null) ?? null,
+              });
+              const ageSec = (nowMs2 - new Date(ts).getTime()) / 1000;
+              if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
+                ltpFreshSet.add(sym);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`phase2v: inline_refresh_failed ${String(e)}`);
+        }
+      }
+    }
+
+
     // --- Phase 2D helpers (dev-preview math, deterministic, no fabrication) ---
     // Phase 2O — load tuning knobs fresh per request from runtime_config (no module-cache)
     type Knobs = {
