@@ -723,6 +723,121 @@ serve(async (req: Request) => {
       }
     }
 
+    // ---- Phase 2c: universe cleanliness filter (equities-only) ----
+    // Config-driven, reversible. Applied AFTER override and BEFORE liquidity/
+    // exclusion so bonds/ETFs never enter the equity pipeline as
+    // "insufficient_data". Does not change replay schema; only shrinks the
+    // canonical member set + overrideSymbolSet so N_excl == N_hash holds.
+    const cleanliness_filtered: Array<{ symbol: string; exchange: string; reason: string }> = [];
+    let cleanliness_n_in = canonicalMembers.length;
+    let cleanliness_n_out = canonicalMembers.length;
+    if (body.mode !== 'bootstrap' && canonicalMembers.length > 0) {
+      const readFlag = (key: string, dflt: boolean): boolean => {
+        const raw = config.get(key);
+        if (raw === undefined || raw === null) return dflt;
+        return jsonbBool(raw, key);
+      };
+      const f_type = readFlag('universe_filter_require_equity_type', true);
+      const f_segment = readFlag('universe_filter_require_equity_segment', true);
+      const f_suspended = readFlag('universe_filter_reject_suspended', true);
+      const f_etf = readFlag('universe_filter_reject_etf_by_name', true);
+      const f_ine = readFlag('universe_filter_require_ine_isin', false);
+      const f_dhan = readFlag('universe_filter_require_dhan_security_id', true);
+      const f_bond = readFlag('universe_filter_reject_bond_by_name', true);
+
+      console.log(`phase_universe_cleanliness start n_in=${cleanliness_n_in}`);
+
+      const symbols = Array.from(new Set(canonicalMembers.map((m) => m.symbol)));
+      const { data: meta, error: metaErr } = await supabase
+        .from('stock_master')
+        .select('symbol,exchange,type,segment,isin,company_name,is_suspended,dhan_security_id')
+        .in('symbol', symbols);
+      if (metaErr) throw new Error(`cleanliness: stock_master read failed: ${metaErr.message}`);
+
+      // Aggregate per (symbol, exchange) — permissive on segment, conservative on suspended.
+      type Agg = {
+        any_equity_type: boolean;
+        any_equity_segment: boolean;
+        any_suspended: boolean;
+        any_ine_isin: boolean;
+        any_dhan: boolean;
+        company_name: string | null;
+      };
+      const agg = new Map<string, Agg>();
+      const EQUITY_TYPES = new Set(['EQUITY', 'EQ', 'STOCK']);
+      const EQUITY_SEGMENTS = new Set(['EQ', 'NSE_EQ', 'BSE_EQ']);
+      for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
+        const sym = String(r.symbol ?? '');
+        const exch = String(r.exchange ?? '');
+        const key = `${sym}|${exch}`;
+        const cur = agg.get(key) ?? {
+          any_equity_type: false,
+          any_equity_segment: false,
+          any_suspended: false,
+          any_ine_isin: false,
+          any_dhan: false,
+          company_name: null,
+        };
+        if (typeof r.type === 'string' && EQUITY_TYPES.has(r.type.toUpperCase())) cur.any_equity_type = true;
+        if (typeof r.segment === 'string' && EQUITY_SEGMENTS.has(r.segment.toUpperCase())) cur.any_equity_segment = true;
+        if (r.is_suspended === true) cur.any_suspended = true;
+        if (typeof r.isin === 'string' && r.isin.toUpperCase().startsWith('INE')) cur.any_ine_isin = true;
+        if (r.dhan_security_id !== null && r.dhan_security_id !== undefined && String(r.dhan_security_id).length > 0) cur.any_dhan = true;
+        if (cur.company_name === null && typeof r.company_name === 'string') cur.company_name = r.company_name;
+        agg.set(key, cur);
+      }
+
+      const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
+      const etfNameRe = /\bETF\b/i;
+
+      const kept: typeof canonicalMembers = [];
+      for (const m of canonicalMembers) {
+        const key = `${m.symbol}|${m.exchange}`;
+        const a = agg.get(key);
+        let reason: string | null = null;
+        if (!a) {
+          reason = 'not_equity_type';
+        } else if (f_type && !a.any_equity_type) {
+          reason = 'not_equity_type';
+        } else if (f_segment && !a.any_equity_segment) {
+          reason = 'not_equity_segment';
+        } else if (f_suspended && a.any_suspended) {
+          reason = 'suspended';
+        } else if (f_etf && a.company_name && etfNameRe.test(a.company_name)) {
+          reason = 'etf_name';
+        } else if (f_bond && a.company_name && bondNameRe.test(a.company_name)) {
+          reason = 'bond_name';
+        } else if (f_ine && !a.any_ine_isin) {
+          reason = 'non_ine_isin';
+        } else if (f_dhan && !a.any_dhan) {
+          reason = 'missing_dhan_id';
+        }
+        if (reason) {
+          cleanliness_filtered.push({ symbol: m.symbol, exchange: m.exchange, reason });
+        } else {
+          kept.push(m);
+        }
+      }
+
+      canonicalMembers = kept;
+      cleanliness_n_out = kept.length;
+      // Mirror filter onto overrideSymbolSet so post-exclusion lock-step filter
+      // continues to keep N_excl == N_hash.
+      if (overrideSymbolSet) {
+        const keptSymbols = new Set(kept.map((m) => m.symbol));
+        const newSet = new Set<string>();
+        for (const s of overrideSymbolSet) if (keptSymbols.has(s)) newSet.add(s);
+        overrideSymbolSet = newSet;
+      }
+
+      console.log(`phase_universe_cleanliness done n_out=${cleanliness_n_out} filtered_out=${cleanliness_n_in - cleanliness_n_out}`);
+      if (cleanliness_filtered.length > 0) {
+        console.log(`cleanliness_filtered: ${JSON.stringify(cleanliness_filtered)}`);
+      }
+    }
+
+
+
     // ---- Phase 3: liquidity fetch + append ----
     const tLiquidity = Date.now();
     logDiagnosticPhase(batchId, 'phase_liquidity', 'start', tLiquidity, { universe_size: canonicalMembers.length });
@@ -1038,8 +1153,13 @@ serve(async (req: Request) => {
         batch_type: batchType,
         batch_state: batchState,
         ...phaseMs,
+        cleanliness_n_in,
+        cleanliness_n_out,
+        cleanliness_filtered_count: cleanliness_filtered.length,
+        cleanliness_filtered,
       },
     });
+
 
     return new Response(
       JSON.stringify({
