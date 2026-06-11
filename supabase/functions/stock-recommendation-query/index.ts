@@ -707,7 +707,7 @@ Deno.serve(async (req) => {
         technicals: "derived from stock_picker_liquidity_20d closes (sma_20d, high_20d, low_20d, pct_change_20d, realized_vol_20d)",
         fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
         zones: "derived in-response from CMP + technicals (Phase 2D dev-preview math)",
-        news: "not produced by SP-1 pipeline yet",
+        news: "news_cache (populated by sync-news-marketaux background job)",
       },
     });
   } catch (e) {
