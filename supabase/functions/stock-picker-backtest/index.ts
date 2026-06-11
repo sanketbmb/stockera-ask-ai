@@ -280,6 +280,7 @@ Deno.serve(async (req) => {
         type Trade = {
           end_date: string; cmp: number; ret_pct: number; outcome: 'win' | 'loss' | 'neither';
           composite_score_preview: number; vol20: number; profile: string;
+          max_dd: number; // per-trade max drawdown as fraction (<= 0)
         };
         const trades: Trade[] = [];
         const allVols: number[] = [];
@@ -300,16 +301,20 @@ Deno.serve(async (req) => {
         const p_agg = percentile(volsSorted, 0.50);
         const p_ult = percentile(volsSorted, 0.75);
 
-        // Second pass — simulate forward window
+        // Second pass — simulate forward window, track per-trade peak-to-trough drawdown
         for (let k = 0; k < metrics.length; k++) {
           const wm = metrics[k];
           const idxEnd = effMin - 1 + k;
-          // forward look: close indices idxEnd+1 .. idxEnd+holdDays
           let hitTarget = false, hitStop = false;
           let exitClose = closes[idxEnd].close;
+          let peak = wm.cmp;          // include entry price in peak
+          let trade_max_dd = 0;       // worst (most negative) trough_decline observed
           for (let j = 1; j <= holdDays; j++) {
             const c = closes[idxEnd + j].close;
             exitClose = c;
+            if (c > peak) peak = c;
+            const trough_decline = peak > 0 ? (c - peak) / peak : 0;
+            if (trough_decline < trade_max_dd) trade_max_dd = trough_decline;
             if (wm.target !== null && c >= wm.target) { hitTarget = true; break; }
             if (wm.stop_loss !== null && c <= wm.stop_loss) { hitStop = true; break; }
           }
@@ -321,6 +326,7 @@ Deno.serve(async (req) => {
             end_date: wm.end_date, cmp: wm.cmp, ret_pct, outcome,
             composite_score_preview: wm.composite_score_preview,
             vol20: wm.vol20, profile,
+            max_dd: trade_max_dd,
           });
         }
 
@@ -338,16 +344,11 @@ Deno.serve(async (req) => {
           const decided = wins + losses;
           const hit_rate = decided === 0 ? null : wins / decided;
           const rets = ts.map((t) => t.ret_pct);
-          const avg_return_pct = mean(rets);
-          const median_return_pct = median(rets);
-          // max drawdown of cumulative return path (sum of rets in order)
-          let cum = 0, peak = 0, mdd = 0;
-          for (const r of rets) {
-            cum += r;
-            if (cum > peak) peak = cum;
-            const dd = peak - cum;
-            if (dd > mdd) mdd = dd;
-          }
+          // Worst single-trade peak-to-trough drawdown, as signed percent.
+          const worst_dd_frac = ts.reduce((acc, t) => (t.max_dd < acc ? t.max_dd : acc), 0);
+          const max_drawdown_pct = decided === 0 ? null : worst_dd_frac * 100;
+          const avg_return_pct = decided === 0 ? null : mean(rets);
+          const median_return_pct = decided === 0 ? null : median(rets);
           const ic = spearman(ts.map((t) => t.composite_score_preview), rets);
           const csp_avg = mean(ts.map((t) => t.composite_score_preview));
           insertRows.push({
@@ -363,11 +364,12 @@ Deno.serve(async (req) => {
             hit_rate,
             avg_return_pct,
             median_return_pct,
-            max_drawdown_pct: -mdd,
+            max_drawdown_pct,
             information_coefficient: ic,
             composite_score_preview_avg: csp_avg,
           });
         }
+
 
         if (insertRows.length > 0) {
           const { error: insErr } = await supabase
