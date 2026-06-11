@@ -287,8 +287,9 @@ Deno.serve(async (req) => {
 
         // First pass — compute window vols to derive this symbol's tier percentiles.
         const metrics: WindowMetric[] = [];
-        for (let i = minSample - 1; i < closes.length - holdDays; i++) {
-          const w = closes.slice(i - minSample + 1, i + 1);
+        for (let i = effMin - 1; i < closes.length - holdDays; i++) {
+          const w = closes.slice(i - effMin + 1, i + 1);
+
           const wm = computeWindowMetric(w);
           metrics.push(wm);
           allVols.push(wm.vol20);
