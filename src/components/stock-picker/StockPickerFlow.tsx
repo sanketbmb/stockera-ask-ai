@@ -728,6 +728,10 @@ function StockCard({
   const dc = stock.data_completeness;
   const ch = stock.cache_health;
 
+  // MASTER FIX — collapsible Technicals / Fundamentals, default closed.
+  const [techOpen, setTechOpen] = useState(false);
+  const [fundOpen, setFundOpen] = useState(false);
+
   const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
   const cmpSourceLabel =
     cmp.source === "liquidity_20d_close"
