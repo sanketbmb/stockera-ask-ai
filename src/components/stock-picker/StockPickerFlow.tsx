@@ -126,11 +126,18 @@ interface StockPickerResponse {
   stocks: PickedStock[];
   note?: string;
   error?: string;
+  regulatory_stamp?: {
+    firm_legal_name: string;
+    sebi_reg_no: string;
+    regulatory_status_at_generation: string;
+  };
 }
 
-// SEBI RA registration — authoritative values per Stockera Technology Private Limited.
-// Surfaced as a stamp on each result card; not fabricated.
+/** @deprecated Legacy fallback only. Authoritative stamp now comes from
+ *  stock-recommendation-query response (regulatory_stamp), sourced from
+ *  runtime_config via currentRegulatoryStamp(). */
 const SEBI_RA_FIRM = "Stockera Technology Private Limited";
+/** @deprecated See SEBI_RA_FIRM above. */
 const SEBI_RA_REGNO = "INH000019071";
 
 const HORIZONS: { id: Horizon; label: string }[] = [
@@ -597,7 +604,7 @@ export function StockPickerFlow() {
               />
             )}
 
-            <DisclaimerFooter />
+            <DisclaimerFooter stamp={result?.regulatory_stamp} />
           </Card>
         )}
       </div>
@@ -609,6 +616,19 @@ function ChevronRightIcon() {
   return <span className="text-muted-foreground/60">›</span>;
 }
 
+function resolveStamp(
+  s: StockPickerResponse["regulatory_stamp"] | undefined,
+): { firm: string; reg: string } {
+  if (
+    s &&
+    typeof s.firm_legal_name === "string" && s.firm_legal_name.trim() !== "" &&
+    typeof s.sebi_reg_no === "string" && s.sebi_reg_no.trim() !== ""
+  ) {
+    return { firm: s.firm_legal_name, reg: s.sebi_reg_no };
+  }
+  return { firm: SEBI_RA_FIRM, reg: SEBI_RA_REGNO };
+}
+
 function ResultsView({
   result,
   showCompletenessChips,
@@ -616,6 +636,7 @@ function ResultsView({
   result: StockPickerResponse;
   showCompletenessChips: boolean;
 }) {
+  const stamp = resolveStamp(result.regulatory_stamp);
   if (!result.stocks || result.stocks.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -643,6 +664,7 @@ function ResultsView({
           stock={s}
           riskProfile={result.risk_profile}
           showCompletenessChips={showCompletenessChips}
+          stamp={stamp}
         />
       ))}
     </div>
@@ -691,10 +713,12 @@ function StockCard({
   stock,
   riskProfile,
   showCompletenessChips,
+  stamp,
 }: {
   stock: PickedStock;
   riskProfile: string;
   showCompletenessChips: boolean;
+  stamp: { firm: string; reg: string };
 }) {
   const shortBatch = stock.batch_id ? stock.batch_id.slice(0, 8) : "—";
   const isConservative = riskProfile === "conservative";
@@ -720,8 +744,8 @@ function StockCard({
               <span className="text-[11px] text-muted-foreground">· {stock.sector}</span>
             )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO})
+          <p className="text-[10px] text-muted-foreground mt-1" data-testid="sebi-ra-stamp">
+            SEBI-registered RA: {stamp.firm} ({stamp.reg})
           </p>
           <p className="text-[10px] text-muted-foreground/80">
             Batch {shortBatch} · {new Date(stock.generated_at).toLocaleString()}
@@ -922,13 +946,18 @@ function FlagPill({ label }: { label: string }) {
   );
 }
 
-function DisclaimerFooter() {
+function DisclaimerFooter({
+  stamp,
+}: {
+  stamp?: StockPickerResponse["regulatory_stamp"];
+}) {
+  const { firm, reg } = resolveStamp(stamp);
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground flex items-start gap-2">
       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
       <div className="space-y-1">
         <p>
-          AI-generated. SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO}). Independent
+          AI-generated. SEBI-registered RA: {firm} ({reg}). Independent
           analyst review recommended before acting on any pick.
         </p>
         <p>
