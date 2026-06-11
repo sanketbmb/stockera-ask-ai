@@ -278,19 +278,30 @@ export function buildCanonicalString(bundle: CanonicalBundle): string {
   // Always emit the hardened schema version, regardless of what the caller passed.
   const schemaVersion = REPLAY_SCHEMA_VERSION;
 
-  const fields: Array<{ name: string; value: string }> = [
+  // Atomic top-level fields go through serializeField (with SEP-collision guard).
+  // Composite section strings (universe_members, liquidity_bundle, exclusion_checks)
+  // are pre-joined canonical blocks that already contain SEP internally; they
+  // must be appended directly, NOT re-serialized.
+  const atomicLeading: Array<{ name: string; value: string }> = [
     { name: 'schema_version', value: schemaVersion },
     { name: 'batch_id', value: bundle.batch_id },
     { name: 'seed_version', value: bundle.seed_version },
     { name: 'run_date_ist', value: bundle.run_date_ist.normalize('NFC') },
     { name: 'universe_snapshot_hash', value: bundle.universe_snapshot_hash },
-    { name: 'universe_members', value: universeCanon },
-    { name: 'liquidity_bundle', value: liquidityCanon },
-    { name: 'exclusion_checks', value: exclusionCanon },
+  ];
+  const atomicTrailing: Array<{ name: string; value: string }> = [
     { name: 'data_freshness_date', value: bundle.data_freshness_date.normalize('NFC') },
   ];
 
-  return fields.map(f => serializeField(f.name, f.value)).join(SEP);
+  const parts: string[] = [
+    ...atomicLeading.map(f => serializeField(f.name, f.value)),
+    universeCanon,
+    liquidityCanon,
+    exclusionCanon,
+    ...atomicTrailing.map(f => serializeField(f.name, f.value)),
+  ];
+
+  return parts.join(SEP);
 }
 
 // ---------------------------------------------------------------------------
