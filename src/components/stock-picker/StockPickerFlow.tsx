@@ -795,6 +795,7 @@ function StockCard({
           <span className="text-[10px] uppercase text-muted-foreground font-mono">CMP</span>
           <span className="font-display text-lg">₹{fmt(cmp.value)}</span>
           <span
+            data-testid="cmp-source-badge"
             className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${
               cmpLive
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
