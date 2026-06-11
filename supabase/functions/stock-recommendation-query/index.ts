@@ -749,6 +749,11 @@ Deno.serve(async (req) => {
         zones: "derived in-response from CMP + technicals (Phase 2D dev-preview math)",
         news: "news_cache (populated by sync-news-marketaux background job)",
       },
+      cache_health_meta: {
+        ltp_ttl_seconds: ltpTtlSec,
+        fundamentals_ttl_seconds: fundTtlSec,
+        news_ttl_seconds: newsTtlSec,
+      },
     });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
