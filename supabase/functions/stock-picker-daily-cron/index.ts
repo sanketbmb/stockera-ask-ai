@@ -1054,10 +1054,11 @@ serve(async (req: Request) => {
     const tWrite = Date.now();
 
     const batchType: BatchType = body.mode === 'dry_run' ? 'dry_run' : 'live';
-    const batchState: BatchState =
-      body.mode === 'dry_run' ? 'dry_run'
-      : abortDueToData ? 'aborted'
-      : 'completed';
+    // Phase 2R repair: write-audit's ALLOWED_MATRIX recognizes
+    //   dry_run/{completed,aborted} and live/{completed,aborted}.
+    // Map dry_run mode to dry_run/completed (or dry_run/aborted on data
+    // outage) to satisfy the matrix without weakening SP-1.6 guarantees.
+    const batchState: BatchState = abortDueToData ? 'aborted' : 'completed';
 
     // DEFECT 4: hash persisted ⇔ batch_state in {'completed','dry_run'}
     const persistedHash: string | null =
