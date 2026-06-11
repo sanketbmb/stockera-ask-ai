@@ -27,6 +27,46 @@ interface RequestBody {
   is_pro: boolean;
 }
 
+interface DataCompleteness {
+  cmp: boolean;
+  technicals: boolean;
+  zones: boolean;
+  fundamentals: boolean;
+  news: boolean;
+}
+
+interface CmpBlock {
+  value: number | null;
+  as_of: string | null;
+  source: "ltp_cache" | "liquidity_20d_close" | null;
+}
+
+interface TechnicalsBlock {
+  sma_20d: number | null;
+  high_20d: number | null;
+  low_20d: number | null;
+  pct_change_20d: number | null;
+  realized_vol_20d: number | null;
+  sample_size: number;
+}
+
+interface FundamentalsBlock {
+  company_name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap_rs: number | null;
+  cap_band: string | null;
+  lot_size: number | null;
+  tick_size: number | null;
+  regulatory_flags: {
+    is_asm: boolean | null;
+    is_gsm: boolean | null;
+    is_t2t: boolean | null;
+    is_suspended: boolean | null;
+    pledged_pct: number | null;
+  };
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
@@ -35,13 +75,11 @@ interface StockOut {
   composite_score: number | null;
   batch_id: string;
   generated_at: string;
-  data_completeness: {
-    cmp: false;
-    technicals: false;
-    zones: false;
-    fundamentals: false;
-    news: false;
-  };
+  cmp: CmpBlock;
+  technicals: TechnicalsBlock;
+  fundamentals: FundamentalsBlock;
+  data_completeness: DataCompleteness;
+  pending: string[];
 }
 
 function json(body: unknown, status = 200) {
@@ -120,21 +158,68 @@ Deno.serve(async (req) => {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
     }
 
-    // Step 3 — sector/industry lookup via stock_master
+    // Step 3 — fundamentals lookup via stock_master (collapse multi-row dupes;
+    // prefer first non-null per field; never invent missing values).
     const symbols = Array.from(new Set(auditRows.map((r) => r.symbol as string)));
     const { data: masterRows, error: masterErr } = await supabase
       .from("stock_master")
-      .select("symbol, sector, industry, market_cap_rs, cap_band")
+      .select(
+        "symbol, company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
+      )
       .in("symbol", symbols);
 
     if (masterErr) {
       return json({ ok: false, error: masterErr.message }, 500);
     }
-    const masterBySymbol = new Map<string, { sector: string | null }>();
+
+    interface MasterAgg {
+      company_name: string | null;
+      sector: string | null;
+      industry: string | null;
+      market_cap_rs: number | null;
+      cap_band: string | null;
+      lot_size: number | null;
+      tick_size: number | null;
+      is_asm: boolean | null;
+      is_gsm: boolean | null;
+      is_t2t: boolean | null;
+      is_suspended: boolean | null;
+      pledged_pct: number | null;
+    }
+    const masterBySymbol = new Map<string, MasterAgg>();
+    function preferNonNull<T>(prev: T | null, next: T | null | undefined): T | null {
+      if (prev !== null && prev !== undefined) return prev;
+      return (next ?? null) as T | null;
+    }
     for (const m of masterRows ?? []) {
-      if (!masterBySymbol.has(m.symbol as string)) {
-        masterBySymbol.set(m.symbol as string, { sector: (m.sector as string | null) ?? null });
-      }
+      const sym = m.symbol as string;
+      const cur: MasterAgg = masterBySymbol.get(sym) ?? {
+        company_name: null,
+        sector: null,
+        industry: null,
+        market_cap_rs: null,
+        cap_band: null,
+        lot_size: null,
+        tick_size: null,
+        is_asm: null,
+        is_gsm: null,
+        is_t2t: null,
+        is_suspended: null,
+        pledged_pct: null,
+      };
+      cur.company_name = preferNonNull(cur.company_name, m.company_name as string | null);
+      cur.sector = preferNonNull(cur.sector, m.sector as string | null);
+      cur.industry = preferNonNull(cur.industry, m.industry as string | null);
+      cur.market_cap_rs = preferNonNull(cur.market_cap_rs, m.market_cap_rs as number | null);
+      cur.cap_band = preferNonNull(cur.cap_band, m.cap_band as string | null);
+      cur.lot_size = preferNonNull(cur.lot_size, m.lot_size as number | null);
+      cur.tick_size = preferNonNull(cur.tick_size, m.tick_size as number | null);
+      cur.is_asm = preferNonNull(cur.is_asm, m.is_asm as boolean | null);
+      cur.is_gsm = preferNonNull(cur.is_gsm, m.is_gsm as boolean | null);
+      cur.is_t2t = preferNonNull(cur.is_t2t, m.is_t2t as boolean | null);
+      cur.is_suspended = preferNonNull(cur.is_suspended, m.is_suspended as boolean | null);
+      cur.pledged_pct = preferNonNull(cur.pledged_pct, m.pledged_pct as number | null);
+      masterBySymbol.set(sym, cur);
     }
 
     // Index membership set (latest as_of_date per symbol+exchange for index)
@@ -193,24 +278,25 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: liqErr.message }, 500);
     }
 
-    const closesBySymbol = new Map<string, number[]>();
+    interface CloseRow { close: number; record_date: string }
+    const closesBySymbol = new Map<string, CloseRow[]>();
     for (const row of liqRows ?? []) {
       const sym = row.symbol as string;
       const close = Number(row.close);
+      const record_date = String(row.record_date);
       if (!Number.isFinite(close) || close <= 0) continue;
       const arr = closesBySymbol.get(sym) ?? [];
-      if (arr.length < 20) arr.push(close);
+      if (arr.length < 20) arr.push({ close, record_date });
       closesBySymbol.set(sym, arr);
     }
 
-    function realizedVol(closesDesc: number[] | undefined): number | null {
-      if (!closesDesc || closesDesc.length < 3) return null;
-      // closesDesc is newest-first; build chronological return series
-      const asc = [...closesDesc].reverse();
+    function realizedVol(rowsDesc: CloseRow[] | undefined): number | null {
+      if (!rowsDesc || rowsDesc.length < 3) return null;
+      const asc = [...rowsDesc].reverse();
       const rets: number[] = [];
       for (let i = 1; i < asc.length; i++) {
-        const prev = asc[i - 1];
-        const cur = asc[i];
+        const prev = asc[i - 1].close;
+        const cur = asc[i].close;
         if (prev > 0) rets.push((cur - prev) / prev);
       }
       if (rets.length < 2) return null;
@@ -222,6 +308,93 @@ Deno.serve(async (req) => {
     const volBySymbol = new Map<string, number | null>();
     for (const sym of filteredSymbols) {
       volBySymbol.set(sym, realizedVol(closesBySymbol.get(sym)));
+    }
+
+    // Phase 2C — fetch optional real-time LTP cache (may be empty); use as
+    // primary CMP source when present, otherwise fall back to latest close.
+    const { data: ltpRows } = await supabase
+      .from("ltp_cache")
+      .select("symbol, ltp, fetched_at, source")
+      .in("symbol", filteredSymbols);
+    const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
+    for (const r of ltpRows ?? []) {
+      const v = Number(r.ltp);
+      if (Number.isFinite(v) && v > 0) {
+        ltpBySymbol.set(r.symbol as string, {
+          ltp: v,
+          fetched_at: String(r.fetched_at),
+          source: (r.source as string | null) ?? null,
+        });
+      }
+    }
+
+    function round2(n: number): number {
+      return Math.round(n * 100) / 100;
+    }
+    function round4(n: number): number {
+      return Math.round(n * 10000) / 10000;
+    }
+
+    function buildCmp(sym: string): CmpBlock {
+      const live = ltpBySymbol.get(sym);
+      if (live) {
+        return { value: round2(live.ltp), as_of: live.fetched_at, source: "ltp_cache" };
+      }
+      const rows = closesBySymbol.get(sym);
+      if (rows && rows.length > 0) {
+        return {
+          value: round2(rows[0].close),
+          as_of: rows[0].record_date,
+          source: "liquidity_20d_close",
+        };
+      }
+      return { value: null, as_of: null, source: null };
+    }
+
+    function buildTechnicals(sym: string): TechnicalsBlock {
+      const rows = closesBySymbol.get(sym) ?? [];
+      if (rows.length === 0) {
+        return {
+          sma_20d: null, high_20d: null, low_20d: null,
+          pct_change_20d: null, realized_vol_20d: null, sample_size: 0,
+        };
+      }
+      const closes = rows.map((r) => r.close);
+      const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
+      const hi = Math.max(...closes);
+      const lo = Math.min(...closes);
+      const newest = rows[0].close;
+      const oldest = rows[rows.length - 1].close;
+      const pct = oldest > 0 ? ((newest - oldest) / oldest) * 100 : null;
+      const vol = volBySymbol.get(sym) ?? null;
+      return {
+        sma_20d: round2(sma),
+        high_20d: round2(hi),
+        low_20d: round2(lo),
+        pct_change_20d: pct == null ? null : round2(pct),
+        realized_vol_20d: vol == null ? null : round4(vol),
+        sample_size: rows.length,
+      };
+    }
+
+    function buildFundamentals(sym: string): FundamentalsBlock {
+      const m = masterBySymbol.get(sym);
+      return {
+        company_name: m?.company_name ?? null,
+        sector: m?.sector ?? null,
+        industry: m?.industry ?? null,
+        market_cap_rs: m?.market_cap_rs ?? null,
+        cap_band: m?.cap_band ?? null,
+        lot_size: m?.lot_size ?? null,
+        tick_size: m?.tick_size ?? null,
+        regulatory_flags: {
+          is_asm: m?.is_asm ?? null,
+          is_gsm: m?.is_gsm ?? null,
+          is_t2t: m?.is_t2t ?? null,
+          is_suspended: m?.is_suspended ?? null,
+          pledged_pct: m?.pledged_pct ?? null,
+        },
+      };
     }
 
     // Compute median volatility across this survivor set (symbols with a
@@ -293,23 +466,62 @@ Deno.serve(async (req) => {
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
 
-    // Step 7 — shape
-    const stocks: StockOut[] = limited.map((r) => ({
-      ticker: r.symbol as string,
-      exchange: r.exchange as string,
-      sector: masterBySymbol.get(r.symbol as string)?.sector ?? null,
-      verdict: "include",
-      composite_score: (r.composite_score as number | null) ?? null,
-      batch_id: r.batch_id as string,
-      generated_at: new Date(r.generated_at as string).toISOString(),
-      data_completeness: {
-        cmp: false,
-        technicals: false,
-        zones: false,
-        fundamentals: false,
-        news: false,
-      },
-    }));
+    // Step 7 — shape (Phase 2C: populate CMP / technicals / fundamentals from
+    // real DB data only; data_completeness reflects what is actually present).
+    const stocks: StockOut[] = limited.map((r) => {
+      const sym = r.symbol as string;
+      const cmp = buildCmp(sym);
+      const tech = buildTechnicals(sym);
+      const fund = buildFundamentals(sym);
+
+      const cmpOk = cmp.value !== null;
+      const techOk =
+        tech.sample_size >= 3 &&
+        tech.sma_20d !== null &&
+        tech.realized_vol_20d !== null;
+      const fundOk =
+        fund.company_name !== null ||
+        fund.sector !== null ||
+        fund.industry !== null ||
+        fund.market_cap_rs !== null ||
+        fund.cap_band !== null;
+
+      const pending: string[] = [];
+      if (!cmpOk) pending.push("cmp");
+      if (!techOk) pending.push("technicals");
+      pending.push("zones");
+      if (!fundOk) pending.push("fundamentals");
+      else {
+        const missingFund: string[] = [];
+        if (fund.sector === null) missingFund.push("sector");
+        if (fund.industry === null) missingFund.push("industry");
+        if (fund.market_cap_rs === null) missingFund.push("market_cap_rs");
+        if (fund.cap_band === null) missingFund.push("cap_band");
+        if (missingFund.length > 0) pending.push("fundamentals:" + missingFund.join(","));
+      }
+      pending.push("news");
+
+      return {
+        ticker: sym,
+        exchange: r.exchange as string,
+        sector: fund.sector,
+        verdict: "include" as const,
+        composite_score: (r.composite_score as number | null) ?? null,
+        batch_id: r.batch_id as string,
+        generated_at: new Date(r.generated_at as string).toISOString(),
+        cmp,
+        technicals: tech,
+        fundamentals: fund,
+        data_completeness: {
+          cmp: cmpOk,
+          technicals: techOk,
+          zones: false,
+          fundamentals: fundOk,
+          news: false,
+        },
+        pending,
+      };
+    });
 
     return json({
       ...baseResponse,
@@ -326,6 +538,13 @@ Deno.serve(async (req) => {
           Array.from(volBySymbol.entries()).map(([k, v]) => [k, v]),
         ),
         tier_applied: tier,
+      },
+      data_sources: {
+        cmp: "ltp_cache (preferred) -> stock_picker_liquidity_20d latest close (fallback)",
+        technicals: "derived from stock_picker_liquidity_20d closes (sma_20d, high_20d, low_20d, pct_change_20d, realized_vol_20d)",
+        fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
+        zones: "not produced by SP-1 pipeline yet",
+        news: "not produced by SP-1 pipeline yet",
       },
     });
   } catch (e) {
