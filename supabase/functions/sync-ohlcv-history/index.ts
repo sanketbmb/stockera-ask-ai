@@ -270,7 +270,7 @@ Deno.serve(async (req) => {
     }
 
     const telemetry = {
-      ok: errors.length === 0,
+      ok: rows_inserted > 0 && targets.length > 0,
       symbols_processed: targets.length,
       rows_inserted,
       dhan_used,
