@@ -61,13 +61,34 @@ serve(async (req: Request) => {
 
     // 2. Load raw daily liquidity rows directly from base table (NOT the *_latest view).
     //    We compute 20d metrics ourselves; nullable view fields must not drive eligibility.
+    //    phase2s1: paginated fetch — PostgREST default 1000-row cap silently truncates
+    //    .in(symbol, universeSymbols) results when total liquidity rows exceed 1000.
     const universeSymbols = Array.from(new Set(members.map(m => m.symbol)));
-    const { data: liq, error: liqErr } = await supabase
-      .from('stock_picker_liquidity_20d')
-      .select('id, symbol, exchange, record_date, close, volume, turnover_rs, fetch_status, data_snapshot_at')
-      .eq('fetch_status', 'ok')
-      .in('symbol', universeSymbols);
-    if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
+    const PAGE_SIZE = 1000;
+    const MAX_PAGES = 50;
+    const liq: any[] = [];
+    let pages = 0;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const start = page * PAGE_SIZE;
+      const end = start + PAGE_SIZE - 1;
+      const { data: chunk, error: liqErr } = await supabase
+        .from('stock_picker_liquidity_20d')
+        .select('id, symbol, exchange, record_date, close, volume, turnover_rs, fetch_status, data_snapshot_at')
+        .eq('fetch_status', 'ok')
+        .in('symbol', universeSymbols)
+        .order('id', { ascending: true })
+        .range(start, end);
+      if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
+      const rows = chunk ?? [];
+      liq.push(...rows);
+      pages = page + 1;
+      if (rows.length < PAGE_SIZE) break;
+      if (page === MAX_PAGES - 1 && rows.length === PAGE_SIZE) {
+        throw new Error('phase2s1: liq20d_page_cap_exceeded');
+      }
+    }
+    console.log(`phase2s1: liq20d_paged_fetch pages=${pages} rows=${liq.length}`);
+
 
     // Filter to current universe + ok + finite numeric guards
     const filteredLiq = (liq ?? []).filter(r => {
