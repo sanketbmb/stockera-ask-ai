@@ -826,6 +826,13 @@ serve(async (req: Request) => {
 
         } else if (f_bond && a.company_name && bondNameRe.test(a.company_name)) {
           reason = 'bond_name';
+        } else if (f_bond_ticker && (
+          /^\d{3,4}[A-Z]{1,3}\d{2,3}[A-Z]?$/i.test(m.symbol) ||
+          /^[A-Z]{2,4}\d{2,4}[A-Z]{1,3}\d{1,3}$/i.test(m.symbol) ||
+          /(^|\s)SDL(\s|$)/i.test(m.symbol) ||
+          /^SDL/i.test(m.symbol)
+        )) {
+          reason = 'bond_ticker';
         } else if (f_ine && !a.any_ine_isin) {
           reason = 'non_ine_isin';
         } else if (f_dhan && !a.any_dhan) {
