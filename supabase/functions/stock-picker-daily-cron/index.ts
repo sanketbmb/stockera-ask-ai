@@ -259,10 +259,15 @@ async function fetchLiquidityForSymbol(args: {
   serviceKey: string;
   maxRetries: number;
 }): Promise<LiquidityFetchOutcome> {
+  const symbolStartedAt = Date.now();
+  const label = `${args.symbol}/${args.exchange}`;
+  console.log(`cron diagnostic: liquidity_symbol_start label=${label} security_id=${args.dhanSecurityId ?? 'null'}`);
   let attempt = 0;
   let delayMs = 200;
   while (attempt <= args.maxRetries) {
     try {
+      const attemptStartedAt = Date.now();
+      console.log(`cron diagnostic: liquidity_symbol_attempt_start label=${label} attempt=${attempt + 1}`);
       const res = await fetch(args.dhanFetchUrl, {
         method: 'POST',
         headers: {
@@ -280,18 +285,24 @@ async function fetchLiquidityForSymbol(args: {
           },
         }),
       });
+      console.log(
+        `cron diagnostic: liquidity_symbol_attempt_response label=${label} attempt=${attempt + 1} status=${res.status} elapsed_ms=${Date.now() - attemptStartedAt}`
+      );
       if (res.status === 429) {
         const retryAfter = Number(res.headers.get('Retry-After') ?? '0');
         const waitMs = Math.max(retryAfter * 1000, delayMs * 2);
         attempt++;
         if (attempt > args.maxRetries) {
+          console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=rate_limited elapsed_ms=${Date.now() - symbolStartedAt}`);
           return { symbol: args.symbol, exchange: args.exchange, status: 'rate_limited', rows: [] };
         }
+        console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${waitMs}`);
         await sleep(waitMs);
         delayMs = Math.min(delayMs * 2, 5000);
         continue;
       }
       if (!res.ok) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error http_status=${res.status} elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -302,6 +313,7 @@ async function fetchLiquidityForSymbol(args: {
       }
       const json = await res.json();
       if (json?.success !== true) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error upstream_unsuccessful elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -326,6 +338,7 @@ async function fetchLiquidityForSymbol(args: {
       if (!Array.isArray(closeArr)) missing.push('close');
       if (!Array.isArray(volArr)) missing.push('volume');
       if (missing.length > 0) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error malformed_missing=${missing.join(',')} elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -335,6 +348,7 @@ async function fetchLiquidityForSymbol(args: {
         };
       }
       if (closeArr.length !== ts.length || volArr.length !== ts.length) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error length_mismatch elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -359,6 +373,7 @@ async function fetchLiquidityForSymbol(args: {
         parsedRows.push({ record_date, close: c, volume: vol, turnover_rs });
       }
       if (parsedRows.length === 0) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error no_valid_candles elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -367,6 +382,7 @@ async function fetchLiquidityForSymbol(args: {
           error: 'no_valid_candles',
         };
       }
+      console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=ok rows=${parsedRows.length} elapsed_ms=${Date.now() - symbolStartedAt}`);
       return {
         symbol: args.symbol,
         exchange: args.exchange,
@@ -376,6 +392,7 @@ async function fetchLiquidityForSymbol(args: {
     } catch (e) {
       attempt++;
       if (attempt > args.maxRetries) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error exception elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -384,6 +401,7 @@ async function fetchLiquidityForSymbol(args: {
           error: e instanceof Error ? e.message : String(e),
         };
       }
+      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${e instanceof Error ? e.message : String(e)}`);
       await sleep(delayMs);
       delayMs = Math.min(delayMs * 2, 5000);
     }
