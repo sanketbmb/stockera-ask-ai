@@ -967,8 +967,7 @@ Deno.serve(async (req) => {
         },
         pending,
         cache_health: {
-          cmp_fresh: cmp.source === "ltp_cache" && cmp.as_of != null &&
-            ((Date.now() - new Date(cmp.as_of).getTime()) / 1000) <= ltpTtlSec,
+          cmp_fresh: cmp.label === "LIVE" || cmp.label === "CLOSE",
           fundamentals_fresh: (() => {
             const f = fundCacheBySymbol.get(sym);
             if (!f?.as_of) return false;
