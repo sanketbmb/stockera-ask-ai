@@ -1378,6 +1378,54 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_backtest_sweep: {
+        Row: {
+          avg_return_pct: number | null
+          created_at: string
+          hit_rate: number | null
+          id: string
+          knob_set: Json
+          max_drawdown_pct: number | null
+          median_return_pct: number | null
+          risk_adjusted_score: number | null
+          risk_profile: string
+          sweep_id: string
+          symbols_evaluated: number
+          total_trades: number
+          variant_id: number
+        }
+        Insert: {
+          avg_return_pct?: number | null
+          created_at?: string
+          hit_rate?: number | null
+          id?: string
+          knob_set: Json
+          max_drawdown_pct?: number | null
+          median_return_pct?: number | null
+          risk_adjusted_score?: number | null
+          risk_profile: string
+          sweep_id: string
+          symbols_evaluated: number
+          total_trades: number
+          variant_id: number
+        }
+        Update: {
+          avg_return_pct?: number | null
+          created_at?: string
+          hit_rate?: number | null
+          id?: string
+          knob_set?: Json
+          max_drawdown_pct?: number | null
+          median_return_pct?: number | null
+          risk_adjusted_score?: number | null
+          risk_profile?: string
+          sweep_id?: string
+          symbols_evaluated?: number
+          total_trades?: number
+          variant_id?: number
+        }
+        Relationships: []
+      }
       stock_picker_batch_rejection: {
         Row: {
           batch_id: string
