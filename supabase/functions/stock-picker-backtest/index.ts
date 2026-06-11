@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
         for (let i = effMin - 1; i < closes.length - holdDays; i++) {
           const w = closes.slice(i - effMin + 1, i + 1);
 
-          const wm = computeWindowMetric(w);
+          const wm = computeWindowMetric(w, knobs);
           metrics.push(wm);
           allVols.push(wm.vol20);
         }
