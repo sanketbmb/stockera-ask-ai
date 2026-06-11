@@ -189,9 +189,6 @@ Deno.serve(async (req) => {
     }
 
     // Audit log
-    const { error: logErr } = await supabase.from("cron_run_log").insert({
-      job_name: "refresh-ltp-every-minute",
-      status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
     await supabase.from("cron_run_log").insert({
       job_name: "refresh-ltp-every-minute",
       status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
