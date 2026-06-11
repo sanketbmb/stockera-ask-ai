@@ -616,6 +616,19 @@ function ChevronRightIcon() {
   return <span className="text-muted-foreground/60">›</span>;
 }
 
+function resolveStamp(
+  s: StockPickerResponse["regulatory_stamp"] | undefined,
+): { firm: string; reg: string } {
+  if (
+    s &&
+    typeof s.firm_legal_name === "string" && s.firm_legal_name.trim() !== "" &&
+    typeof s.sebi_reg_no === "string" && s.sebi_reg_no.trim() !== ""
+  ) {
+    return { firm: s.firm_legal_name, reg: s.sebi_reg_no };
+  }
+  return { firm: SEBI_RA_FIRM, reg: SEBI_RA_REGNO };
+}
+
 function ResultsView({
   result,
   showCompletenessChips,
@@ -623,6 +636,7 @@ function ResultsView({
   result: StockPickerResponse;
   showCompletenessChips: boolean;
 }) {
+  const stamp = resolveStamp(result.regulatory_stamp);
   if (!result.stocks || result.stocks.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -650,6 +664,7 @@ function ResultsView({
           stock={s}
           riskProfile={result.risk_profile}
           showCompletenessChips={showCompletenessChips}
+          stamp={stamp}
         />
       ))}
     </div>
