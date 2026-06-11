@@ -79,7 +79,25 @@ Deno.serve(async (req) => {
     if (cfg.get("universe_override_enabled") !== true) {
       return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, errors: [] });
     }
-    const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
+    const rawSymbols = (cfg.get("universe_override_symbols") as unknown[] | undefined) ?? [];
+    // Normalize: config items may be either strings or {symbol, exchange} objects.
+    const symbols: Array<{ symbol: string; exchange: string }> = [];
+    const seenKey = new Set<string>();
+    for (const item of rawSymbols) {
+      let s: string | null = null;
+      let ex: string = "NSE";
+      if (typeof item === "string") s = item;
+      else if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>;
+        if (typeof o.symbol === "string") s = o.symbol;
+        if (typeof o.exchange === "string") ex = o.exchange;
+      }
+      if (!s) continue;
+      const k = `${s}|${ex}`;
+      if (seenKey.has(k)) continue;
+      seenKey.add(k);
+      symbols.push({ symbol: s, exchange: ex });
+    }
     if (symbols.length === 0) {
       return json({ ok: true, symbols_updated: 0, errors: ["no override symbols"] });
     }
@@ -88,7 +106,7 @@ Deno.serve(async (req) => {
     let updated = 0;
     const nowIso = new Date().toISOString();
 
-    for (const sym of symbols) {
+    for (const { symbol: sym, exchange: ex } of symbols) {
       // Try company-profile for sector/industry, ratios for market cap.
       const profile = await callFinEdge("company-profile", sym);
       const ratios = await callFinEdge("ratios", sym);
