@@ -262,69 +262,130 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Cleanliness filter (Phase 2I + 2J) + collect best dhan_security_id+segment
-    const { data: meta, error: metaErr } = await supabase
-      .from('stock_master')
-      .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
-      .in('symbol', overrideSymbols);
-    if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
-
-    const EQUITY_TYPES = new Set(['EQUITY', 'EQ', 'STOCK']);
-    const EQUITY_SEGMENTS = new Set(['EQ', 'NSE_EQ', 'BSE_EQ']);
-    const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
-    const etfSymbolTokenRe = /(?:^|[^A-Z])(ETF|BEES|NIFTYBEES|BANKBEES|GOLDBEES|LIQUIDBEES|JUNIORBEES|N100|NV20)$/i;
-    const etfSymbolSuffixRe = /ETF$/i;
-    const etfNameRe = /ETF|EXCHANGE\s+TRADED|INDEX\s+FUND/i;
-
-    type Agg = {
-      sym: string; exch: string;
-      any_equity_type: boolean; any_equity_segment: boolean;
-      any_suspended: boolean; dhan_id: string | null;
-      company_name: string | null;
-    };
-    const agg = new Map<string, Agg>();
-    for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
-      const sym = String(r.symbol ?? ''); const exch = String(r.exchange ?? '');
-      const key = `${sym}|${exch}`;
-      const cur = agg.get(key) ?? {
-        sym, exch, any_equity_type: false, any_equity_segment: false,
-        any_suspended: false, dhan_id: null, company_name: null,
-      };
-      if (typeof r.type === 'string' && EQUITY_TYPES.has(r.type.toUpperCase())) cur.any_equity_type = true;
-      if (typeof r.segment === 'string' && EQUITY_SEGMENTS.has(r.segment.toUpperCase())) cur.any_equity_segment = true;
-      if (r.is_suspended === true) cur.any_suspended = true;
-      if (cur.dhan_id === null && r.dhan_security_id !== null && r.dhan_security_id !== undefined && String(r.dhan_security_id).length > 0) {
-        cur.dhan_id = String(r.dhan_security_id);
-      }
-      if (cur.company_name === null && typeof r.company_name === 'string') cur.company_name = r.company_name;
-      agg.set(key, cur);
-    }
-
-    const surviving: Array<{ symbol: string; exchange: string; dhan_id: string | null }> = [];
-    for (const a of agg.values()) {
-      if (!a.any_equity_type) continue;
-      if (!a.any_equity_segment) continue;
-      if (a.any_suspended) continue;
-      if (!a.dhan_id) continue;
-      if (a.company_name && (etfNameRe.test(a.company_name) || etfSymbolTokenRe.test(a.sym) || etfSymbolSuffixRe.test(a.sym))) continue;
-      if (a.company_name && bondNameRe.test(a.company_name)) continue;
-      surviving.push({ symbol: a.sym, exchange: a.exch, dhan_id: a.dhan_id });
-    }
-
-    // Prefer NSE row when both NSE and BSE survive for the same symbol.
-    const bySymbol = new Map<string, { symbol: string; exchange: string; dhan_id: string | null }>();
-    for (const s of surviving) {
-      const cur = bySymbol.get(s.symbol);
-      if (!cur || (cur.exchange !== 'NSE' && s.exchange === 'NSE')) bySymbol.set(s.symbol, s);
-    }
-    const targets = [...bySymbol.values()];
-
     const toDate = new Date();
     const fromDate = new Date(toDate);
     fromDate.setUTCFullYear(toDate.getUTCFullYear() - years);
     const fromStr = isoDate(fromDate);
     const toStr = isoDate(toDate);
 
+    const targets = await computeCleanTargets(supabase, overrideSymbols);
+
+    // -------------------------------------------------------------------
+    // Phase 2S: chunked, resumable mode
+    // -------------------------------------------------------------------
+    if (mode === 'chunk') {
+      const chunkSize = Math.max(1, Math.floor(jnum(cfg.get('ohlcv_chunk_size'), 10)));
+      const sleepMs = Math.max(0, Math.floor(jnum(cfg.get('ohlcv_chunk_sleep_ms'), 250)));
+      const maxRuntimeMs = Math.max(5000, Math.floor(jnum(cfg.get('ohlcv_max_runtime_ms'), 90000)));
+      const t0 = Date.now();
+
+      // Seed pending rows for any clean target not yet in backfill_state.
+      const seedRows = targets.map((t) => ({
+        symbol: t.symbol, exchange: t.exchange, status: 'pending' as const,
+      }));
+      if (seedRows.length > 0) {
+        // do in chunks of 500 to be safe
+        for (let i = 0; i < seedRows.length; i += 500) {
+          const slice = seedRows.slice(i, i + 500);
+          await supabase
+            .from('stock_picker_ohlcv_backfill_state')
+            .upsert(slice, { onConflict: 'symbol,exchange', ignoreDuplicates: true });
+        }
+      }
+
+      const targetKeys = new Set(targets.map((t) => `${t.symbol}|${t.exchange}`));
+      const dhanById = new Map(targets.map((t) => [`${t.symbol}|${t.exchange}`, t]));
+
+      const { data: pendingRows, error: pendErr } = await supabase
+        .from('stock_picker_ohlcv_backfill_state')
+        .select('symbol,exchange,status')
+        .eq('status', 'pending')
+        .order('symbol', { ascending: true })
+        .order('exchange', { ascending: true })
+        .limit(Math.max(chunkSize * 4, 200));
+      if (pendErr) throw new Error(`pending read failed: ${pendErr.message}`);
+
+      const candidates = (pendingRows ?? [])
+        .map((r) => ({ symbol: String(r.symbol), exchange: String(r.exchange) }))
+        .filter((r) => targetKeys.has(`${r.symbol}|${r.exchange}`))
+        .slice(0, chunkSize);
+
+      let processed = 0;
+      let errorsCount = 0;
+      let rowsInsertedTotal = 0;
+      let dhanCount = 0;
+      let tdCount = 0;
+      const failures: Array<{ symbol: string; exchange: string; error: string }> = [];
+
+      for (const cand of candidates) {
+        if (Date.now() - t0 > maxRuntimeMs) break;
+        const t = dhanById.get(`${cand.symbol}|${cand.exchange}`)!;
+        let res: Awaited<ReturnType<typeof processOne>>;
+        try {
+          res = await processOne(supabase, t, fromStr, toStr);
+        } catch (e) {
+          res = { chosen: null, rows_inserted: 0, error: e instanceof Error ? e.message : String(e) };
+        }
+        const status = res.chosen ? 'done' : 'failed';
+        if (status === 'done') {
+          rowsInsertedTotal += res.rows_inserted;
+          if (res.chosen === 'dhan') dhanCount++; else tdCount++;
+        } else {
+          errorsCount++;
+          failures.push({ symbol: t.symbol, exchange: t.exchange, error: res.error ?? 'unknown' });
+        }
+        await supabase
+          .from('stock_picker_ohlcv_backfill_state')
+          .upsert({
+            symbol: t.symbol, exchange: t.exchange, status,
+            rows_inserted: res.rows_inserted,
+            source: res.chosen,
+            last_error: res.error ?? null,
+            attempted_at: new Date().toISOString(),
+          }, { onConflict: 'symbol,exchange' });
+        processed++;
+        if (sleepMs > 0) await sleep(sleepMs);
+      }
+
+      // Compute remaining pending strictly within the current target universe.
+      const { data: stillPending } = await supabase
+        .from('stock_picker_ohlcv_backfill_state')
+        .select('symbol,exchange')
+        .eq('status', 'pending');
+      const remainingPending = (stillPending ?? []).filter((r) =>
+        targetKeys.has(`${String(r.symbol)}|${String(r.exchange)}`)).length;
+
+      const cursor = {
+        last_run_at: new Date().toISOString(),
+        invoked_by,
+        processed, remaining_pending: remainingPending,
+        dhan_used: dhanCount, twelve_data_fallback_used: tdCount,
+        rows_inserted: rowsInsertedTotal,
+        errors_count: errorsCount,
+        elapsed_ms: Date.now() - t0,
+      };
+      await supabase.from('stock_picker_runtime_config').upsert({
+        config_key: 'ohlcv_backfill_cursor',
+        kind: 'operational',
+        config_value: cursor,
+        description: 'Phase 2S: chunked backfill cursor telemetry',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'config_key' });
+
+      return new Response(JSON.stringify({
+        ok: true, mode: 'chunk', invoked_by,
+        processed, remaining_pending: remainingPending,
+        elapsed_ms: Date.now() - t0,
+        errors_count: errorsCount,
+        rows_inserted: rowsInsertedTotal,
+        dhan_used: dhanCount, twelve_data_fallback_used: tdCount,
+        failures,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // -------------------------------------------------------------------
+    // Default mode (Phase 2L/2M): full pass over clean targets
+    // -------------------------------------------------------------------
     let rows_inserted = 0;
     let dhan_used = 0;
     let twelve_data_fallback_used = 0;
@@ -332,45 +393,19 @@ Deno.serve(async (req) => {
 
     for (const t of targets) {
       try {
-        let rows: OhlcvRow[] | null = await fetchDhan(t.dhan_id!, t.exchange, fromStr, toStr);
-        let chosen: 'dhan' | 'twelve_data' | null = null;
-        if (rows && rows.length >= MIN_USABLE_ROWS) {
-          chosen = 'dhan';
-        } else {
-          const td = await fetchTwelveData(t.symbol, t.exchange, fromStr, toStr);
-          if (td && td.length >= MIN_USABLE_ROWS) {
-            rows = td; chosen = 'twelve_data';
-          }
-        }
-        if (!chosen || !rows) {
-          errors.push({ symbol: t.symbol, error: 'no usable history from dhan or twelve_data' });
+        const res = await processOne(supabase, t, fromStr, toStr);
+        if (!res.chosen) {
+          errors.push({ symbol: t.symbol, error: res.error ?? 'unknown' });
           continue;
         }
-
-        // Dedupe per record_date, attach key fields
-        const byDate = new Map<string, OhlcvRow>();
-        for (const r of rows) {
-          r.symbol = t.symbol; r.exchange = t.exchange; r.source = chosen;
-          byDate.set(r.record_date, r);
-        }
-        const finalRows = [...byDate.values()];
-
-        // Chunked upsert
-        const CHUNK = 500;
-        for (let i = 0; i < finalRows.length; i += CHUNK) {
-          const slice = finalRows.slice(i, i + CHUNK);
-          const { error: upErr } = await supabase
-            .from('stock_picker_ohlcv_history')
-            .upsert(slice, { onConflict: 'symbol,exchange,record_date' });
-          if (upErr) throw new Error(upErr.message);
-          rows_inserted += slice.length;
-        }
-        if (chosen === 'dhan') dhan_used++; else twelve_data_fallback_used++;
+        rows_inserted += res.rows_inserted;
+        if (res.chosen === 'dhan') dhan_used++; else twelve_data_fallback_used++;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push({ symbol: t.symbol, error: msg });
       }
     }
+
 
     const telemetry = {
       ok: rows_inserted > 0 && targets.length > 0,
