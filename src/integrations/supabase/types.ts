@@ -1498,6 +1498,45 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_ohlcv_history: {
+        Row: {
+          close: number | null
+          exchange: string
+          high: number | null
+          inserted_at: string
+          low: number | null
+          open: number | null
+          record_date: string
+          source: string
+          symbol: string
+          volume: number | null
+        }
+        Insert: {
+          close?: number | null
+          exchange: string
+          high?: number | null
+          inserted_at?: string
+          low?: number | null
+          open?: number | null
+          record_date: string
+          source: string
+          symbol: string
+          volume?: number | null
+        }
+        Update: {
+          close?: number | null
+          exchange?: string
+          high?: number | null
+          inserted_at?: string
+          low?: number | null
+          open?: number | null
+          record_date?: string
+          source?: string
+          symbol?: string
+          volume?: number | null
+        }
+        Relationships: []
+      }
       stock_picker_pick_audit: {
         Row: {
           batch_id: string
