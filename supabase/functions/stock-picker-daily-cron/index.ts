@@ -837,6 +837,17 @@ serve(async (req: Request) => {
       }
     );
     if (!exclusion.ok) throw new Error(`cron: exclusion-engine returned not ok`);
+
+    // SP-1.6 universe override: keep exclusion response in lock-step with the
+    // filtered canonical members. Bootstrap path never reaches here.
+    if (overrideSymbolSet) {
+      const inSet = (s: string) => overrideSymbolSet!.has(s);
+      exclusion.per_symbol_verdicts = exclusion.per_symbol_verdicts.filter((v) => inSet(v.symbol));
+      exclusion.survivors = exclusion.survivors.filter(inSet);
+      exclusion.rejected_symbols = exclusion.rejected_symbols.filter(inSet);
+      exclusion.insufficient_data_symbols = exclusion.insufficient_data_symbols.filter(inSet);
+      exclusion.liquidity_records_for_hash = exclusion.liquidity_records_for_hash.filter((r) => inSet(r.symbol));
+    }
     markPhase('phase_exclusion_ms', tExclusion);
     logDiagnosticPhase(batchId, 'phase_exclusion', 'done', tExclusion, { verdicts: exclusion.per_symbol_verdicts.length });
 
