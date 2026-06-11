@@ -397,8 +397,19 @@ Deno.serve(async (req) => {
       .order("published_at", { ascending: false });
 
     const newsBySymbol = new Map<string, NewsItemOut[]>();
+    const newsLatestInsertedBySymbol = new Map<string, string>();
     for (const r of newsRows ?? []) {
       const sym = r.symbol as string;
+      const ins = (r.inserted_at as string | null) ?? null;
+      if (ins && !newsLatestInsertedBySymbol.has(sym)) {
+        // rows are ordered by published_at desc; track first-seen inserted_at as proxy.
+        newsLatestInsertedBySymbol.set(sym, ins);
+      } else if (ins) {
+        const prev = newsLatestInsertedBySymbol.get(sym)!;
+        if (new Date(ins).getTime() > new Date(prev).getTime()) {
+          newsLatestInsertedBySymbol.set(sym, ins);
+        }
+      }
       const arr = newsBySymbol.get(sym) ?? [];
       if (arr.length >= 3) continue;
       arr.push({
