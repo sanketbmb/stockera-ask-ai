@@ -55,7 +55,16 @@ interface StockDataCompleteness {
 interface CmpBlock {
   value: number | null;
   as_of: string | null;
-  source: "ltp_cache" | "liquidity_20d_close" | null;
+  fetched_at?: string | null;
+  source:
+    | "dhan_live"
+    | "dhan_close"
+    | "dhan_cache_stale"
+    | "liquidity_20d_close"
+    | "ltp_cache"
+    | null;
+  label?: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null;
+  stale_minutes?: number | null;
 }
 interface TechnicalsBlock {
   sma_20d: number | null;
