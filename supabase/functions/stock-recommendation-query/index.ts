@@ -695,6 +695,20 @@ Deno.serve(async (req) => {
           news: newsOk,
         },
         pending,
+        cache_health: {
+          cmp_fresh: cmp.source === "ltp_cache" && cmp.as_of != null &&
+            ((Date.now() - new Date(cmp.as_of).getTime()) / 1000) <= ltpTtlSec,
+          fundamentals_fresh: (() => {
+            const f = fundCacheBySymbol.get(sym);
+            if (!f?.as_of) return false;
+            return ((Date.now() - new Date(f.as_of).getTime()) / 1000) <= fundTtlSec;
+          })(),
+          news_fresh: (() => {
+            const ins = newsLatestInsertedBySymbol.get(sym);
+            if (!ins) return false;
+            return ((Date.now() - new Date(ins).getTime()) / 1000) <= newsTtlSec;
+          })(),
+        },
       };
 
     });
