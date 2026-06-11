@@ -474,6 +474,42 @@ export type Database = {
         }
         Relationships: []
       }
+      fundamentals_cache: {
+        Row: {
+          as_of: string | null
+          cap_band: string | null
+          exchange: string
+          industry: string | null
+          market_cap_rs: number | null
+          sector: string | null
+          source: string | null
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          as_of?: string | null
+          cap_band?: string | null
+          exchange?: string
+          industry?: string | null
+          market_cap_rs?: number | null
+          sector?: string | null
+          source?: string | null
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          as_of?: string | null
+          cap_band?: string | null
+          exchange?: string
+          industry?: string | null
+          market_cap_rs?: number | null
+          sector?: string | null
+          source?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       grievances: {
         Row: {
           against_analyst_id: string | null
@@ -536,22 +572,31 @@ export type Database = {
       }
       ltp_cache: {
         Row: {
+          as_of: string | null
+          exchange: string
           fetched_at: string
           ltp: number
           source: string
           symbol: string
+          updated_at: string
         }
         Insert: {
+          as_of?: string | null
+          exchange?: string
           fetched_at?: string
           ltp: number
           source?: string
           symbol: string
+          updated_at?: string
         }
         Update: {
+          as_of?: string | null
+          exchange?: string
           fetched_at?: string
           ltp?: number
           source?: string
           symbol?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -618,6 +663,42 @@ export type Database = {
           call_count?: number
           date?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      news_cache: {
+        Row: {
+          category: string | null
+          exchange: string | null
+          headline: string
+          id: number
+          inserted_at: string
+          published_at: string
+          source: string | null
+          symbol: string
+          url: string | null
+        }
+        Insert: {
+          category?: string | null
+          exchange?: string | null
+          headline: string
+          id?: number
+          inserted_at?: string
+          published_at: string
+          source?: string | null
+          symbol: string
+          url?: string | null
+        }
+        Update: {
+          category?: string | null
+          exchange?: string | null
+          headline?: string
+          id?: number
+          inserted_at?: string
+          published_at?: string
+          source?: string | null
+          symbol?: string
+          url?: string | null
         }
         Relationships: []
       }

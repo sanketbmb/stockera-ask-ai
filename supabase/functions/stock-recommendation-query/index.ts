@@ -72,6 +72,13 @@ interface BuyZoneBlock {
   upper: number | null;
 }
 
+interface NewsItemOut {
+  headline: string;
+  url: string | null;
+  source: string;
+  published_at: string;
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
@@ -87,6 +94,7 @@ interface StockOut {
   buy_zone: BuyZoneBlock;
   target: number | null;
   stop_loss: number | null;
+  news: NewsItemOut[];
   data_completeness: DataCompleteness;
   pending: string[];
 }
@@ -319,23 +327,79 @@ Deno.serve(async (req) => {
       volBySymbol.set(sym, realizedVol(closesBySymbol.get(sym)));
     }
 
-    // Phase 2C — fetch optional real-time LTP cache (may be empty); use as
-    // primary CMP source when present, otherwise fall back to latest close.
+    // Phase 2E — fetch optional real-time LTP cache (TTL-gated), fundamentals
+    // cache (merged into stock_master), and news cache (top 3 per symbol).
+    // All three are populated by background sync functions (sync-ltp-dhan,
+    // sync-fundamentals-finedge, sync-news-marketaux); this function NEVER
+    // calls external providers in the request path.
+    const { data: cacheCfgRows } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_key, config_value")
+      .in("config_key", ["ltp_cache_ttl_seconds"]);
+    let ltpTtlSec = 60;
+    for (const r of cacheCfgRows ?? []) {
+      if (r.config_key === "ltp_cache_ttl_seconds") {
+        const v = Number(r.config_value);
+        if (Number.isFinite(v) && v > 0) ltpTtlSec = v;
+      }
+    }
+    const nowMs = Date.now();
+
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
-      .select("symbol, ltp, fetched_at, source")
+      .select("symbol, ltp, fetched_at, as_of, source")
       .in("symbol", filteredSymbols);
     const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
     for (const r of ltpRows ?? []) {
       const v = Number(r.ltp);
-      if (Number.isFinite(v) && v > 0) {
-        ltpBySymbol.set(r.symbol as string, {
-          ltp: v,
-          fetched_at: String(r.fetched_at),
-          source: (r.source as string | null) ?? null,
-        });
-      }
+      if (!Number.isFinite(v) || v <= 0) continue;
+      const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
+      if (!ts) continue;
+      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
+      if (!Number.isFinite(ageSec) || ageSec < 0 || ageSec > ltpTtlSec) continue;
+      ltpBySymbol.set(r.symbol as string, {
+        ltp: v,
+        fetched_at: ts,
+        source: (r.source as string | null) ?? null,
+      });
     }
+
+    const { data: fundRows } = await supabase
+      .from("fundamentals_cache")
+      .select("symbol, sector, industry, market_cap_rs, cap_band")
+      .in("symbol", filteredSymbols);
+    const fundCacheBySymbol = new Map<string, {
+      sector: string | null; industry: string | null;
+      market_cap_rs: number | null; cap_band: string | null;
+    }>();
+    for (const r of fundRows ?? []) {
+      fundCacheBySymbol.set(r.symbol as string, {
+        sector: (r.sector as string | null) ?? null,
+        industry: (r.industry as string | null) ?? null,
+        market_cap_rs: r.market_cap_rs == null ? null : Number(r.market_cap_rs),
+        cap_band: (r.cap_band as string | null) ?? null,
+      });
+    }
+
+    const { data: newsRows } = await supabase
+      .from("news_cache")
+      .select("symbol, headline, url, source, published_at")
+      .in("symbol", filteredSymbols)
+      .order("published_at", { ascending: false });
+    const newsBySymbol = new Map<string, NewsItemOut[]>();
+    for (const r of newsRows ?? []) {
+      const sym = r.symbol as string;
+      const arr = newsBySymbol.get(sym) ?? [];
+      if (arr.length >= 3) continue;
+      arr.push({
+        headline: r.headline as string,
+        url: (r.url as string | null) ?? null,
+        source: (r.source as string | null) ?? "marketaux",
+        published_at: r.published_at as string,
+      });
+      newsBySymbol.set(sym, arr);
+    }
+
 
     function round2(n: number): number {
       return Math.round(n * 100) / 100;
@@ -388,12 +452,14 @@ Deno.serve(async (req) => {
 
     function buildFundamentals(sym: string): FundamentalsBlock {
       const m = masterBySymbol.get(sym);
+      const fc = fundCacheBySymbol.get(sym);
+      // Merge: prefer stock_master, fall back to fundamentals_cache for nulls.
       return {
         company_name: m?.company_name ?? null,
-        sector: m?.sector ?? null,
-        industry: m?.industry ?? null,
-        market_cap_rs: m?.market_cap_rs ?? null,
-        cap_band: m?.cap_band ?? null,
+        sector: m?.sector ?? fc?.sector ?? null,
+        industry: m?.industry ?? fc?.industry ?? null,
+        market_cap_rs: m?.market_cap_rs ?? fc?.market_cap_rs ?? null,
+        cap_band: m?.cap_band ?? fc?.cap_band ?? null,
         lot_size: m?.lot_size ?? null,
         tick_size: m?.tick_size ?? null,
         regulatory_flags: {
@@ -404,6 +470,7 @@ Deno.serve(async (req) => {
           pledged_pct: m?.pledged_pct ?? null,
         },
       };
+
     }
 
     // Compute median volatility across this survivor set (symbols with a
@@ -572,7 +639,9 @@ Deno.serve(async (req) => {
         if (fund.cap_band === null) missingFund.push("cap_band");
         if (missingFund.length > 0) pending.push("fundamentals:" + missingFund.join(","));
       }
-      pending.push("news");
+      const newsItems = newsBySymbol.get(sym) ?? [];
+      const newsOk = newsItems.length > 0;
+      if (!newsOk) pending.push("news");
 
       return {
         ticker: sym,
@@ -591,15 +660,17 @@ Deno.serve(async (req) => {
         buy_zone: zones.buy_zone,
         target: zones.target,
         stop_loss: zones.stop_loss,
+        news: newsItems,
         data_completeness: {
           cmp: cmpOk,
           technicals: techOk,
           zones: zonesOk,
           fundamentals: fundOk,
-          news: false,
+          news: newsOk,
         },
         pending,
       };
+
     });
 
     return json({
@@ -636,7 +707,7 @@ Deno.serve(async (req) => {
         technicals: "derived from stock_picker_liquidity_20d closes (sma_20d, high_20d, low_20d, pct_change_20d, realized_vol_20d)",
         fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
         zones: "derived in-response from CMP + technicals (Phase 2D dev-preview math)",
-        news: "not produced by SP-1 pipeline yet",
+        news: "news_cache (populated by sync-news-marketaux background job)",
       },
     });
   } catch (e) {
