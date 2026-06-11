@@ -1546,6 +1546,42 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_ohlcv_backfill_state: {
+        Row: {
+          attempted_at: string | null
+          created_at: string
+          exchange: string
+          last_error: string | null
+          rows_inserted: number
+          source: string | null
+          status: string
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          attempted_at?: string | null
+          created_at?: string
+          exchange: string
+          last_error?: string | null
+          rows_inserted?: number
+          source?: string | null
+          status: string
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          attempted_at?: string | null
+          created_at?: string
+          exchange?: string
+          last_error?: string | null
+          rows_inserted?: number
+          source?: string | null
+          status?: string
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       stock_picker_ohlcv_history: {
         Row: {
           close: number | null
