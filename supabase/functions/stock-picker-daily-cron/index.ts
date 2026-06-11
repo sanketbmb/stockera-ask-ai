@@ -606,6 +606,7 @@ serve(async (req: Request) => {
   try {
     // ---- Phase 1: config + kill-switch + calendar gates ----
     const tConfig = Date.now();
+    logDiagnosticPhase(batchId, 'phase_config', 'start', tConfig, { mode: body.mode });
     const config = await loadConfig(supabase);
 
     const cronEnabled = jsonbBool(config.get(CFG.CRON_ENABLED), CFG.CRON_ENABLED);
@@ -668,9 +669,11 @@ serve(async (req: Request) => {
       CFG.ABORT_INSUF_DATA_PCT
     );
     markPhase('phase_config_ms', tConfig);
+    logDiagnosticPhase(batchId, 'phase_config', 'done', tConfig, { run_date_ist: runDateIst, seed_version: seedVersion });
 
     // ---- Phase 2: universe build (CARRIES MEMBERS BACK — BLOCKER 1) ----
     const tUniverse = Date.now();
+    logDiagnosticPhase(batchId, 'phase_universe', 'start', tUniverse, { seed_version: seedVersion });
     const universe = await invokeFunction<BuildUniverseResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -690,9 +693,11 @@ serve(async (req: Request) => {
     }
     const canonicalMembers: UniverseMember[] = universe.members;
     markPhase('phase_universe_ms', tUniverse);
+    logDiagnosticPhase(batchId, 'phase_universe', 'done', tUniverse, { universe_size: universe.universe_size });
 
     // ---- Phase 3: liquidity fetch + append ----
     const tLiquidity = Date.now();
+    logDiagnosticPhase(batchId, 'phase_liquidity', 'start', tLiquidity, { universe_size: canonicalMembers.length });
     const dhanFetchUrl = `${SUPABASE_URL}/functions/v1/dhan-fetch`;
     const today = new Date();
     const toDateIso = today.toISOString().slice(0, 10);
