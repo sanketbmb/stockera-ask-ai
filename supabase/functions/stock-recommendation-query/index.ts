@@ -135,6 +135,19 @@ Deno.serve(async (req) => {
   const stockCount = Math.max(1, Math.min(5, Number(body.stock_count) || 1));
 
   const generatedAt = new Date().toISOString();
+  // Phase 2U — surface SEBI RA stamp from runtime_config (no module-scope cache).
+  let regulatoryStamp;
+  try {
+    const s = await currentRegulatoryStamp();
+    regulatoryStamp = {
+      firm_legal_name: s.firm_legal_name,
+      sebi_reg_no: s.sebi_reg_no,
+      regulatory_status_at_generation: s.regulatory_status_at_generation,
+    };
+  } catch (e) {
+    return json({ ok: false, error: `regulatory_stamp_unavailable: ${String(e)}` }, 500);
+  }
+
   const baseResponse = {
     ok: true as const,
     horizon,
@@ -143,6 +156,7 @@ Deno.serve(async (req) => {
     index: indexName,
     generated_at: generatedAt,
     data_completeness: "sp1_only" as const,
+    regulatory_stamp: regulatoryStamp,
   };
 
   try {
