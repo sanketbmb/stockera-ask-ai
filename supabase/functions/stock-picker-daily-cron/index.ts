@@ -73,6 +73,10 @@ interface DailyCronRequest {
   seed_version?: string;
   run_date_ist?: string;
   resume_from?: string;
+  // Phase 2R: per-profile gate. Optional thin pass-through; default 'moderate'.
+  // Used by the batch-level persistence gate in write-audit. Never enters
+  // replay-hash payload, never persisted to stock_picker_pick_audit.
+  risk_profile?: 'conservative' | 'moderate' | 'aggressive' | 'ultra';
 }
 
 // --- CHUNKED BOOTSTRAP HELPERS ---
