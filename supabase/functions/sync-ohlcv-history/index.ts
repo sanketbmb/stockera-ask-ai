@@ -127,6 +127,108 @@ async function fetchTwelveData(symbol: string, exchange: string, fromDate: strin
   }
 }
 
+const EQUITY_TYPES = new Set(['EQUITY', 'EQ', 'STOCK']);
+const EQUITY_SEGMENTS = new Set(['EQ', 'NSE_EQ', 'BSE_EQ']);
+const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
+const etfSymbolTokenRe = /(?:^|[^A-Z])(ETF|BEES|NIFTYBEES|BANKBEES|GOLDBEES|LIQUIDBEES|JUNIORBEES|N100|NV20)$/i;
+const etfSymbolSuffixRe = /ETF$/i;
+const etfNameRe = /ETF|EXCHANGE\s+TRADED|INDEX\s+FUND/i;
+
+type Target = { symbol: string; exchange: string; dhan_id: string | null };
+
+async function computeCleanTargets(
+  supabase: ReturnType<typeof createClient>,
+  overrideSymbols: string[],
+): Promise<Target[]> {
+  const { data: meta, error: metaErr } = await supabase
+    .from('stock_master')
+    .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
+    .in('symbol', overrideSymbols);
+  if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
+
+  type Agg = {
+    sym: string; exch: string;
+    any_equity_type: boolean; any_equity_segment: boolean;
+    any_suspended: boolean; dhan_id: string | null;
+    company_name: string | null;
+  };
+  const agg = new Map<string, Agg>();
+  for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
+    const sym = String(r.symbol ?? ''); const exch = String(r.exchange ?? '');
+    const key = `${sym}|${exch}`;
+    const cur = agg.get(key) ?? {
+      sym, exch, any_equity_type: false, any_equity_segment: false,
+      any_suspended: false, dhan_id: null, company_name: null,
+    };
+    if (typeof r.type === 'string' && EQUITY_TYPES.has(r.type.toUpperCase())) cur.any_equity_type = true;
+    if (typeof r.segment === 'string' && EQUITY_SEGMENTS.has(r.segment.toUpperCase())) cur.any_equity_segment = true;
+    if (r.is_suspended === true) cur.any_suspended = true;
+    if (cur.dhan_id === null && r.dhan_security_id !== null && r.dhan_security_id !== undefined && String(r.dhan_security_id).length > 0) {
+      cur.dhan_id = String(r.dhan_security_id);
+    }
+    if (cur.company_name === null && typeof r.company_name === 'string') cur.company_name = r.company_name;
+    agg.set(key, cur);
+  }
+
+  const surviving: Target[] = [];
+  for (const a of agg.values()) {
+    if (!a.any_equity_type) continue;
+    if (!a.any_equity_segment) continue;
+    if (a.any_suspended) continue;
+    if (!a.dhan_id) continue;
+    if (a.company_name && (etfNameRe.test(a.company_name) || etfSymbolTokenRe.test(a.sym) || etfSymbolSuffixRe.test(a.sym))) continue;
+    if (a.company_name && bondNameRe.test(a.company_name)) continue;
+    surviving.push({ symbol: a.sym, exchange: a.exch, dhan_id: a.dhan_id });
+  }
+
+  // Prefer NSE row when both NSE and BSE survive for the same symbol.
+  const bySymbol = new Map<string, Target>();
+  for (const s of surviving) {
+    const cur = bySymbol.get(s.symbol);
+    if (!cur || (cur.exchange !== 'NSE' && s.exchange === 'NSE')) bySymbol.set(s.symbol, s);
+  }
+  return [...bySymbol.values()].sort((a, b) =>
+    a.symbol.localeCompare(b.symbol) || a.exchange.localeCompare(b.exchange));
+}
+
+async function processOne(
+  supabase: ReturnType<typeof createClient>,
+  t: Target,
+  fromStr: string,
+  toStr: string,
+): Promise<{ chosen: 'dhan' | 'twelve_data' | null; rows_inserted: number; error?: string }> {
+  let rows: OhlcvRow[] | null = await fetchDhan(t.dhan_id!, t.exchange, fromStr, toStr);
+  let chosen: 'dhan' | 'twelve_data' | null = null;
+  if (rows && rows.length >= MIN_USABLE_ROWS) {
+    chosen = 'dhan';
+  } else {
+    const td = await fetchTwelveData(t.symbol, t.exchange, fromStr, toStr);
+    if (td && td.length >= MIN_USABLE_ROWS) { rows = td; chosen = 'twelve_data'; }
+  }
+  if (!chosen || !rows) {
+    return { chosen: null, rows_inserted: 0, error: 'no usable history from dhan or twelve_data' };
+  }
+  const byDate = new Map<string, OhlcvRow>();
+  for (const r of rows) {
+    r.symbol = t.symbol; r.exchange = t.exchange; r.source = chosen;
+    byDate.set(r.record_date, r);
+  }
+  const finalRows = [...byDate.values()];
+  let inserted = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < finalRows.length; i += CHUNK) {
+    const slice = finalRows.slice(i, i + CHUNK);
+    const { error: upErr } = await supabase
+      .from('stock_picker_ohlcv_history')
+      .upsert(slice, { onConflict: 'symbol,exchange,record_date' });
+    if (upErr) return { chosen, rows_inserted: inserted, error: upErr.message };
+    inserted += slice.length;
+  }
+  return { chosen, rows_inserted: inserted };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -136,6 +238,7 @@ Deno.serve(async (req) => {
   try {
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const invoked_by = typeof body.invoked_by === 'string' ? body.invoked_by : 'manual';
+    const mode = typeof body.mode === 'string' ? body.mode : 'full';
 
     const { data: cfgRows, error: cfgErr } = await supabase
       .from('stock_picker_runtime_config').select('config_key, config_value');
