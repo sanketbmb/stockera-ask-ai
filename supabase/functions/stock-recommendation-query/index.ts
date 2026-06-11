@@ -569,33 +569,84 @@ Deno.serve(async (req) => {
     const limited = tierFiltered.slice(0, stockCount);
 
     // --- Phase 2D helpers (dev-preview math, deterministic, no fabrication) ---
+    // Phase 2O — load tuning knobs fresh per request from runtime_config (no module-cache)
+    type Knobs = {
+      vol_clamp_min: number; vol_clamp_max: number; vol_default: number;
+      buy_upper_factor: number; buy_lower_factor: number; buy_lower_floor_factor: number;
+      target_vol_mult: number; target_high_factor: number;
+      stop_vol_mult: number; stop_low_factor: number;
+      w_vol: number; w_trend: number; w_mr: number;
+    };
+    const KNOB_DEFAULTS: Knobs = {
+      vol_clamp_min: 0.005, vol_clamp_max: 0.05, vol_default: 0.02,
+      buy_upper_factor: 0.25, buy_lower_factor: 1.25, buy_lower_floor_factor: 0.98,
+      target_vol_mult: 3.0, target_high_factor: 1.02,
+      stop_vol_mult: 3.0, stop_low_factor: 0.95,
+      w_vol: 0.4, w_trend: 0.4, w_mr: 0.2,
+    };
+    const knobs: Knobs = { ...KNOB_DEFAULTS };
+    {
+      const { data: cfgRows, error: cfgErr } = await supabase
+        .from("stock_picker_runtime_config")
+        .select("config_key, config_value")
+        .in("config_key", [
+          "zone_vol_clamp_min","zone_vol_clamp_max","zone_vol_default",
+          "zone_buy_upper_factor","zone_buy_lower_factor","zone_buy_lower_floor_factor",
+          "zone_target_vol_mult","zone_target_high_factor",
+          "zone_stop_vol_mult","zone_stop_low_factor",
+          "score_weight_vol","score_weight_trend","score_weight_mean_rev",
+        ]);
+      const cfg = new Map<string, unknown>();
+      if (!cfgErr && cfgRows) for (const r of cfgRows) cfg.set(r.config_key as string, r.config_value as unknown);
+      const keyMap: Array<[keyof Knobs, string]> = [
+        ["vol_clamp_min","zone_vol_clamp_min"],
+        ["vol_clamp_max","zone_vol_clamp_max"],
+        ["vol_default","zone_vol_default"],
+        ["buy_upper_factor","zone_buy_upper_factor"],
+        ["buy_lower_factor","zone_buy_lower_factor"],
+        ["buy_lower_floor_factor","zone_buy_lower_floor_factor"],
+        ["target_vol_mult","zone_target_vol_mult"],
+        ["target_high_factor","zone_target_high_factor"],
+        ["stop_vol_mult","zone_stop_vol_mult"],
+        ["stop_low_factor","zone_stop_low_factor"],
+        ["w_vol","score_weight_vol"],
+        ["w_trend","score_weight_trend"],
+        ["w_mr","score_weight_mean_rev"],
+      ];
+      for (const [field, key] of keyMap) {
+        const raw = cfg.get(key);
+        const n = typeof raw === "number" ? raw : (typeof raw === "string" ? Number(raw) : NaN);
+        if (!cfg.has(key) || !Number.isFinite(n)) {
+          console.warn(`phase2o: knob_missing ${key}`);
+        } else {
+          (knobs as Record<string, number>)[field] = n;
+        }
+      }
+    }
+
     function clamp(n: number, lo: number, hi: number): number {
       return Math.max(lo, Math.min(hi, n));
     }
-    // vol clamp: floor 0.5%/d, cap 5%/d, default 2%/d when unknown
     function effectiveVol(v: number | null): number {
-      if (v == null || !Number.isFinite(v)) return 0.02;
-      return clamp(v, 0.005, 0.05);
+      if (v == null || !Number.isFinite(v)) return knobs.vol_default;
+      return clamp(v, knobs.vol_clamp_min, knobs.vol_clamp_max);
     }
     function buildZones(cmp: number | null, tech: TechnicalsBlock): {
       buy_zone: BuyZoneBlock; target: number | null; stop_loss: number | null;
     } {
       if (cmp == null) return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
       const v = effectiveVol(tech.realized_vol_20d);
-      let upper = cmp * (1 - v * 0.25);
-      let lower = cmp * (1 - v * 1.25);
-      if (tech.low_20d != null) lower = Math.max(lower, tech.low_20d * 0.98);
-      // ensure ordering
+      let upper = cmp * (1 - v * knobs.buy_upper_factor);
+      let lower = cmp * (1 - v * knobs.buy_lower_factor);
+      if (tech.low_20d != null) lower = Math.max(lower, tech.low_20d * knobs.buy_lower_floor_factor);
       if (!(lower < upper)) {
         return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
       }
-      // target: above CMP, anchored by 20d high
-      let target: number | null = cmp * (1 + v * 3);
-      if (tech.high_20d != null) target = Math.max(target, tech.high_20d * 1.02);
+      let target: number | null = cmp * (1 + v * knobs.target_vol_mult);
+      if (tech.high_20d != null) target = Math.max(target, tech.high_20d * knobs.target_high_factor);
       if (target == null || !(target > upper)) target = null;
-      // stop loss: below buy_zone.lower, anchored by 20d low
-      let stop: number | null = cmp * (1 - v * 3);
-      if (tech.low_20d != null) stop = Math.min(stop, tech.low_20d * 0.95);
+      let stop: number | null = cmp * (1 - v * knobs.stop_vol_mult);
+      if (tech.low_20d != null) stop = Math.min(stop, tech.low_20d * knobs.stop_low_factor);
       if (stop == null || !(stop < lower)) stop = null;
       return {
         buy_zone: { lower: round2(lower), upper: round2(upper) },
@@ -603,12 +654,10 @@ Deno.serve(async (req) => {
         stop_loss: stop == null ? null : round2(stop),
       };
     }
-    // composite_score (dev-preview only; NOT persisted): 0..100 blend of
-    //   40% inverse realized vol, 40% 20d trend, 20% mean-reversion proximity
     function previewComposite(cmp: number | null, tech: TechnicalsBlock): number | null {
       if (cmp == null) return null;
       const v = tech.realized_vol_20d;
-      const volScore = v == null ? 50 : 100 * (1 - clamp(v / 0.05, 0, 1));
+      const volScore = v == null ? 50 : 100 * (1 - clamp(v / knobs.vol_clamp_max, 0, 1));
       const pct = tech.pct_change_20d;
       const trendScore = pct == null ? 50 : clamp(50 + pct * 2.5, 0, 100);
       let proxScore = 50;
@@ -616,7 +665,7 @@ Deno.serve(async (req) => {
         const dev = Math.abs(cmp - tech.sma_20d) / tech.sma_20d;
         proxScore = 100 * (1 - clamp(dev / 0.2, 0, 1));
       }
-      const blended = 0.4 * volScore + 0.4 * trendScore + 0.2 * proxScore;
+      const blended = knobs.w_vol * volScore + knobs.w_trend * trendScore + knobs.w_mr * proxScore;
       return Math.round(clamp(blended, 0, 100) * 10) / 10;
     }
 
