@@ -1115,7 +1115,89 @@ serve(async (req: Request) => {
         if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1;
         return a.exchange < b.exchange ? -1 : a.exchange > b.exchange ? 1 : 0;
       });
+
+    // Phase 2R: per-profile knobs + composite_score computation.
+    // Mirrors stock-recommendation-query previewComposite() math, honoring
+    // profile_knobs_<risk_profile> overrides (Phase 2Q). Score is computed
+    // from the in-memory liquidity outcomes already fetched this run.
+    type KnobsR = {
+      vol_clamp_min: number; vol_clamp_max: number; vol_default: number;
+      w_vol: number; w_trend: number; w_mr: number;
+    };
+    const KNOB_DEFAULTS_R: KnobsR = {
+      vol_clamp_min: 0.005, vol_clamp_max: 0.05, vol_default: 0.02,
+      w_vol: 0.4, w_trend: 0.4, w_mr: 0.2,
+    };
+    const knobsR: KnobsR = { ...KNOB_DEFAULTS_R };
+    const ALLOWED_PROFILES = new Set(['conservative', 'moderate', 'aggressive', 'ultra']);
+    const riskProfile: string = (body.risk_profile && ALLOWED_PROFILES.has(body.risk_profile))
+      ? body.risk_profile
+      : 'moderate';
+    const profileOverrideRaw = config.get(`profile_knobs_${riskProfile}`);
+    if (profileOverrideRaw && typeof profileOverrideRaw === 'object' && !Array.isArray(profileOverrideRaw)) {
+      const ov = profileOverrideRaw as Record<string, unknown>;
+      const map: Array<[keyof KnobsR, string]> = [
+        ['vol_clamp_min', 'zone_vol_clamp_min'],
+        ['vol_clamp_max', 'zone_vol_clamp_max'],
+        ['vol_default',   'zone_vol_default'],
+        ['w_vol',         'score_weight_vol'],
+        ['w_trend',       'score_weight_trend'],
+        ['w_mr',          'score_weight_mean_rev'],
+      ];
+      for (const [field, key] of map) {
+        const raw = ov[key];
+        const n = typeof raw === 'number' ? raw : (typeof raw === 'string' ? Number(raw) : NaN);
+        if (Number.isFinite(n)) (knobsR as Record<string, number>)[field] = n;
+      }
+    }
+
+    // Index liquidity outcomes by symbol|exchange for per-survivor scoring.
+    const rowsBySymbolExchange = new Map<string, DhanHistoricalRow[]>();
+    for (const o of fetchOutcomes) {
+      if (o.status === 'ok' && o.rows.length > 0) {
+        // sort ascending by record_date so vol/sma/pct_change are stable
+        const sorted = [...o.rows].sort((a, b) => a.record_date < b.record_date ? -1 : 1);
+        rowsBySymbolExchange.set(`${o.symbol}|${o.exchange}`, sorted);
+      }
+    }
+    function clampR(n: number, lo: number, hi: number): number {
+      return Math.max(lo, Math.min(hi, n));
+    }
+    function computeCompositeScore(symbol: string, exchange: string): number | null {
+      const rows = rowsBySymbolExchange.get(`${symbol}|${exchange}`);
+      if (!rows || rows.length < 3) return null;
+      const win = rows.slice(-20);
+      const closes = win.map(r => r.close);
+      const cmp = closes[closes.length - 1];
+      if (!Number.isFinite(cmp) || cmp <= 0) return null;
+      const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
+      // realized daily-return stddev (mirrors recommendation-query realizedVol)
+      const rets: number[] = [];
+      for (let i = 1; i < closes.length; i++) {
+        const p = closes[i - 1], c = closes[i];
+        if (p > 0) rets.push((c - p) / p);
+      }
+      let vol: number | null = null;
+      if (rets.length >= 2) {
+        const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+        const variance = rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rets.length - 1);
+        vol = Math.sqrt(Math.max(0, variance));
+      }
+      const oldest = closes[0];
+      const pct = oldest > 0 ? ((cmp - oldest) / oldest) * 100 : null;
+      const volScore = vol == null ? 50 : 100 * (1 - clampR(vol / knobsR.vol_clamp_max, 0, 1));
+      const trendScore = pct == null ? 50 : clampR(50 + pct * 2.5, 0, 100);
+      let proxScore = 50;
+      if (sma > 0) {
+        const dev = Math.abs(cmp - sma) / sma;
+        proxScore = 100 * (1 - clampR(dev / 0.2, 0, 1));
+      }
+      const blended = knobsR.w_vol * volScore + knobsR.w_trend * trendScore + knobsR.w_mr * proxScore;
+      return Math.round(clampR(blended, 0, 100) * 10) / 10;
+    }
+
     const pickAuditOps = includedSurvivors.map((survivor) => {
+      const composite = computeCompositeScore(survivor.symbol, survivor.exchange);
       const params: WriteAuditRowParams = {
         p_batch_id: batchId,
         p_batch_type: batchType,
@@ -1123,7 +1205,7 @@ serve(async (req: Request) => {
         p_symbol: survivor.symbol,
         p_exchange: survivor.exchange,
         p_verdict: 'include',
-        p_composite_score: null,
+        p_composite_score: composite,
         p_pillar_scores: null,
         p_data_gaps_at_generation: null,
         p_code_commit_sha: CODE_COMMIT_SHA,
@@ -1134,7 +1216,10 @@ serve(async (req: Request) => {
         p_reg_no: stamp.sebi_reg_no,
         p_legal_name: stamp.firm_legal_name,
       };
-      return { op: 'write_pick_audit' as const, params };
+      // Phase 2R: risk_profile_guard is at OP level (sibling of params).
+      // It MUST NOT enter the replay-hash payload bundle. It is consumed
+      // only by write-audit to choose persistence (null vs real score).
+      return { op: 'write_pick_audit' as const, params, risk_profile_guard: riskProfile };
     });
 
     // SP-1.6 Step 5: forward internal invocation secret to write-audit when set.
