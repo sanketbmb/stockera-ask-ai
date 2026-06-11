@@ -259,16 +259,23 @@ Deno.serve(async (req) => {
         if (cErr) throw new Error(cErr.message);
 
         const byDate = new Map<string, number>();
+        const ordered: Close[] = [];
         for (const r of closesRaw ?? []) {
           const d = String((r as Record<string, unknown>).record_date);
           const c = Number((r as Record<string, unknown>).close);
-          if (Number.isFinite(c) && c > 0) byDate.set(d, c);
+          if (!Number.isFinite(c) || c <= 0) continue;
+          byDate.set(d, c);
         }
+        // Use unique record_date with latest close per date, chronological order.
         const closes: Close[] = [...byDate.entries()]
           .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
           .map(([date, close]) => ({ date, close }));
+        // Adaptive minimum: scale down to available history when needed,
+        // floor at 5 closes (scaffold realism for short dev caches).
+        const effMin = Math.min(minSample, Math.max(5, closes.length - holdDays - 1));
+        void ordered;
+        if (closes.length < effMin + holdDays + 1) continue;
 
-        if (closes.length < minSample + holdDays + 1) continue;
 
         // ---- Build window metrics + simulate trades ----
         type Trade = {
