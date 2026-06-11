@@ -483,7 +483,13 @@ Deno.serve(async (req) => {
     function buildCmp(sym: string): CmpBlock {
       const live = ltpBySymbol.get(sym);
       if (live) {
-        return { value: round2(live.ltp), as_of: live.fetched_at, source: "ltp_cache" };
+        return {
+          value: round2(live.ltp),
+          as_of: live.fetched_at,
+          source: "ltp_cache",
+          window_phase: cmpWindowPhase,
+          refresh_attempted: refreshedSet.has(sym),
+        };
       }
       const rows = closesBySymbol.get(sym);
       if (rows && rows.length > 0) {
@@ -491,12 +497,20 @@ Deno.serve(async (req) => {
           value: round2(rows[0].close),
           as_of: rows[0].record_date,
           source: "liquidity_20d_close",
+          window_phase: cmpWindowPhase,
+          refresh_attempted: refreshedSet.has(sym),
         };
       }
-      return { value: null, as_of: null, source: null };
+      return {
+        value: null,
+        as_of: null,
+        source: null,
+        window_phase: cmpWindowPhase,
+        refresh_attempted: refreshedSet.has(sym),
+      };
     }
 
-    function buildTechnicals(sym: string): TechnicalsBlock {
+    function buildTechnicals(sym: string, cmpValue: number | null): TechnicalsBlock {
       const rows = closesBySymbol.get(sym) ?? [];
       if (rows.length === 0) {
         return {
@@ -508,9 +522,14 @@ Deno.serve(async (req) => {
       const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
       const hi = Math.max(...closes);
       const lo = Math.min(...closes);
+      // Phase 2V — pct_change uses the SAME CMP displayed on the card when
+      // available; falls back to newest close in window if CMP is null.
+      // first_close_in_20d_window = oldest record in the descending-sorted
+      // closesBySymbol array (rows[rows.length - 1]).
       const newest = rows[0].close;
       const oldest = rows[rows.length - 1].close;
-      const pct = oldest > 0 ? ((newest - oldest) / oldest) * 100 : null;
+      const numerator = cmpValue != null ? cmpValue : newest;
+      const pct = oldest > 0 ? ((numerator - oldest) / oldest) * 100 : null;
       const vol = volBySymbol.get(sym) ?? null;
       return {
         sma_20d: round2(sma),
