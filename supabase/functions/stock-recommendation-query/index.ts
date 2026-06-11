@@ -27,6 +27,46 @@ interface RequestBody {
   is_pro: boolean;
 }
 
+interface DataCompleteness {
+  cmp: boolean;
+  technicals: boolean;
+  zones: boolean;
+  fundamentals: boolean;
+  news: boolean;
+}
+
+interface CmpBlock {
+  value: number | null;
+  as_of: string | null;
+  source: "ltp_cache" | "liquidity_20d_close" | null;
+}
+
+interface TechnicalsBlock {
+  sma_20d: number | null;
+  high_20d: number | null;
+  low_20d: number | null;
+  pct_change_20d: number | null;
+  realized_vol_20d: number | null;
+  sample_size: number;
+}
+
+interface FundamentalsBlock {
+  company_name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap_rs: number | null;
+  cap_band: string | null;
+  lot_size: number | null;
+  tick_size: number | null;
+  regulatory_flags: {
+    is_asm: boolean | null;
+    is_gsm: boolean | null;
+    is_t2t: boolean | null;
+    is_suspended: boolean | null;
+    pledged_pct: number | null;
+  };
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
@@ -35,13 +75,11 @@ interface StockOut {
   composite_score: number | null;
   batch_id: string;
   generated_at: string;
-  data_completeness: {
-    cmp: false;
-    technicals: false;
-    zones: false;
-    fundamentals: false;
-    news: false;
-  };
+  cmp: CmpBlock;
+  technicals: TechnicalsBlock;
+  fundamentals: FundamentalsBlock;
+  data_completeness: DataCompleteness;
+  pending: string[];
 }
 
 function json(body: unknown, status = 200) {
