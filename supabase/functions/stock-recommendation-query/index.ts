@@ -5,6 +5,7 @@
 // Read-only. No fabricated scores, no external APIs.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { currentRegulatoryStamp } from "../_shared/stock-picker/regulatory-status.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
