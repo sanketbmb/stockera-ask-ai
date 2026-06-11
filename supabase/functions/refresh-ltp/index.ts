@@ -192,12 +192,14 @@ Deno.serve(async (req) => {
     const { error: logErr } = await supabase.from("cron_run_log").insert({
       job_name: "refresh-ltp-every-minute",
       status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
+    await supabase.from("cron_run_log").insert({
+      job_name: "refresh-ltp-every-minute",
+      status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
       rows_affected: ok,
-      details: { failed: fail, total: rows.length, symbols_considered: symbols.length },
+      details: { failed: fail, total: tasks.length, work_set_size: work.size },
     });
-    if (logErr) console.error("cron_run_log insert error:", logErr.message);
 
-    return json({ success: true, refreshed: ok, failed: fail, total: rows.length });
+    return json({ success: true, refreshed: ok, failed: fail, total: tasks.length });
   } catch (e) {
     console.error("refresh-ltp error:", e);
     try {
