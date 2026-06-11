@@ -1,7 +1,6 @@
-// Phase 2E — Background news sync (Marketaux)
-// Reads universe_override_symbols, fetches news via marketaux-fetch,
-// inserts up to 5 latest items per symbol into public.news_cache.
-// Unique (symbol, url, published_at) handles dedupe.
+// Phase 2F — Background news sync (Marketaux), with ticker/company-name fallback + telemetry.
+// Tries Marketaux symbols=.NS, then symbols=.BO, then entity_types=equity & search=<company>.
+// Stops at the first attempt that yields items. Inserts only real items.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -27,48 +26,61 @@ interface NewsItem {
   source: string;
 }
 
-async function fetchMarketauxFor(symbol: string): Promise<NewsItem[]> {
-  // Try .NS variant (Indian listings); fallback to bare symbol.
-  const variants = [`${symbol}.NS`, symbol];
-  for (const sym of variants) {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/marketaux-fetch`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SERVICE_KEY,
-          authorization: `Bearer ${SERVICE_KEY}`,
+function normalizeCompany(name: string): string {
+  // Marketaux "search" works best with a short, lowercased phrase; trim suffixes.
+  return name
+    .toLowerCase()
+    .replace(/\b(ltd\.?|limited|services|servic|serv)\b/g, "")
+    .replace(/&/g, "and")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function callMarketaux(params: Record<string, string>): Promise<NewsItem[]> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/marketaux-fetch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SERVICE_KEY,
+        authorization: `Bearer ${SERVICE_KEY}`,
+      },
+      body: JSON.stringify({
+        endpoint: "news/all",
+        symbols: params.symbols, // may be undefined
+        params: {
+          limit: 5,
+          language: "en",
+          ...(params.search ? { search: params.search } : {}),
+          ...(params.entity_types ? { entity_types: params.entity_types } : {}),
+          ...(params.countries ? { countries: params.countries } : {}),
         },
-        body: JSON.stringify({
-          endpoint: "news/all",
-          symbols: sym,
-          params: { limit: 5, language: "en" },
-        }),
-      });
-      const text = await res.text();
-      let body: Record<string, unknown> = {};
-      try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
-      if (!res.ok || body.success !== true) continue;
-      const data = body.data as Record<string, unknown> | undefined;
-      const items = (data?.data as Array<Record<string, unknown>> | undefined) ?? [];
-      if (items.length === 0) continue;
-      const mapped: NewsItem[] = [];
-      for (const it of items.slice(0, 5)) {
-        const title = typeof it.title === "string" ? it.title.trim() : "";
-        const url = typeof it.url === "string" ? it.url : null;
-        const published = typeof it.published_at === "string" ? it.published_at : null;
-        if (!title || !published) continue;
-        const src = typeof it.source === "string" ? it.source : "marketaux";
-        mapped.push({ headline: title, url, published_at: published, source: src });
-      }
-      if (mapped.length > 0) return mapped;
-    } catch { /* try next variant */ }
+      }),
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
+    if (!res.ok || body.success !== true) return [];
+    const data = body.data as Record<string, unknown> | undefined;
+    const items = (data?.data as Array<Record<string, unknown>> | undefined) ?? [];
+    const mapped: NewsItem[] = [];
+    for (const it of items.slice(0, 5)) {
+      const title = typeof it.title === "string" ? it.title.trim() : "";
+      const url = typeof it.url === "string" ? it.url : null;
+      const published = typeof it.published_at === "string" ? it.published_at : null;
+      if (!title || !published) continue;
+      const src = typeof it.source === "string" ? it.source : "marketaux";
+      mapped.push({ headline: title, url, published_at: published, source: src });
+    }
+    return mapped;
+  } catch {
+    return [];
   }
-  return [];
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  const ranAt = new Date().toISOString();
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -82,28 +94,71 @@ Deno.serve(async (req) => {
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
     if (cfg.get("marketaux_api_enabled") !== true) {
-      return json({ ok: true, skipped: "marketaux_api_enabled=false", symbols_inserted: 0, dedup_skipped: 0, errors: [] });
+      return json({ ok: true, skipped: "marketaux_api_enabled=false", symbols_inserted: 0, attempts: [], errors: [] });
     }
     if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_inserted: 0, dedup_skipped: 0, errors: [] });
+      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_inserted: 0, attempts: [], errors: [] });
     }
     const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
     if (symbols.length === 0) {
-      return json({ ok: true, symbols_inserted: 0, dedup_skipped: 0, errors: ["no override symbols"] });
+      return json({ ok: true, symbols_inserted: 0, attempts: [], errors: ["no override symbols"] });
+    }
+
+    // Load company_name from stock_master (prefer NSE row).
+    const { data: masters } = await supabase
+      .from("stock_master")
+      .select("symbol, exchange, company_name")
+      .in("symbol", symbols);
+    const companyMap = new Map<string, string>();
+    for (const m of masters ?? []) {
+      const sym = m.symbol as string;
+      const cn = (m.company_name as string) ?? "";
+      if (!cn) continue;
+      if (m.exchange === "NSE" || !companyMap.has(sym)) companyMap.set(sym, cn);
     }
 
     const errors: Array<{ symbol: string; reason: string }> = [];
+    const attemptsOut: Array<Record<string, unknown>> = [];
     let inserted = 0;
-    let dedup = 0;
-    const perSymbol: Record<string, number> = {};
 
     for (const sym of symbols) {
-      const items = await fetchMarketauxFor(sym);
+      const tries: Array<{ label: string; params: Record<string, string> }> = [
+        { label: "ticker_ns", params: { symbols: `${sym}.NS` } },
+        { label: "ticker_bo", params: { symbols: `${sym}.BO` } },
+      ];
+      const company = companyMap.get(sym);
+      if (company) {
+        tries.push({
+          label: "company_name",
+          params: { search: normalizeCompany(company), entity_types: "equity", countries: "in" },
+        });
+      }
+
+      const attemptLabels: string[] = [];
+      let items: NewsItem[] = [];
+      let queryUsed = "";
+      for (const t of tries) {
+        attemptLabels.push(t.label);
+        const got = await callMarketaux(t.params);
+        if (got.length > 0) {
+          items = got;
+          queryUsed = t.params.symbols ?? `search=${t.params.search}`;
+          break;
+        }
+      }
+
       if (items.length === 0) {
-        errors.push({ symbol: sym, reason: "no_articles_returned" });
-        perSymbol[sym] = 0;
+        errors.push({ symbol: sym, reason: "no_articles_from_marketaux_after_fallbacks" });
+        attemptsOut.push({
+          symbol: sym,
+          query_used: null,
+          attempts: attemptLabels,
+          inserted_count: 0,
+          reason_if_zero: "no_articles_from_marketaux_after_fallbacks",
+        });
         continue;
       }
+
       const rows = items.map((it) => ({
         symbol: sym,
         exchange: "NSE",
@@ -113,22 +168,44 @@ Deno.serve(async (req) => {
         published_at: it.published_at,
         category: null,
       }));
-      // Use upsert on the unique key to soak up dedup without errors.
       const { data: ins, error: upErr } = await supabase
         .from("news_cache")
         .upsert(rows, { onConflict: "symbol,url,published_at", ignoreDuplicates: true })
         .select("id");
       if (upErr) {
         errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
+        attemptsOut.push({
+          symbol: sym,
+          query_used: queryUsed,
+          attempts: attemptLabels,
+          inserted_count: 0,
+          reason_if_zero: `upsert_failed: ${upErr.message}`,
+        });
         continue;
       }
       const insertedHere = (ins ?? []).length;
       inserted += insertedHere;
-      dedup += rows.length - insertedHere;
-      perSymbol[sym] = insertedHere;
+      attemptsOut.push({
+        symbol: sym,
+        query_used: queryUsed,
+        attempts: attemptLabels,
+        inserted_count: insertedHere,
+        reason_if_zero: null,
+      });
     }
 
-    return json({ ok: true, symbols_inserted: inserted, dedup_skipped: dedup, per_symbol: perSymbol, errors });
+    await supabase.from("stock_picker_runtime_config").upsert(
+      {
+        config_key: "last_sync_news_marketaux",
+        kind: "operational",
+        config_value: { ok: true, symbols_inserted: inserted, errors_count: errors.length, ran_at: ranAt },
+        description: "Last sync-news-marketaux run summary",
+        updated_at: ranAt,
+      },
+      { onConflict: "config_key" },
+    );
+
+    return json({ ok: true, symbols_inserted: inserted, attempts: attemptsOut, errors });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }

@@ -1,6 +1,7 @@
-// Phase 2E — Background LTP sync (Dhan)
-// Reads universe_override_symbols from runtime_config, fetches LTP via dhan-fetch,
-// upserts public.ltp_cache. Isolated from user request path.
+// Phase 2F — Background LTP sync (Dhan), with NSE→BSE fallback + telemetry.
+// Reads universe_override_symbols from runtime_config, looks up dhan_security_id
+// per (symbol, exchange) from stock_master, fetches LTP via dhan-fetch, upserts
+// public.ltp_cache, then writes operational telemetry into runtime_config.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -47,6 +48,7 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<number
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  const ranAt = new Date().toISOString();
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -60,39 +62,84 @@ Deno.serve(async (req) => {
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
     if (cfg.get("dhan_api_enabled") !== true) {
-      return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, errors: [] });
+      return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
     }
     if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, errors: [] });
+      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
     }
     const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
     if (symbols.length === 0) {
-      return json({ ok: true, symbols_updated: 0, errors: ["no override symbols"] });
+      return json({ ok: true, symbols_updated: 0, attempts: [], errors: ["no override symbols"] });
     }
 
+    // Load all NSE+BSE rows; dedupe by (symbol, exchange) preferring segment NSE_EQ/BSE_EQ.
     const { data: masters, error: mErr } = await supabase
       .from("stock_master")
-      .select("symbol, dhan_security_id, segment")
+      .select("symbol, exchange, segment, dhan_security_id")
       .in("symbol", symbols)
-      .eq("segment", "NSE_EQ");
+      .in("exchange", ["NSE", "BSE"]);
     if (mErr) return json({ ok: false, error: mErr.message }, 500);
 
+    // Map: symbol -> { NSE?: id, BSE?: id }
+    const idMap = new Map<string, { NSE?: string; BSE?: string }>();
+    for (const m of masters ?? []) {
+      const sym = m.symbol as string;
+      const ex = m.exchange as string;
+      const seg = (m.segment as string) ?? "";
+      const id = String(m.dhan_security_id);
+      const cur = idMap.get(sym) ?? {};
+      // Prefer canonical *_EQ segment; otherwise keep first seen.
+      if (ex === "NSE" && (seg === "NSE_EQ" || cur.NSE == null)) cur.NSE = id;
+      if (ex === "BSE" && (seg === "BSE_EQ" || cur.BSE == null)) cur.BSE = id;
+      idMap.set(sym, cur);
+    }
+
     const errors: Array<{ symbol: string; reason: string }> = [];
+    const attempts: Array<Record<string, unknown>> = [];
     let updated = 0;
     const nowIso = new Date().toISOString();
 
-    for (const m of masters ?? []) {
-      const sym = m.symbol as string;
-      const secId = String(m.dhan_security_id);
-      const ltp = await fetchDhanLtp(secId, "NSE_EQ");
-      if (ltp == null) {
-        errors.push({ symbol: sym, reason: "dhan_fetch_returned_null" });
+    for (const sym of symbols) {
+      const ids = idMap.get(sym);
+      if (!ids || (!ids.NSE && !ids.BSE)) {
+        errors.push({ symbol: sym, reason: "no_dhan_security_id_in_stock_master" });
+        attempts.push({ symbol: sym, exchange: null, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
         continue;
       }
+
+      // Try NSE first, fall back to BSE.
+      let ltp: number | null = null;
+      let exUsed: "NSE" | "BSE" | null = null;
+      let idUsed: string | null = null;
+      if (ids.NSE) {
+        idUsed = ids.NSE; exUsed = "NSE";
+        ltp = await fetchDhanLtp(ids.NSE, "NSE_EQ");
+      }
+      if (ltp == null && ids.BSE) {
+        idUsed = ids.BSE; exUsed = "BSE";
+        ltp = await fetchDhanLtp(ids.BSE, "BSE_EQ");
+      }
+
+      attempts.push({
+        symbol: sym,
+        exchange: exUsed,
+        dhan_security_id_used: idUsed,
+        ltp_or_null: ltp,
+        source: "dhan",
+      });
+
+      if (ltp == null) {
+        errors.push({
+          symbol: sym,
+          reason: `dhan_returned_null (tried NSE id=${ids.NSE ?? "n/a"}${ids.BSE ? `, BSE id=${ids.BSE}` : ""})`,
+        });
+        continue;
+      }
+
       const { error: upErr } = await supabase
         .from("ltp_cache")
         .upsert(
-          { symbol: sym, exchange: "NSE", ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
+          { symbol: sym, exchange: exUsed!, ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
           { onConflict: "symbol" },
         );
       if (upErr) {
@@ -102,7 +149,19 @@ Deno.serve(async (req) => {
       updated++;
     }
 
-    return json({ ok: true, symbols_updated: updated, errors });
+    // Telemetry — never include secrets.
+    await supabase.from("stock_picker_runtime_config").upsert(
+      {
+        config_key: "last_sync_ltp_dhan",
+        kind: "operational",
+        config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
+        description: "Last sync-ltp-dhan run summary",
+        updated_at: ranAt,
+      },
+      { onConflict: "config_key" },
+    );
+
+    return json({ ok: true, symbols_updated: updated, attempts, errors });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
