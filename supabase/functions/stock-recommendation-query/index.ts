@@ -40,6 +40,8 @@ interface CmpBlock {
   value: number | null;
   as_of: string | null;
   source: "ltp_cache" | "liquidity_20d_close" | null;
+  window_phase: "open" | "post_close" | "pre_open" | "weekend";
+  refresh_attempted: boolean;
 }
 
 interface TechnicalsBlock {
@@ -110,6 +112,25 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+// Phase 2V — Market-window helper (IST). Returns one of:
+//   "open"        — Mon-Fri, 09:15-15:30 IST
+//   "post_close"  — Mon-Fri, after 15:30 IST (same trading day)
+//   "pre_open"    — Mon-Fri, before 09:15 IST
+//   "weekend"     — Sat/Sun
+function marketWindowPhase(now: Date = new Date()): "open" | "post_close" | "pre_open" | "weekend" {
+  // IST = UTC + 5:30
+  const istMs = now.getTime() + (5 * 60 + 30) * 60 * 1000;
+  const ist = new Date(istMs);
+  const dow = ist.getUTCDay(); // 0=Sun..6=Sat in IST frame
+  if (dow === 0 || dow === 6) return "weekend";
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const OPEN = 9 * 60 + 15;
+  const CLOSE = 15 * 60 + 30;
+  if (minutes < OPEN) return "pre_open";
+  if (minutes <= CLOSE) return "open";
+  return "post_close";
 }
 
 Deno.serve(async (req) => {
@@ -372,24 +393,34 @@ Deno.serve(async (req) => {
     }
     const nowMs = Date.now();
 
+    // Phase 2V — load ALL valid ltp_cache rows (no TTL gate). TTL governs the
+    // cmp_fresh health flag and inline-refresh trigger, NOT whether we expose
+    // the value. Priority 1: live LTP during market hours; Priority 2: latest
+    // post-close LTP; Priority 3: liquidity_20d_close fallback (last resort).
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
       .select("symbol, ltp, fetched_at, as_of, source")
       .in("symbol", filteredSymbols);
     const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
+    const ltpFreshSet = new Set<string>();
     for (const r of ltpRows ?? []) {
       const v = Number(r.ltp);
       if (!Number.isFinite(v) || v <= 0) continue;
       const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
       if (!ts) continue;
-      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
-      if (!Number.isFinite(ageSec) || ageSec < 0 || ageSec > ltpTtlSec) continue;
-      ltpBySymbol.set(r.symbol as string, {
+      const sym = r.symbol as string;
+      ltpBySymbol.set(sym, {
         ltp: v,
         fetched_at: ts,
         source: (r.source as string | null) ?? null,
       });
+      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
+      if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
+        ltpFreshSet.add(sym);
+      }
     }
+    const cmpWindowPhase = marketWindowPhase();
+    const refreshedSet = new Set<string>();
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
@@ -452,7 +483,13 @@ Deno.serve(async (req) => {
     function buildCmp(sym: string): CmpBlock {
       const live = ltpBySymbol.get(sym);
       if (live) {
-        return { value: round2(live.ltp), as_of: live.fetched_at, source: "ltp_cache" };
+        return {
+          value: round2(live.ltp),
+          as_of: live.fetched_at,
+          source: "ltp_cache",
+          window_phase: cmpWindowPhase,
+          refresh_attempted: refreshedSet.has(sym),
+        };
       }
       const rows = closesBySymbol.get(sym);
       if (rows && rows.length > 0) {
@@ -460,12 +497,20 @@ Deno.serve(async (req) => {
           value: round2(rows[0].close),
           as_of: rows[0].record_date,
           source: "liquidity_20d_close",
+          window_phase: cmpWindowPhase,
+          refresh_attempted: refreshedSet.has(sym),
         };
       }
-      return { value: null, as_of: null, source: null };
+      return {
+        value: null,
+        as_of: null,
+        source: null,
+        window_phase: cmpWindowPhase,
+        refresh_attempted: refreshedSet.has(sym),
+      };
     }
 
-    function buildTechnicals(sym: string): TechnicalsBlock {
+    function buildTechnicals(sym: string, cmpValue: number | null): TechnicalsBlock {
       const rows = closesBySymbol.get(sym) ?? [];
       if (rows.length === 0) {
         return {
@@ -477,9 +522,14 @@ Deno.serve(async (req) => {
       const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
       const hi = Math.max(...closes);
       const lo = Math.min(...closes);
+      // Phase 2V — pct_change uses the SAME CMP displayed on the card when
+      // available; falls back to newest close in window if CMP is null.
+      // first_close_in_20d_window = oldest record in the descending-sorted
+      // closesBySymbol array (rows[rows.length - 1]).
       const newest = rows[0].close;
       const oldest = rows[rows.length - 1].close;
-      const pct = oldest > 0 ? ((newest - oldest) / oldest) * 100 : null;
+      const numerator = cmpValue != null ? cmpValue : newest;
+      const pct = oldest > 0 ? ((numerator - oldest) / oldest) * 100 : null;
       const vol = volBySymbol.get(sym) ?? null;
       return {
         sma_20d: round2(sma),
@@ -582,6 +632,61 @@ Deno.serve(async (req) => {
 
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
+
+    // Phase 2V — Inline LTP refresh for survivor cards.
+    // Trigger sync-ltp-dhan with a `symbols` filter (≤10) when:
+    //   * market window phase is "open" or "post_close", AND
+    //   * any survivor's ltp_cache value is missing or stale (not in ltpFreshSet)
+    // After refresh succeeds, re-query ltp_cache for those symbols and
+    // overwrite ltpBySymbol entries so buildCmp surfaces the live value.
+    {
+      const refreshCandidates = limited
+        .map((r) => r.symbol as string)
+        .filter((s) => !ltpFreshSet.has(s))
+        .slice(0, 10);
+      const phaseAllowsRefresh =
+        cmpWindowPhase === "open" || cmpWindowPhase === "post_close";
+      if (refreshCandidates.length > 0 && phaseAllowsRefresh) {
+        for (const s of refreshCandidates) refreshedSet.add(s);
+        try {
+          const refreshRes = await fetch(`${SUPABASE_URL}/functions/v1/sync-ltp-dhan`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SERVICE_KEY,
+              authorization: `Bearer ${SERVICE_KEY}`,
+            },
+            body: JSON.stringify({ symbols: refreshCandidates }),
+          });
+          if (refreshRes.ok) {
+            const { data: freshRows } = await supabase
+              .from("ltp_cache")
+              .select("symbol, ltp, fetched_at, as_of, source")
+              .in("symbol", refreshCandidates);
+            const nowMs2 = Date.now();
+            for (const r of freshRows ?? []) {
+              const v = Number(r.ltp);
+              if (!Number.isFinite(v) || v <= 0) continue;
+              const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
+              if (!ts) continue;
+              const sym = r.symbol as string;
+              ltpBySymbol.set(sym, {
+                ltp: v,
+                fetched_at: ts,
+                source: (r.source as string | null) ?? null,
+              });
+              const ageSec = (nowMs2 - new Date(ts).getTime()) / 1000;
+              if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
+                ltpFreshSet.add(sym);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`phase2v: inline_refresh_failed ${String(e)}`);
+        }
+      }
+    }
+
 
     // --- Phase 2D helpers (dev-preview math, deterministic, no fabrication) ---
     // Phase 2O — load tuning knobs fresh per request from runtime_config (no module-cache)
@@ -757,7 +862,7 @@ Deno.serve(async (req) => {
     const stocks: StockOut[] = limited.map((r) => {
       const sym = r.symbol as string;
       const cmp = buildCmp(sym);
-      const tech = buildTechnicals(sym);
+      const tech = buildTechnicals(sym, cmp.value);
       const fund = buildFundamentals(sym);
       const zones = buildZones(cmp.value, tech);
       const compositePreview = previewComposite(cmp.value, tech);

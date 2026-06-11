@@ -49,6 +49,23 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<number
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   const ranAt = new Date().toISOString();
+
+  // Optional body filter: { symbols?: string[] } — restricts the run to a
+  // subset of the universe (used by stock-recommendation-query for inline
+  // refresh of survivor cards). Capped at 10 symbols.
+  let filterSymbols: string[] | null = null;
+  try {
+    if (req.method === "POST") {
+      const body = (await req.json().catch(() => null)) as { symbols?: unknown } | null;
+      if (body && Array.isArray(body.symbols)) {
+        const cleaned = body.symbols
+          .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+          .map((s) => s.trim());
+        filterSymbols = cleaned.slice(0, 10);
+      }
+    }
+  } catch { /* ignore */ }
+
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -67,9 +84,14 @@ Deno.serve(async (req) => {
     if (cfg.get("universe_override_enabled") !== true) {
       return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
     }
-    const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
+    const universe = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
+    let symbols = universe;
+    if (filterSymbols && filterSymbols.length > 0) {
+      const u = new Set(universe);
+      symbols = filterSymbols.filter((s) => u.has(s));
+    }
     if (symbols.length === 0) {
-      return json({ ok: true, symbols_updated: 0, attempts: [], errors: ["no override symbols"] });
+      return json({ ok: true, symbols_updated: 0, attempts: [], errors: ["no override symbols"], filter_applied: filterSymbols != null });
     }
 
     // Load all NSE+BSE rows; dedupe by (symbol, exchange) preferring segment NSE_EQ/BSE_EQ.
@@ -149,19 +171,22 @@ Deno.serve(async (req) => {
       updated++;
     }
 
-    // Telemetry — never include secrets.
-    await supabase.from("stock_picker_runtime_config").upsert(
-      {
-        config_key: "last_sync_ltp_dhan",
-        kind: "operational",
-        config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
-        description: "Last sync-ltp-dhan run summary",
-        updated_at: ranAt,
-      },
-      { onConflict: "config_key" },
-    );
+    // Telemetry — only for full-universe runs; partial inline refreshes
+    // (filter_applied) must not overwrite the daily summary.
+    if (!filterSymbols) {
+      await supabase.from("stock_picker_runtime_config").upsert(
+        {
+          config_key: "last_sync_ltp_dhan",
+          kind: "operational",
+          config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
+          description: "Last sync-ltp-dhan run summary",
+          updated_at: ranAt,
+        },
+        { onConflict: "config_key" },
+      );
+    }
 
-    return json({ ok: true, symbols_updated: updated, attempts, errors });
+    return json({ ok: true, symbols_updated: updated, attempts, errors, filter_applied: filterSymbols != null });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
