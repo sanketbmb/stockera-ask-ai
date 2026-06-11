@@ -166,9 +166,17 @@ Deno.serve(async (req) => {
       tasks.push({ symbol: w.symbol, exchange: w.exchange, securityId: m.dhan_security_id, segment: seg });
     }
 
+    // Phase 2V.2 — shuffle tasks so repeated invocations under rate-limit
+    // pressure spread coverage across the work set instead of re-fetching
+    // the same first items every time.
+    for (let i = tasks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
+    }
+
     let ok = 0, fail = 0;
     const nowIso = new Date().toISOString();
-    const BATCH = 8;
+    const BATCH = 2;
     for (let i = 0; i < tasks.length; i += BATCH) {
       const slice = tasks.slice(i, i + BATCH);
       const results = await Promise.all(slice.map(async (t) => {
@@ -196,14 +204,20 @@ Deno.serve(async (req) => {
         const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
         if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
+      // Phase 2V.2 — pace between batches; Supabase enforces a per-trace
+      // outbound HTTP rate limit (~10/sec) and Dhan's marketfeed rate caps.
+      if (i + BATCH < tasks.length) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
     }
 
     const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
     await supabase.from("cron_run_log").insert({
-      job_name: "snapshot-ltp-close",
+      function_name: "snapshot-ltp-close",
       status,
-      rows_affected: ok,
-      details: {
+      finished_at: new Date().toISOString(),
+      metrics: {
+        rows_affected: ok,
         failed: fail,
         total_tasks: tasks.length,
         work_set_size: work.size,
@@ -230,10 +244,11 @@ Deno.serve(async (req) => {
         auth: { persistSession: false, autoRefreshToken: false },
       });
       await supabase.from("cron_run_log").insert({
-        job_name: "snapshot-ltp-close",
+        function_name: "snapshot-ltp-close",
         status: "error",
-        rows_affected: 0,
-        details: { error: String(e) },
+        finished_at: new Date().toISOString(),
+        error_message: String(e),
+        metrics: { rows_affected: 0 },
       });
     } catch { /* swallow */ }
     return json({ success: false, error: String(e) }, 500);
