@@ -604,7 +604,7 @@ export function StockPickerFlow() {
               />
             )}
 
-            <DisclaimerFooter />
+            <DisclaimerFooter stamp={result?.regulatory_stamp} />
           </Card>
         )}
       </div>
