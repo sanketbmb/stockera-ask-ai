@@ -852,7 +852,7 @@ serve(async (req: Request) => {
     logDiagnosticPhase(batchId, 'phase_exclusion', 'done', tExclusion, { verdicts: exclusion.per_symbol_verdicts.length });
 
     // ---- Phase 5: abort threshold check ----
-    const totalUniverse = universe.universe_size;
+    const totalUniverse = overrideSymbolSet ? canonicalMembers.length : universe.universe_size;
     const insufficientCount = exclusion.insufficient_data_symbols.length;
     const insufficientPct = totalUniverse > 0 ? (insufficientCount / totalUniverse) * 100 : 0;
     const abortDueToData = insufficientPct > abortPct;
