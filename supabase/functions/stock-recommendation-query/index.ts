@@ -97,6 +97,11 @@ interface StockOut {
   news: NewsItemOut[];
   data_completeness: DataCompleteness;
   pending: string[];
+  cache_health: {
+    cmp_fresh: boolean;
+    fundamentals_fresh: boolean;
+    news_fresh: boolean;
+  };
 }
 
 function json(body: unknown, status = 200) {
