@@ -113,6 +113,11 @@ Deno.serve(async (req) => {
   try {
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const invoked_by = typeof body.invoked_by === 'string' ? body.invoked_by : 'manual';
+    // Phase 2Q — optional filter + widened grid
+    const filterProfile: string | null = typeof body.filter_profile === 'string'
+      && ['conservative', 'moderate', 'aggressive', 'ultra'].includes(body.filter_profile)
+      ? body.filter_profile : null;
+    const widerGrid: boolean = body.wider_grid === true;
 
     // ---- Load runtime config ----
     const { data: cfgRows, error: cfgErr } = await supabase
@@ -126,11 +131,16 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const maxVariants = Math.max(1, Math.floor(asNum(cfg.get('sweep_max_variants')) ?? 24));
+    const maxVariants = Math.max(1, Math.floor(
+      widerGrid
+        ? (asNum(cfg.get('sweep_max_variants_wide')) ?? 60)
+        : (asNum(cfg.get('sweep_max_variants')) ?? 24)
+    ));
     const minTrades = Math.max(1, Math.floor(asNum(cfg.get('sweep_min_trades_per_profile')) ?? 30));
-    const holdWindows = asNumArray(cfg.get('sweep_holding_windows'));
-    const tgtMults = asNumArray(cfg.get('sweep_target_vol_mults'));
-    const stopMults = asNumArray(cfg.get('sweep_stop_vol_mults'));
+    const holdWindows = asNumArray(cfg.get(widerGrid ? 'sweep_holding_windows_wide' : 'sweep_holding_windows'));
+    const tgtMults = asNumArray(cfg.get(widerGrid ? 'sweep_target_vol_mults_wide' : 'sweep_target_vol_mults'));
+    const stopMults = asNumArray(cfg.get(widerGrid ? 'sweep_stop_vol_mults_wide' : 'sweep_stop_vol_mults'));
+
 
     // Baseline knobs from live config
     const baseline: Knobs = { ...KNOB_DEFAULTS };
