@@ -278,24 +278,25 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: liqErr.message }, 500);
     }
 
-    const closesBySymbol = new Map<string, number[]>();
+    interface CloseRow { close: number; record_date: string }
+    const closesBySymbol = new Map<string, CloseRow[]>();
     for (const row of liqRows ?? []) {
       const sym = row.symbol as string;
       const close = Number(row.close);
+      const record_date = String(row.record_date);
       if (!Number.isFinite(close) || close <= 0) continue;
       const arr = closesBySymbol.get(sym) ?? [];
-      if (arr.length < 20) arr.push(close);
+      if (arr.length < 20) arr.push({ close, record_date });
       closesBySymbol.set(sym, arr);
     }
 
-    function realizedVol(closesDesc: number[] | undefined): number | null {
-      if (!closesDesc || closesDesc.length < 3) return null;
-      // closesDesc is newest-first; build chronological return series
-      const asc = [...closesDesc].reverse();
+    function realizedVol(rowsDesc: CloseRow[] | undefined): number | null {
+      if (!rowsDesc || rowsDesc.length < 3) return null;
+      const asc = [...rowsDesc].reverse();
       const rets: number[] = [];
       for (let i = 1; i < asc.length; i++) {
-        const prev = asc[i - 1];
-        const cur = asc[i];
+        const prev = asc[i - 1].close;
+        const cur = asc[i].close;
         if (prev > 0) rets.push((cur - prev) / prev);
       }
       if (rets.length < 2) return null;
@@ -307,6 +308,93 @@ Deno.serve(async (req) => {
     const volBySymbol = new Map<string, number | null>();
     for (const sym of filteredSymbols) {
       volBySymbol.set(sym, realizedVol(closesBySymbol.get(sym)));
+    }
+
+    // Phase 2C — fetch optional real-time LTP cache (may be empty); use as
+    // primary CMP source when present, otherwise fall back to latest close.
+    const { data: ltpRows } = await supabase
+      .from("ltp_cache")
+      .select("symbol, ltp, fetched_at, source")
+      .in("symbol", filteredSymbols);
+    const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
+    for (const r of ltpRows ?? []) {
+      const v = Number(r.ltp);
+      if (Number.isFinite(v) && v > 0) {
+        ltpBySymbol.set(r.symbol as string, {
+          ltp: v,
+          fetched_at: String(r.fetched_at),
+          source: (r.source as string | null) ?? null,
+        });
+      }
+    }
+
+    function round2(n: number): number {
+      return Math.round(n * 100) / 100;
+    }
+    function round4(n: number): number {
+      return Math.round(n * 10000) / 10000;
+    }
+
+    function buildCmp(sym: string): CmpBlock {
+      const live = ltpBySymbol.get(sym);
+      if (live) {
+        return { value: round2(live.ltp), as_of: live.fetched_at, source: "ltp_cache" };
+      }
+      const rows = closesBySymbol.get(sym);
+      if (rows && rows.length > 0) {
+        return {
+          value: round2(rows[0].close),
+          as_of: rows[0].record_date,
+          source: "liquidity_20d_close",
+        };
+      }
+      return { value: null, as_of: null, source: null };
+    }
+
+    function buildTechnicals(sym: string): TechnicalsBlock {
+      const rows = closesBySymbol.get(sym) ?? [];
+      if (rows.length === 0) {
+        return {
+          sma_20d: null, high_20d: null, low_20d: null,
+          pct_change_20d: null, realized_vol_20d: null, sample_size: 0,
+        };
+      }
+      const closes = rows.map((r) => r.close);
+      const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
+      const hi = Math.max(...closes);
+      const lo = Math.min(...closes);
+      const newest = rows[0].close;
+      const oldest = rows[rows.length - 1].close;
+      const pct = oldest > 0 ? ((newest - oldest) / oldest) * 100 : null;
+      const vol = volBySymbol.get(sym) ?? null;
+      return {
+        sma_20d: round2(sma),
+        high_20d: round2(hi),
+        low_20d: round2(lo),
+        pct_change_20d: pct == null ? null : round2(pct),
+        realized_vol_20d: vol == null ? null : round4(vol),
+        sample_size: rows.length,
+      };
+    }
+
+    function buildFundamentals(sym: string): FundamentalsBlock {
+      const m = masterBySymbol.get(sym);
+      return {
+        company_name: m?.company_name ?? null,
+        sector: m?.sector ?? null,
+        industry: m?.industry ?? null,
+        market_cap_rs: m?.market_cap_rs ?? null,
+        cap_band: m?.cap_band ?? null,
+        lot_size: m?.lot_size ?? null,
+        tick_size: m?.tick_size ?? null,
+        regulatory_flags: {
+          is_asm: m?.is_asm ?? null,
+          is_gsm: m?.is_gsm ?? null,
+          is_t2t: m?.is_t2t ?? null,
+          is_suspended: m?.is_suspended ?? null,
+          pledged_pct: m?.pledged_pct ?? null,
+        },
+      };
     }
 
     // Compute median volatility across this survivor set (symbols with a
