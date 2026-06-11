@@ -314,6 +314,8 @@ Deno.serve(async (req) => {
 
       const insertRows: Array<Record<string, unknown>> = [];
       for (const p of profiles) {
+        if (filterProfile !== null && p !== filterProfile) continue;
+
         const a = perProfile.get(p)!;
         const total_trades = a.rets.length;
         const decided = a.wins + a.losses;
