@@ -373,11 +373,12 @@ Deno.serve(async (req) => {
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
-      .select("symbol, sector, industry, market_cap_rs, cap_band")
+      .select("symbol, sector, industry, market_cap_rs, cap_band, as_of")
       .in("symbol", filteredSymbols);
     const fundCacheBySymbol = new Map<string, {
       sector: string | null; industry: string | null;
       market_cap_rs: number | null; cap_band: string | null;
+      as_of: string | null;
     }>();
     for (const r of fundRows ?? []) {
       fundCacheBySymbol.set(r.symbol as string, {
@@ -385,14 +386,16 @@ Deno.serve(async (req) => {
         industry: (r.industry as string | null) ?? null,
         market_cap_rs: r.market_cap_rs == null ? null : Number(r.market_cap_rs),
         cap_band: (r.cap_band as string | null) ?? null,
+        as_of: (r.as_of as string | null) ?? null,
       });
     }
 
     const { data: newsRows } = await supabase
       .from("news_cache")
-      .select("symbol, headline, url, source, published_at")
+      .select("symbol, headline, url, source, published_at, inserted_at")
       .in("symbol", filteredSymbols)
       .order("published_at", { ascending: false });
+
     const newsBySymbol = new Map<string, NewsItemOut[]>();
     for (const r of newsRows ?? []) {
       const sym = r.symbol as string;
