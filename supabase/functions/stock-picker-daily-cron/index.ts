@@ -691,9 +691,37 @@ serve(async (req: Request) => {
         `members.length=${universe.members?.length} but universe_size=${universe.universe_size}`
       );
     }
-    const canonicalMembers: UniverseMember[] = universe.members;
+    let canonicalMembers: UniverseMember[] = universe.members;
     markPhase('phase_universe_ms', tUniverse);
     logDiagnosticPhase(batchId, 'phase_universe', 'done', tUniverse, { universe_size: universe.universe_size });
+
+    // ---- Phase 2b: universe override (test-only, config-driven) ----
+    // Driven exclusively by stock_picker_runtime_config. When disabled or the
+    // symbol list is empty, behavior is unchanged. When active, restricts the
+    // in-memory canonical universe to the configured symbol whitelist BEFORE
+    // any downstream work (liquidity fetch / exclusion consumption / hash).
+    // The exclusion-engine still queries the full snapshot from the DB, so we
+    // also filter its response below to keep N_excl == N_hash. Bootstrap path
+    // is unaffected — override only applies to live/dry_run.
+    let overrideSymbolSet: Set<string> | null = null;
+    if (body.mode !== 'bootstrap') {
+      const overrideEnabledRaw = config.get('universe_override_enabled');
+      const overrideEnabled = overrideEnabledRaw === undefined
+        ? false
+        : jsonbBool(overrideEnabledRaw, 'universe_override_enabled');
+      const overrideSymbolsRaw = config.get('universe_override_symbols');
+      const overrideSymbols: string[] = Array.isArray(overrideSymbolsRaw)
+        ? overrideSymbolsRaw.filter((s): s is string => typeof s === 'string' && s.length > 0)
+        : [];
+      if (overrideEnabled && overrideSymbols.length > 0) {
+        const set = new Set(overrideSymbols);
+        const filtered = canonicalMembers.filter((m) => set.has(m.symbol));
+        const sortedSymbols = [...new Set(filtered.map((m) => m.symbol))].sort();
+        console.log(`universe-override active: N=${filtered.length} symbols=${JSON.stringify(sortedSymbols)}`);
+        canonicalMembers = filtered;
+        overrideSymbolSet = set;
+      }
+    }
 
     // ---- Phase 3: liquidity fetch + append ----
     const tLiquidity = Date.now();
