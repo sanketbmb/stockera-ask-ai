@@ -155,6 +155,23 @@ function jsonbBoolWithDefault(value: unknown, key: string, defaultValue: boolean
   return jsonbBool(value, key);
 }
 
+function logDiagnosticPhase(
+  batchId: string,
+  phase: string,
+  event: 'start' | 'done',
+  startedAt: number,
+  details?: Record<string, unknown>
+): void {
+  console.log(JSON.stringify({
+    diagnostic: 'stock-picker-daily-cron',
+    batch_id: batchId,
+    phase,
+    event,
+    elapsed_ms: Date.now() - startedAt,
+    ...(details ? { details } : {}),
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // IST date helper
 // ---------------------------------------------------------------------------
@@ -259,10 +276,15 @@ async function fetchLiquidityForSymbol(args: {
   serviceKey: string;
   maxRetries: number;
 }): Promise<LiquidityFetchOutcome> {
+  const symbolStartedAt = Date.now();
+  const label = `${args.symbol}/${args.exchange}`;
+  console.log(`cron diagnostic: liquidity_symbol_start label=${label} security_id=${args.dhanSecurityId ?? 'null'}`);
   let attempt = 0;
   let delayMs = 200;
   while (attempt <= args.maxRetries) {
     try {
+      const attemptStartedAt = Date.now();
+      console.log(`cron diagnostic: liquidity_symbol_attempt_start label=${label} attempt=${attempt + 1}`);
       const res = await fetch(args.dhanFetchUrl, {
         method: 'POST',
         headers: {
@@ -280,18 +302,24 @@ async function fetchLiquidityForSymbol(args: {
           },
         }),
       });
+      console.log(
+        `cron diagnostic: liquidity_symbol_attempt_response label=${label} attempt=${attempt + 1} status=${res.status} elapsed_ms=${Date.now() - attemptStartedAt}`
+      );
       if (res.status === 429) {
         const retryAfter = Number(res.headers.get('Retry-After') ?? '0');
         const waitMs = Math.max(retryAfter * 1000, delayMs * 2);
         attempt++;
         if (attempt > args.maxRetries) {
+          console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=rate_limited elapsed_ms=${Date.now() - symbolStartedAt}`);
           return { symbol: args.symbol, exchange: args.exchange, status: 'rate_limited', rows: [] };
         }
+        console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${waitMs}`);
         await sleep(waitMs);
         delayMs = Math.min(delayMs * 2, 5000);
         continue;
       }
       if (!res.ok) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error http_status=${res.status} elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -302,6 +330,7 @@ async function fetchLiquidityForSymbol(args: {
       }
       const json = await res.json();
       if (json?.success !== true) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error upstream_unsuccessful elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -326,6 +355,7 @@ async function fetchLiquidityForSymbol(args: {
       if (!Array.isArray(closeArr)) missing.push('close');
       if (!Array.isArray(volArr)) missing.push('volume');
       if (missing.length > 0) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error malformed_missing=${missing.join(',')} elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -335,6 +365,7 @@ async function fetchLiquidityForSymbol(args: {
         };
       }
       if (closeArr.length !== ts.length || volArr.length !== ts.length) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error length_mismatch elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -359,6 +390,7 @@ async function fetchLiquidityForSymbol(args: {
         parsedRows.push({ record_date, close: c, volume: vol, turnover_rs });
       }
       if (parsedRows.length === 0) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error no_valid_candles elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -367,6 +399,7 @@ async function fetchLiquidityForSymbol(args: {
           error: 'no_valid_candles',
         };
       }
+      console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=ok rows=${parsedRows.length} elapsed_ms=${Date.now() - symbolStartedAt}`);
       return {
         symbol: args.symbol,
         exchange: args.exchange,
@@ -376,6 +409,7 @@ async function fetchLiquidityForSymbol(args: {
     } catch (e) {
       attempt++;
       if (attempt > args.maxRetries) {
+        console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error exception elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
           exchange: args.exchange,
@@ -384,6 +418,7 @@ async function fetchLiquidityForSymbol(args: {
           error: e instanceof Error ? e.message : String(e),
         };
       }
+      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${e instanceof Error ? e.message : String(e)}`);
       await sleep(delayMs);
       delayMs = Math.min(delayMs * 2, 5000);
     }
@@ -571,6 +606,7 @@ serve(async (req: Request) => {
   try {
     // ---- Phase 1: config + kill-switch + calendar gates ----
     const tConfig = Date.now();
+    logDiagnosticPhase(batchId, 'phase_config', 'start', tConfig, { mode: body.mode });
     const config = await loadConfig(supabase);
 
     const cronEnabled = jsonbBool(config.get(CFG.CRON_ENABLED), CFG.CRON_ENABLED);
@@ -633,9 +669,11 @@ serve(async (req: Request) => {
       CFG.ABORT_INSUF_DATA_PCT
     );
     markPhase('phase_config_ms', tConfig);
+    logDiagnosticPhase(batchId, 'phase_config', 'done', tConfig, { run_date_ist: runDateIst, seed_version: seedVersion });
 
     // ---- Phase 2: universe build (CARRIES MEMBERS BACK — BLOCKER 1) ----
     const tUniverse = Date.now();
+    logDiagnosticPhase(batchId, 'phase_universe', 'start', tUniverse, { seed_version: seedVersion });
     const universe = await invokeFunction<BuildUniverseResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -655,9 +693,11 @@ serve(async (req: Request) => {
     }
     const canonicalMembers: UniverseMember[] = universe.members;
     markPhase('phase_universe_ms', tUniverse);
+    logDiagnosticPhase(batchId, 'phase_universe', 'done', tUniverse, { universe_size: universe.universe_size });
 
     // ---- Phase 3: liquidity fetch + append ----
     const tLiquidity = Date.now();
+    logDiagnosticPhase(batchId, 'phase_liquidity', 'start', tLiquidity, { universe_size: canonicalMembers.length });
     const dhanFetchUrl = `${SUPABASE_URL}/functions/v1/dhan-fetch`;
     const today = new Date();
     const toDateIso = today.toISOString().slice(0, 10);
@@ -693,8 +733,10 @@ serve(async (req: Request) => {
         dhanFetchUrl,
         serviceKey: SUPABASE_SERVICE_ROLE_KEY,
       });
+      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: outcomes.length });
       await appendLiquidity(supabase, outcomes);
       markPhase('phase_liquidity_ms', tLiquidity);
+      logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: outcomes.length });
 
       // 4. Continuation or finish
       const nextSymbol = isFinalChunk ? null : chunk[chunk.length - 1].symbol;
@@ -749,11 +791,14 @@ serve(async (req: Request) => {
       dhanFetchUrl,
       serviceKey: SUPABASE_SERVICE_ROLE_KEY,
     });
+    logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
     await appendLiquidity(supabase, fetchOutcomes);
     markPhase('phase_liquidity_ms', tLiquidity);
+    logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
 
     // ---- Phase 4: exclusion ----
     const tExclusion = Date.now();
+    logDiagnosticPhase(batchId, 'phase_exclusion', 'start', tExclusion, { universe_snapshot_id: universe.universe_snapshot_id });
     const exclusion = await invokeFunction<ExclusionResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -765,6 +810,7 @@ serve(async (req: Request) => {
     );
     if (!exclusion.ok) throw new Error(`cron: exclusion-engine returned not ok`);
     markPhase('phase_exclusion_ms', tExclusion);
+    logDiagnosticPhase(batchId, 'phase_exclusion', 'done', tExclusion, { verdicts: exclusion.per_symbol_verdicts.length });
 
     // ---- Phase 5: abort threshold check ----
     const totalUniverse = universe.universe_size;
