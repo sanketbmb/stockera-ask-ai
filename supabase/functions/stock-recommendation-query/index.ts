@@ -452,12 +452,14 @@ Deno.serve(async (req) => {
 
     function buildFundamentals(sym: string): FundamentalsBlock {
       const m = masterBySymbol.get(sym);
+      const fc = fundCacheBySymbol.get(sym);
+      // Merge: prefer stock_master, fall back to fundamentals_cache for nulls.
       return {
         company_name: m?.company_name ?? null,
-        sector: m?.sector ?? null,
-        industry: m?.industry ?? null,
-        market_cap_rs: m?.market_cap_rs ?? null,
-        cap_band: m?.cap_band ?? null,
+        sector: m?.sector ?? fc?.sector ?? null,
+        industry: m?.industry ?? fc?.industry ?? null,
+        market_cap_rs: m?.market_cap_rs ?? fc?.market_cap_rs ?? null,
+        cap_band: m?.cap_band ?? fc?.cap_band ?? null,
         lot_size: m?.lot_size ?? null,
         tick_size: m?.tick_size ?? null,
         regulatory_flags: {
@@ -468,6 +470,7 @@ Deno.serve(async (req) => {
           pledged_pct: m?.pledged_pct ?? null,
         },
       };
+
     }
 
     // Compute median volatility across this survivor set (symbols with a
