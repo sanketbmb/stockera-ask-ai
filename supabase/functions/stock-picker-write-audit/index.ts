@@ -46,7 +46,15 @@ const LOWER_HEX_64 = /^[0-9a-f]{64}$/;
 // Request envelope
 // ---------------------------------------------------------------------------
 type WriteOp =
-  | { op: 'write_pick_audit'; params: WriteAuditRowParams }
+  | {
+      op: 'write_pick_audit';
+      params: WriteAuditRowParams;
+      // Phase 2R: per-batch persistence guard. NEVER persisted; never enters
+      // the replay-hash payload. write-audit uses it to decide whether
+      // composite_score becomes null (gate closed) or the supplied value
+      // (gate open) before invoking the RPC.
+      risk_profile_guard?: 'conservative' | 'moderate' | 'aggressive' | 'ultra';
+    }
   | { op: 'write_batch_rejection'; params: WriteBatchRejectionParams };
 
 interface WriteAuditRequest {
