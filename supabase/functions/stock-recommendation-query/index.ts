@@ -639,7 +639,9 @@ Deno.serve(async (req) => {
         if (fund.cap_band === null) missingFund.push("cap_band");
         if (missingFund.length > 0) pending.push("fundamentals:" + missingFund.join(","));
       }
-      pending.push("news");
+      const newsItems = newsBySymbol.get(sym) ?? [];
+      const newsOk = newsItems.length > 0;
+      if (!newsOk) pending.push("news");
 
       return {
         ticker: sym,
@@ -658,15 +660,17 @@ Deno.serve(async (req) => {
         buy_zone: zones.buy_zone,
         target: zones.target,
         stop_loss: zones.stop_loss,
+        news: newsItems,
         data_completeness: {
           cmp: cmpOk,
           technicals: techOk,
           zones: zonesOk,
           fundamentals: fundOk,
-          news: false,
+          news: newsOk,
         },
         pending,
       };
+
     });
 
     return json({
