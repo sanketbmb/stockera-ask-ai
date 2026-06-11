@@ -235,10 +235,11 @@ Deno.serve(async (req) => {
         auth: { persistSession: false, autoRefreshToken: false },
       });
       await supabase.from("cron_run_log").insert({
-        job_name: "snapshot-ltp-close",
+        function_name: "snapshot-ltp-close",
         status: "error",
-        rows_affected: 0,
-        details: { error: String(e) },
+        finished_at: new Date().toISOString(),
+        error_message: String(e),
+        metrics: { rows_affected: 0 },
       });
     } catch { /* swallow */ }
     return json({ success: false, error: String(e) }, 500);
