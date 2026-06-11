@@ -713,10 +713,12 @@ function StockCard({
   stock,
   riskProfile,
   showCompletenessChips,
+  stamp,
 }: {
   stock: PickedStock;
   riskProfile: string;
   showCompletenessChips: boolean;
+  stamp: { firm: string; reg: string };
 }) {
   const shortBatch = stock.batch_id ? stock.batch_id.slice(0, 8) : "—";
   const isConservative = riskProfile === "conservative";
@@ -742,8 +744,8 @@ function StockCard({
               <span className="text-[11px] text-muted-foreground">· {stock.sector}</span>
             )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO})
+          <p className="text-[10px] text-muted-foreground mt-1" data-testid="sebi-ra-stamp">
+            SEBI-registered RA: {stamp.firm} ({stamp.reg})
           </p>
           <p className="text-[10px] text-muted-foreground/80">
             Batch {shortBatch} · {new Date(stock.generated_at).toLocaleString()}
