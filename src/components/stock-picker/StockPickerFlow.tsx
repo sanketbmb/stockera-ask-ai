@@ -946,13 +946,18 @@ function FlagPill({ label }: { label: string }) {
   );
 }
 
-function DisclaimerFooter() {
+function DisclaimerFooter({
+  stamp,
+}: {
+  stamp?: StockPickerResponse["regulatory_stamp"];
+}) {
+  const { firm, reg } = resolveStamp(stamp);
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground flex items-start gap-2">
       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
       <div className="space-y-1">
         <p>
-          AI-generated. SEBI-registered RA: {SEBI_RA_FIRM} ({SEBI_RA_REGNO}). Independent
+          AI-generated. SEBI-registered RA: {firm} ({reg}). Independent
           analyst review recommended before acting on any pick.
         </p>
         <p>
