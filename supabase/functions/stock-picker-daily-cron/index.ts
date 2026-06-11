@@ -155,6 +155,23 @@ function jsonbBoolWithDefault(value: unknown, key: string, defaultValue: boolean
   return jsonbBool(value, key);
 }
 
+function logDiagnosticPhase(
+  batchId: string,
+  phase: string,
+  event: 'start' | 'done',
+  startedAt: number,
+  details?: Record<string, unknown>
+): void {
+  console.log(JSON.stringify({
+    diagnostic: 'stock-picker-daily-cron',
+    batch_id: batchId,
+    phase,
+    event,
+    elapsed_ms: Date.now() - startedAt,
+    ...(details ? { details } : {}),
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // IST date helper
 // ---------------------------------------------------------------------------
