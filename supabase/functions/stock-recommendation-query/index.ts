@@ -466,23 +466,62 @@ Deno.serve(async (req) => {
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
 
-    // Step 7 — shape
-    const stocks: StockOut[] = limited.map((r) => ({
-      ticker: r.symbol as string,
-      exchange: r.exchange as string,
-      sector: masterBySymbol.get(r.symbol as string)?.sector ?? null,
-      verdict: "include",
-      composite_score: (r.composite_score as number | null) ?? null,
-      batch_id: r.batch_id as string,
-      generated_at: new Date(r.generated_at as string).toISOString(),
-      data_completeness: {
-        cmp: false,
-        technicals: false,
-        zones: false,
-        fundamentals: false,
-        news: false,
-      },
-    }));
+    // Step 7 — shape (Phase 2C: populate CMP / technicals / fundamentals from
+    // real DB data only; data_completeness reflects what is actually present).
+    const stocks: StockOut[] = limited.map((r) => {
+      const sym = r.symbol as string;
+      const cmp = buildCmp(sym);
+      const tech = buildTechnicals(sym);
+      const fund = buildFundamentals(sym);
+
+      const cmpOk = cmp.value !== null;
+      const techOk =
+        tech.sample_size >= 3 &&
+        tech.sma_20d !== null &&
+        tech.realized_vol_20d !== null;
+      const fundOk =
+        fund.company_name !== null ||
+        fund.sector !== null ||
+        fund.industry !== null ||
+        fund.market_cap_rs !== null ||
+        fund.cap_band !== null;
+
+      const pending: string[] = [];
+      if (!cmpOk) pending.push("cmp");
+      if (!techOk) pending.push("technicals");
+      pending.push("zones");
+      if (!fundOk) pending.push("fundamentals");
+      else {
+        const missingFund: string[] = [];
+        if (fund.sector === null) missingFund.push("sector");
+        if (fund.industry === null) missingFund.push("industry");
+        if (fund.market_cap_rs === null) missingFund.push("market_cap_rs");
+        if (fund.cap_band === null) missingFund.push("cap_band");
+        if (missingFund.length > 0) pending.push("fundamentals:" + missingFund.join(","));
+      }
+      pending.push("news");
+
+      return {
+        ticker: sym,
+        exchange: r.exchange as string,
+        sector: fund.sector,
+        verdict: "include" as const,
+        composite_score: (r.composite_score as number | null) ?? null,
+        batch_id: r.batch_id as string,
+        generated_at: new Date(r.generated_at as string).toISOString(),
+        cmp,
+        technicals: tech,
+        fundamentals: fund,
+        data_completeness: {
+          cmp: cmpOk,
+          technicals: techOk,
+          zones: false,
+          fundamentals: fundOk,
+          news: false,
+        },
+        pending,
+      };
+    });
 
     return json({
       ...baseResponse,
@@ -499,6 +538,13 @@ Deno.serve(async (req) => {
           Array.from(volBySymbol.entries()).map(([k, v]) => [k, v]),
         ),
         tier_applied: tier,
+      },
+      data_sources: {
+        cmp: "ltp_cache (preferred) -> stock_picker_liquidity_20d latest close (fallback)",
+        technicals: "derived from stock_picker_liquidity_20d closes (sma_20d, high_20d, low_20d, pct_change_20d, realized_vol_20d)",
+        fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
+        zones: "not produced by SP-1 pipeline yet",
+        news: "not produced by SP-1 pipeline yet",
       },
     });
   } catch (e) {
