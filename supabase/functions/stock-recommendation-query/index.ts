@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Step 4 — apply filters
+    // Step 4 — apply sector/index filters
     const filtered = auditRows.filter((r) => {
       const sym = r.symbol as string;
       const exch = r.exchange as string;
@@ -175,21 +175,123 @@ Deno.serve(async (req) => {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
     }
 
-    // Step 5 — sort: composite_score DESC nulls last, then symbol ASC
-    filtered.sort((a, b) => {
+    // Step 4b — Phase 2B risk-tier engine.
+    // Available real signals on current dataset: 20d close history from
+    // stock_picker_liquidity_20d. composite_score, cap_band, market_cap_rs are
+    // NULL for the active 3-symbol dev override universe, so we derive a
+    // deterministic, explainable per-symbol risk metric = realized daily-return
+    // standard deviation over up-to-20 most recent closes. Higher = riskier.
+    const filteredSymbols = Array.from(new Set(filtered.map((r) => r.symbol as string)));
+    const { data: liqRows, error: liqErr } = await supabase
+      .from("stock_picker_liquidity_20d")
+      .select("symbol, record_date, close")
+      .in("symbol", filteredSymbols)
+      .order("symbol", { ascending: true })
+      .order("record_date", { ascending: false });
+
+    if (liqErr) {
+      return json({ ok: false, error: liqErr.message }, 500);
+    }
+
+    const closesBySymbol = new Map<string, number[]>();
+    for (const row of liqRows ?? []) {
+      const sym = row.symbol as string;
+      const close = Number(row.close);
+      if (!Number.isFinite(close) || close <= 0) continue;
+      const arr = closesBySymbol.get(sym) ?? [];
+      if (arr.length < 20) arr.push(close);
+      closesBySymbol.set(sym, arr);
+    }
+
+    function realizedVol(closesDesc: number[] | undefined): number | null {
+      if (!closesDesc || closesDesc.length < 3) return null;
+      // closesDesc is newest-first; build chronological return series
+      const asc = [...closesDesc].reverse();
+      const rets: number[] = [];
+      for (let i = 1; i < asc.length; i++) {
+        const prev = asc[i - 1];
+        const cur = asc[i];
+        if (prev > 0) rets.push((cur - prev) / prev);
+      }
+      if (rets.length < 2) return null;
+      const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+      const variance = rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rets.length - 1);
+      return Math.sqrt(Math.max(0, variance));
+    }
+
+    const volBySymbol = new Map<string, number | null>();
+    for (const sym of filteredSymbols) {
+      volBySymbol.set(sym, realizedVol(closesBySymbol.get(sym)));
+    }
+
+    // Compute median volatility across this survivor set (symbols with a
+    // computable vol). NULL-vol symbols are treated as "unknown risk" and
+    // only included by permissive tiers.
+    const volsKnown = filteredSymbols
+      .map((s) => volBySymbol.get(s))
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+      .sort((a, b) => a - b);
+
+    function percentile(p: number): number | null {
+      if (volsKnown.length === 0) return null;
+      const idx = Math.min(volsKnown.length - 1, Math.floor(p * volsKnown.length));
+      return volsKnown[idx];
+    }
+    const p50 = percentile(0.5);
+    const p75 = percentile(0.75);
+
+    type Tier = "conservative" | "moderate" | "aggressive" | "ultra";
+    const tier = (risk_profile ?? "moderate") as Tier;
+
+    // Tier filter: keep symbols whose realized vol satisfies the tier rule.
+    // Always guarantee at least 1 symbol survives (fall back to lowest-vol
+    // for restrictive tiers, or all for permissive).
+    let tierFiltered = filtered.filter((r) => {
+      const v = volBySymbol.get(r.symbol as string);
+      if (tier === "ultra") return true;
+      if (tier === "aggressive") return true; // permissive; ranking handles bias
+      if (v == null) {
+        // unknown risk: only ultra/aggressive accept it
+        return false;
+      }
+      if (tier === "conservative") return p50 != null && v <= p50;
+      if (tier === "moderate") return p75 != null && v <= p75;
+      return true;
+    });
+
+    if (tierFiltered.length === 0) {
+      // safety net: fall back to lowest-vol single name so the API still
+      // returns a deterministic answer rather than empty.
+      const lowest = [...filtered].sort((a, b) => {
+        const va = volBySymbol.get(a.symbol as string) ?? Number.POSITIVE_INFINITY;
+        const vb = volBySymbol.get(b.symbol as string) ?? Number.POSITIVE_INFINITY;
+        return va - vb;
+      });
+      tierFiltered = lowest.slice(0, 1);
+    }
+
+    // Step 5 — tier-aware sort.
+    //   conservative / moderate: realized vol ASC (stable first),
+    //                            then composite_score DESC nulls last, then symbol ASC
+    //   aggressive / ultra:      realized vol DESC (opportunity first),
+    //                            then composite_score DESC nulls last, then symbol ASC
+    const volDesc = tier === "aggressive" || tier === "ultra";
+    tierFiltered.sort((a, b) => {
+      const va = volBySymbol.get(a.symbol as string);
+      const vb = volBySymbol.get(b.symbol as string);
+      const vaN = va == null ? (volDesc ? -Infinity : Infinity) : va;
+      const vbN = vb == null ? (volDesc ? -Infinity : Infinity) : vb;
+      if (vaN !== vbN) return volDesc ? vbN - vaN : vaN - vbN;
       const as = a.composite_score as number | null;
       const bs = b.composite_score as number | null;
-      if (as == null && bs == null) {
-        return (a.symbol as string).localeCompare(b.symbol as string);
-      }
-      if (as == null) return 1;
-      if (bs == null) return -1;
-      if (bs !== as) return bs - as;
+      if (as == null && bs != null) return 1;
+      if (bs == null && as != null) return -1;
+      if (as != null && bs != null && as !== bs) return bs - as;
       return (a.symbol as string).localeCompare(b.symbol as string);
     });
 
     // Step 6 — limit
-    const limited = filtered.slice(0, stockCount);
+    const limited = tierFiltered.slice(0, stockCount);
 
     // Step 7 — shape
     const stocks: StockOut[] = limited.map((r) => ({
@@ -209,7 +311,23 @@ Deno.serve(async (req) => {
       },
     }));
 
-    return json({ ...baseResponse, stocks });
+    return json({
+      ...baseResponse,
+      stocks,
+      risk_engine: {
+        signal: "realized_vol_20d_close",
+        note:
+          "composite_score / cap_band / market_cap_rs are NULL on current dev " +
+          "universe; using realized daily-return stddev from up-to-20 most " +
+          "recent closes as the deterministic risk metric.",
+        median_vol: p50,
+        p75_vol: p75,
+        per_symbol_vol: Object.fromEntries(
+          Array.from(volBySymbol.entries()).map(([k, v]) => [k, v]),
+        ),
+        tier_applied: tier,
+      },
+    });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
