@@ -393,24 +393,34 @@ Deno.serve(async (req) => {
     }
     const nowMs = Date.now();
 
+    // Phase 2V — load ALL valid ltp_cache rows (no TTL gate). TTL governs the
+    // cmp_fresh health flag and inline-refresh trigger, NOT whether we expose
+    // the value. Priority 1: live LTP during market hours; Priority 2: latest
+    // post-close LTP; Priority 3: liquidity_20d_close fallback (last resort).
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
       .select("symbol, ltp, fetched_at, as_of, source")
       .in("symbol", filteredSymbols);
     const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
+    const ltpFreshSet = new Set<string>();
     for (const r of ltpRows ?? []) {
       const v = Number(r.ltp);
       if (!Number.isFinite(v) || v <= 0) continue;
       const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
       if (!ts) continue;
-      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
-      if (!Number.isFinite(ageSec) || ageSec < 0 || ageSec > ltpTtlSec) continue;
-      ltpBySymbol.set(r.symbol as string, {
+      const sym = r.symbol as string;
+      ltpBySymbol.set(sym, {
         ltp: v,
         fetched_at: ts,
         source: (r.source as string | null) ?? null,
       });
+      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
+      if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
+        ltpFreshSet.add(sym);
+      }
     }
+    const cmpWindowPhase = marketWindowPhase();
+    const refreshedSet = new Set<string>();
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
