@@ -52,21 +52,73 @@ interface StockDataCompleteness {
   news: boolean;
 }
 
+interface CmpBlock {
+  value: number | null;
+  as_of: string | null;
+  source: "ltp_cache" | "liquidity_20d_close" | null;
+}
+interface TechnicalsBlock {
+  sma_20d: number | null;
+  high_20d: number | null;
+  low_20d: number | null;
+  pct_change_20d: number | null;
+  realized_vol_20d: number | null;
+  sample_size: number;
+}
+interface FundamentalsBlock {
+  company_name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap_rs: number | null;
+  cap_band: string | null;
+  lot_size: number | null;
+  tick_size: number | null;
+  regulatory_flags: {
+    is_asm: boolean | null;
+    is_gsm: boolean | null;
+    is_t2t: boolean | null;
+    is_suspended: boolean | null;
+    pledged_pct: number | null;
+  };
+}
+interface BuyZoneBlock { lower: number | null; upper: number | null; }
+interface NewsItemOut {
+  headline: string;
+  url: string | null;
+  source: string;
+  published_at: string;
+}
+interface CacheHealth {
+  cmp_fresh: boolean;
+  fundamentals_fresh: boolean;
+  news_fresh: boolean;
+}
+
 interface PickedStock {
   ticker: string;
   exchange: string;
   sector: string | null;
   verdict: string;
   composite_score: number | null;
+  composite_score_preview: number | null;
   batch_id: string;
   generated_at: string;
+  cmp: CmpBlock;
+  technicals: TechnicalsBlock;
+  fundamentals: FundamentalsBlock;
+  buy_zone: BuyZoneBlock;
+  target: number | null;
+  stop_loss: number | null;
+  news: NewsItemOut[];
   data_completeness: StockDataCompleteness;
+  pending: string[];
+  cache_health: CacheHealth;
 }
 
 interface StockPickerResponse {
   ok: boolean;
   horizon: string;
-  risk_profile: string;
+  risk_profile: "conservative" | "moderate" | "aggressive" | "ultra" | string;
   sector: string;
   index: string;
   generated_at: string;
@@ -75,6 +127,11 @@ interface StockPickerResponse {
   note?: string;
   error?: string;
 }
+
+// SEBI RA registration — authoritative values per Stockera Technology Private Limited.
+// Surfaced as a stamp on each result card; not fabricated.
+const SEBI_RA_FIRM = "Stockera Technology Private Limited";
+const SEBI_RA_REGNO = "INH000019071";
 
 const HORIZONS: { id: Horizon; label: string }[] = [
   { id: "intraday", label: "Intraday" },
