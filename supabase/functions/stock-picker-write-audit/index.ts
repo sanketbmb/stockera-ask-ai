@@ -420,11 +420,43 @@ serve(async (req: Request) => {
     return jsonResponse(500, { ok: false, error: `regulatory-status: ${msg}` });
   }
 
+  // Phase 2R: ONE batched runtime_config read for per-profile persistence flags.
+  // No per-row roundtrip. Defaults to false on missing rows.
+  const persistByProfile: Record<string, boolean> = {
+    conservative: false, moderate: false, aggressive: false, ultra: false,
+  };
+  try {
+    const { data: cfgRows, error: cfgErr } = await supabase
+      .from('stock_picker_runtime_config')
+      .select('config_key, config_value')
+      .in('config_key', [
+        'composite_score_persist_conservative',
+        'composite_score_persist_moderate',
+        'composite_score_persist_aggressive',
+        'composite_score_persist_ultra',
+      ]);
+    if (!cfgErr && cfgRows) {
+      for (const r of cfgRows) {
+        const k = (r as { config_key: string }).config_key;
+        const v = (r as { config_value: unknown }).config_value;
+        const b = v === true || v === 'true';
+        const profile = k.replace('composite_score_persist_', '');
+        if (profile in persistByProfile) persistByProfile[profile] = b;
+      }
+    }
+  } catch (e) {
+    console.warn(`write-audit: per-profile flag load failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  console.log(`phase2r: gate global=${compositeEnabled} per_profile=${JSON.stringify(persistByProfile)}`);
+
   const results: OpResult[] = [];
   for (const op of body.operations) {
     try {
       if (op.op === 'write_pick_audit') {
-        results.push(await runWritePickAudit(supabase, op.params, stamp, compositeEnabled));
+        const guard = (op as { risk_profile_guard?: string }).risk_profile_guard;
+        const profileOpen = guard && guard in persistByProfile ? persistByProfile[guard] : false;
+        const effectiveCompositeOpen = compositeEnabled && profileOpen === true;
+        results.push(await runWritePickAudit(supabase, op.params, stamp, effectiveCompositeOpen));
       } else {
         results.push(await runWriteBatchRejection(supabase, op.params, stamp));
       }
