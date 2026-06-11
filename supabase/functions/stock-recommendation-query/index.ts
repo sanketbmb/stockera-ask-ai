@@ -586,6 +586,7 @@ Deno.serve(async (req) => {
     };
     const knobs: Knobs = { ...KNOB_DEFAULTS };
     {
+      const profileOverrideKey = `profile_knobs_${risk_profile}`;
       const { data: cfgRows, error: cfgErr } = await supabase
         .from("stock_picker_runtime_config")
         .select("config_key, config_value")
@@ -595,6 +596,7 @@ Deno.serve(async (req) => {
           "zone_target_vol_mult","zone_target_high_factor",
           "zone_stop_vol_mult","zone_stop_low_factor",
           "score_weight_vol","score_weight_trend","score_weight_mean_rev",
+          profileOverrideKey,
         ]);
       const cfg = new Map<string, unknown>();
       if (!cfgErr && cfgRows) for (const r of cfgRows) cfg.set(r.config_key as string, r.config_value as unknown);
@@ -622,7 +624,40 @@ Deno.serve(async (req) => {
           (knobs as Record<string, number>)[field] = n;
         }
       }
+      // Phase 2Q — per-profile override (overrides any matching global knob for this request only)
+      const profileOverrideRaw = cfg.get(profileOverrideKey);
+      if (profileOverrideRaw && typeof profileOverrideRaw === "object" && !Array.isArray(profileOverrideRaw)) {
+        const overrideMap: Array<[keyof Knobs, string]> = [
+          ["vol_clamp_min","zone_vol_clamp_min"],
+          ["vol_clamp_max","zone_vol_clamp_max"],
+          ["vol_default","zone_vol_default"],
+          ["buy_upper_factor","zone_buy_upper_factor"],
+          ["buy_lower_factor","zone_buy_lower_factor"],
+          ["buy_lower_floor_factor","zone_buy_lower_floor_factor"],
+          ["target_vol_mult","zone_target_vol_mult"],
+          ["target_high_factor","zone_target_high_factor"],
+          ["stop_vol_mult","zone_stop_vol_mult"],
+          ["stop_low_factor","zone_stop_low_factor"],
+          ["w_vol","score_weight_vol"],
+          ["w_trend","score_weight_trend"],
+          ["w_mr","score_weight_mean_rev"],
+        ];
+        const ov = profileOverrideRaw as Record<string, unknown>;
+        const appliedFields: string[] = [];
+        for (const [field, key] of overrideMap) {
+          const raw = ov[key];
+          const n = typeof raw === "number" ? raw : (typeof raw === "string" ? Number(raw) : NaN);
+          if (Number.isFinite(n)) {
+            (knobs as Record<string, number>)[field] = n;
+            appliedFields.push(key);
+          }
+        }
+        console.log(`phase2q: profile_override_applied ${risk_profile} fields=${appliedFields.length} values=${JSON.stringify(knobs)}`);
+      } else {
+        console.log(`phase2q: profile_override_absent ${risk_profile} (using global knobs)`);
+      }
     }
+
 
     function clamp(n: number, lo: number, hi: number): number {
       return Math.max(lo, Math.min(hi, n));

@@ -113,6 +113,11 @@ Deno.serve(async (req) => {
   try {
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const invoked_by = typeof body.invoked_by === 'string' ? body.invoked_by : 'manual';
+    // Phase 2Q — optional filter + widened grid
+    const filterProfile: string | null = typeof body.filter_profile === 'string'
+      && ['conservative', 'moderate', 'aggressive', 'ultra'].includes(body.filter_profile)
+      ? body.filter_profile : null;
+    const widerGrid: boolean = body.wider_grid === true;
 
     // ---- Load runtime config ----
     const { data: cfgRows, error: cfgErr } = await supabase
@@ -126,11 +131,16 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const maxVariants = Math.max(1, Math.floor(asNum(cfg.get('sweep_max_variants')) ?? 24));
+    const maxVariants = Math.max(1, Math.floor(
+      widerGrid
+        ? (asNum(cfg.get('sweep_max_variants_wide')) ?? 60)
+        : (asNum(cfg.get('sweep_max_variants')) ?? 24)
+    ));
     const minTrades = Math.max(1, Math.floor(asNum(cfg.get('sweep_min_trades_per_profile')) ?? 30));
-    const holdWindows = asNumArray(cfg.get('sweep_holding_windows'));
-    const tgtMults = asNumArray(cfg.get('sweep_target_vol_mults'));
-    const stopMults = asNumArray(cfg.get('sweep_stop_vol_mults'));
+    const holdWindows = asNumArray(cfg.get(widerGrid ? 'sweep_holding_windows_wide' : 'sweep_holding_windows'));
+    const tgtMults = asNumArray(cfg.get(widerGrid ? 'sweep_target_vol_mults_wide' : 'sweep_target_vol_mults'));
+    const stopMults = asNumArray(cfg.get(widerGrid ? 'sweep_stop_vol_mults_wide' : 'sweep_stop_vol_mults'));
+
 
     // Baseline knobs from live config
     const baseline: Knobs = { ...KNOB_DEFAULTS };
@@ -304,6 +314,8 @@ Deno.serve(async (req) => {
 
       const insertRows: Array<Record<string, unknown>> = [];
       for (const p of profiles) {
+        if (filterProfile !== null && p !== filterProfile) continue;
+
         const a = perProfile.get(p)!;
         const total_trades = a.rets.length;
         const decided = a.wins + a.losses;
@@ -353,33 +365,38 @@ Deno.serve(async (req) => {
 
     const upserts: Array<Record<string, unknown>> = [];
     for (const p of profiles) {
+      if (filterProfile !== null && p !== filterProfile) continue;
       const arr = byProfile.get(p) ?? [];
       if (arr.length === 0) continue;
       arr.sort((a, b) => b.ras - a.ras || a.vid - b.vid);
       const winnerKnobs = byVariantKnobs.get(arr[0].vid);
+      const tag = filterProfile !== null ? 'Phase 2Q wider sweep' : 'Phase 2P staging winner';
       upserts.push({
         config_key: `staging_winner_${p}`,
         kind: 'identifier',
         config_value: winnerKnobs,
-        description: `Phase 2P staging winner for ${p} (sweep ${sweep_id}, variant ${arr[0].vid}, ras ${arr[0].ras.toFixed(4)})`,
+        description: `${tag} for ${p} (sweep ${sweep_id}, variant ${arr[0].vid}, ras ${arr[0].ras.toFixed(4)})`,
       });
     }
-    // global = highest mean ras
-    let bestGlobal: { vid: number; avg: number } | null = null;
-    for (const [vid, s] of variantAvg.entries()) {
-      const avg = s.sum / s.n;
-      if (bestGlobal === null || avg > bestGlobal.avg || (avg === bestGlobal.avg && vid < bestGlobal.vid)) {
-        bestGlobal = { vid, avg };
+    // global staging — only when not filtering to a single profile
+    if (filterProfile === null) {
+      let bestGlobal: { vid: number; avg: number } | null = null;
+      for (const [vid, s] of variantAvg.entries()) {
+        const avg = s.sum / s.n;
+        if (bestGlobal === null || avg > bestGlobal.avg || (avg === bestGlobal.avg && vid < bestGlobal.vid)) {
+          bestGlobal = { vid, avg };
+        }
+      }
+      if (bestGlobal !== null) {
+        upserts.push({
+          config_key: 'staging_winner_global',
+          kind: 'identifier',
+          config_value: byVariantKnobs.get(bestGlobal.vid),
+          description: `Phase 2P staging winner global (sweep ${sweep_id}, variant ${bestGlobal.vid}, avg ras ${bestGlobal.avg.toFixed(4)})`,
+        });
       }
     }
-    if (bestGlobal !== null) {
-      upserts.push({
-        config_key: 'staging_winner_global',
-        kind: 'identifier',
-        config_value: byVariantKnobs.get(bestGlobal.vid),
-        description: `Phase 2P staging winner global (sweep ${sweep_id}, variant ${bestGlobal.vid}, avg ras ${bestGlobal.avg.toFixed(4)})`,
-      });
-    }
+
     if (upserts.length > 0) {
       const { error: uErr } = await supabase
         .from('stock_picker_runtime_config')
