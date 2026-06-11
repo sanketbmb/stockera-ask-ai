@@ -216,12 +216,16 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'backtest_enabled=false' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const holdDays = cfg.has('backtest_holding_period_days')
-      ? Math.max(1, Math.floor(jsonbNum(cfg.get('backtest_holding_period_days'), 'backtest_holding_period_days')))
-      : 5;
+    const holdDays = cfg.has('backtest_holding_window')
+      ? Math.max(1, Math.floor(jsonbNum(cfg.get('backtest_holding_window'), 'backtest_holding_window')))
+      : (cfg.has('backtest_holding_period_days')
+          ? Math.max(1, Math.floor(jsonbNum(cfg.get('backtest_holding_period_days'), 'backtest_holding_period_days')))
+          : 5);
+    if (!cfg.has('backtest_holding_window')) console.warn('phase2o: knob_missing backtest_holding_window');
     const minSample = cfg.has('backtest_min_sample_size')
       ? Math.max(5, Math.floor(jsonbNum(cfg.get('backtest_min_sample_size'), 'backtest_min_sample_size')))
       : 20;
+    const knobs = loadZoneScoreKnobs(cfg);
 
     // ---- Resolve universe from runtime_override ----
     const overrideSymbolsRaw = cfg.get('universe_override_symbols');
