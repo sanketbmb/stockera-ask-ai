@@ -196,6 +196,10 @@ Deno.serve(async (req) => {
         const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
         if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
+      // Phase 2V.2 — pace between batches to stay under upstream rate limits.
+      if (i + BATCH < tasks.length) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
     }
 
     const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
