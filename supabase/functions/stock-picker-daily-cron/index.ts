@@ -714,12 +714,25 @@ serve(async (req: Request) => {
         ? false
         : jsonbBool(overrideEnabledRaw, 'universe_override_enabled');
       const overrideSymbolsRaw = config.get('universe_override_symbols');
+      // Phase 2S fix: accept both legacy string entries and the
+      // {symbol, exchange} object shape currently persisted in
+      // stock_picker_runtime_config. Preserve array order (do not sort)
+      // so replay payload identity is unaffected.
       const overrideSymbols: string[] = Array.isArray(overrideSymbolsRaw)
-        ? overrideSymbolsRaw.filter((s): s is string => typeof s === 'string' && s.length > 0)
+        ? (overrideSymbolsRaw as unknown[]).reduce<string[]>((acc, entry) => {
+            if (typeof entry === 'string' && entry.length > 0) {
+              acc.push(entry);
+            } else if (entry && typeof entry === 'object') {
+              const sym = (entry as Record<string, unknown>).symbol;
+              if (typeof sym === 'string' && sym.length > 0) acc.push(sym);
+            }
+            return acc;
+          }, [])
         : [];
       if (overrideEnabled && overrideSymbols.length > 0) {
         const set = new Set(overrideSymbols);
         const filtered = canonicalMembers.filter((m) => set.has(m.symbol));
+        console.log(`phase2s_fix: override_short_circuit n=${filtered.length}`);
         const sortedSymbols = [...new Set(filtered.map((m) => m.symbol))].sort();
         console.log(`universe-override active: N=${filtered.length} symbols=${JSON.stringify(sortedSymbols)}`);
         canonicalMembers = filtered;
