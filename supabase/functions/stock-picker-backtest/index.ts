@@ -225,7 +225,50 @@ Deno.serve(async (req) => {
     const minSample = cfg.has('backtest_min_sample_size')
       ? Math.max(5, Math.floor(jsonbNum(cfg.get('backtest_min_sample_size'), 'backtest_min_sample_size')))
       : 20;
-    const knobs = loadZoneScoreKnobs(cfg);
+    const globalKnobs = loadZoneScoreKnobs(cfg);
+
+    // Phase 2Q — per-profile override knobs (if present in runtime_config).
+    // Each profile gets its own knob set + holdDays for the backtest sim.
+    const profilesAll = ['conservative', 'moderate', 'aggressive', 'ultra'] as const;
+    const profileKnobs = new Map<string, ZoneScoreKnobs>();
+    const profileHold = new Map<string, number>();
+    const overrideKeyMap: Array<[keyof ZoneScoreKnobs, string]> = [
+      ['vol_clamp_min', 'zone_vol_clamp_min'],
+      ['vol_clamp_max', 'zone_vol_clamp_max'],
+      ['vol_default', 'zone_vol_default'],
+      ['buy_upper_factor', 'zone_buy_upper_factor'],
+      ['buy_lower_factor', 'zone_buy_lower_factor'],
+      ['buy_lower_floor_factor', 'zone_buy_lower_floor_factor'],
+      ['target_vol_mult', 'zone_target_vol_mult'],
+      ['target_high_factor', 'zone_target_high_factor'],
+      ['stop_vol_mult', 'zone_stop_vol_mult'],
+      ['stop_low_factor', 'zone_stop_low_factor'],
+      ['w_vol', 'score_weight_vol'],
+      ['w_trend', 'score_weight_trend'],
+      ['w_mr', 'score_weight_mean_rev'],
+    ];
+    for (const p of profilesAll) {
+      const k: ZoneScoreKnobs = { ...globalKnobs };
+      let h = holdDays;
+      const overrideRaw = cfg.get(`profile_knobs_${p}`);
+      if (overrideRaw && typeof overrideRaw === 'object' && !Array.isArray(overrideRaw)) {
+        const ov = overrideRaw as Record<string, unknown>;
+        let appliedCount = 0;
+        for (const [field, key] of overrideKeyMap) {
+          const raw = ov[key];
+          const n = typeof raw === 'number' ? raw : (typeof raw === 'string' ? Number(raw) : NaN);
+          if (Number.isFinite(n)) { (k as Record<string, number>)[field] = n; appliedCount++; }
+        }
+        const hOv = ov['backtest_holding_window'];
+        const hn = typeof hOv === 'number' ? hOv : (typeof hOv === 'string' ? Number(hOv) : NaN);
+        if (Number.isFinite(hn)) { h = Math.max(1, Math.floor(hn)); appliedCount++; }
+        console.log(`phase2q: profile_override_applied ${p} fields=${appliedCount} holdDays=${h}`);
+      } else {
+        console.log(`phase2q: profile_override_absent ${p} (using global knobs, holdDays=${h})`);
+      }
+      profileKnobs.set(p, k);
+      profileHold.set(p, h);
+    }
 
     // ---- Resolve universe from runtime_override ----
     const overrideSymbolsRaw = cfg.get('universe_override_symbols');
@@ -286,9 +329,14 @@ Deno.serve(async (req) => {
     const errors: Array<{ symbol: string; error: string }> = [];
     let rows_inserted = 0;
 
+    type Trade = {
+      end_date: string; cmp: number; ret_pct: number; outcome: 'win' | 'loss' | 'neither';
+      composite_score_preview: number; vol20: number; profile: string;
+      max_dd: number;
+    };
+
     for (const m of surviving) {
       try {
-        // Phase 2L: read deep history from stock_picker_ohlcv_history
         const { data: closesRaw, error: cErr } = await supabase
           .from('stock_picker_ohlcv_history')
           .select('record_date, close')
@@ -299,93 +347,78 @@ Deno.serve(async (req) => {
         if (cErr) throw new Error(cErr.message);
 
         const byDate = new Map<string, number>();
-        const ordered: Close[] = [];
         for (const r of closesRaw ?? []) {
           const d = String((r as Record<string, unknown>).record_date);
           const c = Number((r as Record<string, unknown>).close);
           if (!Number.isFinite(c) || c <= 0) continue;
           byDate.set(d, c);
         }
-        // Use unique record_date with latest close per date, chronological order.
         const closes: Close[] = [...byDate.entries()]
           .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
           .map(([date, close]) => ({ date, close }));
-        // Adaptive minimum: scale down to available history when needed,
-        // floor at 5 closes (scaffold realism for short dev caches).
-        const effMin = Math.min(minSample, Math.max(5, closes.length - holdDays - 1));
-        void ordered;
-        if (closes.length < effMin + holdDays + 1) continue;
+        if (closes.length < 10) continue;
 
-
-        // ---- Build window metrics + simulate trades ----
-        type Trade = {
-          end_date: string; cmp: number; ret_pct: number; outcome: 'win' | 'loss' | 'neither';
-          composite_score_preview: number; vol20: number; profile: string;
-          max_dd: number; // per-trade max drawdown as fraction (<= 0)
-        };
-        const trades: Trade[] = [];
-        const allVols: number[] = [];
-
-        // First pass — compute window vols to derive this symbol's tier percentiles.
-        const metrics: WindowMetric[] = [];
-        for (let i = effMin - 1; i < closes.length - holdDays; i++) {
-          const w = closes.slice(i - effMin + 1, i + 1);
-
-          const wm = computeWindowMetric(w, knobs);
-          metrics.push(wm);
-          allVols.push(wm.vol20);
-        }
-        if (metrics.length === 0) continue;
-
-        const volsSorted = [...allVols].sort((a, b) => a - b);
-        const p_mod = percentile(volsSorted, 0.25);
-        const p_agg = percentile(volsSorted, 0.50);
-        const p_ult = percentile(volsSorted, 0.75);
-
-        // Second pass — simulate forward window, track per-trade peak-to-trough drawdown
-        for (let k = 0; k < metrics.length; k++) {
-          const wm = metrics[k];
-          const idxEnd = effMin - 1 + k;
-          let hitTarget = false, hitStop = false;
-          let exitClose = closes[idxEnd].close;
-          let peak = wm.cmp;          // include entry price in peak
-          let trade_max_dd = 0;       // worst (most negative) trough_decline observed
-          for (let j = 1; j <= holdDays; j++) {
-            const c = closes[idxEnd + j].close;
-            exitClose = c;
-            if (c > peak) peak = c;
-            const trough_decline = peak > 0 ? (c - peak) / peak : 0;
-            if (trough_decline < trade_max_dd) trade_max_dd = trough_decline;
-            if (wm.target !== null && c >= wm.target) { hitTarget = true; break; }
-            if (wm.stop_loss !== null && c <= wm.stop_loss) { hitStop = true; break; }
-          }
-          const outcome: 'win' | 'loss' | 'neither' =
-            hitTarget ? 'win' : hitStop ? 'loss' : 'neither';
-          const ret_pct = wm.cmp === 0 ? 0 : ((exitClose - wm.cmp) / wm.cmp) * 100;
-          const profile = tierForVol(wm.vol20, p_mod, p_agg, p_ult);
-          trades.push({
-            end_date: wm.end_date, cmp: wm.cmp, ret_pct, outcome,
-            composite_score_preview: wm.composite_score_preview,
-            vol20: wm.vol20, profile,
-            max_dd: trade_max_dd,
-          });
-        }
-
-        // ---- Aggregate per risk_profile ----
-        const profiles = ['conservative', 'moderate', 'aggressive', 'ultra'] as const;
         const window_start = closes[0].date;
         const window_end = closes[closes.length - 1].date;
 
+        // Phase 2Q — simulate per profile using that profile's knob set + holdDays.
         const insertRows: Array<Record<string, unknown>> = [];
-        for (const p of profiles) {
-          const ts = trades.filter((t) => t.profile === p);
+        for (const p of profilesAll) {
+          const pk = profileKnobs.get(p)!;
+          const ph = profileHold.get(p)!;
+          const effMin = Math.min(minSample, Math.max(5, closes.length - ph - 1));
+          if (closes.length < effMin + ph + 1) continue;
+
+          const metrics: WindowMetric[] = [];
+          const allVols: number[] = [];
+          for (let i = effMin - 1; i < closes.length - ph; i++) {
+            const w = closes.slice(i - effMin + 1, i + 1);
+            const wm = computeWindowMetric(w, pk);
+            metrics.push(wm);
+            allVols.push(wm.vol20);
+          }
+          if (metrics.length === 0) continue;
+
+          const volsSorted = [...allVols].sort((a, b) => a - b);
+          const p_mod = percentile(volsSorted, 0.25);
+          const p_agg = percentile(volsSorted, 0.50);
+          const p_ult = percentile(volsSorted, 0.75);
+
+          const ts: Trade[] = [];
+          for (let k = 0; k < metrics.length; k++) {
+            const wm = metrics[k];
+            const idxEnd = effMin - 1 + k;
+            const tier = tierForVol(wm.vol20, p_mod, p_agg, p_ult);
+            if (tier !== p) continue;
+            let hitTarget = false, hitStop = false;
+            let exitClose = closes[idxEnd].close;
+            let peak = wm.cmp;
+            let trade_max_dd = 0;
+            for (let j = 1; j <= ph; j++) {
+              const c = closes[idxEnd + j].close;
+              exitClose = c;
+              if (c > peak) peak = c;
+              const trough_decline = peak > 0 ? (c - peak) / peak : 0;
+              if (trough_decline < trade_max_dd) trade_max_dd = trough_decline;
+              if (wm.target !== null && c >= wm.target) { hitTarget = true; break; }
+              if (wm.stop_loss !== null && c <= wm.stop_loss) { hitStop = true; break; }
+            }
+            const outcome: 'win' | 'loss' | 'neither' =
+              hitTarget ? 'win' : hitStop ? 'loss' : 'neither';
+            const ret_pct = wm.cmp === 0 ? 0 : ((exitClose - wm.cmp) / wm.cmp) * 100;
+            ts.push({
+              end_date: wm.end_date, cmp: wm.cmp, ret_pct, outcome,
+              composite_score_preview: wm.composite_score_preview,
+              vol20: wm.vol20, profile: p, max_dd: trade_max_dd,
+            });
+          }
           if (ts.length === 0) continue;
+
           const wins = ts.filter((t) => t.outcome === 'win').length;
           const losses = ts.filter((t) => t.outcome === 'loss').length;
           const decided = wins + losses;
           const hit_rate = decided === 0 ? null : wins / decided;
           const rets = ts.map((t) => t.ret_pct);
-          // Worst single-trade peak-to-trough drawdown, as signed percent.
           const worst_dd_frac = ts.reduce((acc, t) => (t.max_dd < acc ? t.max_dd : acc), 0);
           const max_drawdown_pct = decided === 0 ? null : worst_dd_frac * 100;
           const avg_return_pct = decided === 0 ? null : mean(rets);
@@ -411,7 +444,6 @@ Deno.serve(async (req) => {
           });
         }
 
-
         if (insertRows.length > 0) {
           const { error: insErr } = await supabase
             .from('stock_picker_backtest_run')
@@ -424,6 +456,7 @@ Deno.serve(async (req) => {
         errors.push({ symbol: m.symbol, error: msg });
       }
     }
+
 
     return new Response(JSON.stringify({
       ok: true,
