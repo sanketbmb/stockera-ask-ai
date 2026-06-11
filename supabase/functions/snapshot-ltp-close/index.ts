@@ -166,6 +166,14 @@ Deno.serve(async (req) => {
       tasks.push({ symbol: w.symbol, exchange: w.exchange, securityId: m.dhan_security_id, segment: seg });
     }
 
+    // Phase 2V.2 — shuffle tasks so repeated invocations under rate-limit
+    // pressure spread coverage across the work set instead of re-fetching
+    // the same first items every time.
+    for (let i = tasks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
+    }
+
     let ok = 0, fail = 0;
     const nowIso = new Date().toISOString();
     const BATCH = 2;
