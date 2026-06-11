@@ -823,18 +823,30 @@ function StockCard({
         <div className="flex items-baseline gap-3 flex-wrap">
           <span className="text-[10px] uppercase text-muted-foreground font-mono">CMP</span>
           <span className="font-display text-lg">₹{fmt(cmp.value)}</span>
-          <span
-            data-testid="cmp-source-badge"
-            className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${
-              cmpLive
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                : "border-border bg-muted text-muted-foreground"
-            }`}
-          >
-            {cmpSourceLabel}
-          </span>
+          {cmpLabel === "CACHE" ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  data-testid="cmp-source-badge"
+                  className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border cursor-help ${cmpBadgeClass}`}
+                >
+                  {cmpBadgeText}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Cached {cmp.stale_minutes ?? "?"} min ago
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span
+              data-testid="cmp-source-badge"
+              className={`text-[10px] font-mono uppercase rounded-full px-2 py-0.5 border ${cmpBadgeClass}`}
+            >
+              {cmpBadgeText}
+            </span>
+          )}
           <span className="text-[10px] text-muted-foreground">
-            {cmp.source ?? "—"} · {cmp.as_of ? new Date(cmp.as_of).toLocaleString() : "—"}
+            {cmp.source ?? "—"} · {cmp.fetched_at ?? cmp.as_of ? new Date((cmp.fetched_at ?? cmp.as_of) as string).toLocaleString() : "—"}
           </span>
         </div>
       </div>
