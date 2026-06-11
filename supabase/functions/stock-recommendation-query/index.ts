@@ -39,7 +39,15 @@ interface DataCompleteness {
 interface CmpBlock {
   value: number | null;
   as_of: string | null;
-  source: "ltp_cache" | "liquidity_20d_close" | null;
+  fetched_at: string | null;
+  source:
+    | "dhan_live"
+    | "dhan_close"
+    | "dhan_cache_stale"
+    | "liquidity_20d_close"
+    | null;
+  label: "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null;
+  stale_minutes: number | null;
   window_phase: "open" | "post_close" | "pre_open" | "weekend";
   refresh_attempted: boolean;
 }
