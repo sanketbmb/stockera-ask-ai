@@ -304,7 +304,7 @@ Deno.serve(async (req) => {
         // Second pass — simulate forward window
         for (let k = 0; k < metrics.length; k++) {
           const wm = metrics[k];
-          const idxEnd = minSample - 1 + k;
+          const idxEnd = effMin - 1 + k;
           // forward look: close indices idxEnd+1 .. idxEnd+holdDays
           let hitTarget = false, hitStop = false;
           let exitClose = closes[idxEnd].close;
