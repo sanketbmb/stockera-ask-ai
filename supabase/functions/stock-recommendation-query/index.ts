@@ -719,6 +719,40 @@ Deno.serve(async (req) => {
       return Math.round(clamp(blended, 0, 100) * 10) / 10;
     }
 
+    // Step 6b — Phase 2V.1 per-profile composite_score read-path gate.
+    // Read all 4 per-profile persistence flags fresh per request (no cache).
+    // Missing or non-strict-true => false (safe default).
+    const persistKey = `composite_score_persist_${risk_profile}`;
+    let persistEnabled = false;
+    {
+      const { data: flagRows, error: flagErr } = await supabase
+        .from("stock_picker_runtime_config")
+        .select("config_key, config_value")
+        .in("config_key", [
+          "composite_score_persist_conservative",
+          "composite_score_persist_moderate",
+          "composite_score_persist_aggressive",
+          "composite_score_persist_ultra",
+        ]);
+      if (flagErr) {
+        return json({ ok: false, error: `score_gate_flags_unavailable: ${flagErr.message}` }, 500);
+      }
+      const flagMap = new Map<string, unknown>();
+      for (const row of flagRows ?? []) {
+        flagMap.set(
+          (row as { config_key: string }).config_key,
+          (row as { config_value: unknown }).config_value,
+        );
+      }
+      const raw = flagMap.get(persistKey);
+      persistEnabled = raw === true ||
+        (typeof raw === "string" && raw.trim().toLowerCase() === "true");
+    }
+    const scoreGate = {
+      risk_profile,
+      persistence_enabled: persistEnabled,
+    };
+
     // Step 7 — shape (Phase 2C real fields + Phase 2D zones/composite preview).
     const stocks: StockOut[] = limited.map((r) => {
       const sym = r.symbol as string;
@@ -773,10 +807,10 @@ Deno.serve(async (req) => {
         exchange: r.exchange as string,
         sector: fund.sector,
         verdict: "include" as const,
-        // persisted score from audit (currently NULL — writes disabled)
-        composite_score: (r.composite_score as number | null) ?? null,
-        // dev-preview score (NOT persisted)
-        composite_score_preview: compositePreview,
+        // persisted score from audit (Phase 2V.1: gated to null when persistence disabled for this profile)
+        composite_score: persistEnabled ? ((r.composite_score as number | null) ?? null) : null,
+        // dev-preview score (Phase 2V.1: gated to null when persistence disabled for this profile)
+        composite_score_preview: persistEnabled ? compositePreview : null,
         batch_id: r.batch_id as string,
         generated_at: new Date(r.generated_at as string).toISOString(),
         cmp,
@@ -814,6 +848,7 @@ Deno.serve(async (req) => {
 
     return json({
       ...baseResponse,
+      score_gate: scoreGate,
       stocks,
       risk_engine: {
         signal: "realized_vol_20d_close",
