@@ -869,11 +869,22 @@ serve(async (req: Request) => {
 
     // SP-1.5 audit integrity fix: include one write_pick_audit op per
     // included survivor so stock_picker_pick_audit is populated alongside
-    // stock_picker_batch_rejection. Source survivors from per_symbol_verdicts
-    // (which carry exchange) filtered to verdict === 'include'.
-    const includedSurvivors = exclusion.per_symbol_verdicts.filter(
-      (v) => v.verdict === 'include'
-    );
+    // stock_picker_batch_rejection.
+    // SP-1.6 perf: deterministic ordering — isin ASC NULLS LAST, symbol ASC, exchange ASC.
+    const isinBySymbolExchange = new Map<string, string | null>();
+    for (const m of canonicalMembers) {
+      isinBySymbolExchange.set(`${m.symbol}|${m.exchange}`, m.isin ?? null);
+    }
+    const includedSurvivors = exclusion.per_symbol_verdicts
+      .filter((v) => v.verdict === 'include')
+      .map((s) => ({ ...s, isin: isinBySymbolExchange.get(`${s.symbol}|${s.exchange}`) ?? null }))
+      .sort((a, b) => {
+        if (a.isin === null && b.isin !== null) return 1;
+        if (a.isin !== null && b.isin === null) return -1;
+        if (a.isin !== null && b.isin !== null && a.isin !== b.isin) return a.isin < b.isin ? -1 : 1;
+        if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1;
+        return a.exchange < b.exchange ? -1 : a.exchange > b.exchange ? 1 : 0;
+      });
     const pickAuditOps = includedSurvivors.map((survivor) => {
       const params: WriteAuditRowParams = {
         p_batch_id: batchId,
