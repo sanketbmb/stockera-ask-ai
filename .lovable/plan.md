@@ -1,153 +1,89 @@
-## Wave 5h — Master Hardening Plan
+# Phase 2W — Plan
 
-Frontend + one resolver hop. No scoring changes. No Stock Picker. Three independent sub-tracks, sequenced to land in one wave but verifiable in isolation.
+Four independent sub-tracks. Each is verifiable in isolation. No SP-1.6 invariant files touched, no universe widening, no persist-flag changes, replay schema stays `sp1-replay-v2`.
 
----
+## W-A — CMP badge honesty (frontend only)
 
-### Sub-track A — PriceBand overlap on `/report/$queryId`
+File: `src/components/stock-picker/StockPickerFlow.tsx` (the inline `StockCard` at line ~712 — this is the equivalent of the spec's `StockCard.tsx`).
 
-**Current state.** `src/routes/report.$queryId.tsx` already mounts the live `<StockAnalysisReport>` (not a static snapshot) and the PriceBand component uses `useIsoLayoutEffect` + `ResizeObserver`. So the 4-pass reflow IS running on frozen reports. Overlap therefore points at the measurement pass itself, not the route.
+Replace the current binary `cmpSourceLabel = cmpLive ? "Live" : "EOD"` (line 732) with the 3-state derivation from `cmp.source`, `cache_health.cmp_fresh`, and `cmp.window_phase`:
 
-**Likely causes to investigate (in order):**
+- `LIVE` when `cmp_fresh === true`
+- `LAST TRADED` when `cmp.source === 'ltp_cache'` AND `cmp_fresh === false` AND `cmp.window_phase === 'post_close'`
+- `EOD CLOSE` when `cmp.source === 'liquidity_20d_close'`
+- Fallback (e.g. pre_open/weekend stale ltp_cache): `LAST TRADED`
 
-1. **Zero-width first-paint trap.** On /report the rail is inside a `Tabs` panel; hidden panels can yield `railW <= 0`. We `return` without scheduling a remeasure on the next show.
-2. **Heuristic-only first paint persists.** If `setRealPct(widths)` runs but the `groupsKey` invalidator re-fires (LTP poll, frozen-stale opacity flip) immediately after, we keep oscillating between null and measured.
-3. `**labelRefs` orphaning in `tableMode`.** When TABLE_MODE flips on, label DOM is removed, refs go null, next measure falls back to heuristic → overflow gate flips back → infinite "non-overlap" claim while CSS still overlaps the prior frame.
-4. **Wide-viewport edge.** Current viewport in repro is 4525 CSS px; constant `LANE_OFFSETS` (px) + `PAD_PCT = 1.5` (%) can still allow visual overlap at very narrow rails when label content is long ("ENTRY / LTP ₹1,321.90" multi-line).
+No other UI change. Verify the badge no longer reads "EOD" for ltp_cache survivors via a preview screenshot of the picker.
 
-**Build steps (only in `src/components/analysis/StockAnalysisReport.tsx`, PriceBand region L495-L605):**
+## W-B — Fundamentals backfill for override universe (data only)
 
-1. **Tab-aware remeasure.** Wrap the measure block so that when `railW <= 0` we install a one-shot `IntersectionObserver(rail, { threshold: 0.01 })` that re-invokes `measure()` on first visibility, then disconnects. Also keep the existing ResizeObserver.
-2. **Stable measured state.** Gate the `setRealPct(null)` invalidator on a real change of `groupsKey` (compare against a `useRef<string>` of the last seen key). Polled LTP-only re-renders that don't change `groupsKey` must not reset measurement.
-3. **Always-measured collision check.** Move the "tableMode = overflow && realPct !== null" gate to `tableMode = overflow && (realPct !== null || stableHeuristicConfirmed)` where `stableHeuristicConfirmed = groups.length >= 5` (heuristic overflow at high density is enough signal — avoids the orphaning oscillation).
-4. **Cluster padding bump.** Raise `PAD_PCT` from `1.5` to `2.0` and add a per-group min-side spacing pass: after lane assignment, if two same-lane neighbours have center gap < their summed half-widths + `PAD_PCT`, push the later one down a tier even if that means tier-1 (we already model tier-1).
-5. **TABLE_MODE styling parity.** Verify TABLE_MODE renders inside the `printMode` print route (`/print-stock/$queryId`) — currently the rail keeps dots, but the table appears below; confirm the page break doesn't split rail from table.
+No code edits. Invoke the existing edge function `sync-fundamentals-finedge` (already iterates `universe_override_symbols` when `finedge_api_enabled=true` and `universe_override_enabled=true`, upserts `fundamentals_cache` with sector / industry / `market_cap_rs` / `cap_band`).
 
-**No backend changes. No type changes. No scoring touched.**
+Steps:
 
----
+1. Coverage-before query against `fundamentals_cache` filtered to the 43 override symbols: count of rows where `sector`, `industry`, `market_cap_rs`, `cap_band` are non-null.
+2. Confirm both runtime flags are `true`; if not, this sub-track is blocked (report and stop — do not flip flags).
+3. POST to `sync-fundamentals-finedge` with service role.
+4. Coverage-after query, plus a targeted lookup for `APTECHT` showing real sector / industry / market_cap_rs.
 
-### Sub-track B — Ambiguity picker for Post-a-Query (ICICI / Reliance / Adani / Tata Motors)
+Note on visible card fields: the picker reads fundamentals from `fundamentals_cache` (merged in `stock-recommendation-query`), not `stock_master`. The verification phrasing in the spec ("stock_master fundamentals") is satisfied by the same `fundamentals_cache` rows the card consumes; no `stock_master` writes are needed and none are in scope.
 
-**Root cause.** `src/lib/intent-router.functions.ts` calls Gemini with a system prompt that resolves "ICICI" → `ICICIBANK` on its own. By the time the freeze fn runs, the symbol is already disambiguated, so the orchestrator never emits `SYMBOL_AMBIGUOUS`. The /analysis route works because the URL path passes the raw string straight to the orchestrator's resolver.
+## W-C — Liquidity 20d coverage backfill (new edge function, data only)
 
-**Strategy.** Insert a deterministic, server-side **ambiguity gate** between the router and the freeze write — never trust Gemini's `symbol` blindly when the user's raw text contains an ambiguous stem.
+New edge function: `supabase/functions/backfill-liquidity-20d/index.ts`.
 
-**Build steps:**
+Logic:
 
-1. **New file: `src/lib/symbol-ambiguity-gate.ts**` (server-safe; pure).
-  - Export `detectAmbiguousStem(rawText: string): { stem: string; candidates: { symbol: string; company_name: string|null; exchange: "NSE" }[] } | null`.
-  - Hard-coded stem map (single source of truth, mirrors `supabase/functions/_shared/symbol-successors.ts` family groups):
-    - `ICICI` → ICICIBANK, ICICIPRULI, ICICIGI
-    - `TATA MOTORS` / `TATAMOTORS` → TMCV, TMPV
-    - `RELIANCE` (when no qualifier like "industries"/"jio"/"power") → RELIANCE, JIOFIN, RPOWER
-    - `ADANI` (when no qualifier) → ADANIENT, ADANIPORTS, ADANIPOWER, ADANIGREEN, ADANIENSOL, ATGL
-  - Stem detection: case-insensitive word-boundary regex on `query_text + custom_question`, gated so that exact unambiguous tickers ("ICICIBANK", "ADANIPORTS") never trip the gate.
-2. **Wire into `QueryForm.handleSubmit**` (`src/components/query/QueryForm.tsx`):
-  - After router prefill but BEFORE persisting `stockSymbol` for `usesV1Engine` intents, call `detectAmbiguousStem(queryText + " " + (anythingElse ?? ""))`.
-  - If a stem matches AND the user has not manually picked a ticker via `StockAutocomplete` (track via existing `autoDetected.stock` vs current `stockSymbol`), **set `stock_symbol` to the raw stem string** (e.g. `"ICICI"`) when inserting the `queries` row, and set a new boolean column `pending_ambiguity` (additive) OR — simpler, no migration — stash `{ kind: "SYMBOL_AMBIGUOUS", candidates }` into a new field on `audit_meta` at freeze time.
-3. **Wire into `freezeOrReadReport**` (`src/lib/freeze-report.functions.ts`):
-  - At the top of the handler, after loading the row, call `detectAmbiguousStem` on `row.query_text + row.custom_question`.
-  - If it matches AND `stock_symbol` equals the raw stem (or matches one of the candidate family members but the raw text was the bare stem), short-circuit: return `synthesizeAmbiguousPayload({ candidates }, stem)` — same path already used for orchestrator-side ambiguity. **Do not persist into `ai_report**` (mirrors existing `UNSUPPORTED_SYMBOL` non-cache behavior at L338-L354).
-  - Emit a single `audit_events` row `event_type: "symbol_ambiguous_short_circuit"`.
-4. `**/report/$queryId` rendering** — already handled. `TierShapedReportContent` calls `isUnsupportedSymbolPayload(data)` and renders `<UnsupportedSymbolPanel>`. No change needed once freeze fn returns the synthesized payload.
-5. **Candidate click → `/analysis/$symbol**` — already works via existing `CandidateButton` in `UnsupportedSymbolPanel.tsx`.
+- Read `universe_override_symbols` from `stock_picker_runtime_config`.
+- For each symbol, read the last 20 trading-day rows from `stock_picker_ohlcv_history` (ordered by `trade_date desc`, limit 20).
+- Insert into `stock_picker_liquidity_20d` using upsert with `onConflict: <pk cols>, ignoreDuplicates: true` (the spec's "DO NOTHING on conflict"). Map columns exactly to existing schema (no synthesis — close, volume, turnover come straight from `stock_picker_ohlcv_history`; any column the source lacks is left null).
+- After loop, upsert a telemetry row into `stock_picker_runtime_config` with key `last_backfill_liquidity_20d` (kind `operational`), shape `{ ok, symbols_processed, rows_inserted, errors_count, ran_at }`.
 
-**No new DB columns. No orchestrator change. No router prompt change** (we treat router output as a hint, not truth, for ambiguous stems).
+Verification:
 
----
+1. Coverage-before: `select symbol, count(*) from stock_picker_liquidity_20d where symbol = any(<override>) group by symbol` — flag symbols with <20 rows (expected: ITI and any others).
+2. Deploy + invoke once.
+3. Coverage-after: every override symbol has ≥20 rows.
+4. Reload picker for ITI horizon and confirm "TECHNICALS: Pending" pill is gone.
 
-### Sub-track C — Global parity verification
+No edits to write-audit, daily-cron, exclusion-engine, replay-hash, or regulatory-status.
 
-No code changes beyond A + B. Just a checklist exercised against both routes:
+## W-D — Risk-profile differentiation diagnostic (read-only)
 
+No code edits, no function deployments. From the harness, invoke `stock-recommendation-query` for the matrix:
 
-| Input                                         | Route    | Expected                                                               |
-| --------------------------------------------- | -------- | ---------------------------------------------------------------------- |
-| `/analysis/tata%20motors`                     | analysis | picker (TMCV, TMPV)                                                    |
-| Post-query "Should I buy Tata Motors?"        | report   | picker (TMCV, TMPV)                                                    |
-| `/analysis/ICICI`                             | analysis | picker (ICICIBANK, ICICIPRULI, ICICIGI)                                |
-| Post-query "Buy ICICI stock"                  | report   | picker                                                                 |
-| Post-query "Analyze Reliance"                 | report   | picker (RELIANCE, JIOFIN, RPOWER)                                      |
-| Post-query "Adani long-term view"             | report   | picker (Adani family)                                                  |
-| Post-query "Analyze ICICIBANK" (exact ticker) | report   | normal report — gate skipped                                           |
-| Click any candidate from a /report picker     | navigate | lands on `/analysis/{symbol}?horizon=…&news=true` and renders normally |
+- horizons: `short`, `medium`, `long`
+- risks: `conservative`, `moderate`, `aggressive`, `ultra`
 
+For each call, capture: survivor count, top-5 tickers (in order), and score distribution (min / median / max of `composite_score`, treating null as N/A for conservative).
 
-PriceBand spot-checks (Sub-track A):
+Produce a table grouped by horizon, with one row per risk profile, so we can read off whether moderate vs aggressive top-N differ for the same horizon. Conclusion line: "diverges" vs "identical — universe-size limited" vs "identical — weight-collapse".
 
-- `/analysis/ICICIBANK` (cluster)
-- `/analysis/SBIN` (cluster)
-- `/analysis/HDFCBANK` (sparse) — no TABLE_MODE
-- `/analysis/SUZLON` long-term — frozen report, verify reflow
-- `/report/{queryId}` for a Suzlon post-query — verify same reflow now triggers
-- Mobile 375×812 — TABLE_MODE triggers on dense names
+## Final verification checklist returned to user
 
----
+- Files edited per sub-track (W-A only; W-C adds one new file; W-B and W-D edit nothing).
+- Edge functions invoked: `sync-fundamentals-finedge` (W-B), `backfill-liquidity-20d` (W-C).
+- Coverage-before / coverage-after tables for `fundamentals_cache` and `stock_picker_liquidity_20d`.
+- Screenshot of updated card badges (LIVE / LAST TRADED / EOD CLOSE as available in current market window).
+- W-D diagnostic table.
+- Invariant checks: `audit_rows_with_score` for conservative still 0; `replay_payload_hash_version` still `sp1-replay-v2` on recent rows.
+- Final single-line status.
 
-### Recommended execution order
+## Out of scope (explicit)
 
-**A → B → C verification**. PriceBand fix (A) is local to one component and risk-free; ship first to clear the visible bug. Ambiguity gate (B) touches the intake + freeze paths and benefits from being verified against a clean PriceBand. C is verification only.
-
-Both A and B can be approved in the same founder response but should be built and committed in two distinct passes so visual regressions and ambiguity logic can be bisected independently.
-
----
-
-### Files touched (preview)
-
-- **A:** `src/components/analysis/StockAnalysisReport.tsx` (PriceBand region only, ~L495-L605)
-- **B:**
-  - new `src/lib/symbol-ambiguity-gate.ts`
-  - `src/components/query/QueryForm.tsx` (submit path — symbol override)
-  - `src/lib/freeze-report.functions.ts` (top-of-handler short-circuit)
-- **C:** no code; verification only
-
-### Guardrails reaffirmed
-
-- No scoring / verdict logic changes
-- No orchestrator changes
-- No DB migrations
-- No PDF backend changes (TABLE_MODE already reaches print route via shared component)
-- Stock Picker remains deferred
-
-STOP — awaiting approval.  
+- No edits to: `regulatory-status.ts`, `replay-hash.ts`, `stock-picker-write-audit`, `stock-picker-daily-cron`, `stock-picker-exclusion-engine`.
+- No change to `composite_score_writes_enabled` or any `composite_score_persist_*` flag.
+- No universe widening, no replay schema bump, no new secrets.  
   
-Approve Wave 5h Master Hardening Plan for BUILD. 
-
-Execution Sequence:
-
-1) Build Sub-track A first (PriceBand / Report Route fix):
-
-- Implement Tab-aware remeasurement with IntersectionObserver.
-
-- Ensure the 'groupsKey' content hash is used for stable measurements.
-
-- Apply the PAD_PCT bump to 2.0.
-
-- Verify on /report/{suzlon_id} and /analysis/ICICIBANK.
-
-- STOP and report verification.
-
-2) Then build Sub-track B (Ambiguity Gate for Post-a-Query):
-
-- Create the src/lib/symbol-ambiguity-gate.ts with the stem map (ICICI, TATA, RELIANCE, ADANI).
-
-- Wire it into QueryForm.handleSubmit and freezeOrReadReport.
-
-- Ensure 'Post a Query' for 'ICICI' now shows the selection picker instead of auto-routing.
-
-- Verify that clicking a candidate button routes correctly to /analysis/{symbol}.
-
-Guardrails:
-
-- Build and commit A and B separately.
-
-- No backend scoring changes.
-
-- No DB migrations.
-
-- STOP after Sub-track B and perform the Global Parity Verification (Track C).
-
-Once all 8 verification cases (ICICI, TATA, Reliance, Adani, etc.) pass on both routes, we will finalize V1 and open the Stock Picker thread.
-
-&nbsp;
+Phase 2W plan APPROVED with 4 mandatory additions before build:
+  ADD-1 (W-A): Fallback to LAST TRADED must apply whenever cmp.source='ltp_cache' AND cmp_fresh=false, regardless of window_phase value. Only fall through to EOD CLOSE when cmp.source='liquidity_20d_close'.
+  ADD-2 (W-B): If finedge_api_enabled !== true OR universe_override_enabled !== true, return W-B as BLOCKED with both flag values in the message. Do NOT invoke sync-fundamentals-finedge. Do NOT flip flags. W-A, W-C, W-D continue independently. Final phase line becomes PHASE 2W PARTIAL — W-B BLOCKED by config flags.
+  ADD-3 (W-C): Lock the column mapping from stock_picker_ohlcv_history to stock_picker_liquidity_20d explicitly in the function. Confirm exact date column name on liquidity_20d before insert (likely record_date or trade_date). Map symbol, exchange, date, close, volume one-to-one. Leave turnover and any unmapped liquidity_20d columns null — no synthesis. If column names diverge from the schema, abort and report. Do not guess.
+  ADD-4 (W-D): For each (horizon, risk) row also capture universe_after_sp1_filters and score_spread (max - min composite_score). Conclusion line logic:
+  - identical top-5 AND universe_after_sp1_filters ≤ 5 → "identical — universe-size limited"
+  - identical top-5 AND universe_after_sp1_filters > 5 AND score_spread < 5 → "identical — weight-collapse"
+  - identical top-5 AND universe_after_sp1_filters > 5 AND score_spread ≥ 5 → "identical — risk-profile not wired into ranking"
+  - else → "diverges"
+  ADD-5 (optional, recommended): Add data-testid="cmp-source-badge" on the W-A badge element.
+  All other plan items approved as written. Proceed with build. STOP after verification. Do not start any Phase 2X work.
+  &nbsp;
