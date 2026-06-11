@@ -667,8 +667,11 @@ Deno.serve(async (req) => {
         .map((r) => r.symbol as string)
         .filter((s) => !ltpFreshSet.has(s))
         .slice(0, 10);
-      const phaseAllowsRefresh =
-        cmpWindowPhase === "open" || cmpWindowPhase === "post_close";
+      // MASTER FIX — attempt LTP refresh in every non-weekend phase. Dhan
+      // serves last-traded values throughout the trading week, so refreshing
+      // during pre_open / post_close keeps the displayed CMP closer to the
+      // most recent live tick instead of yesterday's EOD close.
+      const phaseAllowsRefresh = cmpWindowPhase !== "weekend";
       if (refreshCandidates.length > 0 && phaseAllowsRefresh) {
         for (const s of refreshCandidates) refreshedSet.add(s);
         try {
