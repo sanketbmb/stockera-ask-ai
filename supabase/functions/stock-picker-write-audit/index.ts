@@ -175,8 +175,13 @@ async function runWritePickAudit(
   supabase: SupabaseClient,
   paramsIn: WriteAuditRowParams,
   stamp: { regulatory_status_at_generation: string; sebi_reg_no: string; firm_legal_name: string },
-  compositeEnabled: boolean
+  effectiveCompositeOpen: boolean
 ): Promise<OpResult> {
+  // NOTE: risk_profile_guard is intentionally NOT passed into this function.
+  // The caller resolves the per-profile gate into effectiveCompositeOpen
+  // and strips the guard before we build any p_* params. The guard never
+  // enters the RPC, never enters the replay-hash payload, and never reaches
+  // stock_picker_pick_audit.
   const params: WriteAuditRowParams = { ...paramsIn };
 
   assertUuid(params.p_batch_id, 'p_batch_id');
@@ -200,9 +205,12 @@ async function runWritePickAudit(
   params.p_reg_no = stamp.sebi_reg_no;
   params.p_legal_name = stamp.firm_legal_name;
 
-  // Composite-score runtime flag gate (precomputed).
+  // Phase 2R: batch-level persistence gate. effectiveCompositeOpen is
+  //   global composite_score_writes_enabled
+  //   && composite_score_persist_<risk_profile_guard> === true
+  // If closed, force composite_score to null before the RPC call.
   if (params.p_composite_score !== null && params.p_composite_score !== undefined) {
-    if (!compositeEnabled) {
+    if (!effectiveCompositeOpen) {
       params.p_composite_score = null;
     }
   }
