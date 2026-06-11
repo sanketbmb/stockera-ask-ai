@@ -99,8 +99,48 @@ function spearman(a: number[], b: number[]): number | null {
   return num / denom;
 }
 
+// Phase 2O — tuning knobs (config-driven, fresh per invocation)
+type ZoneScoreKnobs = {
+  vol_clamp_min: number; vol_clamp_max: number; vol_default: number;
+  buy_upper_factor: number; buy_lower_factor: number; buy_lower_floor_factor: number;
+  target_vol_mult: number; target_high_factor: number;
+  stop_vol_mult: number; stop_low_factor: number;
+  w_vol: number; w_trend: number; w_mr: number;
+};
+const KNOB_DEFAULTS: ZoneScoreKnobs = {
+  vol_clamp_min: 0.005, vol_clamp_max: 0.05, vol_default: 0.02,
+  buy_upper_factor: 0.25, buy_lower_factor: 1.25, buy_lower_floor_factor: 0.98,
+  target_vol_mult: 3.0, target_high_factor: 1.02,
+  stop_vol_mult: 3.0, stop_low_factor: 0.95,
+  w_vol: 0.4, w_trend: 0.4, w_mr: 0.2,
+};
+function loadZoneScoreKnobs(cfg: Map<string, unknown>): ZoneScoreKnobs {
+  const keyMap: Array<[keyof ZoneScoreKnobs, string]> = [
+    ['vol_clamp_min', 'zone_vol_clamp_min'],
+    ['vol_clamp_max', 'zone_vol_clamp_max'],
+    ['vol_default', 'zone_vol_default'],
+    ['buy_upper_factor', 'zone_buy_upper_factor'],
+    ['buy_lower_factor', 'zone_buy_lower_factor'],
+    ['buy_lower_floor_factor', 'zone_buy_lower_floor_factor'],
+    ['target_vol_mult', 'zone_target_vol_mult'],
+    ['target_high_factor', 'zone_target_high_factor'],
+    ['stop_vol_mult', 'zone_stop_vol_mult'],
+    ['stop_low_factor', 'zone_stop_low_factor'],
+    ['w_vol', 'score_weight_vol'],
+    ['w_trend', 'score_weight_trend'],
+    ['w_mr', 'score_weight_mean_rev'],
+  ];
+  const out: ZoneScoreKnobs = { ...KNOB_DEFAULTS };
+  for (const [field, key] of keyMap) {
+    if (!cfg.has(key)) { console.warn(`phase2o: knob_missing ${key}`); continue; }
+    try { (out as Record<string, number>)[field] = jsonbNum(cfg.get(key), key); }
+    catch { console.warn(`phase2o: knob_missing ${key}`); }
+  }
+  return out;
+}
+
 // Phase 2D zone/score math (replay, in-process — no live audit writes)
-function computeWindowMetric(window: Close[]): WindowMetric {
+function computeWindowMetric(window: Close[], k: ZoneScoreKnobs): WindowMetric {
   const closes = window.map((c) => c.close);
   const cmp = closes[closes.length - 1];
   const sma20 = mean(closes);
@@ -114,23 +154,20 @@ function computeWindowMetric(window: Close[]): WindowMetric {
     if (closes[i - 1] > 0) rets.push((closes[i] - closes[i - 1]) / closes[i - 1]);
   }
   const vol20 = stddev(rets);
-  const vc = clamp(vol20 || 0.02, 0.005, 0.05);
-  const buy_zone_upper = cmp * (1 - vc * 0.25);
-  const buy_zone_lower = Math.max(cmp * (1 - vc * 1.25), low20 * 0.98);
-  const tgtCand = Math.max(cmp * (1 + vc * 3), high20 * 1.02);
+  const vc = clamp(vol20 || k.vol_default, k.vol_clamp_min, k.vol_clamp_max);
+  const buy_zone_upper = cmp * (1 - vc * k.buy_upper_factor);
+  const buy_zone_lower = Math.max(cmp * (1 - vc * k.buy_lower_factor), low20 * k.buy_lower_floor_factor);
+  const tgtCand = Math.max(cmp * (1 + vc * k.target_vol_mult), high20 * k.target_high_factor);
   const target = tgtCand > buy_zone_upper ? tgtCand : null;
-  const slCand = Math.min(cmp * (1 - vc * 3), low20 * 0.95);
+  const slCand = Math.min(cmp * (1 - vc * k.stop_vol_mult), low20 * k.stop_low_factor);
   const stop_loss = slCand < buy_zone_lower ? slCand : null;
 
-  // composite_score_preview = 0.4 vol + 0.4 trend + 0.2 mean-reversion proximity (0..100)
-  // vol_score: lower vol better (0..100)
-  const vol_score = clamp(100 - (vc - 0.005) * (100 / (0.05 - 0.005)), 0, 100);
-  // trend_score: pct20 mapped from [-20, +20] to [0, 100]
+  // composite_score_preview = w_vol*vol + w_trend*trend + w_mr*mean-reversion proximity (0..100)
+  const vol_score = clamp(100 - (vc - k.vol_clamp_min) * (100 / (k.vol_clamp_max - k.vol_clamp_min)), 0, 100);
   const trend_score = clamp(50 + (pct20 / 20) * 50, 0, 100);
-  // mean-reversion proximity: distance of cmp below sma, normalized by vc
   const mr_raw = sma20 === 0 ? 0 : (sma20 - cmp) / (sma20 * vc);
   const mr_score = clamp(50 + mr_raw * 25, 0, 100);
-  const composite_score_preview = Math.round((0.4 * vol_score + 0.4 * trend_score + 0.2 * mr_score) * 10) / 10;
+  const composite_score_preview = Math.round((k.w_vol * vol_score + k.w_trend * trend_score + k.w_mr * mr_score) * 10) / 10;
 
   return {
     end_date: window[window.length - 1].date,
