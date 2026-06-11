@@ -97,6 +97,11 @@ interface StockOut {
   news: NewsItemOut[];
   data_completeness: DataCompleteness;
   pending: string[];
+  cache_health: {
+    cmp_fresh: boolean;
+    fundamentals_fresh: boolean;
+    news_fresh: boolean;
+  };
 }
 
 function json(body: unknown, status = 200) {
@@ -335,13 +340,20 @@ Deno.serve(async (req) => {
     const { data: cacheCfgRows } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_key, config_value")
-      .in("config_key", ["ltp_cache_ttl_seconds"]);
+      .in("config_key", [
+        "ltp_cache_ttl_seconds",
+        "fundamentals_cache_ttl_seconds",
+        "news_cache_ttl_seconds",
+      ]);
     let ltpTtlSec = 60;
+    let fundTtlSec = 86400;
+    let newsTtlSec = 1800;
     for (const r of cacheCfgRows ?? []) {
-      if (r.config_key === "ltp_cache_ttl_seconds") {
-        const v = Number(r.config_value);
-        if (Number.isFinite(v) && v > 0) ltpTtlSec = v;
-      }
+      const v = Number(r.config_value);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      if (r.config_key === "ltp_cache_ttl_seconds") ltpTtlSec = v;
+      else if (r.config_key === "fundamentals_cache_ttl_seconds") fundTtlSec = v;
+      else if (r.config_key === "news_cache_ttl_seconds") newsTtlSec = v;
     }
     const nowMs = Date.now();
 
@@ -366,11 +378,12 @@ Deno.serve(async (req) => {
 
     const { data: fundRows } = await supabase
       .from("fundamentals_cache")
-      .select("symbol, sector, industry, market_cap_rs, cap_band")
+      .select("symbol, sector, industry, market_cap_rs, cap_band, as_of")
       .in("symbol", filteredSymbols);
     const fundCacheBySymbol = new Map<string, {
       sector: string | null; industry: string | null;
       market_cap_rs: number | null; cap_band: string | null;
+      as_of: string | null;
     }>();
     for (const r of fundRows ?? []) {
       fundCacheBySymbol.set(r.symbol as string, {
@@ -378,17 +391,30 @@ Deno.serve(async (req) => {
         industry: (r.industry as string | null) ?? null,
         market_cap_rs: r.market_cap_rs == null ? null : Number(r.market_cap_rs),
         cap_band: (r.cap_band as string | null) ?? null,
+        as_of: (r.as_of as string | null) ?? null,
       });
     }
 
     const { data: newsRows } = await supabase
       .from("news_cache")
-      .select("symbol, headline, url, source, published_at")
+      .select("symbol, headline, url, source, published_at, inserted_at")
       .in("symbol", filteredSymbols)
       .order("published_at", { ascending: false });
+
     const newsBySymbol = new Map<string, NewsItemOut[]>();
+    const newsLatestInsertedBySymbol = new Map<string, string>();
     for (const r of newsRows ?? []) {
       const sym = r.symbol as string;
+      const ins = (r.inserted_at as string | null) ?? null;
+      if (ins && !newsLatestInsertedBySymbol.has(sym)) {
+        // rows are ordered by published_at desc; track first-seen inserted_at as proxy.
+        newsLatestInsertedBySymbol.set(sym, ins);
+      } else if (ins) {
+        const prev = newsLatestInsertedBySymbol.get(sym)!;
+        if (new Date(ins).getTime() > new Date(prev).getTime()) {
+          newsLatestInsertedBySymbol.set(sym, ins);
+        }
+      }
       const arr = newsBySymbol.get(sym) ?? [];
       if (arr.length >= 3) continue;
       arr.push({
@@ -669,6 +695,20 @@ Deno.serve(async (req) => {
           news: newsOk,
         },
         pending,
+        cache_health: {
+          cmp_fresh: cmp.source === "ltp_cache" && cmp.as_of != null &&
+            ((Date.now() - new Date(cmp.as_of).getTime()) / 1000) <= ltpTtlSec,
+          fundamentals_fresh: (() => {
+            const f = fundCacheBySymbol.get(sym);
+            if (!f?.as_of) return false;
+            return ((Date.now() - new Date(f.as_of).getTime()) / 1000) <= fundTtlSec;
+          })(),
+          news_fresh: (() => {
+            const ins = newsLatestInsertedBySymbol.get(sym);
+            if (!ins) return false;
+            return ((Date.now() - new Date(ins).getTime()) / 1000) <= newsTtlSec;
+          })(),
+        },
       };
 
     });
@@ -708,6 +748,11 @@ Deno.serve(async (req) => {
         fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
         zones: "derived in-response from CMP + technicals (Phase 2D dev-preview math)",
         news: "news_cache (populated by sync-news-marketaux background job)",
+      },
+      cache_health_meta: {
+        ltp_ttl_seconds: ltpTtlSec,
+        fundamentals_ttl_seconds: fundTtlSec,
+        news_ttl_seconds: newsTtlSec,
       },
     });
   } catch (e) {
