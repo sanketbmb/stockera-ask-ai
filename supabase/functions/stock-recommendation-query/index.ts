@@ -891,10 +891,10 @@ Deno.serve(async (req) => {
       const compositePreview = previewComposite(cmp.value, tech);
 
       const cmpOk = cmp.value !== null;
-      const techOk =
-        tech.sample_size >= 3 &&
-        tech.sma_20d !== null &&
-        tech.realized_vol_20d !== null;
+      // MASTER FIX — lenient gate: any non-null SMA (incl. CMP-derived
+      // fallback when history is empty) qualifies as "ready" so the card
+      // shows real numbers. Δ% and Vol are reported as "—" when null.
+      const techOk = tech.sma_20d !== null;
       const fundOk =
         fund.company_name !== null ||
         fund.sector !== null ||
