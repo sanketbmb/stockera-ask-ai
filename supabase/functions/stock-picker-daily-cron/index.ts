@@ -788,7 +788,24 @@ serve(async (req: Request) => {
       }
 
       const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
-      const etfNameRe = /\bETF\b/i;
+      // ETF detection: pattern set (any match = ETF). Catches ticker- and
+      // company-name styles (NETF, SBISMLETF, NIFTYBEES, GOLDBEES, etc.).
+      const etfSymbolTokenRe = /(?:^|[^A-Z])(ETF|BEES|NIFTYBEES|BANKBEES|GOLDBEES|LIQUIDBEES|JUNIORBEES|N100|NV20)$/i;
+      const etfSymbolSuffixRe = /ETF$/i;
+      const etfNameContainsRe = /ETF/i;
+      const etfNameExchTradedRe = /EXCHANGE\s+TRADED/i;
+      const etfNameIndexFundRe = /INDEX\s+FUND/i;
+      const etfNameNiftyEtfRe = /(NIFTY[\s\S]*ETF|ETF[\s\S]*NIFTY)/i;
+      const isEtf = (sym: string, name: string | null): boolean => {
+        if (sym && (etfSymbolTokenRe.test(sym) || etfSymbolSuffixRe.test(sym))) return true;
+        if (!name) return false;
+        if (etfNameContainsRe.test(name)) return true;
+        if (etfNameExchTradedRe.test(name)) return true;
+        if (etfNameIndexFundRe.test(name)) return true;
+        if (etfNameNiftyEtfRe.test(name)) return true;
+        return false;
+      };
+
 
       const kept: typeof canonicalMembers = [];
       for (const m of canonicalMembers) {
