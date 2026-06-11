@@ -165,7 +165,9 @@ function isUniqueViolationOnConstraint(err: PgErrorLike | null | undefined, cons
 // ---------------------------------------------------------------------------
 async function runWritePickAudit(
   supabase: SupabaseClient,
-  paramsIn: WriteAuditRowParams
+  paramsIn: WriteAuditRowParams,
+  stamp: { regulatory_status_at_generation: string; sebi_reg_no: string; firm_legal_name: string },
+  compositeEnabled: boolean
 ): Promise<OpResult> {
   const params: WriteAuditRowParams = { ...paramsIn };
 
@@ -184,17 +186,15 @@ async function runWritePickAudit(
   assertSchemaVersion(params.p_replay_payload_hash_version);
   assertNonEmptyString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
 
-  // Source-of-truth regulatory stamp (async, runtime-config backed).
-  const stamp = await currentRegulatoryStamp();
+  // SP-1.6 perf: stamp + composite flag are precomputed ONCE per request and
+  // passed in. No per-op DB roundtrip to runtime_config.
   params.p_regulatory_status_at_generation = stamp.regulatory_status_at_generation;
   params.p_reg_no = stamp.sebi_reg_no;
   params.p_legal_name = stamp.firm_legal_name;
 
-  // Composite-score runtime flag gate.
+  // Composite-score runtime flag gate (precomputed).
   if (params.p_composite_score !== null && params.p_composite_score !== undefined) {
-    const allowed = await isCompositeScoreWritesEnabled();
-    if (!allowed) {
-      console.warn('composite_score forced to null by runtime flag');
+    if (!compositeEnabled) {
       params.p_composite_score = null;
     }
   }
@@ -239,12 +239,14 @@ async function runWritePickAudit(
   return { op: 'write_pick_audit', ok: true, id: data };
 }
 
+
 // ---------------------------------------------------------------------------
 // write_batch_rejection
 // ---------------------------------------------------------------------------
 async function runWriteBatchRejection(
   supabase: SupabaseClient,
-  paramsIn: WriteBatchRejectionParams
+  paramsIn: WriteBatchRejectionParams,
+  stamp: { regulatory_status_at_generation: string; sebi_reg_no: string; firm_legal_name: string }
 ): Promise<OpResult> {
   const params: WriteBatchRejectionParams = { ...paramsIn };
 
@@ -261,8 +263,7 @@ async function runWriteBatchRejection(
   assertSchemaVersion(params.p_replay_payload_hash_version);
   assertNonEmptyString(params.p_universe_snapshot_id, 'p_universe_snapshot_id');
 
-  // Source-of-truth regulatory stamp.
-  const stamp = await currentRegulatoryStamp();
+  // SP-1.6 perf: stamp precomputed ONCE per request.
   params.p_regulatory_status_at_generation = stamp.regulatory_status_at_generation;
   params.p_reg_no = stamp.sebi_reg_no;
   params.p_legal_name = stamp.firm_legal_name;
@@ -309,6 +310,7 @@ async function runWriteBatchRejection(
   }
   return { op: 'write_batch_rejection', ok: true, id: data };
 }
+
 
 // ---------------------------------------------------------------------------
 // HTTP handler
@@ -391,13 +393,24 @@ serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // SP-1.6 perf: compute regulatory stamp + composite flag ONCE per request.
+  let stamp;
+  let compositeEnabled = false;
+  try {
+    stamp = await currentRegulatoryStamp();
+    compositeEnabled = await isCompositeScoreWritesEnabled();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return jsonResponse(500, { ok: false, error: `regulatory-status: ${msg}` });
+  }
+
   const results: OpResult[] = [];
   for (const op of body.operations) {
     try {
       if (op.op === 'write_pick_audit') {
-        results.push(await runWritePickAudit(supabase, op.params));
+        results.push(await runWritePickAudit(supabase, op.params, stamp, compositeEnabled));
       } else {
-        results.push(await runWriteBatchRejection(supabase, op.params));
+        results.push(await runWriteBatchRejection(supabase, op.params, stamp));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
