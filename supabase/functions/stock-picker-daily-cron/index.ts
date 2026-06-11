@@ -820,8 +820,9 @@ serve(async (req: Request) => {
           reason = 'not_equity_segment';
         } else if (f_suspended && a.any_suspended) {
           reason = 'suspended';
-        } else if (f_etf && a.company_name && etfNameRe.test(a.company_name)) {
+        } else if (f_etf && isEtf(m.symbol, a.company_name)) {
           reason = 'etf_name';
+
         } else if (f_bond && a.company_name && bondNameRe.test(a.company_name)) {
           reason = 'bond_name';
         } else if (f_ine && !a.any_ine_isin) {
