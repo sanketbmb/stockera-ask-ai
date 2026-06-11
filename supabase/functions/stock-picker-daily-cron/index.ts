@@ -744,6 +744,7 @@ serve(async (req: Request) => {
       const f_ine = readFlag('universe_filter_require_ine_isin', false);
       const f_dhan = readFlag('universe_filter_require_dhan_security_id', true);
       const f_bond = readFlag('universe_filter_reject_bond_by_name', true);
+      const f_bond_ticker = readFlag('universe_filter_reject_bond_by_ticker', false);
 
       console.log(`phase_universe_cleanliness start n_in=${cleanliness_n_in}`);
 
