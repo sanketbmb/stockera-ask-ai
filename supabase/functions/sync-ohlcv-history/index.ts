@@ -1,5 +1,6 @@
 // sync-ohlcv-history
-// Phase 2L — Backfill ~2 years of daily OHLCV per cleaned dev-universe symbol.
+// Phase 2L — Backfill ~2 years of daily OHLCV per cleaned candidate symbol.
+// Phase 2S.2A — Decouple backfill candidates from the picker override.
 // Primary: Dhan. Fallback: Twelve Data. Writes ONLY to stock_picker_ohlcv_history.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
@@ -33,6 +34,10 @@ function jbool(v: unknown): boolean {
 function jnum(v: unknown, def: number): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? n : def; }
+  return def;
+}
+function jstr(v: unknown, def: string): string {
+  if (typeof v === 'string') return v;
   return def;
 }
 function isoDate(d: Date): string { return d.toISOString().slice(0, 10); }
@@ -133,17 +138,152 @@ const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
 const etfSymbolTokenRe = /(?:^|[^A-Z])(ETF|BEES|NIFTYBEES|BANKBEES|GOLDBEES|LIQUIDBEES|JUNIORBEES|N100|NV20)$/i;
 const etfSymbolSuffixRe = /ETF$/i;
 const etfNameRe = /ETF|EXCHANGE\s+TRADED|INDEX\s+FUND/i;
+const bondTicker1Re = /^\d{3,4}[A-Z]{1,3}\d{2,3}[A-Z]?$/;
+const bondTicker2Re = /^[A-Z]{2,4}\d{2,4}[A-Z]{1,3}\d{1,3}$/;
 
-type Target = { symbol: string; exchange: string; dhan_id: string | null };
+type Target = { symbol: string; exchange: string; dhan_id: string };
+type CandidatePair = { symbol: string; exchange: string };
 
-async function computeCleanTargets(
+function isCleanRow(r: {
+  symbol: string;
+  exchange: string;
+  type?: string | null;
+  segment?: string | null;
+  is_suspended?: boolean | null;
+  dhan_security_id?: string | null;
+  company_name?: string | null;
+}): boolean {
+  if (!r.type || !EQUITY_TYPES.has(r.type.toUpperCase())) return false;
+  if (!r.segment || !EQUITY_SEGMENTS.has(r.segment.toUpperCase())) return false;
+  if (r.is_suspended === true) return false;
+  if (!r.dhan_security_id) return false;
+  const name = r.company_name ?? '';
+  if (name && (etfNameRe.test(name) || bondNameRe.test(name))) return false;
+  if (etfSymbolTokenRe.test(r.symbol) || etfSymbolSuffixRe.test(r.symbol)) return false;
+  if (bondTicker1Re.test(r.symbol) || bondTicker2Re.test(r.symbol)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------
+// Phase 2S.2A: tolerant universe_override parser.
+// Accepts string[] or [{symbol, exchange}, ...]. For bare strings, resolves
+// (symbol, exchange) from stock_master preferring NSE; ambiguous -> skip
+// with single warning. Used only for diagnostics; NOT the candidate source.
+// ---------------------------------------------------------------------
+async function parseUniverseOverride(
   supabase: ReturnType<typeof createClient>,
-  overrideSymbols: string[],
-): Promise<Target[]> {
+  raw: unknown,
+): Promise<CandidatePair[]> {
+  if (!Array.isArray(raw)) return [];
+  const objectPairs: CandidatePair[] = [];
+  const bareSymbols: string[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string' && item.length > 0) {
+      bareSymbols.push(item);
+    } else if (item && typeof item === 'object') {
+      const sym = (item as Record<string, unknown>).symbol;
+      const exch = (item as Record<string, unknown>).exchange;
+      if (typeof sym === 'string' && typeof exch === 'string' && sym && exch) {
+        objectPairs.push({ symbol: sym, exchange: exch });
+      }
+    }
+  }
+  if (bareSymbols.length === 0) return objectPairs;
+  const { data, error } = await supabase
+    .from('stock_master')
+    .select('symbol,exchange')
+    .in('symbol', bareSymbols)
+    .in('exchange', ['NSE', 'BSE']);
+  if (error) return objectPairs;
+  const bySym = new Map<string, string[]>();
+  for (const r of (data ?? []) as Array<{ symbol: string; exchange: string }>) {
+    const arr = bySym.get(r.symbol) ?? [];
+    arr.push(r.exchange);
+    bySym.set(r.symbol, arr);
+  }
+  const warned = new Set<string>();
+  for (const s of bareSymbols) {
+    const ex = bySym.get(s) ?? [];
+    if (ex.length === 0) continue;
+    if (ex.length === 1) { objectPairs.push({ symbol: s, exchange: ex[0] }); continue; }
+    if (ex.includes('NSE')) { objectPairs.push({ symbol: s, exchange: 'NSE' }); continue; }
+    if (!warned.has(s)) {
+      console.warn(`phase2s2a: ambiguous override symbol ${s} (exchanges=${ex.join(',')}), skipping`);
+      warned.add(s);
+    }
+  }
+  return objectPairs;
+}
+
+// ---------------------------------------------------------------------
+// Phase 2S.2A: resolve backfill candidates from runtime_config + snapshot.
+// ---------------------------------------------------------------------
+async function resolveBackfillCandidates(
+  supabase: ReturnType<typeof createClient>,
+  cfg: Map<string, unknown>,
+): Promise<{ targets: Target[]; source: string; pairs: CandidatePair[] }> {
+  let source = jstr(cfg.get('backfill_candidate_source'), 'snapshot_topN_clean');
+  if (source !== 'runtime_list' && source !== 'snapshot_topN_clean') {
+    source = 'snapshot_topN_clean';
+  }
+
+  let pairs: CandidatePair[] = [];
+
+  if (source === 'runtime_list') {
+    const raw = cfg.get('backfill_candidate_symbols');
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item && typeof item === 'object') {
+          const sym = (item as Record<string, unknown>).symbol;
+          const exch = (item as Record<string, unknown>).exchange;
+          if (typeof sym === 'string' && typeof exch === 'string' && sym && exch) {
+            pairs.push({ symbol: sym, exchange: exch });
+          }
+        }
+      }
+    }
+  } else {
+    const topN = Math.max(1, Math.floor(jnum(cfg.get('backfill_candidate_topN'), 200)));
+    const { data: snapRows, error: snapErr } = await supabase
+      .from('stock_picker_universe_snapshot')
+      .select('id,created_at')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (snapErr) throw new Error(`snapshot read failed: ${snapErr.message}`);
+    const snapshotId = snapRows?.[0]?.id as string | undefined;
+    if (!snapshotId) return { targets: [], source, pairs: [] };
+
+    const { data: memRows, error: memErr } = await supabase
+      .from('stock_picker_universe_snapshot_member')
+      .select('symbol,exchange,canonical_rank')
+      .eq('universe_snapshot_id', snapshotId)
+      .order('canonical_rank', { ascending: true, nullsFirst: false })
+      .order('symbol', { ascending: true })
+      .limit(topN);
+    if (memErr) throw new Error(`snapshot_member read failed: ${memErr.message}`);
+    for (const r of (memRows ?? []) as Array<Record<string, unknown>>) {
+      const sym = String(r.symbol ?? '');
+      const exch = String(r.exchange ?? '');
+      if (sym && exch) pairs.push({ symbol: sym, exchange: exch });
+    }
+  }
+
+  // Dedupe pairs by symbol|exchange, preserve order.
+  const seen = new Set<string>();
+  pairs = pairs.filter((p) => {
+    const k = `${p.symbol}|${p.exchange}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  if (pairs.length === 0) return { targets: [], source, pairs };
+
+  // Apply inline cleanliness from stock_master.
+  const symbolList = [...new Set(pairs.map((p) => p.symbol))];
   const { data: meta, error: metaErr } = await supabase
     .from('stock_master')
     .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
-    .in('symbol', overrideSymbols);
+    .in('symbol', symbolList);
   if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
 
   type Agg = {
@@ -154,7 +294,8 @@ async function computeCleanTargets(
   };
   const agg = new Map<string, Agg>();
   for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
-    const sym = String(r.symbol ?? ''); const exch = String(r.exchange ?? '');
+    const sym = String(r.symbol ?? '');
+    const exch = String(r.exchange ?? '');
     const key = `${sym}|${exch}`;
     const cur = agg.get(key) ?? {
       sym, exch, any_equity_type: false, any_equity_segment: false,
@@ -170,25 +311,23 @@ async function computeCleanTargets(
     agg.set(key, cur);
   }
 
-  const surviving: Target[] = [];
-  for (const a of agg.values()) {
+  const targets: Target[] = [];
+  for (const p of pairs) {
+    const a = agg.get(`${p.symbol}|${p.exchange}`);
+    if (!a) continue;
     if (!a.any_equity_type) continue;
     if (!a.any_equity_segment) continue;
     if (a.any_suspended) continue;
     if (!a.dhan_id) continue;
-    if (a.company_name && (etfNameRe.test(a.company_name) || etfSymbolTokenRe.test(a.sym) || etfSymbolSuffixRe.test(a.sym))) continue;
-    if (a.company_name && bondNameRe.test(a.company_name)) continue;
-    surviving.push({ symbol: a.sym, exchange: a.exch, dhan_id: a.dhan_id });
+    if (!isCleanRow({
+      symbol: a.sym, exchange: a.exch,
+      type: 'EQUITY', segment: 'EQ',
+      is_suspended: false, dhan_security_id: a.dhan_id,
+      company_name: a.company_name,
+    })) continue;
+    targets.push({ symbol: a.sym, exchange: a.exch, dhan_id: a.dhan_id });
   }
-
-  // Prefer NSE row when both NSE and BSE survive for the same symbol.
-  const bySymbol = new Map<string, Target>();
-  for (const s of surviving) {
-    const cur = bySymbol.get(s.symbol);
-    if (!cur || (cur.exchange !== 'NSE' && s.exchange === 'NSE')) bySymbol.set(s.symbol, s);
-  }
-  return [...bySymbol.values()].sort((a, b) =>
-    a.symbol.localeCompare(b.symbol) || a.exchange.localeCompare(b.exchange));
+  return { targets, source, pairs };
 }
 
 async function processOne(
@@ -197,7 +336,7 @@ async function processOne(
   fromStr: string,
   toStr: string,
 ): Promise<{ chosen: 'dhan' | 'twelve_data' | null; rows_inserted: number; error?: string }> {
-  let rows: OhlcvRow[] | null = await fetchDhan(t.dhan_id!, t.exchange, fromStr, toStr);
+  let rows: OhlcvRow[] | null = await fetchDhan(t.dhan_id, t.exchange, fromStr, toStr);
   let chosen: 'dhan' | 'twelve_data' | null = null;
   if (rows && rows.length >= MIN_USABLE_ROWS) {
     chosen = 'dhan';
@@ -253,22 +392,18 @@ Deno.serve(async (req) => {
     }
     const years = Math.max(1, Math.floor(jnum(cfg.get('ohlcv_backfill_years'), 2)));
 
-    const overrideSymbolsRaw = cfg.get('universe_override_symbols');
-    const overrideSymbols: string[] = Array.isArray(overrideSymbolsRaw)
-      ? (overrideSymbolsRaw as unknown[]).filter((s): s is string => typeof s === 'string' && s.length > 0)
-      : [];
-    if (overrideSymbols.length === 0) {
-      return new Response(JSON.stringify({ ok: false, error: 'no universe_override_symbols configured' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    // Tolerant parse of universe_override_symbols (diagnostic only).
+    const overridePairs = await parseUniverseOverride(supabase, cfg.get('universe_override_symbols'));
+
+    // Resolve backfill candidates from the dedicated candidate-source contract.
+    const { targets, source: candidateSource, pairs: resolvedPairs } =
+      await resolveBackfillCandidates(supabase, cfg);
 
     const toDate = new Date();
     const fromDate = new Date(toDate);
     fromDate.setUTCFullYear(toDate.getUTCFullYear() - years);
     const fromStr = isoDate(fromDate);
     const toStr = isoDate(toDate);
-
-    const targets = await computeCleanTargets(supabase, overrideSymbols);
 
     // -------------------------------------------------------------------
     // Phase 2S: chunked, resumable mode
@@ -279,12 +414,11 @@ Deno.serve(async (req) => {
       const maxRuntimeMs = Math.max(5000, Math.floor(jnum(cfg.get('ohlcv_max_runtime_ms'), 90000)));
       const t0 = Date.now();
 
-      // Seed pending rows for any clean target not yet in backfill_state.
+      // Seed pending rows for any clean candidate not yet in backfill_state.
       const seedRows = targets.map((t) => ({
         symbol: t.symbol, exchange: t.exchange, status: 'pending' as const,
       }));
       if (seedRows.length > 0) {
-        // do in chunks of 500 to be safe
         for (let i = 0; i < seedRows.length; i += 500) {
           const slice = seedRows.slice(i, i + 500);
           await supabase
@@ -294,7 +428,7 @@ Deno.serve(async (req) => {
       }
 
       const targetKeys = new Set(targets.map((t) => `${t.symbol}|${t.exchange}`));
-      const dhanById = new Map(targets.map((t) => [`${t.symbol}|${t.exchange}`, t]));
+      const targetByKey = new Map(targets.map((t) => [`${t.symbol}|${t.exchange}`, t]));
 
       const { data: pendingRows, error: pendErr } = await supabase
         .from('stock_picker_ohlcv_backfill_state')
@@ -319,7 +453,7 @@ Deno.serve(async (req) => {
 
       for (const cand of candidates) {
         if (Date.now() - t0 > maxRuntimeMs) break;
-        const t = dhanById.get(`${cand.symbol}|${cand.exchange}`)!;
+        const t = targetByKey.get(`${cand.symbol}|${cand.exchange}`)!;
         let res: Awaited<ReturnType<typeof processOne>>;
         try {
           res = await processOne(supabase, t, fromStr, toStr);
@@ -347,7 +481,6 @@ Deno.serve(async (req) => {
         if (sleepMs > 0) await sleep(sleepMs);
       }
 
-      // Compute remaining pending strictly within the current target universe.
       const { data: stillPending } = await supabase
         .from('stock_picker_ohlcv_backfill_state')
         .select('symbol,exchange')
@@ -358,6 +491,9 @@ Deno.serve(async (req) => {
       const cursor = {
         last_run_at: new Date().toISOString(),
         invoked_by,
+        candidate_source: candidateSource,
+        candidates_resolved: targets.length,
+        override_pairs: overridePairs.length,
         processed, remaining_pending: remainingPending,
         dhan_used: dhanCount, twelve_data_fallback_used: tdCount,
         rows_inserted: rowsInsertedTotal,
@@ -374,6 +510,9 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         ok: true, mode: 'chunk', invoked_by,
+        candidate_source: candidateSource,
+        candidates_resolved: targets.length,
+        resolved_pairs_total: resolvedPairs.length,
         processed, remaining_pending: remainingPending,
         elapsed_ms: Date.now() - t0,
         errors_count: errorsCount,
@@ -384,7 +523,7 @@ Deno.serve(async (req) => {
     }
 
     // -------------------------------------------------------------------
-    // Default mode (Phase 2L/2M): full pass over clean targets
+    // Default mode: full pass over resolved clean candidates
     // -------------------------------------------------------------------
     let rows_inserted = 0;
     let dhan_used = 0;
@@ -406,10 +545,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Compute remaining_pending for telemetry parity with chunked mode.
+    const targetKeys = new Set(targets.map((t) => `${t.symbol}|${t.exchange}`));
+    const { data: stillPending } = await supabase
+      .from('stock_picker_ohlcv_backfill_state')
+      .select('symbol,exchange')
+      .eq('status', 'pending');
+    const remainingPending = (stillPending ?? []).filter((r) =>
+      targetKeys.has(`${String(r.symbol)}|${String(r.exchange)}`)).length;
 
     const telemetry = {
       ok: rows_inserted > 0 && targets.length > 0,
       symbols_processed: targets.length,
+      candidate_source: candidateSource,
       rows_inserted,
       dhan_used,
       twelve_data_fallback_used,
@@ -426,7 +574,10 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       ok: true, invoked_by,
+      candidate_source: candidateSource,
+      candidates_resolved: targets.length,
       symbols_processed: targets.length,
+      remaining_pending: remainingPending,
       rows_inserted, dhan_used, twelve_data_fallback_used,
       errors,
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
