@@ -67,17 +67,26 @@ interface FundamentalsBlock {
   };
 }
 
+interface BuyZoneBlock {
+  lower: number | null;
+  upper: number | null;
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
   sector: string | null;
   verdict: "include";
   composite_score: number | null;
+  composite_score_preview: number | null;
   batch_id: string;
   generated_at: string;
   cmp: CmpBlock;
   technicals: TechnicalsBlock;
   fundamentals: FundamentalsBlock;
+  buy_zone: BuyZoneBlock;
+  target: number | null;
+  stop_loss: number | null;
   data_completeness: DataCompleteness;
   pending: string[];
 }
