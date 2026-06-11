@@ -114,6 +114,25 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Phase 2V — Market-window helper (IST). Returns one of:
+//   "open"        — Mon-Fri, 09:15-15:30 IST
+//   "post_close"  — Mon-Fri, after 15:30 IST (same trading day)
+//   "pre_open"    — Mon-Fri, before 09:15 IST
+//   "weekend"     — Sat/Sun
+function marketWindowPhase(now: Date = new Date()): "open" | "post_close" | "pre_open" | "weekend" {
+  // IST = UTC + 5:30
+  const istMs = now.getTime() + (5 * 60 + 30) * 60 * 1000;
+  const ist = new Date(istMs);
+  const dow = ist.getUTCDay(); // 0=Sun..6=Sat in IST frame
+  if (dow === 0 || dow === 6) return "weekend";
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const OPEN = 9 * 60 + 15;
+  const CLOSE = 15 * 60 + 30;
+  if (minutes < OPEN) return "pre_open";
+  if (minutes <= CLOSE) return "open";
+  return "post_close";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
