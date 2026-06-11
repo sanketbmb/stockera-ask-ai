@@ -365,33 +365,38 @@ Deno.serve(async (req) => {
 
     const upserts: Array<Record<string, unknown>> = [];
     for (const p of profiles) {
+      if (filterProfile !== null && p !== filterProfile) continue;
       const arr = byProfile.get(p) ?? [];
       if (arr.length === 0) continue;
       arr.sort((a, b) => b.ras - a.ras || a.vid - b.vid);
       const winnerKnobs = byVariantKnobs.get(arr[0].vid);
+      const tag = filterProfile !== null ? 'Phase 2Q wider sweep' : 'Phase 2P staging winner';
       upserts.push({
         config_key: `staging_winner_${p}`,
         kind: 'identifier',
         config_value: winnerKnobs,
-        description: `Phase 2P staging winner for ${p} (sweep ${sweep_id}, variant ${arr[0].vid}, ras ${arr[0].ras.toFixed(4)})`,
+        description: `${tag} for ${p} (sweep ${sweep_id}, variant ${arr[0].vid}, ras ${arr[0].ras.toFixed(4)})`,
       });
     }
-    // global = highest mean ras
-    let bestGlobal: { vid: number; avg: number } | null = null;
-    for (const [vid, s] of variantAvg.entries()) {
-      const avg = s.sum / s.n;
-      if (bestGlobal === null || avg > bestGlobal.avg || (avg === bestGlobal.avg && vid < bestGlobal.vid)) {
-        bestGlobal = { vid, avg };
+    // global staging — only when not filtering to a single profile
+    if (filterProfile === null) {
+      let bestGlobal: { vid: number; avg: number } | null = null;
+      for (const [vid, s] of variantAvg.entries()) {
+        const avg = s.sum / s.n;
+        if (bestGlobal === null || avg > bestGlobal.avg || (avg === bestGlobal.avg && vid < bestGlobal.vid)) {
+          bestGlobal = { vid, avg };
+        }
+      }
+      if (bestGlobal !== null) {
+        upserts.push({
+          config_key: 'staging_winner_global',
+          kind: 'identifier',
+          config_value: byVariantKnobs.get(bestGlobal.vid),
+          description: `Phase 2P staging winner global (sweep ${sweep_id}, variant ${bestGlobal.vid}, avg ras ${bestGlobal.avg.toFixed(4)})`,
+        });
       }
     }
-    if (bestGlobal !== null) {
-      upserts.push({
-        config_key: 'staging_winner_global',
-        kind: 'identifier',
-        config_value: byVariantKnobs.get(bestGlobal.vid),
-        description: `Phase 2P staging winner global (sweep ${sweep_id}, variant ${bestGlobal.vid}, avg ras ${bestGlobal.avg.toFixed(4)})`,
-      });
-    }
+
     if (upserts.length > 0) {
       const { error: uErr } = await supabase
         .from('stock_picker_runtime_config')
