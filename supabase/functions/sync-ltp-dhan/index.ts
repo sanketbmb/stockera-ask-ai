@@ -171,19 +171,22 @@ Deno.serve(async (req) => {
       updated++;
     }
 
-    // Telemetry — never include secrets.
-    await supabase.from("stock_picker_runtime_config").upsert(
-      {
-        config_key: "last_sync_ltp_dhan",
-        kind: "operational",
-        config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
-        description: "Last sync-ltp-dhan run summary",
-        updated_at: ranAt,
-      },
-      { onConflict: "config_key" },
-    );
+    // Telemetry — only for full-universe runs; partial inline refreshes
+    // (filter_applied) must not overwrite the daily summary.
+    if (!filterSymbols) {
+      await supabase.from("stock_picker_runtime_config").upsert(
+        {
+          config_key: "last_sync_ltp_dhan",
+          kind: "operational",
+          config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
+          description: "Last sync-ltp-dhan run summary",
+          updated_at: ranAt,
+        },
+        { onConflict: "config_key" },
+      );
+    }
 
-    return json({ ok: true, symbols_updated: updated, attempts, errors });
+    return json({ ok: true, symbols_updated: updated, attempts, errors, filter_applied: filterSymbols != null });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
