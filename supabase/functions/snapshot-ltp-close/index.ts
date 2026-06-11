@@ -196,9 +196,10 @@ Deno.serve(async (req) => {
         const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
         if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
-      // Phase 2V.2 — pace between batches to stay under upstream rate limits.
+      // Phase 2V.2 — pace between batches; Supabase enforces a per-trace
+      // outbound HTTP rate limit (~10/sec) and Dhan's marketfeed rate caps.
       if (i + BATCH < tasks.length) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
 
