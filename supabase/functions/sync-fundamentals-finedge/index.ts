@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
         .from("fundamentals_cache")
         .upsert(
           {
-            symbol: sym, exchange: "NSE",
+            symbol: sym, exchange: ex,
             sector, industry,
             market_cap_rs: mcap, cap_band: band,
             source: "finedge", as_of: nowIso, updated_at: nowIso,
