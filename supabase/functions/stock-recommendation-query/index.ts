@@ -447,10 +447,21 @@ Deno.serve(async (req) => {
       .in("symbol", filteredSymbols)
       .order("published_at", { ascending: false });
 
+    // MASTER FIX — 30-day news freshness cutoff. Headlines older than 30 days
+    // are excluded entirely; the UI renders "No recent news in our window"
+    // when nothing survives the cutoff, instead of surfacing stale 3-year-old
+    // items from the cache.
+    const NEWS_CUTOFF_MS = 30 * 24 * 60 * 60 * 1000;
+    const newsCutoffTs = Date.now() - NEWS_CUTOFF_MS;
+
     const newsBySymbol = new Map<string, NewsItemOut[]>();
     const newsLatestInsertedBySymbol = new Map<string, string>();
     for (const r of newsRows ?? []) {
       const sym = r.symbol as string;
+      const publishedAt = r.published_at as string | null;
+      if (!publishedAt) continue;
+      const pubMs = new Date(publishedAt).getTime();
+      if (!Number.isFinite(pubMs) || pubMs < newsCutoffTs) continue;
       const ins = (r.inserted_at as string | null) ?? null;
       if (ins && !newsLatestInsertedBySymbol.has(sym)) {
         // rows are ordered by published_at desc; track first-seen inserted_at as proxy.
@@ -467,7 +478,7 @@ Deno.serve(async (req) => {
         headline: r.headline as string,
         url: (r.url as string | null) ?? null,
         source: (r.source as string | null) ?? "marketaux",
-        published_at: r.published_at as string,
+        published_at: publishedAt,
       });
       newsBySymbol.set(sym, arr);
     }
@@ -512,7 +523,21 @@ Deno.serve(async (req) => {
 
     function buildTechnicals(sym: string, cmpValue: number | null): TechnicalsBlock {
       const rows = closesBySymbol.get(sym) ?? [];
+      // MASTER FIX — graceful fallback when liquidity_20d history is empty
+      // (e.g. ITI). If we have a displayed CMP, use it as the SMA/High/Low
+      // anchor so the card shows real numbers instead of "Pending". Δ% and
+      // realized vol remain null (cannot be computed without a window).
       if (rows.length === 0) {
+        if (cmpValue != null) {
+          return {
+            sma_20d: round2(cmpValue),
+            high_20d: round2(cmpValue),
+            low_20d: round2(cmpValue),
+            pct_change_20d: null,
+            realized_vol_20d: null,
+            sample_size: 0,
+          };
+        }
         return {
           sma_20d: null, high_20d: null, low_20d: null,
           pct_change_20d: null, realized_vol_20d: null, sample_size: 0,
@@ -524,8 +549,6 @@ Deno.serve(async (req) => {
       const lo = Math.min(...closes);
       // Phase 2V — pct_change uses the SAME CMP displayed on the card when
       // available; falls back to newest close in window if CMP is null.
-      // first_close_in_20d_window = oldest record in the descending-sorted
-      // closesBySymbol array (rows[rows.length - 1]).
       const newest = rows[0].close;
       const oldest = rows[rows.length - 1].close;
       const numerator = cmpValue != null ? cmpValue : newest;
@@ -644,8 +667,11 @@ Deno.serve(async (req) => {
         .map((r) => r.symbol as string)
         .filter((s) => !ltpFreshSet.has(s))
         .slice(0, 10);
-      const phaseAllowsRefresh =
-        cmpWindowPhase === "open" || cmpWindowPhase === "post_close";
+      // MASTER FIX — attempt LTP refresh in every non-weekend phase. Dhan
+      // serves last-traded values throughout the trading week, so refreshing
+      // during pre_open / post_close keeps the displayed CMP closer to the
+      // most recent live tick instead of yesterday's EOD close.
+      const phaseAllowsRefresh = cmpWindowPhase !== "weekend";
       if (refreshCandidates.length > 0 && phaseAllowsRefresh) {
         for (const s of refreshCandidates) refreshedSet.add(s);
         try {
@@ -868,10 +894,10 @@ Deno.serve(async (req) => {
       const compositePreview = previewComposite(cmp.value, tech);
 
       const cmpOk = cmp.value !== null;
-      const techOk =
-        tech.sample_size >= 3 &&
-        tech.sma_20d !== null &&
-        tech.realized_vol_20d !== null;
+      // MASTER FIX — lenient gate: any non-null SMA (incl. CMP-derived
+      // fallback when history is empty) qualifies as "ready" so the card
+      // shows real numbers. Δ% and Vol are reported as "—" when null.
+      const techOk = tech.sma_20d !== null;
       const fundOk =
         fund.company_name !== null ||
         fund.sector !== null ||

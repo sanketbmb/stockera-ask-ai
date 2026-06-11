@@ -728,6 +728,10 @@ function StockCard({
   const dc = stock.data_completeness;
   const ch = stock.cache_health;
 
+  // MASTER FIX — collapsible Technicals / Fundamentals, default closed.
+  const [techOpen, setTechOpen] = useState(false);
+  const [fundOpen, setFundOpen] = useState(false);
+
   const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
   const cmpSourceLabel =
     cmp.source === "liquidity_20d_close"
@@ -834,43 +838,78 @@ function StockCard({
         </div>
       </div>
 
-      {/* Technicals */}
-      <div className="rounded-lg border border-border p-3">
-        <p className="text-[10px] uppercase text-muted-foreground font-mono mb-2">Technicals (20d)</p>
-        {dc.technicals ? (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
-            <KV k="SMA" v={`₹${fmt(tech.sma_20d)}`} />
-            <KV k="High" v={`₹${fmt(tech.high_20d)}`} />
-            <KV k="Low" v={`₹${fmt(tech.low_20d)}`} />
-            <KV k="Δ %" v={tech.pct_change_20d == null ? "—" : `${fmt(tech.pct_change_20d)}%`} />
-            <KV k="Vol" v={tech.realized_vol_20d == null ? "—" : fmt(tech.realized_vol_20d, 4)} />
+      {/* Technicals — collapsible, default closed (MASTER FIX) */}
+      <div className="rounded-lg border border-border">
+        <button
+          type="button"
+          onClick={() => setTechOpen((v) => !v)}
+          aria-expanded={techOpen}
+          aria-controls={`tech-${stock.ticker}`}
+          className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/40 transition"
+        >
+          <span className="text-[10px] uppercase text-muted-foreground font-mono">Technicals (20d)</span>
+          {techOpen ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        {techOpen && (
+          <div id={`tech-${stock.ticker}`} className="px-3 pb-3">
+            {dc.technicals ? (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+                <KVT k="SMA" v={`₹${fmt(tech.sma_20d)}`} tip="Simple Moving Average: Average price over the last 20 trading days." />
+                <KVT k="High" v={`₹${fmt(tech.high_20d)}`} tip="Highest closing price observed in the last 20 trading days." />
+                <KVT k="Low" v={`₹${fmt(tech.low_20d)}`} tip="Lowest closing price observed in the last 20 trading days." />
+                <KVT k="Δ %" v={tech.pct_change_20d == null ? "—" : `${fmt(tech.pct_change_20d)}%`} tip="Price Change: Percent difference between current price and 20 days ago." />
+                <KVT k="Vol" v={tech.realized_vol_20d == null ? "—" : fmt(tech.realized_vol_20d, 4)} tip="Realized Volatility: Measure of how much the price swings up and down." />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">Pending</p>
+            )}
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground italic">Pending</p>
         )}
       </div>
 
-      {/* Fundamentals */}
-      <div className="rounded-lg border border-border p-3">
-        <p className="text-[10px] uppercase text-muted-foreground font-mono mb-2">Fundamentals</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-          <KV k="Company" v={fund.company_name ?? "—"} />
-          <KV k="Sector" v={fund.sector ?? "—"} />
-          <KV k="Industry" v={fund.industry ?? "—"} />
-          <KV k="Market Cap" v={fmtCr(fund.market_cap_rs)} />
-          <KV k="Cap Band" v={fund.cap_band ?? "—"} />
-          <KV k="Lot / Tick" v={`${fund.lot_size ?? "—"} / ${fund.tick_size ?? "—"}`} />
-        </div>
-        {(fund.regulatory_flags.is_asm || fund.regulatory_flags.is_gsm ||
-          fund.regulatory_flags.is_t2t || fund.regulatory_flags.is_suspended) && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {fund.regulatory_flags.is_asm && <FlagPill label="ASM" />}
-            {fund.regulatory_flags.is_gsm && <FlagPill label="GSM" />}
-            {fund.regulatory_flags.is_t2t && <FlagPill label="T2T" />}
-            {fund.regulatory_flags.is_suspended && <FlagPill label="SUSPENDED" />}
+      {/* Fundamentals — collapsible, default closed (MASTER FIX) */}
+      <div className="rounded-lg border border-border">
+        <button
+          type="button"
+          onClick={() => setFundOpen((v) => !v)}
+          aria-expanded={fundOpen}
+          aria-controls={`fund-${stock.ticker}`}
+          className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/40 transition"
+        >
+          <span className="text-[10px] uppercase text-muted-foreground font-mono">Fundamentals</span>
+          {fundOpen ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        {fundOpen && (
+          <div id={`fund-${stock.ticker}`} className="px-3 pb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+              <KV k="Company" v={fund.company_name ?? "—"} />
+              <KV k="Sector" v={fund.sector ?? "—"} />
+              <KV k="Industry" v={fund.industry ?? "—"} />
+              <KV k="Market Cap" v={fmtCr(fund.market_cap_rs)} />
+              <KVT k="Cap Band" v={fund.cap_band ?? "—"} tip="Market Category: Classification by company size (Large/Mid/Small)." />
+              <KVT k="Lot / Tick" v={`${fund.lot_size ?? "—"} / ${fund.tick_size ?? "—"}`} tip="Trading Units: Minimum shares per trade / Minimum price movement." />
+            </div>
+            {(fund.regulatory_flags.is_asm || fund.regulatory_flags.is_gsm ||
+              fund.regulatory_flags.is_t2t || fund.regulatory_flags.is_suspended) && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {fund.regulatory_flags.is_asm && <FlagPill label="ASM" />}
+                {fund.regulatory_flags.is_gsm && <FlagPill label="GSM" />}
+                {fund.regulatory_flags.is_t2t && <FlagPill label="T2T" />}
+                {fund.regulatory_flags.is_suspended && <FlagPill label="SUSPENDED" />}
+              </div>
+            )}
           </div>
         )}
       </div>
+
 
       {/* News */}
       <div className="rounded-lg border border-border p-3">
@@ -943,6 +982,24 @@ function KV({ k, v }: { k: string; v: string }) {
     </div>
   );
 }
+
+function KVT({ k, v, tip }: { k: string; v: string; tip: string }) {
+  return (
+    <div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <p className="text-[10px] uppercase text-muted-foreground font-mono inline-flex items-center gap-1 cursor-help">
+            {k}
+            <Info className="h-3 w-3 opacity-60" />
+          </p>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[240px] text-xs">{tip}</TooltipContent>
+      </Tooltip>
+      <p className="text-xs font-mono break-words">{v}</p>
+    </div>
+  );
+}
+
 
 function FlagPill({ label }: { label: string }) {
   return (
