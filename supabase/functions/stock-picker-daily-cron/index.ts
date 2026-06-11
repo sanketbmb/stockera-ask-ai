@@ -1153,8 +1153,13 @@ serve(async (req: Request) => {
         batch_type: batchType,
         batch_state: batchState,
         ...phaseMs,
+        cleanliness_n_in,
+        cleanliness_n_out,
+        cleanliness_filtered_count: cleanliness_filtered.length,
+        cleanliness_filtered,
       },
     });
+
 
     return new Response(
       JSON.stringify({
