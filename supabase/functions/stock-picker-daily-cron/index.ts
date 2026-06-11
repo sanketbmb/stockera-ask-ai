@@ -733,8 +733,10 @@ serve(async (req: Request) => {
         dhanFetchUrl,
         serviceKey: SUPABASE_SERVICE_ROLE_KEY,
       });
+      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: outcomes.length });
       await appendLiquidity(supabase, outcomes);
       markPhase('phase_liquidity_ms', tLiquidity);
+      logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: outcomes.length });
 
       // 4. Continuation or finish
       const nextSymbol = isFinalChunk ? null : chunk[chunk.length - 1].symbol;
@@ -789,11 +791,14 @@ serve(async (req: Request) => {
       dhanFetchUrl,
       serviceKey: SUPABASE_SERVICE_ROLE_KEY,
     });
+    logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
     await appendLiquidity(supabase, fetchOutcomes);
     markPhase('phase_liquidity_ms', tLiquidity);
+    logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
 
     // ---- Phase 4: exclusion ----
     const tExclusion = Date.now();
+    logDiagnosticPhase(batchId, 'phase_exclusion', 'start', tExclusion, { universe_snapshot_id: universe.universe_snapshot_id });
     const exclusion = await invokeFunction<ExclusionResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -805,6 +810,7 @@ serve(async (req: Request) => {
     );
     if (!exclusion.ok) throw new Error(`cron: exclusion-engine returned not ok`);
     markPhase('phase_exclusion_ms', tExclusion);
+    logDiagnosticPhase(batchId, 'phase_exclusion', 'done', tExclusion, { verdicts: exclusion.per_symbol_verdicts.length });
 
     // ---- Phase 5: abort threshold check ----
     const totalUniverse = universe.universe_size;
