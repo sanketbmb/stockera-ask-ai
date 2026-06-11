@@ -1,0 +1,147 @@
+// Phase 2E — Background fundamentals sync (FinEdge)
+// Reads universe_override_symbols, fetches company-profile via finedge-fetch,
+// upserts public.fundamentals_cache. Cap band derived from market cap in INR.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+}
+
+function capBand(mcap: number | null): string | null {
+  if (mcap == null || !Number.isFinite(mcap) || mcap <= 0) return null;
+  if (mcap >= 200_000_000_000) return "large";
+  if (mcap >= 50_000_000_000) return "mid";
+  return "small";
+}
+
+function pickNum(...vals: unknown[]): number | null {
+  for (const v of vals) {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+function pickStr(...vals: unknown[]): string | null {
+  for (const v of vals) if (typeof v === "string" && v.trim()) return v.trim();
+  return null;
+}
+
+async function callFinEdge(endpoint: string, symbol: string): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/finedge-fetch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SERVICE_KEY,
+        authorization: `Bearer ${SERVICE_KEY}`,
+      },
+      body: JSON.stringify({ endpoint, symbol }),
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
+    if (!res.ok || body.success !== true) return null;
+    return (body.data as Record<string, unknown>) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  try {
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: cfgRows } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_key, config_value")
+      .in("config_key", ["finedge_api_enabled", "universe_override_symbols", "universe_override_enabled"]);
+    const cfg = new Map<string, unknown>();
+    for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
+
+    if (cfg.get("finedge_api_enabled") !== true) {
+      return json({ ok: true, skipped: "finedge_api_enabled=false", symbols_updated: 0, errors: [] });
+    }
+    if (cfg.get("universe_override_enabled") !== true) {
+      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, errors: [] });
+    }
+    const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
+    if (symbols.length === 0) {
+      return json({ ok: true, symbols_updated: 0, errors: ["no override symbols"] });
+    }
+
+    const errors: Array<{ symbol: string; reason: string }> = [];
+    let updated = 0;
+    const nowIso = new Date().toISOString();
+
+    for (const sym of symbols) {
+      // Try company-profile for sector/industry, ratios for market cap.
+      const profile = await callFinEdge("company-profile", sym);
+      const ratios = await callFinEdge("ratios", sym);
+
+      // FinEdge nests results in unpredictable shapes — extract defensively.
+      const profileObj = (profile?.data ?? profile ?? {}) as Record<string, unknown>;
+      const ratiosObj = (ratios?.data ?? ratios ?? {}) as Record<string, unknown>;
+
+      const sector = pickStr(
+        profileObj.sector, profileObj.Sector,
+        (profileObj.companyProfile as Record<string, unknown> | undefined)?.sector,
+      );
+      const industry = pickStr(
+        profileObj.industry, profileObj.Industry,
+        (profileObj.companyProfile as Record<string, unknown> | undefined)?.industry,
+      );
+      let mcap = pickNum(
+        profileObj.marketCap, profileObj.market_cap, profileObj.MarketCap,
+        ratiosObj.marketCap, ratiosObj.market_cap,
+        (profileObj.companyProfile as Record<string, unknown> | undefined)?.marketCap,
+      );
+      // FinEdge often returns market cap in INR crores; normalize to rupees if value is suspiciously small.
+      if (mcap != null && mcap > 0 && mcap < 10_000_000) {
+        // likely "in crores" — convert to rupees
+        mcap = mcap * 10_000_000;
+      }
+      const band = capBand(mcap);
+
+      if (sector == null && industry == null && mcap == null) {
+        errors.push({ symbol: sym, reason: "no_fields_extracted" });
+        continue;
+      }
+
+      const { error: upErr } = await supabase
+        .from("fundamentals_cache")
+        .upsert(
+          {
+            symbol: sym, exchange: "NSE",
+            sector, industry,
+            market_cap_rs: mcap, cap_band: band,
+            source: "finedge", as_of: nowIso, updated_at: nowIso,
+          },
+          { onConflict: "symbol,exchange" },
+        );
+      if (upErr) {
+        errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
+        continue;
+      }
+      updated++;
+    }
+
+    return json({ ok: true, symbols_updated: updated, errors });
+  } catch (e) {
+    return json({ ok: false, error: String(e) }, 500);
+  }
+});
