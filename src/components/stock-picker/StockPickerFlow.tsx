@@ -729,7 +729,12 @@ function StockCard({
   const ch = stock.cache_health;
 
   const cmpLive = cmp.source === "ltp_cache" && ch.cmp_fresh;
-  const cmpSourceLabel = cmpLive ? "Live" : "EOD";
+  const cmpSourceLabel =
+    cmp.source === "liquidity_20d_close"
+      ? "EOD CLOSE"
+      : ch.cmp_fresh
+      ? "LIVE"
+      : "LAST TRADED";
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
