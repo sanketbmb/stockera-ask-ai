@@ -475,13 +475,66 @@ Deno.serve(async (req) => {
     // Step 6 — limit
     const limited = tierFiltered.slice(0, stockCount);
 
-    // Step 7 — shape (Phase 2C: populate CMP / technicals / fundamentals from
-    // real DB data only; data_completeness reflects what is actually present).
+    // --- Phase 2D helpers (dev-preview math, deterministic, no fabrication) ---
+    function clamp(n: number, lo: number, hi: number): number {
+      return Math.max(lo, Math.min(hi, n));
+    }
+    // vol clamp: floor 0.5%/d, cap 5%/d, default 2%/d when unknown
+    function effectiveVol(v: number | null): number {
+      if (v == null || !Number.isFinite(v)) return 0.02;
+      return clamp(v, 0.005, 0.05);
+    }
+    function buildZones(cmp: number | null, tech: TechnicalsBlock): {
+      buy_zone: BuyZoneBlock; target: number | null; stop_loss: number | null;
+    } {
+      if (cmp == null) return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
+      const v = effectiveVol(tech.realized_vol_20d);
+      let upper = cmp * (1 - v * 0.25);
+      let lower = cmp * (1 - v * 1.25);
+      if (tech.low_20d != null) lower = Math.max(lower, tech.low_20d * 0.98);
+      // ensure ordering
+      if (!(lower < upper)) {
+        return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
+      }
+      // target: above CMP, anchored by 20d high
+      let target: number | null = cmp * (1 + v * 3);
+      if (tech.high_20d != null) target = Math.max(target, tech.high_20d * 1.02);
+      if (target == null || !(target > upper)) target = null;
+      // stop loss: below buy_zone.lower, anchored by 20d low
+      let stop: number | null = cmp * (1 - v * 3);
+      if (tech.low_20d != null) stop = Math.min(stop, tech.low_20d * 0.95);
+      if (stop == null || !(stop < lower)) stop = null;
+      return {
+        buy_zone: { lower: round2(lower), upper: round2(upper) },
+        target: target == null ? null : round2(target),
+        stop_loss: stop == null ? null : round2(stop),
+      };
+    }
+    // composite_score (dev-preview only; NOT persisted): 0..100 blend of
+    //   40% inverse realized vol, 40% 20d trend, 20% mean-reversion proximity
+    function previewComposite(cmp: number | null, tech: TechnicalsBlock): number | null {
+      if (cmp == null) return null;
+      const v = tech.realized_vol_20d;
+      const volScore = v == null ? 50 : 100 * (1 - clamp(v / 0.05, 0, 1));
+      const pct = tech.pct_change_20d;
+      const trendScore = pct == null ? 50 : clamp(50 + pct * 2.5, 0, 100);
+      let proxScore = 50;
+      if (tech.sma_20d != null && tech.sma_20d > 0) {
+        const dev = Math.abs(cmp - tech.sma_20d) / tech.sma_20d;
+        proxScore = 100 * (1 - clamp(dev / 0.2, 0, 1));
+      }
+      const blended = 0.4 * volScore + 0.4 * trendScore + 0.2 * proxScore;
+      return Math.round(clamp(blended, 0, 100) * 10) / 10;
+    }
+
+    // Step 7 — shape (Phase 2C real fields + Phase 2D zones/composite preview).
     const stocks: StockOut[] = limited.map((r) => {
       const sym = r.symbol as string;
       const cmp = buildCmp(sym);
       const tech = buildTechnicals(sym);
       const fund = buildFundamentals(sym);
+      const zones = buildZones(cmp.value, tech);
+      const compositePreview = previewComposite(cmp.value, tech);
 
       const cmpOk = cmp.value !== null;
       const techOk =
@@ -494,11 +547,22 @@ Deno.serve(async (req) => {
         fund.industry !== null ||
         fund.market_cap_rs !== null ||
         fund.cap_band !== null;
+      const zonesOk =
+        zones.buy_zone.lower !== null &&
+        zones.buy_zone.upper !== null &&
+        zones.target !== null &&
+        zones.stop_loss !== null;
 
       const pending: string[] = [];
       if (!cmpOk) pending.push("cmp");
       if (!techOk) pending.push("technicals");
-      pending.push("zones");
+      if (!zonesOk) {
+        const missingZ: string[] = [];
+        if (zones.buy_zone.lower === null || zones.buy_zone.upper === null) missingZ.push("buy_zone");
+        if (zones.target === null) missingZ.push("target");
+        if (zones.stop_loss === null) missingZ.push("stop_loss");
+        pending.push("zones:" + missingZ.join(","));
+      }
       if (!fundOk) pending.push("fundamentals");
       else {
         const missingFund: string[] = [];
@@ -515,16 +579,22 @@ Deno.serve(async (req) => {
         exchange: r.exchange as string,
         sector: fund.sector,
         verdict: "include" as const,
+        // persisted score from audit (currently NULL — writes disabled)
         composite_score: (r.composite_score as number | null) ?? null,
+        // dev-preview score (NOT persisted)
+        composite_score_preview: compositePreview,
         batch_id: r.batch_id as string,
         generated_at: new Date(r.generated_at as string).toISOString(),
         cmp,
         technicals: tech,
         fundamentals: fund,
+        buy_zone: zones.buy_zone,
+        target: zones.target,
+        stop_loss: zones.stop_loss,
         data_completeness: {
           cmp: cmpOk,
           technicals: techOk,
-          zones: false,
+          zones: zonesOk,
           fundamentals: fundOk,
           news: false,
         },
@@ -548,11 +618,24 @@ Deno.serve(async (req) => {
         ),
         tier_applied: tier,
       },
+      zone_engine: {
+        version: "phase-2d-dev-preview",
+        buy_zone_formula:
+          "upper = CMP*(1 - vc*0.25); lower = max(CMP*(1 - vc*1.25), low_20d*0.98); vc = clamp(realized_vol_20d, 0.005, 0.05), default 0.02",
+        target_formula:
+          "target = max(CMP*(1 + vc*3), high_20d*1.02); null if not strictly > buy_zone.upper",
+        stop_loss_formula:
+          "stop_loss = min(CMP*(1 - vc*3), low_20d*0.95); null if not strictly < buy_zone.lower",
+        composite_score_formula:
+          "0.4 * vol_score + 0.4 * trend_score + 0.2 * mean_reversion_proximity, range 0..100",
+        disclaimer:
+          "Dev-preview math only. NOT backtested. NOT persisted to stock_picker_pick_audit. composite_score_writes_enabled remains false.",
+      },
       data_sources: {
         cmp: "ltp_cache (preferred) -> stock_picker_liquidity_20d latest close (fallback)",
         technicals: "derived from stock_picker_liquidity_20d closes (sma_20d, high_20d, low_20d, pct_change_20d, realized_vol_20d)",
         fundamentals: "stock_master (company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, regulatory flags)",
-        zones: "not produced by SP-1 pipeline yet",
+        zones: "derived in-response from CMP + technicals (Phase 2D dev-preview math)",
         news: "not produced by SP-1 pipeline yet",
       },
     });
