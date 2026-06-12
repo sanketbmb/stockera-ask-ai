@@ -269,47 +269,41 @@ Deno.serve(async (req) => {
     }
 
     // --- Process tasks within wall-clock budget ---
+    // Dhan marketfeed enforces ~1 req/sec, so we serialize and sleep
+    // interSleepMs between calls instead of issuing a parallel batch.
     let processed = 0;
     let errorsCount = failureDetails.length;
-    const PARALLEL = Math.min(8, batchSize);
-    for (let i = 0; i < tasks.length; i += PARALLEL) {
+    for (let i = 0; i < tasks.length; i += 1) {
       if (Date.now() - runStartMs > maxRuntimeMs) break;
-      const chunk = tasks.slice(i, i + PARALLEL);
-      const results = await Promise.all(chunk.map(async (tk) => {
-        const ltp = await fetchDhanLtp(tk.securityId, tk.segment);
-        return { ...tk, ltp };
-      }));
+      const tk = tasks[i];
+      const ltp = await fetchDhanLtp(tk.securityId, tk.segment);
       const nowIso = new Date().toISOString();
-      const upserts = results
-        .filter((r) => r.ltp !== null)
-        .map((r) => ({
-          symbol: r.symbol,
-          exchange: r.exchange,
-          ltp: r.ltp!,
+      if (ltp === null) {
+        errorsCount += 1;
+        failureDetails.push({ symbol: tk.symbol, exchange: tk.exchange, reason: "dhan_null" });
+      } else {
+        const row = {
+          symbol: tk.symbol,
+          exchange: tk.exchange,
+          ltp,
           source: "dhan_close",
           fetched_at: nowIso,
           as_of: nowIso,
-        }));
-      for (const r of results) {
-        if (r.ltp === null) {
-          errorsCount += 1;
-          failureDetails.push({ symbol: r.symbol, exchange: r.exchange, reason: "dhan_null" });
-        }
-      }
-      if (upserts.length > 0) {
-        const { error: upErr } = await supabase.from("ltp_cache").upsert(upserts, { onConflict: "symbol" });
+        };
+        const { error: upErr } = await supabase.from("ltp_cache").upsert([row], { onConflict: "symbol" });
         if (upErr) {
           console.error("ltp_cache upsert error:", upErr.message);
+          errorsCount += 1;
+          failureDetails.push({ symbol: tk.symbol, exchange: tk.exchange, reason: "upsert_error" });
         } else {
-          processed += upserts.length;
+          processed += 1;
+          const { error: hErr } = await supabase.from("ltp_history").insert([{
+            symbol: tk.symbol, ltp, source: "dhan_close", recorded_at: nowIso,
+          }]);
+          if (hErr) console.error("ltp_history insert error:", hErr.message);
         }
-        const historyRows = upserts.map((u) => ({
-          symbol: u.symbol, ltp: u.ltp, source: "dhan_close", recorded_at: u.fetched_at,
-        }));
-        const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
-        if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
-      if (i + PARALLEL < tasks.length && interSleepMs > 0) {
+      if (i + 1 < tasks.length && interSleepMs > 0) {
         await new Promise((r) => setTimeout(r, interSleepMs));
       }
     }
