@@ -1,0 +1,3 @@
+DELETE FROM public.stock_picker_universe_snapshot_member WHERE universe_snapshot_id = 'fb5d0521-6078-43d7-8678-4ced8445c31e';
+DELETE FROM public.stock_picker_universe_snapshot WHERE id = 'fb5d0521-6078-43d7-8678-4ced8445c31e';
+UPDATE public.stock_picker_runtime_config SET config_value = '"73f078c1-a7b4-4968-8e37-d04ab4abc7e5"'::jsonb, updated_at = now() WHERE config_key = 'active_universe_snapshot_id';
