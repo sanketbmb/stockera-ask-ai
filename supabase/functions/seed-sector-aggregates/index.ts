@@ -113,11 +113,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
   const started = Date.now();
+  const startedAt = new Date(started).toISOString();
   try {
     // Bootstrap refresh (always)
     const boot = await upsertBootstrap();
     if (!boot.ok) {
-      await logRun("error", 0, { phase: "bootstrap_upsert", error: boot.error });
+      await logRun("error", 0, { phase: "bootstrap_upsert", error: boot.error }, startedAt);
       return json({ success: false, error: "BOOTSTRAP_UPSERT_FAILED", details: boot.error }, 500);
     }
 
@@ -141,10 +142,10 @@ Deno.serve(async (req) => {
       alias_smoke: aliasChecks,
       latency_ms: Date.now() - started,
     };
-    await logRun("ok", boot.count, summary);
+    await logRun("ok", boot.count, summary, startedAt);
     return json({ success: true, ...summary });
   } catch (e) {
-    await logRun("error", 0, { error: String(e) });
+    await logRun("error", 0, { error: String(e) }, startedAt);
     return json({ success: false, error: "INTERNAL_ERROR", details: String(e) }, 500);
   }
 });
