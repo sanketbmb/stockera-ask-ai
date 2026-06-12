@@ -51,7 +51,7 @@ async function loadSeedRows(
   // Phase 2S.3-FIX-G: paginate to bypass PostgREST 1000-row default cap
   // (stock_master holds ~45k rows for seed v1; the previous unpaginated
   // select silently truncated the universe to 1000).
-  const PAGE = 1000;
+  const PAGE = 5000;
   let from = 0;
   const all: RawSeedRow[] = [];
   while (true) {
