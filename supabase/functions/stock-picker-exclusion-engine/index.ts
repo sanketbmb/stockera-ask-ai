@@ -157,7 +157,9 @@ serve(async (req: Request) => {
         if (!enabled) continue;
 
         if (checkId === 'EX-SEGMENT-1') {
-          if (m.segment !== 'EQ' && m.segment !== 'BE') {
+          // Phase 2S.3-FIX: accept canonical NSE_EQ/BSE_EQ labels alongside legacy EQ/BE.
+          const seg = typeof m.segment === 'string' ? m.segment.toUpperCase() : '';
+          if (seg !== 'EQ' && seg !== 'BE' && seg !== 'NSE_EQ' && seg !== 'BSE_EQ') {
             symbolVerdict = { ...symbolVerdict, verdict: 'exclude', failed_check: checkId, reason: `Invalid segment: ${m.segment}` };
             break;
           }
