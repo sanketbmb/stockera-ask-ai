@@ -244,7 +244,7 @@ async function upsertSnapshot(
   if (insErr || !inserted) throw new Error(`build-universe: snapshot header insert failed`);
 
   const snapshotId = inserted.id as string;
-  const BATCH_SIZE = 500;
+  const BATCH_SIZE = 5000;
   for (let i = 0; i < args.members.length; i += BATCH_SIZE) {
     const slice = args.members.slice(i, i + BATCH_SIZE);
     const memberRows = slice.map((m, idx) => ({
