@@ -1,0 +1,1 @@
+UPDATE public.stock_picker_runtime_config SET config_value = '"fe743410-4238-415b-a8c1-20188dcb0aab"'::jsonb, updated_at = now() WHERE config_key = 'active_universe_snapshot_id';
