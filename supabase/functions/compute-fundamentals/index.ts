@@ -671,9 +671,17 @@ Deno.serve(async (req) => {
       piotroski: pio.score,
     });
 
+    const okStatus: "ok" | "partial" = missingFields.length === 0 ? "ok" : "partial";
+    await logComputeTelemetry({
+      status: okStatus, symbol, exchange,
+      finedge_ok_fields: feOkFields, twelve_data_recovered_fields: tdRecoveredFields,
+      missing_fields: missingFields,
+    });
+
     return json({
       success: true,
       symbol,
+      exchange,
       computed_at: new Date().toISOString(),
       company,
       valuation,
@@ -684,13 +692,21 @@ Deno.serve(async (req) => {
       signals,
       fundamental_score: score,
       verdict: verdictOf(score),
+      fundamentals_source_map,
     });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
+    await logComputeTelemetry({
+      status: "error", symbol, exchange,
+      finedge_ok_fields: 0, twelve_data_recovered_fields: 0,
+      missing_fields: ["sector", "industry", "market_cap_rs", "cap_band"],
+      error_message: msg,
+    });
     if (msg.startsWith("DATA_FETCH_FAILED")) {
       return json({ success: false, error: "DATA_FETCH_FAILED", details: msg }, 502);
     }
     console.error("compute-fundamentals:", err);
     return json({ success: false, error: "INTERNAL_ERROR", details: msg }, 500);
   }
+
 });
