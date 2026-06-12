@@ -498,7 +498,16 @@ async function appendLiquidity(
   const BATCH = 500;
   for (let i = 0; i < rowsToInsert.length; i += BATCH) {
     const slice = rowsToInsert.slice(i, i + BATCH);
-    const { error } = await supabase.from('stock_picker_liquidity_20d').insert(slice);
+    // Phase 2S.3-FIX-B: idempotent write — same (symbol, exchange, record_date,
+    // data_snapshot_at) tuple may already exist from a prior in-day run at the
+    // wider universe. Use ON CONFLICT DO NOTHING to preserve existing rows
+    // (no overwrite, no row-count decrease, no NULL clobber).
+    const { error } = await supabase
+      .from('stock_picker_liquidity_20d')
+      .upsert(slice, {
+        onConflict: 'symbol,exchange,record_date,data_snapshot_at',
+        ignoreDuplicates: true,
+      });
     if (error) throw new Error(`cron: liquidity append failed: ${error.message}`);
   }
 }
