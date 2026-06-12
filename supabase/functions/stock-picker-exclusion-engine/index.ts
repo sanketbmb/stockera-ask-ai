@@ -64,30 +64,44 @@ serve(async (req: Request) => {
     //    phase2s1: paginated fetch — PostgREST default 1000-row cap silently truncates
     //    .in(symbol, universeSymbols) results when total liquidity rows exceed 1000.
     const universeSymbols = Array.from(new Set(members.map(m => m.symbol)));
+    // Phase 2S.3-FIX-C: chunk the symbol IN-list to avoid URL-length limits, and
+    // paginate each chunk's read with the proven Phase 2S.1 range() loop pattern.
+    // Deterministic ordering by (symbol, exchange, record_date, data_snapshot_at, id)
+    // preserves replay-hash stability. Page size matches 2S.1 (1000). Per-chunk
+    // safety cap raised to 500 pages (500K rows / chunk) so wider universes
+    // cannot trip the previous 50-page abort.
+    const SYMBOL_CHUNK = 200;
     const PAGE_SIZE = 1000;
-    const MAX_PAGES = 50;
+    const MAX_PAGES = 500;
     const liq: any[] = [];
-    let pages = 0;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const start = page * PAGE_SIZE;
-      const end = start + PAGE_SIZE - 1;
-      const { data: chunk, error: liqErr } = await supabase
-        .from('stock_picker_liquidity_20d')
-        .select('id, symbol, exchange, record_date, close, volume, turnover_rs, fetch_status, data_snapshot_at')
-        .eq('fetch_status', 'ok')
-        .in('symbol', universeSymbols)
-        .order('id', { ascending: true })
-        .range(start, end);
-      if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
-      const rows = chunk ?? [];
-      liq.push(...rows);
-      pages = page + 1;
-      if (rows.length < PAGE_SIZE) break;
-      if (page === MAX_PAGES - 1 && rows.length === PAGE_SIZE) {
-        throw new Error('phase2s1: liq20d_page_cap_exceeded');
+    let totalPages = 0;
+    for (let s = 0; s < universeSymbols.length; s += SYMBOL_CHUNK) {
+      const symbolsChunk = universeSymbols.slice(s, s + SYMBOL_CHUNK);
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const start = page * PAGE_SIZE;
+        const end = start + PAGE_SIZE - 1;
+        const { data: chunk, error: liqErr } = await supabase
+          .from('stock_picker_liquidity_20d')
+          .select('id, symbol, exchange, record_date, close, volume, turnover_rs, fetch_status, data_snapshot_at')
+          .eq('fetch_status', 'ok')
+          .in('symbol', symbolsChunk)
+          .order('symbol', { ascending: true })
+          .order('exchange', { ascending: true })
+          .order('record_date', { ascending: false })
+          .order('data_snapshot_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(start, end);
+        if (liqErr) throw new Error(`exclusion: load liquidity failed: ${liqErr.message}`);
+        const rows = chunk ?? [];
+        liq.push(...rows);
+        totalPages += 1;
+        if (rows.length < PAGE_SIZE) break;
+        if (page === MAX_PAGES - 1 && rows.length === PAGE_SIZE) {
+          throw new Error('phase2s3c: liq20d_page_cap_exceeded');
+        }
       }
     }
-    console.log(`phase2s1: liq20d_paged_fetch pages=${pages} rows=${liq.length}`);
+    console.log(`phase2s3c: liq20d_paged_fetch symbol_chunks=${Math.ceil(universeSymbols.length / SYMBOL_CHUNK)} pages=${totalPages} rows=${liq.length}`);
 
 
     // Filter to current universe + ok + finite numeric guards
