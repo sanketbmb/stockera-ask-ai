@@ -139,6 +139,10 @@ function isCleanEquityForPicker(r: SuccessorAppliedRow): boolean {
   // ETF / index-fund ticker patterns.
   if (etfSymbolTokenRe.test(r.symbol)) return false;
   if (etfSymbolSuffixRe.test(r.symbol)) return false;
+  // Phase 2S.3-FIX-G contamination spec: reject any ticker ending in BEES
+  // (e.g. INFRABEES, ITBEES, LTGILTBEES, MANUFGBEES, PHARMABEES) that
+  // sync-ohlcv-history's token-boundary regex misses.
+  if (/BEES$/i.test(r.symbol)) return false;
   // Bond / SDL ticker patterns.
   if (bondTicker1Re.test(r.symbol)) return false;
   if (bondTicker2Re.test(r.symbol)) return false;
@@ -244,7 +248,9 @@ async function upsertSnapshot(
   if (insErr || !inserted) throw new Error(`build-universe: snapshot header insert failed`);
 
   const snapshotId = inserted.id as string;
-  const BATCH_SIZE = 500;
+  const BATCH_SIZE = 1000;
+  const PARALLEL = 8;
+  const batches: { i: number; rows: any[] }[] = [];
   for (let i = 0; i < args.members.length; i += BATCH_SIZE) {
     const slice = args.members.slice(i, i + BATCH_SIZE);
     const memberRows = slice.map((m, idx) => ({
@@ -259,10 +265,16 @@ async function upsertSnapshot(
       successor_applied: m.successor_applied,
       canonical_rank: i + idx + 1,
     }));
-    const { error: memErr } = await supabase
-      .from('stock_picker_universe_snapshot_member')
-      .insert(memberRows);
-    if (memErr) throw new Error(`build-universe: member insert failed at batch ${i}: ${memErr.message}`);
+    batches.push({ i, rows: memberRows });
+  }
+  for (let p = 0; p < batches.length; p += PARALLEL) {
+    const group = batches.slice(p, p + PARALLEL);
+    const results = await Promise.all(group.map(b =>
+      supabase.from('stock_picker_universe_snapshot_member').insert(b.rows).then(r => ({ i: b.i, err: r.error }))
+    ));
+    for (const r of results) {
+      if (r.err) throw new Error(`build-universe: member insert failed at batch ${r.i}: ${r.err.message}`);
+    }
   }
 
   return { id: snapshotId, reused: false };
