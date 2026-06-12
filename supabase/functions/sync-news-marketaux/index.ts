@@ -81,6 +81,24 @@ async function callMarketaux(params: Record<string, string>): Promise<NewsItem[]
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   const ranAt = new Date().toISOString();
+  const startedAt = ranAt;
+  async function logTelemetry(args: { status: string; processed: number; errors_count: number; details?: Record<string, unknown>; error_message?: string }): Promise<void> {
+    try {
+      const finishedAt = new Date().toISOString();
+      await fetch(`${SUPABASE_URL}/rest/v1/cron_run_log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, Prefer: "return=minimal" },
+        body: JSON.stringify({
+          function_name: "sync-news-marketaux",
+          status: args.status,
+          started_at: startedAt,
+          finished_at: finishedAt,
+          error_message: args.error_message ?? null,
+          metrics: { status: args.status, processed: args.processed, errors_count: args.errors_count, details: args.details ?? {}, ran_at: finishedAt },
+        }),
+      }).catch(() => null);
+    } catch { /* swallow */ }
+  }
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
