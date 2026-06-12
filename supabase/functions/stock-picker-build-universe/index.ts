@@ -156,6 +156,39 @@ function filterEquitySegments(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[
   return rows.filter(isCleanEquityForPicker);
 }
 
+// Phase 2S.3-FIX-H Step 1: per (symbol, exchange) keep only ONE row.
+// Prefer the canonical segment label (NSE_EQ / BSE_EQ); fall back to EQ/BE.
+function canonicalizeSegment(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
+  const rank = (exchange: string, segment: string): number => {
+    const seg = (segment ?? '').toUpperCase();
+    if (exchange === 'NSE' && seg === 'NSE_EQ') return 0;
+    if (exchange === 'BSE' && seg === 'BSE_EQ') return 0;
+    if (seg === 'EQ') return 1;
+    if (seg === 'BE') return 2;
+    return 3;
+  };
+  const best = new Map<string, SuccessorAppliedRow>();
+  for (const r of rows) {
+    const key = `${r.symbol}|${r.exchange}`;
+    const existing = best.get(key);
+    if (!existing) { best.set(key, r); continue; }
+    const rNew = rank(r.exchange, r.segment);
+    const rOld = rank(existing.exchange, existing.segment);
+    if (rNew < rOld) best.set(key, r);
+  }
+  return [...best.values()];
+}
+
+// Phase 2S.3-FIX-H Step 2: if the same symbol exists on both NSE and BSE,
+// keep only the NSE row. BSE rows survive only if the symbol is not on NSE.
+function preferNsePrimary(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
+  const nseSymbols = new Set<string>();
+  for (const r of rows) if (r.exchange === 'NSE') nseSymbols.add(r.symbol);
+  return rows.filter(r => r.exchange === 'NSE' || !nseSymbols.has(r.symbol));
+}
+
+
+
 function dedupByIsin(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
   const seen = new Set<string>();
   const out: SuccessorAppliedRow[] = [];
