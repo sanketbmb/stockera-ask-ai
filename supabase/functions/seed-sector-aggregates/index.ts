@@ -83,7 +83,8 @@ async function upsertBootstrap(): Promise<{ ok: boolean; count: number; error?: 
   return { ok: true, count: rows.length };
 }
 
-async function logRun(status: string, rows: number, details: Record<string, unknown>): Promise<void> {
+async function logRun(status: string, rows: number, details: Record<string, unknown>, startedAt: string): Promise<void> {
+  const finishedAt = new Date().toISOString();
   await fetch(`${SUPABASE_URL}/rest/v1/cron_run_log`, {
     method: "POST",
     headers: {
@@ -93,10 +94,17 @@ async function logRun(status: string, rows: number, details: Record<string, unkn
       Prefer: "return=minimal",
     },
     body: JSON.stringify({
-      job_name: "seed-sector-aggregates",
+      function_name: "seed-sector-aggregates",
       status,
-      rows_affected: rows,
-      details,
+      started_at: startedAt,
+      finished_at: finishedAt,
+      metrics: {
+        status,
+        processed: rows,
+        errors_count: status === "ok" ? 0 : 1,
+        details,
+        ran_at: finishedAt,
+      },
     }),
   }).catch(() => null);
 }
