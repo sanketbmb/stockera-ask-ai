@@ -976,20 +976,99 @@ serve(async (req: Request) => {
     }
 
     // --- LIVE / DRY_RUN BRANCH ---
-    // REPAIR 1: completed the previously-broken fetchLiquidityForUniverse call
-    // and chained appendLiquidity + markPhase. Mirrors the bootstrap branch
-    // pattern but runs against the FULL universe (no chunking).
-    const fetchOutcomes = await fetchLiquidityForUniverse({
-      members: canonicalMembers.map(m => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
-      fromDateIso,
-      toDateIso,
-      dhanFetchUrl,
-      serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+    // PHASE 2S.3-FIX-H0: cache-first liquidity. Read pre-warmed
+    // stock_picker_liquidity_20d rows for each (symbol, exchange) BEFORE
+    // touching Dhan. Only cache-miss / stale-cache members go to the live
+    // sequential fetch loop. This removes the wall-clock binding risk that
+    // collapsed FIX-G's canary at ~200-member universe size.
+    const tCache = Date.now();
+    const FRESH_RECORD_LOOKBACK_DAYS = 5; // tolerate weekends/holidays
+    const MIN_OK_ROWS_FOR_CACHE_HIT = 15; // ADV20 needs ≥20; allow ≥15 with recent rows
+    const minRecordDateD = new Date(today);
+    minRecordDateD.setDate(minRecordDateD.getDate() - FRESH_RECORD_LOOKBACK_DAYS);
+    const minRecordDateIso = minRecordDateD.toISOString().slice(0, 10);
+    const cacheSymbolList = Array.from(new Set(canonicalMembers.map((m) => m.symbol)));
+    const cacheRowsAll: Array<{
+      symbol: string; exchange: string; record_date: string;
+      close: number | string; volume: number | string; turnover_rs: number | string;
+    }> = [];
+    if (cacheSymbolList.length > 0) {
+      const CACHE_PAGE = 1000;
+      let cacheFrom = 0;
+      while (true) {
+        const { data: page, error: cErr } = await supabase
+          .from('stock_picker_liquidity_20d')
+          .select('symbol,exchange,record_date,close,volume,turnover_rs')
+          .in('symbol', cacheSymbolList)
+          .eq('fetch_status', 'ok')
+          .gte('record_date', fromDateIso)
+          .lte('record_date', toDateIso)
+          .order('record_date', { ascending: true })
+          .range(cacheFrom, cacheFrom + CACHE_PAGE - 1);
+        if (cErr) throw new Error(`cron: liquidity cache read failed: ${cErr.message}`);
+        if (!page || page.length === 0) break;
+        cacheRowsAll.push(...(page as typeof cacheRowsAll));
+        if (page.length < CACHE_PAGE) break;
+        cacheFrom += CACHE_PAGE;
+      }
+    }
+    const cacheByKey = new Map<string, DhanHistoricalRow[]>();
+    const cacheMaxRecord = new Map<string, string>();
+    for (const r of cacheRowsAll) {
+      const key = `${r.symbol}|${r.exchange}`;
+      let arr = cacheByKey.get(key);
+      if (!arr) { arr = []; cacheByKey.set(key, arr); }
+      arr.push({
+        record_date: r.record_date,
+        close: Number(r.close),
+        volume: Number(r.volume),
+        turnover_rs: Number(r.turnover_rs),
+      });
+      const prev = cacheMaxRecord.get(key);
+      if (!prev || r.record_date > prev) cacheMaxRecord.set(key, r.record_date);
+    }
+    const cachedOutcomes: LiquidityFetchOutcome[] = [];
+    const missMembers: typeof canonicalMembers = [];
+    for (const m of canonicalMembers) {
+      const key = `${m.symbol}|${m.exchange}`;
+      const rows = cacheByKey.get(key);
+      const maxRec = cacheMaxRecord.get(key);
+      if (rows && rows.length >= MIN_OK_ROWS_FOR_CACHE_HIT && maxRec && maxRec >= minRecordDateIso) {
+        cachedOutcomes.push({ symbol: m.symbol, exchange: m.exchange as Exchange, status: 'ok', rows });
+      } else {
+        missMembers.push(m);
+      }
+    }
+    const cacheElapsedMs = Date.now() - tCache;
+    console.log(
+      `phase_liquidity_cache: total=${canonicalMembers.length} ` +
+      `hits=${cachedOutcomes.length} misses=${missMembers.length} ` +
+      `elapsed_ms=${cacheElapsedMs}`
+    );
+
+    const liveOutcomes: LiquidityFetchOutcome[] = missMembers.length > 0
+      ? await fetchLiquidityForUniverse({
+          members: missMembers.map((m) => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
+          fromDateIso,
+          toDateIso,
+          dhanFetchUrl,
+          serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+        })
+      : [];
+    const fetchOutcomes: LiquidityFetchOutcome[] = [...cachedOutcomes, ...liveOutcomes];
+    logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, {
+      outcomes: fetchOutcomes.length,
+      cache_hits: cachedOutcomes.length,
+      live_fetches: liveOutcomes.length,
     });
-    logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
-    await appendLiquidity(supabase, fetchOutcomes);
+    // Only append live-fetched rows; cached rows already exist in DB.
+    if (liveOutcomes.length > 0) await appendLiquidity(supabase, liveOutcomes);
     markPhase('phase_liquidity_ms', tLiquidity);
-    logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: fetchOutcomes.length });
+    logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, {
+      outcomes: fetchOutcomes.length,
+      cache_hits: cachedOutcomes.length,
+      live_fetches: liveOutcomes.length,
+    });
 
     // ---- Phase 4: exclusion ----
     const tExclusion = Date.now();
