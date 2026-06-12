@@ -708,5 +708,5 @@ Deno.serve(async (req) => {
     console.error("compute-fundamentals:", err);
     return json({ success: false, error: "INTERNAL_ERROR", details: msg }, 500);
   }
-
 });
+
