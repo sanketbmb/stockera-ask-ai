@@ -33,6 +33,8 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
       return null;
     })
     .filter((e): e is { symbol: string; exchange: string } => e !== null);
+}
+
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
   try {
