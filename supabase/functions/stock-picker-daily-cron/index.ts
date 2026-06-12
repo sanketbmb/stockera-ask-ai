@@ -685,28 +685,95 @@ serve(async (req: Request) => {
     logDiagnosticPhase(batchId, 'phase_config', 'done', tConfig, { run_date_ist: runDateIst, seed_version: seedVersion });
 
     // ---- Phase 2: universe build (CARRIES MEMBERS BACK — BLOCKER 1) ----
+    // Phase 2S.3-FIX-H: if an active snapshot already exists (set by
+    // active_universe_snapshot_id), READ it directly instead of re-running
+    // the full build pipeline (which paginates ~45k stock_master rows and
+    // re-applies cleanliness on every cron tick). This is the cron-reuse
+    // path. We still fall through to invokeFunction('stock-picker-build-universe')
+    // when no active snapshot is configured (bootstrap path / fresh project).
     const tUniverse = Date.now();
     logDiagnosticPhase(batchId, 'phase_universe', 'start', tUniverse, { seed_version: seedVersion });
-    const universe = await invokeFunction<BuildUniverseResponse>(
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY,
-      'stock-picker-build-universe',
-      {
-        seed_version: seedVersion,
-        run_date_ist: runDateIst,
-        invoked_by: body.invoked_by,
+    let universe: BuildUniverseResponse;
+    const activeSnapIdRaw = config.get('active_universe_snapshot_id');
+    const activeSnapId = typeof activeSnapIdRaw === 'string' && activeSnapIdRaw.length > 0
+      ? activeSnapIdRaw
+      : null;
+    let reusePathHit = false;
+    if (activeSnapId && body.mode !== 'bootstrap') {
+      const { data: snapRow, error: snapErr } = await supabase
+        .from('stock_picker_universe_snapshot')
+        .select('id,seed_version,run_date_ist,universe_size,universe_snapshot_hash,seed_source_doc_sha')
+        .eq('id', activeSnapId)
+        .maybeSingle();
+      if (snapErr) throw new Error(`cron: active snapshot lookup failed: ${snapErr.message}`);
+      if (!snapRow) throw new Error(`cron: active snapshot ${activeSnapId} not found`);
+      // Drain members in canonical_rank order (paginate past 1000-row cap).
+      const PAGE = 1000;
+      let from = 0;
+      const members: UniverseMember[] = [];
+      while (true) {
+        const { data: m, error: mErr } = await supabase
+          .from('stock_picker_universe_snapshot_member')
+          .select('symbol,exchange,segment,isin,dhan_security_id,sector_canonical,alternate_listings,successor_applied,canonical_rank')
+          .eq('universe_snapshot_id', activeSnapId)
+          .order('canonical_rank', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (mErr) throw new Error(`cron: active snapshot members load failed: ${mErr.message}`);
+        if (!m || m.length === 0) break;
+        for (const r of m) {
+          members.push({
+            symbol: r.symbol as string,
+            exchange: r.exchange as Exchange,
+            segment: r.segment as UniverseMember['segment'],
+            isin: r.isin as string | null,
+            dhan_security_id: r.dhan_security_id as string | null,
+            sector_canonical: r.sector_canonical as string | null,
+            alternate_listings: Array.isArray(r.alternate_listings) ? (r.alternate_listings as string[]) : [],
+            successor_applied: Boolean(r.successor_applied),
+          });
+        }
+        if (m.length < PAGE) break;
+        from += PAGE;
       }
-    );
-    if (!universe.ok) throw new Error(`cron: build-universe returned not ok`);
-    if (!Array.isArray(universe.members) || universe.members.length !== universe.universe_size) {
-      throw new Error(
-        `cron: build-universe response invariant violated — ` +
-        `members.length=${universe.members?.length} but universe_size=${universe.universe_size}`
+      if (members.length !== (snapRow.universe_size as number)) {
+        throw new Error(
+          `cron: active snapshot member count ${members.length} != header universe_size ${snapRow.universe_size}`
+        );
+      }
+      universe = {
+        ok: true,
+        universe_snapshot_id: snapRow.id as string,
+        universe_size: snapRow.universe_size as number,
+        universe_snapshot_hash: snapRow.universe_snapshot_hash as string,
+        seed_source_doc_sha: snapRow.seed_source_doc_sha as string,
+        reused_existing: true,
+        members,
+      };
+      reusePathHit = true;
+      console.log(`cron diagnostic: phase_universe_reuse_hit snapshot_id=${activeSnapId} size=${members.length} elapsed_ms=${Date.now() - tUniverse}`);
+    } else {
+      universe = await invokeFunction<BuildUniverseResponse>(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY,
+        'stock-picker-build-universe',
+        {
+          seed_version: seedVersion,
+          run_date_ist: runDateIst,
+          invoked_by: body.invoked_by,
+        }
       );
+      if (!universe.ok) throw new Error(`cron: build-universe returned not ok`);
+      if (!Array.isArray(universe.members) || universe.members.length !== universe.universe_size) {
+        throw new Error(
+          `cron: build-universe response invariant violated — ` +
+          `members.length=${universe.members?.length} but universe_size=${universe.universe_size}`
+        );
+      }
     }
     let canonicalMembers: UniverseMember[] = universe.members;
     markPhase('phase_universe_ms', tUniverse);
-    logDiagnosticPhase(batchId, 'phase_universe', 'done', tUniverse, { universe_size: universe.universe_size });
+    logDiagnosticPhase(batchId, 'phase_universe', 'done', tUniverse, { universe_size: universe.universe_size, reuse_path_hit: reusePathHit });
+
 
     // ---- Phase 2b: universe override (test-only, config-driven) ----
     // Driven exclusively by stock_picker_runtime_config. When disabled or the
