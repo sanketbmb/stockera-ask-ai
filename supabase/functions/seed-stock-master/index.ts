@@ -227,6 +227,12 @@ Deno.serve(async (req) => {
       inserted += slice.length;
     }
 
+    await logTelemetry({
+      status: "ok",
+      processed: inserted,
+      errors_count: 0,
+      details: { totalParsed: rows.length, durationMs: Date.now() - started },
+    });
     return json({
       success: true,
       totalParsed: rows.length,
@@ -235,6 +241,12 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("seed-stock-master error:", err);
+    await logTelemetry({
+      status: "error",
+      processed: 0,
+      errors_count: 1,
+      error_message: String(err),
+    });
     return json({ success: false, error: String(err) }, 500);
   }
 });
