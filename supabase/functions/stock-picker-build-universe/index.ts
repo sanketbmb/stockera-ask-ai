@@ -84,10 +84,13 @@ function applySuccessors(rows: RawSeedRow[]): SuccessorAppliedRow[] {
   });
 }
 
+// Phase 2S.3-FIX: accept canonical NSE_EQ/BSE_EQ labels alongside legacy EQ/BE.
+const PICKER_EQUITY_SEGMENTS = new Set(['EQ', 'BE', 'NSE_EQ', 'BSE_EQ']);
 function filterEquitySegments(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
   return rows.filter(r =>
     (r.exchange === 'NSE' || r.exchange === 'BSE') &&
-    (r.segment === 'EQ' || r.segment === 'BE')
+    typeof r.segment === 'string' &&
+    PICKER_EQUITY_SEGMENTS.has(r.segment.toUpperCase())
   );
 }
 
