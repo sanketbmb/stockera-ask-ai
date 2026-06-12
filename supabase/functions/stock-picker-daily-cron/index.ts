@@ -1318,11 +1318,8 @@ serve(async (req: Request) => {
     const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
     console.error('cron fatal:', msg, e);
     try {
-      const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
       const nowIso = new Date().toISOString();
-      await sb.from('cron_run_log').insert({
+      await supabase.from('cron_run_log').insert({
         function_name: 'stock-picker-daily-cron',
         status: 'error',
         started_at: nowIso,
