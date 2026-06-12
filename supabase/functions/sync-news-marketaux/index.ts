@@ -133,11 +133,20 @@ function parseRss(xml: string): RssItem[] {
   return items;
 }
 
+const RSS_USER_AGENT =
+  "StockeraNewsBot/1.0 (+https://www.askthe-expert.app; SEBI-registered RA Stockera Technology Private Limited; contact: admin)";
+
 async function fetchRss(url: string, timeoutMs = 5000): Promise<{ items: RssItem[]; error: string | null }> {
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": "Mozilla/5.0 stockera-news-sync" } });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": RSS_USER_AGENT,
+        "Accept": "application/rss+xml, application/xml, text/xml; q=0.9, */*; q=0.5",
+      },
+    });
     clearTimeout(to);
     if (!res.ok) return { items: [], error: `http_${res.status}` };
     const xml = await res.text();
@@ -145,6 +154,10 @@ async function fetchRss(url: string, timeoutMs = 5000): Promise<{ items: RssItem
   } catch (e) {
     return { items: [], error: String((e as Error).message || e).slice(0, 120) };
   }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
 function toIsoOrNull(s: string | null): string | null {
