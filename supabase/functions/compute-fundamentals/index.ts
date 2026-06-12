@@ -531,20 +531,24 @@ Deno.serve(async (req) => {
     const lI = pl.length - 1, pI = lI - 1;
     const lBI = bs.length - 1, pBI = lBI - 1;
 
-    // ── company ───────────────────────────────────────────────────────────────
-    const marketCap = Number(profile.market_cap ?? NaN);                  // ₹ crore (×1e7)
-    const marketCapAbs = Number.isFinite(marketCap) ? marketCap * 1e7 : null; // ₹
+    // ── company (merged FinEdge primary + Twelve Data fill) ──────────────────
+    const marketCapAbs = finalMarketCapAbs;                                  // ₹
+    const marketCap = marketCapAbs != null ? marketCapAbs / 1e7 : NaN;       // ₹ crore
     const sharesOut = sharesS[lI];
     const price = marketCapAbs != null && sharesOut ? marketCapAbs / sharesOut : null;
 
     const company = {
-      name: profile.name ?? null,
-      sector: profile.sector ?? profile.macro_sector ?? null,
-      industry: profile.industry ?? null,
+      name: finalName,
+      sector: finalSector,
+      industry: finalIndustry,
       market_cap_cr: Number.isFinite(marketCap) ? marketCap : null,
+      market_cap_rs: marketCapAbs,
+      cap_band: capBand,
       employees: null as number | null,
       price: round(price, 2),
+      fundamentals_source_map,
     };
+
 
     // ── valuation ─────────────────────────────────────────────────────────────
     const netIncomeAbs = profS[lI];
