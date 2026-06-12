@@ -1263,13 +1263,16 @@ serve(async (req: Request) => {
 
     // ---- Phase 8: cron_run_log ----
     const finishedAt = new Date().toISOString();
+    const topStatus = abortDueToData ? 'aborted' : 'ok';
     await logCronRun(supabase, {
       batch_id: batchId,
       mode: body.mode,
-      status: abortDueToData ? 'aborted_data_outage' : 'completed',
+      status: topStatus,
       started_at: startedAt,
       finished_at: finishedAt,
       metrics: {
+        status: topStatus,
+        errors_count: 0,
         universe_size: totalUniverse,
         survivors: exclusion.survivors.length,
         rejected: exclusion.rejected_symbols.length,
@@ -1314,6 +1317,17 @@ serve(async (req: Request) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
     console.error('cron fatal:', msg, e);
+    try {
+      const nowIso = new Date().toISOString();
+      await supabase.from('cron_run_log').insert({
+        function_name: 'stock-picker-daily-cron',
+        status: 'error',
+        started_at: nowIso,
+        finished_at: nowIso,
+        error_message: msg,
+        metrics: { status: 'error', errors_count: 1, error_message: msg },
+      });
+    } catch { /* swallow */ }
     return new Response(JSON.stringify({ ok: false, error: msg ?? 'unknown_error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

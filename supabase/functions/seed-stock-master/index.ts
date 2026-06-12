@@ -57,6 +57,46 @@ Deno.serve(async (req) => {
   }
 
   const started = Date.now();
+  const startedAt = new Date(started).toISOString();
+
+  async function logTelemetry(args: {
+    status: string;
+    processed: number;
+    errors_count: number;
+    details?: Record<string, unknown>;
+    error_message?: string;
+  }): Promise<void> {
+    try {
+      const url = Deno.env.get("SUPABASE_URL");
+      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!url || !key) return;
+      const finishedAt = new Date().toISOString();
+      await fetch(`${url}/rest/v1/cron_run_log`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: key,
+          authorization: `Bearer ${key}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          function_name: "seed-stock-master",
+          status: args.status,
+          started_at: startedAt,
+          finished_at: finishedAt,
+          error_message: args.error_message ?? null,
+          metrics: {
+            status: args.status,
+            processed: args.processed,
+            errors_count: args.errors_count,
+            details: args.details ?? {},
+            ran_at: finishedAt,
+          },
+        }),
+      }).catch(() => null);
+    } catch { /* swallow */ }
+  }
+
 
   try {
     /** Server config (no caller auth required — this is an idempotent
@@ -187,6 +227,12 @@ Deno.serve(async (req) => {
       inserted += slice.length;
     }
 
+    await logTelemetry({
+      status: "ok",
+      processed: inserted,
+      errors_count: 0,
+      details: { totalParsed: rows.length, durationMs: Date.now() - started },
+    });
     return json({
       success: true,
       totalParsed: rows.length,
@@ -195,6 +241,12 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("seed-stock-master error:", err);
+    await logTelemetry({
+      status: "error",
+      processed: 0,
+      errors_count: 1,
+      error_message: String(err),
+    });
     return json({ success: false, error: String(err) }, 500);
   }
 });

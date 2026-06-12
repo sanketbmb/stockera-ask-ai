@@ -73,6 +73,7 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<number
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  const startedAt = new Date().toISOString();
   try {
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "1";
@@ -185,12 +186,23 @@ Deno.serve(async (req) => {
     }
 
     // Audit log
-    await supabase.from("cron_run_log").insert({
-      job_name: "refresh-ltp-every-minute",
-      status: fail === 0 ? "ok" : (ok === 0 ? "error" : "partial"),
-      rows_affected: ok,
-      details: { failed: fail, total: tasks.length, work_set_size: work.size },
-    });
+    try {
+      const finishedAt = new Date().toISOString();
+      const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
+      await supabase.from("cron_run_log").insert({
+        function_name: "refresh-ltp",
+        status,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        metrics: {
+          status,
+          processed: ok,
+          errors_count: fail,
+          details: { failed: fail, total: tasks.length, work_set_size: work.size },
+          ran_at: finishedAt,
+        },
+      });
+    } catch { /* swallow */ }
 
     return json({ success: true, refreshed: ok, failed: fail, total: tasks.length });
   } catch (e) {
@@ -199,11 +211,14 @@ Deno.serve(async (req) => {
       const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
+      const finishedAt = new Date().toISOString();
       await supabase.from("cron_run_log").insert({
-        job_name: "refresh-ltp-every-minute",
+        function_name: "refresh-ltp",
         status: "error",
-        rows_affected: 0,
-        details: { error: String(e) },
+        started_at: startedAt,
+        finished_at: finishedAt,
+        error_message: String(e),
+        metrics: { status: "error", errors_count: 1, error_message: String(e), ran_at: finishedAt },
       });
     } catch { /* swallow */ }
     return json({ success: false, error: String(e) }, 500);
