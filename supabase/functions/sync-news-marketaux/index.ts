@@ -1,6 +1,5 @@
-// Phase 2F — Background news sync (Marketaux), with ticker/company-name fallback + telemetry.
-// Tries Marketaux symbols=.NS, then symbols=.BO, then entity_types=equity & search=<company>.
-// Stops at the first attempt that yields items. Inserts only real items.
+// Phase 2X.5 — News fan-out (Marketaux per-symbol variants) + Indian RSS fallback.
+// Honest insertion only: real headlines/URLs/dates. No fabrication.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -19,11 +18,19 @@ function json(body: unknown, status = 200) {
   });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 interface NewsItem {
   headline: string;
   url: string | null;
   published_at: string;
   source: string;
+}
+interface RssItem {
+  title: string;
+  link: string | null;
+  pubDate: string | null;
+  description: string;
 }
 
 function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string }[] {
@@ -42,13 +49,19 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
 }
 
 function normalizeCompany(name: string): string {
-  // Marketaux "search" works best with a short, lowercased phrase; trim suffixes.
   return name
     .toLowerCase()
-    .replace(/\b(ltd\.?|limited|services|servic|serv)\b/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(limited|ltd\.?|pvt\.?|private|company|co\.?|corporation|corp\.?|industries|enterprises|& co)\b/g, " ")
     .replace(/&/g, "and")
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+function shortToken(normalized: string): string {
+  const parts = normalized.split(" ").filter(Boolean);
+  if (parts.length === 0) return "";
+  return parts.slice(0, 2).join(" ").trim();
 }
 
 async function callMarketaux(params: Record<string, string>): Promise<NewsItem[]> {
@@ -62,11 +75,12 @@ async function callMarketaux(params: Record<string, string>): Promise<NewsItem[]
       },
       body: JSON.stringify({
         endpoint: "news/all",
-        symbols: params.symbols, // may be undefined
+        symbols: params.symbols,
         params: {
-          limit: 5,
+          limit: params.limit ? Number(params.limit) : 5,
           language: "en",
           ...(params.search ? { search: params.search } : {}),
+          ...(params.entity_search ? { entity_search: params.entity_search } : {}),
           ...(params.entity_types ? { entity_types: params.entity_types } : {}),
           ...(params.countries ? { countries: params.countries } : {}),
         },
@@ -78,25 +92,71 @@ async function callMarketaux(params: Record<string, string>): Promise<NewsItem[]
     if (!res.ok || body.success !== true) return [];
     const data = body.data as Record<string, unknown> | undefined;
     const items = (data?.data as Array<Record<string, unknown>> | undefined) ?? [];
-    const mapped: NewsItem[] = [];
-    for (const it of items.slice(0, 5)) {
+    const out: NewsItem[] = [];
+    for (const it of items) {
       const title = typeof it.title === "string" ? it.title.trim() : "";
       const url = typeof it.url === "string" ? it.url : null;
       const published = typeof it.published_at === "string" ? it.published_at : null;
       if (!title || !published) continue;
       const src = typeof it.source === "string" ? it.source : "marketaux";
-      mapped.push({ headline: title, url, published_at: published, source: src });
+      out.push({ headline: title, url, published_at: published, source: src });
     }
-    return mapped;
+    return out;
   } catch {
     return [];
   }
 }
 
+// Minimal inline RSS/XML <item> extractor.
+function parseRss(xml: string): RssItem[] {
+  const items: RssItem[] = [];
+  const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+  const grab = (block: string, tag: string): string => {
+    const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const m = block.match(re);
+    if (!m) return "";
+    let v = m[1].trim();
+    const cd = v.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
+    if (cd) v = cd[1];
+    return v.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+  };
+  let m: RegExpExecArray | null;
+  while ((m = itemRe.exec(xml)) !== null) {
+    const block = m[1];
+    const title = grab(block, "title");
+    const link = grab(block, "link");
+    const pub = grab(block, "pubDate") || grab(block, "dc:date") || grab(block, "published");
+    const desc = grab(block, "description") || grab(block, "summary");
+    if (!title) continue;
+    items.push({ title, link: link || null, pubDate: pub || null, description: desc });
+  }
+  return items;
+}
+
+async function fetchRss(url: string, timeoutMs = 5000): Promise<{ items: RssItem[]; error: string | null }> {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": "Mozilla/5.0 stockera-news-sync" } });
+    clearTimeout(to);
+    if (!res.ok) return { items: [], error: `http_${res.status}` };
+    const xml = await res.text();
+    return { items: parseRss(xml), error: null };
+  } catch (e) {
+    return { items: [], error: String((e as Error).message || e).slice(0, 120) };
+  }
+}
+
+function toIsoOrNull(s: string | null): string | null {
+  if (!s) return null;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-  const ranAt = new Date().toISOString();
-  const startedAt = ranAt;
+  const startedAt = new Date().toISOString();
   async function logTelemetry(args: { status: string; processed: number; errors_count: number; details?: Record<string, unknown>; error_message?: string }): Promise<void> {
     try {
       const finishedAt = new Date().toISOString();
@@ -112,8 +172,9 @@ Deno.serve(async (req) => {
           metrics: { status: args.status, processed: args.processed, errors_count: args.errors_count, details: args.details ?? {}, ran_at: finishedAt },
         }),
       }).catch(() => null);
-    } catch { /* swallow */ }
+    } catch { /* */ }
   }
+
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -122,22 +183,47 @@ Deno.serve(async (req) => {
     const { data: cfgRows } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_key, config_value")
-      .in("config_key", ["marketaux_api_enabled", "universe_override_symbols", "universe_override_enabled"]);
+      .in("config_key", [
+        "marketaux_api_enabled",
+        "universe_override_symbols",
+        "universe_override_enabled",
+        "news_marketaux_enabled",
+        "news_rss_fallback_enabled",
+        "news_freshness_max_days",
+        "news_per_symbol_max_items",
+        "news_marketaux_request_sleep_ms",
+        "news_rss_request_sleep_ms",
+        "news_rss_feed_list",
+      ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
-    if (cfg.get("marketaux_api_enabled") !== true) {
-      return json({ ok: true, skipped: "marketaux_api_enabled=false", symbols_inserted: 0, attempts: [], errors: [] });
-    }
     if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_inserted: 0, attempts: [], errors: [] });
+      return json({ ok: true, skipped: "universe_override_enabled=false" });
     }
-    const symbols = parseOverrideSymbols(cfg.get("universe_override_symbols")).map((e) => e.symbol);
-    if (symbols.length === 0) {
-      return json({ ok: true, symbols_inserted: 0, attempts: [], errors: ["no override symbols"] });
+    const overrideEntries = parseOverrideSymbols(cfg.get("universe_override_symbols"));
+    if (overrideEntries.length === 0) {
+      return json({ ok: true, skipped: "no override symbols" });
     }
 
-    // Load company_name from stock_master (prefer NSE row).
+    const marketauxEnabled = cfg.get("news_marketaux_enabled") === true && cfg.get("marketaux_api_enabled") === true;
+    const rssEnabled = cfg.get("news_rss_fallback_enabled") === true;
+    const freshMaxDays = Number(cfg.get("news_freshness_max_days") ?? 30);
+    const perSymbolMax = Number(cfg.get("news_per_symbol_max_items") ?? 5);
+    const mxSleep = Number(cfg.get("news_marketaux_request_sleep_ms") ?? 600);
+    const rssSleep = Number(cfg.get("news_rss_request_sleep_ms") ?? 400);
+    const feedList = Array.isArray(cfg.get("news_rss_feed_list"))
+      ? (cfg.get("news_rss_feed_list") as Array<{ id: string; url: string }>)
+      : [];
+
+    const freshCutoffMs = Date.now() - freshMaxDays * 86400_000;
+    const isFresh = (iso: string | null): boolean => {
+      if (!iso) return false;
+      const t = Date.parse(iso);
+      return Number.isFinite(t) && t >= freshCutoffMs;
+    };
+
+    const symbols = overrideEntries.map((e) => e.symbol);
     const { data: masters } = await supabase
       .from("stock_master")
       .select("symbol, exchange, company_name")
@@ -150,101 +236,191 @@ Deno.serve(async (req) => {
       if (m.exchange === "NSE" || !companyMap.has(sym)) companyMap.set(sym, cn);
     }
 
-    const errors: Array<{ symbol: string; reason: string }> = [];
-    const attemptsOut: Array<Record<string, unknown>> = [];
-    let inserted = 0;
-
-    for (const sym of symbols) {
-      const tries: Array<{ label: string; params: Record<string, string> }> = [
-        { label: "ticker_ns", params: { symbols: `${sym}.NS` } },
-        { label: "ticker_bo", params: { symbols: `${sym}.BO` } },
-      ];
-      const company = companyMap.get(sym);
-      if (company) {
-        tries.push({
-          label: "company_name",
-          params: { search: normalizeCompany(company), entity_types: "equity", countries: "in" },
-        });
+    // ---------- PRE-FETCH RSS FEEDS ONCE ----------
+    const rssCache = new Map<string, RssItem[]>();
+    const rssFeedErrors: Record<string, string> = {};
+    const rssInsertedPerFeed: Record<string, number> = {};
+    const rssStart = Date.now();
+    if (rssEnabled) {
+      for (const f of feedList) {
+        if (Date.now() - rssStart > 20_000) {
+          rssFeedErrors[f.id] = "global_rss_budget_exceeded";
+          continue;
+        }
+        const { items, error } = await fetchRss(f.url, 5000);
+        if (error) rssFeedErrors[f.id] = error;
+        rssCache.set(f.id, items);
+        rssInsertedPerFeed[f.id] = 0;
+        await sleep(rssSleep);
       }
+    }
 
-      const attemptLabels: string[] = [];
-      let items: NewsItem[] = [];
-      let queryUsed = "";
-      for (const t of tries) {
-        attemptLabels.push(t.label);
-        const got = await callMarketaux(t.params);
-        if (got.length > 0) {
-          items = got;
-          queryUsed = t.params.symbols ?? `search=${t.params.search}`;
-          break;
+    // ---------- PER-SYMBOL LOOP ----------
+    const perSymbol: Record<string, { marketaux: number; rss: number }> = {};
+    let marketauxInserted = 0;
+    let rssInsertedTotal = 0;
+    let errorsCount = 0;
+    const errors: Array<{ symbol: string; reason: string }> = [];
+
+    for (const entry of overrideEntries) {
+      const sym = entry.symbol;
+      const exch = entry.exchange || "NSE";
+      const key = `${sym}/${exch}`;
+      perSymbol[key] = { marketaux: 0, rss: 0 };
+
+      const company = companyMap.get(sym) || "";
+      const normalized = company ? normalizeCompany(company) : "";
+      const token = shortToken(normalized);
+
+      // ---- Marketaux fan-out ----
+      let mxItems: NewsItem[] = [];
+      if (marketauxEnabled) {
+        const tries: Array<{ label: string; params: Record<string, string> }> = [
+          { label: "ticker_ns", params: { symbols: `${sym}.NS`, limit: String(perSymbolMax) } },
+          { label: "ticker_bo", params: { symbols: `${sym}.BO`, limit: String(perSymbolMax) } },
+          { label: "entity_search", params: { entity_search: sym, limit: String(perSymbolMax), countries: "in" } },
+        ];
+        if (normalized) tries.push({ label: "company_name", params: { search: normalized, entity_types: "equity", countries: "in", limit: String(perSymbolMax) } });
+        if (token && token.length >= 4 && token !== normalized) tries.push({ label: "short_token", params: { search: token, entity_types: "equity", countries: "in", limit: String(perSymbolMax) } });
+
+        for (const t of tries) {
+          const got = await callMarketaux(t.params);
+          await sleep(mxSleep);
+          const fresh = got.filter((g) => isFresh(g.published_at));
+          if (fresh.length > 0) {
+            mxItems = fresh.slice(0, perSymbolMax);
+            break;
+          }
         }
       }
 
-      if (items.length === 0) {
-        errors.push({ symbol: sym, reason: "no_articles_from_marketaux_after_fallbacks" });
-        attemptsOut.push({
+      if (mxItems.length > 0) {
+        const rows = mxItems.map((it) => ({
           symbol: sym,
-          query_used: null,
-          attempts: attemptLabels,
-          inserted_count: 0,
-          reason_if_zero: "no_articles_from_marketaux_after_fallbacks",
-        });
-        continue;
+          exchange: exch,
+          headline: it.headline,
+          url: it.url,
+          source: "marketaux",
+          published_at: it.published_at,
+          category: null,
+        }));
+        const { data: ins, error: upErr } = await supabase
+          .from("news_cache")
+          .upsert(rows, { onConflict: "symbol,url,published_at", ignoreDuplicates: true })
+          .select("id");
+        if (upErr) {
+          errorsCount++;
+          errors.push({ symbol: sym, reason: `mx_upsert: ${upErr.message}` });
+        } else {
+          const n = (ins ?? []).length;
+          marketauxInserted += n;
+          perSymbol[key].marketaux = n;
+        }
       }
 
-      const rows = items.map((it) => ({
-        symbol: sym,
-        exchange: "NSE",
-        headline: it.headline,
-        url: it.url,
-        source: it.source,
-        published_at: it.published_at,
-        category: null,
-      }));
-      const { data: ins, error: upErr } = await supabase
-        .from("news_cache")
-        .upsert(rows, { onConflict: "symbol,url,published_at", ignoreDuplicates: true })
-        .select("id");
-      if (upErr) {
-        errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
-        attemptsOut.push({
-          symbol: sym,
-          query_used: queryUsed,
-          attempts: attemptLabels,
-          inserted_count: 0,
-          reason_if_zero: `upsert_failed: ${upErr.message}`,
-        });
-        continue;
+      // ---- RSS fallback only if marketaux returned 0 fresh items for THIS symbol ----
+      if (rssEnabled && mxItems.length === 0 && rssCache.size > 0) {
+        const symLower = sym.toLowerCase();
+        const matchTokens: string[] = [symLower];
+        if (normalized) matchTokens.push(normalized);
+        if (token && token.length >= 4) matchTokens.push(token);
+
+        const matched: Array<{ item: RssItem; feedId: string }> = [];
+        for (const [feedId, items] of rssCache.entries()) {
+          for (const it of items) {
+            const hay = `${it.title} ${it.description}`.toLowerCase();
+            const hit = matchTokens.some((tk) => tk && hay.includes(tk));
+            if (!hit) continue;
+            const iso = toIsoOrNull(it.pubDate);
+            if (!iso || !isFresh(iso)) continue;
+            matched.push({ item: it, feedId });
+          }
+        }
+        // de-dup by URL and cap per symbol
+        const seen = new Set<string>();
+        const capped: Array<{ item: RssItem; feedId: string }> = [];
+        for (const m of matched) {
+          const k = m.item.link || `${m.feedId}::${m.item.title}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          capped.push(m);
+          if (capped.length >= perSymbolMax) break;
+        }
+        if (capped.length > 0) {
+          // Group inserts; track per-feed counts.
+          const rows = capped.map((c) => ({
+            symbol: sym,
+            exchange: exch,
+            headline: c.item.title,
+            url: c.item.link,
+            source: `rss_${c.feedId}`,
+            published_at: toIsoOrNull(c.item.pubDate)!,
+            category: null,
+          }));
+          const { data: ins, error: upErr } = await supabase
+            .from("news_cache")
+            .upsert(rows, { onConflict: "symbol,url,published_at", ignoreDuplicates: true })
+            .select("id, source");
+          if (upErr) {
+            errorsCount++;
+            errors.push({ symbol: sym, reason: `rss_upsert: ${upErr.message}` });
+          } else {
+            for (const r of ins ?? []) {
+              rssInsertedTotal++;
+              perSymbol[key].rss++;
+              const fid = String(r.source ?? "").replace(/^rss_/, "");
+              if (fid in rssInsertedPerFeed) rssInsertedPerFeed[fid]++;
+            }
+          }
+        }
       }
-      const insertedHere = (ins ?? []).length;
-      inserted += insertedHere;
-      attemptsOut.push({
-        symbol: sym,
-        query_used: queryUsed,
-        attempts: attemptLabels,
-        inserted_count: insertedHere,
-        reason_if_zero: null,
-      });
     }
+
+    // Coverage tally — query news_cache for fresh items on override.
+    const { data: freshRows } = await supabase
+      .from("news_cache")
+      .select("symbol, exchange")
+      .gte("published_at", new Date(freshCutoffMs).toISOString())
+      .in("symbol", symbols);
+    const freshSet = new Set<string>();
+    for (const r of freshRows ?? []) freshSet.add(`${r.symbol}/${r.exchange}`);
+    let withRecent = 0;
+    const dry: string[] = [];
+    for (const e of overrideEntries) {
+      const k = `${e.symbol}/${e.exchange}`;
+      if (freshSet.has(k)) withRecent++;
+      else dry.push(k);
+    }
+
+    const totalInserted = marketauxInserted + rssInsertedTotal;
+    const status = errorsCount === 0 ? "ok" : (totalInserted === 0 ? "error" : "partial");
+
+    const details = {
+      marketaux_inserted: marketauxInserted,
+      rss_inserted_total: rssInsertedTotal,
+      rss_inserted_per_feed: rssInsertedPerFeed,
+      rss_feed_errors: rssFeedErrors,
+      symbols_with_recent_news: withRecent,
+      symbols_still_dry: dry.length,
+      dry_symbols: dry,
+      per_symbol: perSymbol,
+      errors_sample: errors.slice(0, 10),
+    };
 
     await supabase.from("stock_picker_runtime_config").upsert(
       {
         config_key: "last_sync_news_marketaux",
         kind: "operational",
-        config_value: { ok: true, symbols_inserted: inserted, errors_count: errors.length, ran_at: ranAt },
+        config_value: { ok: true, inserted: totalInserted, withRecent, ran_at: startedAt },
         description: "Last sync-news-marketaux run summary",
-        updated_at: ranAt,
+        updated_at: startedAt,
       },
       { onConflict: "config_key" },
     );
 
-    await logTelemetry({
-      status: errors.length === 0 ? "ok" : (inserted === 0 ? "error" : "partial"),
-      processed: inserted,
-      errors_count: errors.length,
-      details: { errors_sample: errors.slice(0, 10) },
-    });
-    return json({ ok: true, symbols_inserted: inserted, attempts: attemptsOut, errors });
+    await logTelemetry({ status, processed: totalInserted, errors_count: errorsCount, details });
+
+    return json({ ok: true, status, processed: totalInserted, ...details });
   } catch (e) {
     await logTelemetry({ status: "error", processed: 0, errors_count: 1, error_message: String(e) });
     return json({ ok: false, error: String(e) }, 500);
