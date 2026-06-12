@@ -20,6 +20,20 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === "string") return { symbol: entry, exchange: "NSE" };
+      if (entry && typeof entry === "object" &&
+          typeof (entry as { symbol?: unknown }).symbol === "string" &&
+          typeof (entry as { exchange?: unknown }).exchange === "string") {
+        return { symbol: (entry as { symbol: string }).symbol, exchange: (entry as { exchange: string }).exchange };
+      }
+      return null;
+    })
+    .filter((e): e is { symbol: string; exchange: string } => e !== null);
+
 async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
