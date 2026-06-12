@@ -329,7 +329,9 @@ serve(async (req: Request) => {
 
     const successored = applySuccessors(rawRows);
     const filtered = filterEquitySegments(successored);
-    const deduped = dedupByIsin(filtered);
+    const segCanon = canonicalizeSegment(filtered);
+    const nsePrimary = preferNsePrimary(segCanon);
+    const deduped = dedupByIsin(nsePrimary);
     const sorted = canonicalSort(deduped);
     const members = toUniverseMembers(sorted);
 
