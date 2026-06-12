@@ -10,6 +10,90 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
+
+// ── Twelve Data fallback (Phase 2X.4b) ─────────────────────────────────────
+type TdProfile = { sector: string | null; industry: string | null; name: string | null };
+type TdStats = { market_cap_inr: number | null };
+
+async function fetchWithTimeout(url: string, ms: number): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { signal: ctrl.signal }); } catch { return null; }
+  finally { clearTimeout(id); }
+}
+
+async function tdProfile(symbol: string, exchange: string): Promise<TdProfile> {
+  if (!TWELVE_DATA_API_KEY) return { sector: null, industry: null, name: null };
+  const suffix = exchange === "BSE" ? "BO" : "NS";
+  const url = `https://api.twelvedata.com/profile?symbol=${encodeURIComponent(symbol)}.${suffix}&apikey=${encodeURIComponent(TWELVE_DATA_API_KEY)}`;
+  const res = await fetchWithTimeout(url, 4000);
+  if (!res || !res.ok) return { sector: null, industry: null, name: null };
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!body || typeof body !== "object" || (body as Record<string, unknown>).status === "error") {
+    return { sector: null, industry: null, name: null };
+  }
+  const o = body as Record<string, unknown>;
+  const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return { sector: str(o.sector), industry: str(o.industry), name: str(o.name) };
+}
+
+async function tdStatistics(symbol: string, exchange: string): Promise<TdStats> {
+  if (!TWELVE_DATA_API_KEY) return { market_cap_inr: null };
+  const suffix = exchange === "BSE" ? "BO" : "NS";
+  const url = `https://api.twelvedata.com/statistics?symbol=${encodeURIComponent(symbol)}.${suffix}&apikey=${encodeURIComponent(TWELVE_DATA_API_KEY)}`;
+  const res = await fetchWithTimeout(url, 4000);
+  if (!res || !res.ok) return { market_cap_inr: null };
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!body || typeof body !== "object" || (body as Record<string, unknown>).status === "error") {
+    return { market_cap_inr: null };
+  }
+  const o = body as Record<string, unknown>;
+  const stats = (o.statistics as Record<string, unknown> | undefined) ?? o;
+  const vm = (stats?.valuations_metrics as Record<string, unknown> | undefined) ?? {};
+  const num = (v: unknown): number | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    return null;
+  };
+  // .NS/.BO listings denominate market cap in INR. Outside those suffixes we don't accept the value.
+  return { market_cap_inr: num(vm.market_capitalization ?? (stats as Record<string, unknown>).market_capitalization ?? o.market_capitalization) };
+}
+
+async function isTdFallbackEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/stock_picker_runtime_config?select=config_value&config_key=eq.compute_fundamentals_twelvedata_fallback_enabled`, {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+    });
+    if (!res.ok) return false;
+    const arr = await res.json().catch(() => []);
+    return Array.isArray(arr) && arr[0]?.config_value === true;
+  } catch { return false; }
+}
+
+async function logComputeTelemetry(args: { status: "ok" | "partial" | "error"; symbol: string; exchange: string; finedge_ok_fields: number; twelve_data_recovered_fields: number; missing_fields: string[]; error_message?: string }): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await fetch(`${SUPABASE_URL}/rest/v1/cron_run_log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, Prefer: "return=minimal" },
+      body: JSON.stringify({
+        function_name: "compute-fundamentals",
+        status: args.status,
+        started_at: now,
+        finished_at: now,
+        error_message: args.error_message ?? null,
+        metrics: {
+          symbol: args.symbol, exchange: args.exchange,
+          finedge_ok_fields: args.finedge_ok_fields,
+          twelve_data_recovered_fields: args.twelve_data_recovered_fields,
+          missing_fields: args.missing_fields,
+          ran_at: now,
+        },
+      }),
+    }).catch(() => null);
+  } catch { /* swallow */ }
+}
 
 // DCF assumptions (named, audit-friendly)
 const DCF_GROWTH = 0.10;
