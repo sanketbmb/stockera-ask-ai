@@ -26,6 +26,21 @@ interface NewsItem {
   source: string;
 }
 
+function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === "string") return { symbol: entry, exchange: "NSE" };
+      if (entry && typeof entry === "object" &&
+          typeof (entry as { symbol?: unknown }).symbol === "string" &&
+          typeof (entry as { exchange?: unknown }).exchange === "string") {
+        return { symbol: (entry as { symbol: string }).symbol, exchange: (entry as { exchange: string }).exchange };
+      }
+      return null;
+    })
+    .filter((e): e is { symbol: string; exchange: string } => e !== null);
+}
+
 function normalizeCompany(name: string): string {
   // Marketaux "search" works best with a short, lowercased phrase; trim suffixes.
   return name
