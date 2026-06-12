@@ -139,6 +139,10 @@ function isCleanEquityForPicker(r: SuccessorAppliedRow): boolean {
   // ETF / index-fund ticker patterns.
   if (etfSymbolTokenRe.test(r.symbol)) return false;
   if (etfSymbolSuffixRe.test(r.symbol)) return false;
+  // Phase 2S.3-FIX-G contamination spec: reject any ticker ending in BEES
+  // (e.g. INFRABEES, ITBEES, LTGILTBEES, MANUFGBEES, PHARMABEES) that
+  // sync-ohlcv-history's token-boundary regex misses.
+  if (/BEES$/i.test(r.symbol)) return false;
   // Bond / SDL ticker patterns.
   if (bondTicker1Re.test(r.symbol)) return false;
   if (bondTicker2Re.test(r.symbol)) return false;
