@@ -371,11 +371,15 @@ Deno.serve(async (req) => {
 
   const auth = req.headers.get("authorization");
   let symbol = "";
+  let exchange = "NSE";
   try {
     const body = await req.json();
     symbol = String(body?.symbol ?? "").trim();
+    const ex = String(body?.exchange ?? "").trim().toUpperCase();
+    if (ex === "BSE" || ex === "NSE") exchange = ex;
   } catch { /* fallthrough */ }
   if (!symbol) return json({ success: false, error: "INVALID_INPUT", details: "symbol required" }, 400);
+
 
   try {
     // ── Step 1: parallel fetch ────────────────────────────────────────────────
