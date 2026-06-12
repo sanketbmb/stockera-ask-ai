@@ -1,10 +1,23 @@
 /**
- * snapshot-ltp-close — Phase 2V.2
+ * snapshot-ltp-close — Phase 2V.3
  *
- * Runs at 15:29 IST on NSE trading days. Calls Dhan /marketfeed/ltp for the
- * bounded work set (ai_reports last 24h UNION universe_override_symbols) and
- * upserts ltp_cache rows with source='dhan_close'. If Dhan returns null for a
- * symbol, the existing row is left untouched (no fabrication).
+ * Idempotent micro-batch worker for the daily 15:29-15:30 IST NSE close
+ * snapshot. Each invocation:
+ *   1. Builds the bounded equities work set (ai_reports last 24h UNION
+ *      universe_override_symbols).
+ *   2. Filters out (symbol, exchange) pairs already stamped 'dhan_close'
+ *      in ltp_cache today (IST).
+ *   3. Processes up to ltp_close_snapshot_batch_size PENDING symbols,
+ *      capped by ltp_close_snapshot_max_runtime_ms wall-clock budget.
+ *   4. Upserts ltp_cache + ltp_history with source='dhan_close'.
+ *   5. Logs to cron_run_log using the existing (function_name, metrics)
+ *      schema.
+ *
+ * Multiple cron firings inside the 15:29-15:30 IST window cover the full
+ * universe across Supabase's per-trace outbound HTTP cap.
+ *
+ * No fabrication: if Dhan returns nothing for a symbol, ltp_cache is left
+ * untouched and the symbol remains PENDING for the next invocation.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -24,17 +37,25 @@ const NSE_HOLIDAYS_2026 = new Set<string>([
   "2026-10-21", "2026-11-25", "2026-12-25",
 ]);
 
-function inCloseWindow(): { ok: boolean; reason: string } {
+interface IstNow { date: string; minutes: number; weekday: number; }
+function istNow(): IstNow {
   const now = new Date();
   const ist = new Date(now.getTime() + (5 * 60 + 30) * 60_000);
-  const day = ist.getUTCDay();
-  if (day === 0 || day === 6) return { ok: false, reason: "weekend" };
-  const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
-  if (NSE_HOLIDAYS_2026.has(dateStr)) return { ok: false, reason: "holiday" };
-  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  // 15:28 -> 15:31 IST tolerance window
-  if (mins < 15 * 60 + 28 || mins > 15 * 60 + 31) return { ok: false, reason: "not_close_window" };
-  return { ok: true, reason: "close_window" };
+  const date = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
+  return {
+    date,
+    minutes: ist.getUTCHours() * 60 + ist.getUTCMinutes(),
+    weekday: ist.getUTCDay(),
+  };
+}
+
+function classifyWindow(t: IstNow): { ok: boolean; phase: string } {
+  if (t.weekday === 0 || t.weekday === 6) return { ok: false, phase: "weekend" };
+  if (NSE_HOLIDAYS_2026.has(t.date)) return { ok: false, phase: "holiday" };
+  // Tolerance: 15:28 -> 15:31 IST
+  if (t.minutes < 15 * 60 + 28) return { ok: false, phase: "before_window" };
+  if (t.minutes > 15 * 60 + 31) return { ok: false, phase: "after_window" };
+  return { ok: true, phase: "close_window" };
 }
 
 function json(body: unknown, status = 200) {
@@ -45,25 +66,29 @@ function json(body: unknown, status = 200) {
 }
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-    },
-    body: JSON.stringify({ endpoint: "ltp", securityId, exchangeSegment: segment }),
-  });
-  const text = await res.text();
-  let body: Record<string, unknown> = {};
-  try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
-  if (!res.ok || body.success !== true) return null;
-  const data = body.data as Record<string, unknown> | undefined;
-  const inner = data?.data as Record<string, unknown> | undefined;
-  const seg = inner?.[segment] as Record<string, unknown> | undefined;
-  const node = seg?.[securityId] as Record<string, unknown> | undefined;
-  const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
-  return typeof ltp === "number" && ltp > 0 ? ltp : null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SERVICE_KEY,
+        authorization: `Bearer ${SERVICE_KEY}`,
+      },
+      body: JSON.stringify({ endpoint: "ltp", securityId, exchangeSegment: segment }),
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
+    if (!res.ok || body.success !== true) return null;
+    const data = body.data as Record<string, unknown> | undefined;
+    const inner = data?.data as Record<string, unknown> | undefined;
+    const seg = inner?.[segment] as Record<string, unknown> | undefined;
+    const node = seg?.[securityId] as Record<string, unknown> | undefined;
+    const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
+    return typeof ltp === "number" && ltp > 0 ? ltp : null;
+  } catch {
+    return null;
+  }
 }
 
 interface WorkItem { symbol: string; exchange: string; }
@@ -76,6 +101,8 @@ interface MasterRow {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  const runStartedAt = new Date().toISOString();
+  const runStartMs = Date.now();
   try {
     let force = false;
     let invokedBy = "cron";
@@ -89,17 +116,39 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     if (url.searchParams.get("force") === "1") force = true;
 
-    const win = inCloseWindow();
+    const t = istNow();
+    const win = classifyWindow(t);
     if (!win.ok && !force) {
-      return json({ success: true, skipped: true, reason: win.reason });
+      return json({ ok: true, skipped: true, reason: win.phase, ran_at: runStartedAt });
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Build work set: ai_reports last 24h (NSE default) UNION universe_override_symbols
-    const work = new Map<string, WorkItem>(); // key = `${symbol}|${exchange}`
+    // --- Runtime knobs ---
+    const { data: cfgAll } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_key, config_value")
+      .in("config_key", [
+        "ltp_close_snapshot_batch_size",
+        "ltp_close_snapshot_max_runtime_ms",
+        "ltp_close_snapshot_inter_call_sleep_ms",
+        "universe_override_symbols",
+      ]);
+    const cfgMap = new Map<string, unknown>();
+    for (const r of cfgAll ?? []) cfgMap.set((r as { config_key: string }).config_key, (r as { config_value: unknown }).config_value);
+    const asNum = (v: unknown, dflt: number) => {
+      if (typeof v === "number") return v;
+      if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
+      return dflt;
+    };
+    const batchSize = Math.max(1, asNum(cfgMap.get("ltp_close_snapshot_batch_size"), 8));
+    const maxRuntimeMs = Math.max(2000, asNum(cfgMap.get("ltp_close_snapshot_max_runtime_ms"), 25000));
+    const interSleepMs = Math.max(0, asNum(cfgMap.get("ltp_close_snapshot_inter_call_sleep_ms"), 300));
+
+    // --- Build work set ---
+    const work = new Map<string, WorkItem>(); // `${symbol}|${exchange}`
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recent } = await supabase
       .from("ai_reports")
@@ -113,15 +162,9 @@ Deno.serve(async (req) => {
       const key = `${sym}|NSE`;
       if (!work.has(key)) work.set(key, { symbol: sym, exchange: "NSE" });
     }
-
-    const { data: cfgRows } = await supabase
-      .from("stock_picker_runtime_config")
-      .select("config_value")
-      .eq("config_key", "universe_override_symbols")
-      .maybeSingle();
-    const cfgVal = cfgRows?.config_value;
-    if (Array.isArray(cfgVal)) {
-      for (const item of cfgVal as Array<{ symbol?: string; exchange?: string }>) {
+    const override = cfgMap.get("universe_override_symbols");
+    if (Array.isArray(override)) {
+      for (const item of override as Array<{ symbol?: string; exchange?: string }>) {
         if (!item?.symbol) continue;
         const ex = (item.exchange || "NSE").toUpperCase();
         const key = `${item.symbol}|${ex}`;
@@ -131,21 +174,78 @@ Deno.serve(async (req) => {
 
     if (work.size === 0) {
       await supabase.from("cron_run_log").insert({
-        job_name: "snapshot-ltp-close",
+        function_name: "snapshot-ltp-close",
         status: "ok",
-        rows_affected: 0,
-        details: { reason: "empty_work_set", invoked_by: invokedBy, forced: force },
+        started_at: runStartedAt,
+        finished_at: new Date().toISOString(),
+        metrics: {
+          processed: 0,
+          remaining_pending: 0,
+          errors_count: 0,
+          batch_size: batchSize,
+          ist_window_phase: win.phase,
+          run_started_at: runStartedAt,
+          run_ended_at: new Date().toISOString(),
+          invoked_by: invokedBy,
+          forced: force,
+          reason: "empty_work_set",
+        },
       });
-      return json({ success: true, refreshed: 0, reason: "empty_work_set" });
+      return json({ ok: true, processed: 0, remaining_pending: 0, errors_count: 0, ran_at: runStartedAt });
     }
 
-    const allSymbols = Array.from(new Set(Array.from(work.values()).map((w) => w.symbol)));
+    // --- Determine already-stamped today (IST) ---
+    // IST date boundary in UTC: today_ist 00:00 IST = (today_ist - 1day) 18:30 UTC
+    const istMidnightUtc = new Date(`${t.date}T00:00:00+05:30`).toISOString();
+    const symbolsArr = Array.from(new Set(Array.from(work.values()).map((w) => w.symbol)));
+    const { data: stamped } = await supabase
+      .from("ltp_cache")
+      .select("symbol, exchange, fetched_at, source")
+      .in("symbol", symbolsArr)
+      .eq("source", "dhan_close")
+      .gte("fetched_at", istMidnightUtc);
+    const stampedKeys = new Set<string>();
+    for (const r of stamped ?? []) {
+      const row = r as { symbol: string; exchange: string };
+      stampedKeys.add(`${row.symbol}|${row.exchange}`);
+    }
+
+    // PENDING (sorted deterministically)
+    const pending = Array.from(work.values())
+      .filter((w) => !stampedKeys.has(`${w.symbol}|${w.exchange}`))
+      .sort((a, b) => (a.symbol === b.symbol ? a.exchange.localeCompare(b.exchange) : a.symbol.localeCompare(b.symbol)));
+
+    if (pending.length === 0) {
+      await supabase.from("cron_run_log").insert({
+        function_name: "snapshot-ltp-close",
+        status: "ok",
+        started_at: runStartedAt,
+        finished_at: new Date().toISOString(),
+        metrics: {
+          processed: 0,
+          remaining_pending: 0,
+          errors_count: 0,
+          batch_size: batchSize,
+          ist_window_phase: win.phase,
+          run_started_at: runStartedAt,
+          run_ended_at: new Date().toISOString(),
+          work_set_size: work.size,
+          invoked_by: invokedBy,
+          forced: force,
+          reason: "all_stamped_today",
+        },
+      });
+      return json({ ok: true, processed: 0, remaining_pending: 0, errors_count: 0, ran_at: runStartedAt });
+    }
+
+    const slice = pending.slice(0, batchSize);
+
+    // --- Resolve dhan_security_id from stock_master, prefer *_EQ segment ---
+    const sliceSymbols = Array.from(new Set(slice.map((s) => s.symbol)));
     const { data: masters } = await supabase
       .from("stock_master")
       .select("symbol, exchange, segment, dhan_security_id")
-      .in("symbol", allSymbols);
-
-    // Pick the best master row per (symbol, exchange): prefer segment ending in _EQ
+      .in("symbol", sliceSymbols);
     const masterByKey = new Map<string, MasterRow>();
     for (const m of (masters ?? []) as MasterRow[]) {
       if (!m.dhan_security_id || !m.exchange) continue;
@@ -157,32 +257,29 @@ Deno.serve(async (req) => {
     }
 
     const tasks: Array<{ symbol: string; exchange: string; securityId: string; segment: string }> = [];
-    const noMaster: string[] = [];
-    for (const w of work.values()) {
-      const key = `${w.symbol}|${w.exchange}`;
-      const m = masterByKey.get(key);
-      if (!m) { noMaster.push(key); continue; }
+    const failureDetails: Array<{ symbol: string; exchange: string; reason: string }> = [];
+    for (const w of slice) {
+      const m = masterByKey.get(`${w.symbol}|${w.exchange}`);
+      if (!m) {
+        failureDetails.push({ symbol: w.symbol, exchange: w.exchange, reason: "no_master" });
+        continue;
+      }
       const seg = w.exchange === "BSE" ? "BSE_EQ" : "NSE_EQ";
       tasks.push({ symbol: w.symbol, exchange: w.exchange, securityId: m.dhan_security_id, segment: seg });
     }
 
-    // Phase 2V.2 — shuffle tasks so repeated invocations under rate-limit
-    // pressure spread coverage across the work set instead of re-fetching
-    // the same first items every time.
-    for (let i = tasks.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
-    }
-
-    let ok = 0, fail = 0;
-    const nowIso = new Date().toISOString();
-    const BATCH = 2;
-    for (let i = 0; i < tasks.length; i += BATCH) {
-      const slice = tasks.slice(i, i + BATCH);
-      const results = await Promise.all(slice.map(async (t) => {
-        const ltp = await fetchDhanLtp(t.securityId, t.segment);
-        return { ...t, ltp };
+    // --- Process tasks within wall-clock budget ---
+    let processed = 0;
+    let errorsCount = failureDetails.length;
+    const PARALLEL = Math.min(8, batchSize);
+    for (let i = 0; i < tasks.length; i += PARALLEL) {
+      if (Date.now() - runStartMs > maxRuntimeMs) break;
+      const chunk = tasks.slice(i, i + PARALLEL);
+      const results = await Promise.all(chunk.map(async (tk) => {
+        const ltp = await fetchDhanLtp(tk.securityId, tk.segment);
+        return { ...tk, ltp };
       }));
+      const nowIso = new Date().toISOString();
       const upserts = results
         .filter((r) => r.ltp !== null)
         .map((r) => ({
@@ -193,49 +290,61 @@ Deno.serve(async (req) => {
           fetched_at: nowIso,
           as_of: nowIso,
         }));
-      ok += upserts.length;
-      fail += results.length - upserts.length;
+      for (const r of results) {
+        if (r.ltp === null) {
+          errorsCount += 1;
+          failureDetails.push({ symbol: r.symbol, exchange: r.exchange, reason: "dhan_null" });
+        }
+      }
       if (upserts.length > 0) {
         const { error: upErr } = await supabase.from("ltp_cache").upsert(upserts, { onConflict: "symbol" });
-        if (upErr) console.error("ltp_cache upsert error:", upErr.message);
+        if (upErr) {
+          console.error("ltp_cache upsert error:", upErr.message);
+        } else {
+          processed += upserts.length;
+        }
         const historyRows = upserts.map((u) => ({
           symbol: u.symbol, ltp: u.ltp, source: "dhan_close", recorded_at: u.fetched_at,
         }));
         const { error: hErr } = await supabase.from("ltp_history").insert(historyRows);
         if (hErr) console.error("ltp_history insert error:", hErr.message);
       }
-      // Phase 2V.2 — pace between batches; Supabase enforces a per-trace
-      // outbound HTTP rate limit (~10/sec) and Dhan's marketfeed rate caps.
-      if (i + BATCH < tasks.length) {
-        await new Promise((r) => setTimeout(r, 1500));
+      if (i + PARALLEL < tasks.length && interSleepMs > 0) {
+        await new Promise((r) => setTimeout(r, interSleepMs));
       }
     }
 
-    const status = fail === 0 ? "ok" : (ok === 0 ? "error" : "partial");
+    const remainingPending = Math.max(0, pending.length - processed);
+    const runEndedAt = new Date().toISOString();
+    const status = errorsCount === 0 ? "ok" : (processed === 0 ? "error" : "partial");
+
     await supabase.from("cron_run_log").insert({
       function_name: "snapshot-ltp-close",
       status,
-      finished_at: new Date().toISOString(),
+      started_at: runStartedAt,
+      finished_at: runEndedAt,
       metrics: {
-        rows_affected: ok,
-        failed: fail,
-        total_tasks: tasks.length,
+        processed,
+        remaining_pending: remainingPending,
+        errors_count: errorsCount,
+        batch_size: batchSize,
+        ist_window_phase: win.phase,
+        run_started_at: runStartedAt,
+        run_ended_at: runEndedAt,
         work_set_size: work.size,
-        no_master_keys: noMaster.slice(0, 20),
+        pending_total: pending.length,
         invoked_by: invokedBy,
         forced: force,
-        window_reason: win.reason,
+        details: failureDetails.slice(0, 50),
       },
     });
 
     return json({
-      success: true,
-      rows_affected: ok,
-      errors_count: fail,
-      total_tasks: tasks.length,
-      work_set_size: work.size,
-      no_master_count: noMaster.length,
-      status,
+      ok: true,
+      processed,
+      remaining_pending: remainingPending,
+      errors_count: errorsCount,
+      ran_at: runStartedAt,
     });
   } catch (e) {
     console.error("snapshot-ltp-close error:", e);
@@ -246,11 +355,12 @@ Deno.serve(async (req) => {
       await supabase.from("cron_run_log").insert({
         function_name: "snapshot-ltp-close",
         status: "error",
+        started_at: runStartedAt,
         finished_at: new Date().toISOString(),
         error_message: String(e),
-        metrics: { rows_affected: 0 },
+        metrics: { processed: 0, remaining_pending: -1, errors_count: 1 },
       });
     } catch { /* swallow */ }
-    return json({ success: false, error: String(e) }, 500);
+    return json({ ok: false, error: String(e) }, 500);
   }
 });
