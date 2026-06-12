@@ -32,29 +32,50 @@ interface RawSeedRow {
   symbol: string;
   exchange: string;
   segment: string;
+  type: string | null;
   isin: string | null;
   dhan_security_id: string | null;
   sector_canonical: string | null;
   alternate_listings: unknown;
+  company_name: string | null;
+  is_suspended: boolean | null;
+  is_asm: boolean | null;
+  is_gsm: boolean | null;
+  is_t2t: boolean | null;
 }
 
 async function loadSeedRows(
   supabase: SupabaseClient,
   seedVersion: string
 ): Promise<{ rows: RawSeedRow[]; rawBytes: Uint8Array }> {
-  const { data, error } = await supabase
-    .from('stock_master')
-    .select('symbol,exchange,segment,isin,dhan_security_id,sector_canonical,alternate_listings')
-    .eq('seed_version', seedVersion);
-
-  if (error) {
-    throw new Error(`build-universe: failed to load seed '${seedVersion}': ${error.message}`);
+  // Phase 2S.3-FIX-G: paginate to bypass PostgREST 1000-row default cap
+  // (stock_master holds ~45k rows for seed v1; the previous unpaginated
+  // select silently truncated the universe to 1000).
+  const PAGE = 1000;
+  let from = 0;
+  const all: RawSeedRow[] = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from('stock_master')
+      .select('symbol,exchange,segment,type,isin,dhan_security_id,sector_canonical,alternate_listings,company_name,is_suspended,is_asm,is_gsm,is_t2t')
+      .eq('seed_version', seedVersion)
+      .order('exchange', { ascending: true })
+      .order('symbol', { ascending: true })
+      .order('isin', { ascending: true, nullsFirst: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(`build-universe: failed to load seed '${seedVersion}': ${error.message}`);
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data) all.push(r as RawSeedRow);
+    if (data.length < PAGE) break;
+    from += PAGE;
   }
-  if (!data || data.length === 0) {
+  if (all.length === 0) {
     throw new Error(`build-universe: seed '${seedVersion}' returned zero rows`);
   }
 
-  const stable = [...data].sort((a, b) => {
+  const stable = [...all].sort((a, b) => {
     const aKey = `${a.exchange}|${a.symbol}|${a.isin ?? ''}`;
     const bKey = `${b.exchange}|${b.symbol}|${b.isin ?? ''}`;
     return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
@@ -62,7 +83,7 @@ async function loadSeedRows(
   const stableJson = JSON.stringify(stable);
   const rawBytes = new TextEncoder().encode(stableJson);
 
-  return { rows: data as RawSeedRow[], rawBytes };
+  return { rows: all, rawBytes };
 }
 
 interface SuccessorAppliedRow extends RawSeedRow {
@@ -84,14 +105,51 @@ function applySuccessors(rows: RawSeedRow[]): SuccessorAppliedRow[] {
   });
 }
 
-// Phase 2S.3-FIX: accept canonical NSE_EQ/BSE_EQ labels alongside legacy EQ/BE.
+// =====================================================================
+// Phase 2S.3-FIX-G: equity cleanliness predicate
+// Mirrors sync-ohlcv-history/index.ts (EQUITY_TYPES, EQUITY_SEGMENTS,
+// bond/ETF regexes) PLUS the runtime flag exclusions enforced by the
+// stock-picker-exclusion-engine (is_asm/is_gsm/is_t2t/is_suspended).
+// Inlined here (not extracted to _shared-picker) to keep this fix
+// single-file and avoid touching the green sync-ohlcv-history function.
+// Regex / Set values copied verbatim from sync-ohlcv-history.
+// =====================================================================
+const PICKER_EQUITY_TYPES = new Set(['EQUITY', 'EQ', 'STOCK']);
 const PICKER_EQUITY_SEGMENTS = new Set(['EQ', 'BE', 'NSE_EQ', 'BSE_EQ']);
+const bondNameRe = /(^|\s)SDL\s|\d+(\.\d+)?\s*%\s*\d{4}/i;
+const etfSymbolTokenRe = /(?:^|[^A-Z])(ETF|BEES|NIFTYBEES|BANKBEES|GOLDBEES|LIQUIDBEES|JUNIORBEES|N100|NV20)$/i;
+const etfSymbolSuffixRe = /ETF$/i;
+const etfNameRe = /ETF|EXCHANGE\s+TRADED|INDEX\s+FUND/i;
+const bondTicker1Re = /^\d{3,4}[A-Z]{1,3}\d{2,3}[A-Z]?$/;
+const bondTicker2Re = /^[A-Z]{2,4}\d{2,4}[A-Z]{1,3}\d{1,3}$/;
+
+function isCleanEquityForPicker(r: SuccessorAppliedRow): boolean {
+  if (r.exchange !== 'NSE' && r.exchange !== 'BSE') return false;
+  if (!r.type || !PICKER_EQUITY_TYPES.has(r.type.toUpperCase())) return false;
+  if (typeof r.segment !== 'string') return false;
+  if (!PICKER_EQUITY_SEGMENTS.has(r.segment.toUpperCase())) return false;
+  if (!r.dhan_security_id || r.dhan_security_id === '') return false;
+  if (r.is_suspended === true) return false;
+  if (r.is_asm === true) return false;
+  if (r.is_gsm === true) return false;
+  if (r.is_t2t === true) return false;
+  // Symbol cannot start with a digit (rejects bond ISIN-style tickers
+  // like '0PMPL29', '1005MFL28A').
+  if (/^\d/.test(r.symbol)) return false;
+  // ETF / index-fund ticker patterns.
+  if (etfSymbolTokenRe.test(r.symbol)) return false;
+  if (etfSymbolSuffixRe.test(r.symbol)) return false;
+  // Bond / SDL ticker patterns.
+  if (bondTicker1Re.test(r.symbol)) return false;
+  if (bondTicker2Re.test(r.symbol)) return false;
+  // ETF / SDL / coupon-rate name patterns.
+  const name = r.company_name ?? '';
+  if (name && (etfNameRe.test(name) || bondNameRe.test(name))) return false;
+  return true;
+}
+
 function filterEquitySegments(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
-  return rows.filter(r =>
-    (r.exchange === 'NSE' || r.exchange === 'BSE') &&
-    typeof r.segment === 'string' &&
-    PICKER_EQUITY_SEGMENTS.has(r.segment.toUpperCase())
-  );
+  return rows.filter(isCleanEquityForPicker);
 }
 
 function dedupByIsin(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
