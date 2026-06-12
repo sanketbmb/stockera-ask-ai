@@ -380,11 +380,10 @@ Deno.serve(async (req) => {
   } catch { /* fallthrough */ }
   if (!symbol) return json({ success: false, error: "INVALID_INPUT", details: "symbol required" }, 400);
 
-
-  try {
   const tdEnabled = await isTdFallbackEnabled();
 
   try {
+
     // ── Step 1: parallel fetch (profile tolerated separately) ────────────────
     const [profileS, ratiosS, plS, bsS, cfS] = await Promise.allSettled([
       fe({ endpoint: "company-profile", symbol }, auth),
