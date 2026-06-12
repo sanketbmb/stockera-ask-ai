@@ -205,8 +205,15 @@ Deno.serve(async (req) => {
       );
     }
 
+    await logTelemetry({
+      status: errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"),
+      processed: updated,
+      errors_count: errors.length,
+      details: { filter_applied: filterSymbols != null, errors_sample: errors.slice(0, 10) },
+    });
     return json({ ok: true, symbols_updated: updated, attempts, errors, filter_applied: filterSymbols != null });
   } catch (e) {
+    await logTelemetry({ status: "error", processed: 0, errors_count: 1, error_message: String(e) });
     return json({ ok: false, error: String(e) }, 500);
   }
 });

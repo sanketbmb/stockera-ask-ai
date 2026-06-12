@@ -223,8 +223,15 @@ Deno.serve(async (req) => {
       { onConflict: "config_key" },
     );
 
+    await logTelemetry({
+      status: errors.length === 0 ? "ok" : (inserted === 0 ? "error" : "partial"),
+      processed: inserted,
+      errors_count: errors.length,
+      details: { errors_sample: errors.slice(0, 10) },
+    });
     return json({ ok: true, symbols_inserted: inserted, attempts: attemptsOut, errors });
   } catch (e) {
+    await logTelemetry({ status: "error", processed: 0, errors_count: 1, error_message: String(e) });
     return json({ ok: false, error: String(e) }, 500);
   }
 });
