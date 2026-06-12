@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
     if (cfg.get("universe_override_enabled") !== true) {
       return json({ ok: true, skipped: "universe_override_enabled=false", symbols_inserted: 0, attempts: [], errors: [] });
     }
-    const symbols = (cfg.get("universe_override_symbols") as string[] | undefined) ?? [];
+    const symbols = parseOverrideSymbols(cfg.get("universe_override_symbols")).map((e) => e.symbol);
     if (symbols.length === 0) {
       return json({ ok: true, symbols_inserted: 0, attempts: [], errors: ["no override symbols"] });
     }
