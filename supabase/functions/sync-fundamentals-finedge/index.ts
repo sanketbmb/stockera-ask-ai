@@ -1,6 +1,6 @@
-// Phase 2X.4 — Fundamentals sync: FinEdge primary + Twelve Data fallback (equities only).
-// Reads universe_override_symbols (object-shape tolerant), per-symbol error capture,
-// idempotent skip if updated within 24h, runtime cap, cron_run_log telemetry.
+// Phase 2X.4c — Fundamentals sync: FinEdge primary + Twelve Data fallback (equities only).
+// Adds serialized pacing, transient retry-with-backoff, idempotent fresh-skip, and
+// http_status histogram telemetry on top of Phase 2X.4/2X.4b behavior.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -19,6 +19,9 @@ function json(body: unknown, status = 200) {
     headers: { ...cors, "Content-Type": "application/json" },
   });
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const TRANSIENT = new Set([0, 429, 500, 502, 503, 504]);
 
 function capBand(mcap: number | null): string | null {
   if (mcap == null || !Number.isFinite(mcap) || mcap <= 0) return null;
@@ -61,15 +64,13 @@ function parseOverrideSymbols(raw: unknown): Array<{ symbol: string; exchange: s
   return out;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 interface FinEdgeResult {
   status: "ok" | "miss";
   sector: string | null;
   industry: string | null;
   mcap: number | null;
   reason: string | null;
-  http_status: number | null;
+  http_status: number;
 }
 
 async function callFinEdgeRaw(endpoint: string, symbol: string): Promise<{ ok: boolean; status: number; data: Record<string, unknown> | null }> {
@@ -94,12 +95,11 @@ async function callFinEdgeRaw(endpoint: string, symbol: string): Promise<{ ok: b
   }
 }
 
-async function tryFinEdge(symbol: string): Promise<FinEdgeResult> {
+async function tryFinEdgeOnce(symbol: string, sleepMs: number): Promise<FinEdgeResult> {
   const profile = await callFinEdgeRaw("company-profile", symbol);
-  await sleep(150);
+  await sleep(sleepMs);
   const ratios = await callFinEdgeRaw("ratios", symbol);
 
-  // Honest auth/rate-limit/404 detection
   if (profile.status === 401 || ratios.status === 401) {
     return { status: "miss", sector: null, industry: null, mcap: null, reason: "finedge_auth", http_status: 401 };
   }
@@ -138,14 +138,12 @@ interface TwelveDataResult {
   industry: string | null;
   mcap: number | null;
   reason: string | null;
+  http_status: number;
 }
 
-// USD→INR conversion is non-trivial; the spec says if unit ambiguous, write NULL.
-// Twelve Data returns market_capitalization in the LISTING currency. For .NS / .BO
-// listings, that is INR. We accept the value as-is for those suffixes only.
-async function tryTwelveData(symbol: string, exchange: string): Promise<TwelveDataResult> {
+async function tryTwelveDataOnce(symbol: string, exchange: string, sleepMs: number): Promise<TwelveDataResult> {
   if (!TWELVE_DATA_API_KEY) {
-    return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_no_key" };
+    return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_no_key", http_status: 0 };
   }
   const suffix = exchange === "BSE" ? "BSE" : "NSE";
   const tdSymbol = `${symbol}.${suffix}`;
@@ -155,62 +153,66 @@ async function tryTwelveData(symbol: string, exchange: string): Promise<TwelveDa
   let sector: string | null = null;
   let industry: string | null = null;
   let mcap: number | null = null;
-  let httpFatal: string | null = null;
+  let httpStatus = 200;
 
   try {
     const pRes = await fetch(profileUrl);
-    if (pRes.status === 401 || pRes.status === 403) httpFatal = "twelvedata_auth";
-    else if (pRes.status === 429) httpFatal = "twelvedata_rate_limit";
-    else {
-      const pBody = await pRes.json().catch(() => ({} as Record<string, unknown>));
-      if (pBody && typeof pBody === "object") {
-        const o = pBody as Record<string, unknown>;
-        // Twelve Data error shape: { code, message, status: "error" }
-        if (o.status === "error") {
-          const code = typeof o.code === "number" ? o.code : 0;
-          if (code === 404) httpFatal = "twelvedata_404";
-        } else {
-          sector = pickStr(o.sector, o.Sector);
-          industry = pickStr(o.industry, o.Industry);
-        }
+    httpStatus = pRes.status;
+    if (pRes.status === 401 || pRes.status === 403) {
+      return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_auth", http_status: pRes.status };
+    }
+    if (pRes.status === 429) {
+      return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_rate_limit", http_status: 429 };
+    }
+    const pBody = await pRes.json().catch(() => ({} as Record<string, unknown>));
+    if (pBody && typeof pBody === "object") {
+      const o = pBody as Record<string, unknown>;
+      if (o.status === "error") {
+        const code = typeof o.code === "number" ? o.code : 0;
+        if (code === 404) httpStatus = 404;
+      } else {
+        sector = pickStr(o.sector, o.Sector);
+        industry = pickStr(o.industry, o.Industry);
       }
     }
-  } catch { /* swallow, treated as miss below */ }
-
-  if (httpFatal && httpFatal !== "twelvedata_404") {
-    return { status: "miss", sector: null, industry: null, mcap: null, reason: httpFatal };
+  } catch {
+    return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_fetch_error", http_status: 0 };
   }
 
-  await sleep(300);
+  await sleep(sleepMs);
 
   try {
     const sRes = await fetch(statsUrl);
-    if (sRes.status !== 401 && sRes.status !== 403 && sRes.status !== 429) {
-      const sBody = await sRes.json().catch(() => ({} as Record<string, unknown>));
-      if (sBody && typeof sBody === "object") {
-        const o = sBody as Record<string, unknown>;
-        if (o.status !== "error") {
-          // statistics shape: { statistics: { valuations_metrics: { market_capitalization: N }, ... } }
-          const stats = (o.statistics as Record<string, unknown> | undefined) ?? o;
-          const vm = (stats?.valuations_metrics as Record<string, unknown> | undefined) ?? {};
-          mcap = pickNum(
-            (vm as Record<string, unknown>).market_capitalization,
-            (stats as Record<string, unknown>).market_capitalization,
-            (o as Record<string, unknown>).market_capitalization,
-          );
-          // For .NS/.BO listings the currency is INR. If exchange is anything else we can't trust unit.
-          if (mcap != null && suffix !== "NSE" && suffix !== "BSE") {
-            mcap = null;
-          }
+    if (sRes.status === 401 || sRes.status === 403) {
+      return { status: "miss", sector, industry, mcap: null, reason: "twelvedata_auth", http_status: sRes.status };
+    }
+    if (sRes.status === 429) {
+      return { status: "miss", sector, industry, mcap: null, reason: "twelvedata_rate_limit", http_status: 429 };
+    }
+    const sBody = await sRes.json().catch(() => ({} as Record<string, unknown>));
+    if (sBody && typeof sBody === "object") {
+      const o = sBody as Record<string, unknown>;
+      if (o.status !== "error") {
+        const stats = (o.statistics as Record<string, unknown> | undefined) ?? o;
+        const vm = (stats?.valuations_metrics as Record<string, unknown> | undefined) ?? {};
+        mcap = pickNum(
+          (vm as Record<string, unknown>).market_capitalization,
+          (stats as Record<string, unknown>).market_capitalization,
+          (o as Record<string, unknown>).market_capitalization,
+        );
+        if (mcap != null && suffix !== "NSE" && suffix !== "BSE") {
+          mcap = null;
         }
       }
     }
-  } catch { /* swallow */ }
+  } catch {
+    return { status: "miss", sector, industry, mcap: null, reason: "twelvedata_fetch_error", http_status: 0 };
+  }
 
   if (sector == null && industry == null && mcap == null) {
-    return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_no_fields" };
+    return { status: "miss", sector: null, industry: null, mcap: null, reason: "twelvedata_no_fields", http_status: httpStatus };
   }
-  return { status: "ok", sector, industry, mcap, reason: null };
+  return { status: "ok", sector, industry, mcap, reason: null, http_status: httpStatus };
 }
 
 Deno.serve(async (req) => {
@@ -243,6 +245,7 @@ Deno.serve(async (req) => {
 
     const reqBody = await req.json().catch(() => ({} as Record<string, unknown>));
     const force = reqBody?.force === true;
+    const invokedBy = typeof reqBody?.invoked_by === "string" ? reqBody.invoked_by : null;
 
     const { data: cfgRows } = await supabase
       .from("stock_picker_runtime_config")
@@ -254,6 +257,11 @@ Deno.serve(async (req) => {
         "fundamentals_finedge_primary_enabled",
         "fundamentals_twelvedata_fallback_enabled",
         "fundamentals_max_runtime_ms",
+        "finedge_request_sleep_ms",
+        "twelvedata_request_sleep_ms",
+        "fundamentals_retry_max_attempts",
+        "fundamentals_retry_backoff_ms",
+        "fundamentals_skip_if_fresh_minutes",
       ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
@@ -265,16 +273,22 @@ Deno.serve(async (req) => {
       return json({ ok: true, skipped: "universe_override_enabled=false", processed: 0, errors_count: 0 });
     }
     const tdFallbackEnabled = cfg.get("fundamentals_twelvedata_fallback_enabled") === true;
-    const maxRuntimeMs = typeof cfg.get("fundamentals_max_runtime_ms") === "number"
-      ? (cfg.get("fundamentals_max_runtime_ms") as number) : 60000;
+    const num = (k: string, def: number): number => {
+      const v = cfg.get(k);
+      return typeof v === "number" && Number.isFinite(v) ? v : def;
+    };
+    const maxRuntimeMs = num("fundamentals_max_runtime_ms", 60000);
+    const finedgeSleepMs = num("finedge_request_sleep_ms", 800);
+    const twelveSleepMs = num("twelvedata_request_sleep_ms", 1500);
+    const retryMaxAttempts = num("fundamentals_retry_max_attempts", 2);
+    const retryBackoffMs = num("fundamentals_retry_backoff_ms", 2000);
+    const freshMinutes = num("fundamentals_skip_if_fresh_minutes", 1440);
 
     const symbols = parseOverrideSymbols(cfg.get("universe_override_symbols"));
     if (symbols.length === 0) {
-      return json({ ok: true, processed: 0, errors_count: 0, details: { reason: "no override symbols" } });
+      return json({ ok: true, processed: 0, errors_count: 0, details: { reason: "no override symbols", invoked_by: invokedBy } });
     }
 
-    // Inline cleanliness gate: only equities with dhan_security_id, not suspended, equity type/segment,
-    // exclude bonds/etf patterns. Pull stock_master once.
     const { data: masters } = await supabase
       .from("stock_master")
       .select("symbol, exchange, type, segment, dhan_security_id, is_suspended, company_name")
@@ -284,7 +298,7 @@ Deno.serve(async (req) => {
 
     const isCleanEquity = (sym: string, ex: string): { ok: boolean; reason?: string } => {
       const m = masterKey.get(`${sym}|${ex}`);
-      if (!m) return { ok: true }; // no master row — don't block, just call vendor
+      if (!m) return { ok: true };
       if (m.is_suspended === true) return { ok: false, reason: "suspended" };
       if (m.dhan_security_id == null || String(m.dhan_security_id) === "") return { ok: false, reason: "no_dhan_security_id" };
       const typ = String(m.type ?? "").toUpperCase();
@@ -296,8 +310,8 @@ Deno.serve(async (req) => {
       return { ok: true };
     };
 
-    // Idempotent skip if updated_at within 24h (unless force).
-    const cutoffIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    // Idempotent fresh-skip window
+    const freshCutoffIso = new Date(Date.now() - freshMinutes * 60 * 1000).toISOString();
     const { data: existing } = await supabase
       .from("fundamentals_cache")
       .select("symbol, exchange, sector, market_cap_rs, updated_at")
@@ -305,111 +319,139 @@ Deno.serve(async (req) => {
     const freshKey = new Set<string>();
     for (const r of existing ?? []) {
       const k = `${r.symbol}|${r.exchange}`;
-      if (!force && r.updated_at && (r.updated_at as string) > cutoffIso && r.sector != null && r.market_cap_rs != null) {
+      if (!force && r.updated_at && (r.updated_at as string) > freshCutoffIso && r.sector != null && r.market_cap_rs != null) {
         freshKey.add(k);
       }
     }
 
     const attempts: Array<Record<string, unknown>> = [];
     const stillMissing: string[] = [];
+    const httpHistogram: Record<string, number> = {};
+    const bumpHist = (code: number) => { const k = String(code); httpHistogram[k] = (httpHistogram[k] ?? 0) + 1; };
+
     let finedgeOk = 0;
     let finedgeMissed = 0;
     let twelveRecovered = 0;
     let processed = 0;
     let pendingCount = 0;
     let earlyExit = false;
+    let retriesAttempted = 0;
+    let retriesRecovered = 0;
+    let skippedFresh = 0;
 
+    // Strictly serial loop
     for (const { symbol: sym, exchange: ex } of symbols) {
       const key = `${sym}|${ex}`;
-      if (freshKey.has(key)) {
-        attempts.push({ symbol: sym, exchange: ex, source: "cache", status: "fresh_skip" });
-        continue;
-      }
-      const cleanliness = isCleanEquity(sym, ex);
-      if (!cleanliness.ok) {
-        attempts.push({ symbol: sym, exchange: ex, source: "none", status: "skipped_unclean", reason: cleanliness.reason });
-        continue;
-      }
-      if (Date.now() - startedMs > maxRuntimeMs) {
-        pendingCount++;
-        earlyExit = true;
-        attempts.push({ symbol: sym, exchange: ex, source: "none", status: "pending_runtime_cap" });
-        continue;
-      }
+      try {
+        if (freshKey.has(key)) {
+          skippedFresh++;
+          attempts.push({ symbol: sym, exchange: ex, source: "cache", status: "fresh_skip" });
+          continue;
+        }
+        const cleanliness = isCleanEquity(sym, ex);
+        if (!cleanliness.ok) {
+          attempts.push({ symbol: sym, exchange: ex, source: "none", status: "skipped_unclean", reason: cleanliness.reason });
+          continue;
+        }
+        if (Date.now() - startedMs > maxRuntimeMs) {
+          pendingCount++;
+          earlyExit = true;
+          attempts.push({ symbol: sym, exchange: ex, source: "none", status: "pending_runtime_cap" });
+          continue;
+        }
 
-      // PRIMARY: FinEdge — NSE form first, BSE if 404/not-found.
-      let fe = await tryFinEdge(sym);
-      if (fe.status === "miss" && fe.reason === "finedge_404" && ex === "NSE") {
-        await sleep(250);
-        const bseTry = await tryFinEdge(sym); // FinEdge symbol is exchange-agnostic; retry once
-        if (bseTry.status === "ok") fe = bseTry;
-      }
-      await sleep(250);
+        // === PRIMARY: FinEdge with transient retry ===
+        let fe = await tryFinEdgeOnce(sym, finedgeSleepMs);
+        bumpHist(fe.http_status);
+        await sleep(finedgeSleepMs);
+        let feRetries = 0;
+        while (fe.status === "miss" && TRANSIENT.has(fe.http_status) && feRetries < retryMaxAttempts) {
+          feRetries++;
+          retriesAttempted++;
+          await sleep(retryBackoffMs);
+          fe = await tryFinEdgeOnce(sym, finedgeSleepMs);
+          bumpHist(fe.http_status);
+          await sleep(finedgeSleepMs);
+          if (fe.status === "ok") { retriesRecovered++; break; }
+        }
 
-      let finalSector: string | null = null;
-      let finalIndustry: string | null = null;
-      let finalMcap: number | null = null;
-      let source: "finedge" | "twelve_data" | "none" = "none";
+        let finalSector: string | null = null;
+        let finalIndustry: string | null = null;
+        let finalMcap: number | null = null;
+        let source: "finedge" | "twelve_data" | "none" = "none";
 
-      if (fe.status === "ok") {
-        finalSector = fe.sector;
-        finalIndustry = fe.industry;
-        finalMcap = fe.mcap;
-        source = "finedge";
-        finedgeOk++;
-        attempts.push({
-          symbol: sym, exchange: ex, source: "finedge", status: "ok",
-          missing_fields: [
-            finalSector == null ? "sector" : null,
-            finalIndustry == null ? "industry" : null,
-            finalMcap == null ? "market_cap" : null,
-          ].filter((x) => x !== null),
-        });
-      } else {
-        finedgeMissed++;
-        const feAttempt: Record<string, unknown> = {
-          symbol: sym, exchange: ex, source: "finedge", status: "miss",
-          reason: fe.reason, http_status: fe.http_status,
-        };
+        if (fe.status === "ok") {
+          finalSector = fe.sector; finalIndustry = fe.industry; finalMcap = fe.mcap;
+          source = "finedge";
+          finedgeOk++;
+          attempts.push({
+            symbol: sym, exchange: ex, source: "finedge", status: "ok",
+            retries: feRetries,
+            missing_fields: [
+              finalSector == null ? "sector" : null,
+              finalIndustry == null ? "industry" : null,
+              finalMcap == null ? "market_cap" : null,
+            ].filter((x) => x !== null),
+          });
+        } else {
+          finedgeMissed++;
+          const feAttempt: Record<string, unknown> = {
+            symbol: sym, exchange: ex, source: "finedge", status: "miss",
+            reason: fe.reason, http_status: fe.http_status, retries: feRetries,
+          };
 
-        if (tdFallbackEnabled) {
-          const td = await tryTwelveData(sym, ex);
-          await sleep(300);
-          if (td.status === "ok") {
-            finalSector = td.sector;
-            finalIndustry = td.industry;
-            finalMcap = td.mcap;
-            source = "twelve_data";
-            twelveRecovered++;
-            feAttempt.fallback = { source: "twelve_data", status: "ok" };
+          if (tdFallbackEnabled) {
+            // === FALLBACK: Twelve Data with transient retry ===
+            let td = await tryTwelveDataOnce(sym, ex, twelveSleepMs);
+            bumpHist(td.http_status);
+            await sleep(twelveSleepMs);
+            let tdRetries = 0;
+            while (td.status === "miss" && TRANSIENT.has(td.http_status) && tdRetries < retryMaxAttempts) {
+              tdRetries++;
+              retriesAttempted++;
+              await sleep(retryBackoffMs);
+              td = await tryTwelveDataOnce(sym, ex, twelveSleepMs);
+              bumpHist(td.http_status);
+              await sleep(twelveSleepMs);
+              if (td.status === "ok") { retriesRecovered++; break; }
+            }
+            if (td.status === "ok") {
+              finalSector = td.sector; finalIndustry = td.industry; finalMcap = td.mcap;
+              source = "twelve_data";
+              twelveRecovered++;
+              feAttempt.fallback = { source: "twelve_data", status: "ok", retries: tdRetries };
+            } else {
+              feAttempt.fallback = { source: "twelve_data", status: "miss", reason: td.reason, http_status: td.http_status, retries: tdRetries };
+              stillMissing.push(`${sym}/${ex}`);
+            }
           } else {
-            feAttempt.fallback = { source: "twelve_data", status: "miss", reason: td.reason };
             stillMissing.push(`${sym}/${ex}`);
           }
-        } else {
-          stillMissing.push(`${sym}/${ex}`);
+          attempts.push(feAttempt);
         }
-        attempts.push(feAttempt);
-      }
 
-      if (source !== "none") {
-        const nowIso = new Date().toISOString();
-        const { error: upErr } = await supabase
-          .from("fundamentals_cache")
-          .upsert(
-            {
-              symbol: sym, exchange: ex,
-              sector: finalSector, industry: finalIndustry,
-              market_cap_rs: finalMcap, cap_band: capBand(finalMcap),
-              source, as_of: nowIso, updated_at: nowIso,
-            },
-            { onConflict: "symbol,exchange" },
-          );
-        if (upErr) {
-          attempts.push({ symbol: sym, exchange: ex, source, status: "upsert_failed", reason: upErr.message });
-        } else {
-          processed++;
+        if (source !== "none") {
+          const nowIso = new Date().toISOString();
+          const { error: upErr } = await supabase
+            .from("fundamentals_cache")
+            .upsert(
+              {
+                symbol: sym, exchange: ex,
+                sector: finalSector, industry: finalIndustry,
+                market_cap_rs: finalMcap, cap_band: capBand(finalMcap),
+                source, as_of: nowIso, updated_at: nowIso,
+              },
+              { onConflict: "symbol,exchange" },
+            );
+          if (upErr) {
+            attempts.push({ symbol: sym, exchange: ex, source, status: "upsert_failed", reason: upErr.message });
+          } else {
+            processed++;
+          }
         }
+      } catch (perSymErr) {
+        attempts.push({ symbol: sym, exchange: ex, source: "none", status: "exception", reason: String(perSymErr) });
+        stillMissing.push(`${sym}/${ex}`);
       }
     }
 
@@ -425,26 +467,29 @@ Deno.serve(async (req) => {
             ok: true, processed, errors_count: errorsCount,
             finedge_ok: finedgeOk, twelve_data_recovered: twelveRecovered,
             still_missing: stillMissing.length, ran_at: new Date().toISOString(),
+            invoked_by: invokedBy,
           },
         },
         { onConflict: "config_key" },
       );
     } catch { /* best-effort */ }
 
-    await logTelemetry({
-      status,
-      processed,
-      errors_count: errorsCount,
-      details: {
-        finedge_ok: finedgeOk,
-        finedge_missed: finedgeMissed,
-        twelve_data_recovered: twelveRecovered,
-        still_missing: stillMissing.length,
-        missing_symbols: stillMissing,
-        pending_runtime_cap: pendingCount,
-        attempts_sample: attempts.slice(0, 20),
-      },
-    });
+    const details = {
+      finedge_ok: finedgeOk,
+      finedge_missed: finedgeMissed,
+      twelve_data_recovered: twelveRecovered,
+      still_missing: stillMissing.length,
+      missing_symbols: stillMissing,
+      pending_runtime_cap: pendingCount,
+      http_status_histogram: httpHistogram,
+      retries_attempted: retriesAttempted,
+      retries_recovered: retriesRecovered,
+      skipped_fresh: skippedFresh,
+      invoked_by: invokedBy,
+      attempts_sample: attempts.slice(0, 20),
+    };
+
+    await logTelemetry({ status, processed, errors_count: errorsCount, details });
 
     return json({
       ok: true, status, processed, errors_count: errorsCount,
@@ -452,6 +497,11 @@ Deno.serve(async (req) => {
         finedge_ok: finedgeOk, finedge_missed: finedgeMissed,
         twelve_data_recovered: twelveRecovered, still_missing: stillMissing.length,
         missing_symbols: stillMissing, pending_runtime_cap: pendingCount,
+        http_status_histogram: httpHistogram,
+        retries_attempted: retriesAttempted,
+        retries_recovered: retriesRecovered,
+        skipped_fresh: skippedFresh,
+        invoked_by: invokedBy,
       },
     });
   } catch (e) {
