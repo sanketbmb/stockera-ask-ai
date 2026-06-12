@@ -133,11 +133,20 @@ function parseRss(xml: string): RssItem[] {
   return items;
 }
 
+const RSS_USER_AGENT =
+  "StockeraNewsBot/1.0 (+https://www.askthe-expert.app; SEBI-registered RA Stockera Technology Private Limited; contact: admin)";
+
 async function fetchRss(url: string, timeoutMs = 5000): Promise<{ items: RssItem[]; error: string | null }> {
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": "Mozilla/5.0 stockera-news-sync" } });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": RSS_USER_AGENT,
+        "Accept": "application/rss+xml, application/xml, text/xml; q=0.9, */*; q=0.5",
+      },
+    });
     clearTimeout(to);
     if (!res.ok) return { items: [], error: `http_${res.status}` };
     const xml = await res.text();
@@ -145,6 +154,10 @@ async function fetchRss(url: string, timeoutMs = 5000): Promise<{ items: RssItem
   } catch (e) {
     return { items: [], error: String((e as Error).message || e).slice(0, 120) };
   }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
 function toIsoOrNull(s: string | null): string | null {
@@ -320,17 +333,28 @@ Deno.serve(async (req) => {
 
       // ---- RSS fallback only if marketaux returned 0 fresh items for THIS symbol ----
       if (rssEnabled && mxItems.length === 0 && rssCache.size > 0) {
-        const symLower = sym.toLowerCase();
-        const matchTokens: string[] = [symLower];
-        if (normalized) matchTokens.push(normalized);
-        if (token && token.length >= 4) matchTokens.push(token);
+        // Build candidate regexes with word boundaries. Short tokens (<4) alone
+        // are NOT sufficient to match — they must coexist with another candidate.
+        type Cand = { re: RegExp; weak: boolean };
+        const cands: Cand[] = [];
+        // ticker (uppercase as stored). Weak if length < 4.
+        cands.push({ re: new RegExp(`\\b${escapeRegex(sym)}\\b`, "i"), weak: sym.length < 4 });
+        if (normalized) cands.push({ re: new RegExp(`\\b${escapeRegex(normalized)}\\b`, "i"), weak: false });
+        if (token && token !== normalized) cands.push({ re: new RegExp(`\\b${escapeRegex(token)}\\b`, "i"), weak: token.length < 4 });
 
         const matched: Array<{ item: RssItem; feedId: string }> = [];
         for (const [feedId, items] of rssCache.entries()) {
           for (const it of items) {
-            const hay = `${it.title} ${it.description}`.toLowerCase();
-            const hit = matchTokens.some((tk) => tk && hay.includes(tk));
-            if (!hit) continue;
+            const hay = `${it.title} ${it.description}`;
+            let strongHit = false;
+            let anyHit = false;
+            for (const c of cands) {
+              if (c.re.test(hay)) {
+                anyHit = true;
+                if (!c.weak) { strongHit = true; break; }
+              }
+            }
+            if (!anyHit || !strongHit) continue;
             const iso = toIsoOrNull(it.pubDate);
             if (!iso || !isFresh(iso)) continue;
             matched.push({ item: it, feedId });
