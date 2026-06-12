@@ -10,6 +10,90 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
+
+// ── Twelve Data fallback (Phase 2X.4b) ─────────────────────────────────────
+type TdProfile = { sector: string | null; industry: string | null; name: string | null };
+type TdStats = { market_cap_inr: number | null };
+
+async function fetchWithTimeout(url: string, ms: number): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { signal: ctrl.signal }); } catch { return null; }
+  finally { clearTimeout(id); }
+}
+
+async function tdProfile(symbol: string, exchange: string): Promise<TdProfile> {
+  if (!TWELVE_DATA_API_KEY) return { sector: null, industry: null, name: null };
+  const suffix = exchange === "BSE" ? "BO" : "NS";
+  const url = `https://api.twelvedata.com/profile?symbol=${encodeURIComponent(symbol)}.${suffix}&apikey=${encodeURIComponent(TWELVE_DATA_API_KEY)}`;
+  const res = await fetchWithTimeout(url, 4000);
+  if (!res || !res.ok) return { sector: null, industry: null, name: null };
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!body || typeof body !== "object" || (body as Record<string, unknown>).status === "error") {
+    return { sector: null, industry: null, name: null };
+  }
+  const o = body as Record<string, unknown>;
+  const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return { sector: str(o.sector), industry: str(o.industry), name: str(o.name) };
+}
+
+async function tdStatistics(symbol: string, exchange: string): Promise<TdStats> {
+  if (!TWELVE_DATA_API_KEY) return { market_cap_inr: null };
+  const suffix = exchange === "BSE" ? "BO" : "NS";
+  const url = `https://api.twelvedata.com/statistics?symbol=${encodeURIComponent(symbol)}.${suffix}&apikey=${encodeURIComponent(TWELVE_DATA_API_KEY)}`;
+  const res = await fetchWithTimeout(url, 4000);
+  if (!res || !res.ok) return { market_cap_inr: null };
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!body || typeof body !== "object" || (body as Record<string, unknown>).status === "error") {
+    return { market_cap_inr: null };
+  }
+  const o = body as Record<string, unknown>;
+  const stats = (o.statistics as Record<string, unknown> | undefined) ?? o;
+  const vm = (stats?.valuations_metrics as Record<string, unknown> | undefined) ?? {};
+  const num = (v: unknown): number | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    return null;
+  };
+  // .NS/.BO listings denominate market cap in INR. Outside those suffixes we don't accept the value.
+  return { market_cap_inr: num(vm.market_capitalization ?? (stats as Record<string, unknown>).market_capitalization ?? o.market_capitalization) };
+}
+
+async function isTdFallbackEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/stock_picker_runtime_config?select=config_value&config_key=eq.compute_fundamentals_twelvedata_fallback_enabled`, {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+    });
+    if (!res.ok) return false;
+    const arr = await res.json().catch(() => []);
+    return Array.isArray(arr) && arr[0]?.config_value === true;
+  } catch { return false; }
+}
+
+async function logComputeTelemetry(args: { status: "ok" | "partial" | "error"; symbol: string; exchange: string; finedge_ok_fields: number; twelve_data_recovered_fields: number; missing_fields: string[]; error_message?: string }): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await fetch(`${SUPABASE_URL}/rest/v1/cron_run_log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, Prefer: "return=minimal" },
+      body: JSON.stringify({
+        function_name: "compute-fundamentals",
+        status: args.status,
+        started_at: now,
+        finished_at: now,
+        error_message: args.error_message ?? null,
+        metrics: {
+          symbol: args.symbol, exchange: args.exchange,
+          finedge_ok_fields: args.finedge_ok_fields,
+          twelve_data_recovered_fields: args.twelve_data_recovered_fields,
+          missing_fields: args.missing_fields,
+          ran_at: now,
+        },
+      }),
+    }).catch(() => null);
+  } catch { /* swallow */ }
+}
 
 // DCF assumptions (named, audit-friendly)
 const DCF_GROWTH = 0.10;
@@ -287,23 +371,109 @@ Deno.serve(async (req) => {
 
   const auth = req.headers.get("authorization");
   let symbol = "";
+  let exchange = "NSE";
   try {
     const body = await req.json();
     symbol = String(body?.symbol ?? "").trim();
+    const ex = String(body?.exchange ?? "").trim().toUpperCase();
+    if (ex === "BSE" || ex === "NSE") exchange = ex;
   } catch { /* fallthrough */ }
   if (!symbol) return json({ success: false, error: "INVALID_INPUT", details: "symbol required" }, 400);
 
+  const tdEnabled = await isTdFallbackEnabled();
+
   try {
-    // ── Step 1: parallel fetch ────────────────────────────────────────────────
-    const [profileR, ratiosR, plR, bsR, cfR] = await Promise.all([
+
+    // ── Step 1: parallel fetch (profile tolerated separately) ────────────────
+    const [profileS, ratiosS, plS, bsS, cfS] = await Promise.allSettled([
       fe({ endpoint: "company-profile", symbol }, auth),
       fe({ endpoint: "ratios", symbol, params: { statement_type: "c", ratio_type: "pr" } }, auth),
       fe({ endpoint: "financials", symbol, params: { statement_type: "c", statement_code: "pl", period: "annual" } }, auth),
       fe({ endpoint: "financials", symbol, params: { statement_type: "c", statement_code: "bs", period: "annual" } }, auth),
       fe({ endpoint: "financials", symbol, params: { statement_type: "c", statement_code: "cf", period: "annual" } }, auth),
-    ]).catch((err) => { throw new Error(`DATA_FETCH_FAILED: ${(err as Error).message}`); });
+    ]);
+    // Financials are required for the full computation; only profile failure is tolerated.
+    const financialsFailures = [ratiosS, plS, bsS, cfS].filter((r) => r.status === "rejected");
+    const financialsErr = financialsFailures.length > 0
+      ? (financialsFailures[0] as PromiseRejectedResult).reason
+      : null;
 
+    const profileR = profileS.status === "fulfilled" ? profileS.value : {} as Record<string, unknown>;
     const profile = unwrap(profileR);
+
+    // FinEdge company-level fields (primary).
+    const feSector: string | null = (typeof profile.sector === "string" && profile.sector.trim())
+      ? String(profile.sector).trim()
+      : (typeof profile.macro_sector === "string" && profile.macro_sector.trim() ? String(profile.macro_sector).trim() : null);
+    const feIndustry: string | null = (typeof profile.industry === "string" && profile.industry.trim())
+      ? String(profile.industry).trim() : null;
+    const feMarketCapCr = Number(profile.market_cap ?? NaN); // crore
+    const feMarketCapAbs: number | null = Number.isFinite(feMarketCapCr) ? feMarketCapCr * 1e7 : null;
+    const feName: string | null = (typeof profile.name === "string" && profile.name.trim())
+      ? String(profile.name).trim() : null;
+
+    // Twelve Data fallback fills NULLs only — primary always wins when it has data.
+    let tdRecoveredFields = 0;
+    let tdSector: string | null = null, tdIndustry: string | null = null, tdMarketCapAbs: number | null = null, tdName: string | null = null;
+    const needFallback = tdEnabled && (feSector == null || feIndustry == null || feMarketCapAbs == null);
+    if (needFallback) {
+      const [tp, ts] = await Promise.all([tdProfile(symbol, exchange), tdStatistics(symbol, exchange)]);
+      tdSector = tp.sector; tdIndustry = tp.industry; tdName = tp.name;
+      tdMarketCapAbs = ts.market_cap_inr;
+    }
+
+    const finalSector = feSector ?? tdSector ?? null;
+    const finalIndustry = feIndustry ?? tdIndustry ?? null;
+    const finalMarketCapAbs = feMarketCapAbs ?? tdMarketCapAbs ?? null;
+    const finalName = feName ?? tdName ?? null;
+    const capBand: "large" | "mid" | "small" | null = finalMarketCapAbs == null || !Number.isFinite(finalMarketCapAbs) || finalMarketCapAbs <= 0
+      ? null
+      : finalMarketCapAbs >= 200_000_000_000 ? "large"
+      : finalMarketCapAbs >= 50_000_000_000 ? "mid" : "small";
+
+    const fundamentals_source_map = {
+      sector: feSector != null ? "finedge" as const : (tdSector != null ? "twelve_data" as const : "missing" as const),
+      industry: feIndustry != null ? "finedge" as const : (tdIndustry != null ? "twelve_data" as const : "missing" as const),
+      market_cap_rs: feMarketCapAbs != null ? "finedge" as const : (tdMarketCapAbs != null ? "twelve_data" as const : "missing" as const),
+      cap_band: feMarketCapAbs != null ? "finedge" as const : (tdMarketCapAbs != null ? "twelve_data" as const : "missing" as const),
+    };
+    for (const v of Object.values(fundamentals_source_map)) if (v === "twelve_data") tdRecoveredFields++;
+    const feOkFields = Object.values(fundamentals_source_map).filter((v) => v === "finedge").length;
+    const missingFields = Object.entries(fundamentals_source_map).filter(([, v]) => v === "missing").map(([k]) => k);
+
+    // If financials failed entirely, return a partial company-only response with provenance.
+    if (financialsErr) {
+      const partialStatus: "partial" | "error" = (feOkFields + tdRecoveredFields) > 0 ? "partial" : "error";
+      await logComputeTelemetry({
+        status: partialStatus, symbol, exchange,
+        finedge_ok_fields: feOkFields, twelve_data_recovered_fields: tdRecoveredFields,
+        missing_fields: missingFields, error_message: `DATA_FETCH_FAILED: ${(financialsErr as Error)?.message ?? String(financialsErr)}`,
+      });
+      return json({
+        success: partialStatus === "partial",
+        error: partialStatus === "error" ? "DATA_FETCH_FAILED" : undefined,
+        symbol,
+        partial: partialStatus === "partial",
+        computed_at: new Date().toISOString(),
+        company: {
+          name: finalName,
+          sector: finalSector,
+          industry: finalIndustry,
+          market_cap_cr: finalMarketCapAbs != null ? finalMarketCapAbs / 1e7 : null,
+          market_cap_rs: finalMarketCapAbs,
+          cap_band: capBand,
+          employees: null,
+          price: null,
+          fundamentals_source_map,
+        },
+        details: { reason: `DATA_FETCH_FAILED: ${(financialsErr as Error)?.message ?? String(financialsErr)}` },
+      }, partialStatus === "error" ? 502 : 200);
+    }
+
+    const ratiosR = (ratiosS as PromiseFulfilledResult<Record<string, unknown>>).value;
+    const plR = (plS as PromiseFulfilledResult<Record<string, unknown>>).value;
+    const bsR = (bsS as PromiseFulfilledResult<Record<string, unknown>>).value;
+    const cfR = (cfS as PromiseFulfilledResult<Record<string, unknown>>).value;
     const ratiosRaw = (unwrap(ratiosR).ratios ?? []) as Record<string, unknown>[];
     const plRaw = (unwrap(plR).financials ?? []) as Record<string, unknown>[];
     const bsRaw = (unwrap(bsR).financials ?? []) as Record<string, unknown>[];
@@ -315,11 +485,25 @@ Deno.serve(async (req) => {
     const cf = sortByYear(cfRaw);
 
     if (pl.length < 3 || bs.length < 3) {
-      return json({ success: false, error: "INSUFFICIENT_HISTORY", details: { pl: pl.length, bs: bs.length } });
+      await logComputeTelemetry({
+        status: "partial", symbol, exchange,
+        finedge_ok_fields: feOkFields, twelve_data_recovered_fields: tdRecoveredFields,
+        missing_fields: missingFields,
+      });
+      return json({ success: false, error: "INSUFFICIENT_HISTORY",
+        details: { pl: pl.length, bs: bs.length },
+        company: {
+          name: finalName, sector: finalSector, industry: finalIndustry,
+          market_cap_cr: finalMarketCapAbs != null ? finalMarketCapAbs / 1e7 : null,
+          market_cap_rs: finalMarketCapAbs, cap_band: capBand,
+          fundamentals_source_map,
+        },
+      });
     }
 
     // ── Step 2: derive series ─────────────────────────────────────────────────
     const revS  = series(pl, "revenueFromOperations", "income", "revenue");
+
     const profS = series(pl, "profitOrLossAttributableToOwners", "profitLossForPeriod", "netIncome");
     const epsS  = series(pl, "eps");
     const pbtS  = series(pl, "profitBeforeTax");
@@ -346,20 +530,24 @@ Deno.serve(async (req) => {
     const lI = pl.length - 1, pI = lI - 1;
     const lBI = bs.length - 1, pBI = lBI - 1;
 
-    // ── company ───────────────────────────────────────────────────────────────
-    const marketCap = Number(profile.market_cap ?? NaN);                  // ₹ crore (×1e7)
-    const marketCapAbs = Number.isFinite(marketCap) ? marketCap * 1e7 : null; // ₹
+    // ── company (merged FinEdge primary + Twelve Data fill) ──────────────────
+    const marketCapAbs = finalMarketCapAbs;                                  // ₹
+    const marketCap = marketCapAbs != null ? marketCapAbs / 1e7 : NaN;       // ₹ crore
     const sharesOut = sharesS[lI];
     const price = marketCapAbs != null && sharesOut ? marketCapAbs / sharesOut : null;
 
     const company = {
-      name: profile.name ?? null,
-      sector: profile.sector ?? profile.macro_sector ?? null,
-      industry: profile.industry ?? null,
+      name: finalName,
+      sector: finalSector,
+      industry: finalIndustry,
       market_cap_cr: Number.isFinite(marketCap) ? marketCap : null,
+      market_cap_rs: marketCapAbs,
+      cap_band: capBand,
       employees: null as number | null,
       price: round(price, 2),
+      fundamentals_source_map,
     };
+
 
     // ── valuation ─────────────────────────────────────────────────────────────
     const netIncomeAbs = profS[lI];
@@ -482,9 +670,17 @@ Deno.serve(async (req) => {
       piotroski: pio.score,
     });
 
+    const okStatus: "ok" | "partial" = missingFields.length === 0 ? "ok" : "partial";
+    await logComputeTelemetry({
+      status: okStatus, symbol, exchange,
+      finedge_ok_fields: feOkFields, twelve_data_recovered_fields: tdRecoveredFields,
+      missing_fields: missingFields,
+    });
+
     return json({
       success: true,
       symbol,
+      exchange,
       computed_at: new Date().toISOString(),
       company,
       valuation,
@@ -495,9 +691,16 @@ Deno.serve(async (req) => {
       signals,
       fundamental_score: score,
       verdict: verdictOf(score),
+      fundamentals_source_map,
     });
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
+    await logComputeTelemetry({
+      status: "error", symbol, exchange,
+      finedge_ok_fields: 0, twelve_data_recovered_fields: 0,
+      missing_fields: ["sector", "industry", "market_cap_rs", "cap_band"],
+      error_message: msg,
+    });
     if (msg.startsWith("DATA_FETCH_FAILED")) {
       return json({ success: false, error: "DATA_FETCH_FAILED", details: msg }, 502);
     }
@@ -505,3 +708,5 @@ Deno.serve(async (req) => {
     return json({ success: false, error: "INTERNAL_ERROR", details: msg }, 500);
   }
 });
+
+

@@ -1,0 +1,1 @@
+INSERT INTO public.stock_picker_runtime_config (config_key, kind, config_value, description) VALUES ('compute_fundamentals_twelvedata_fallback_enabled', 'enable_flag', 'true'::jsonb, 'Phase 2X.4b: when FinEdge profile returns no company-level fields, fall back to Twelve Data /profile and /statistics to fill sector/industry/market_cap_rs.') ON CONFLICT (config_key) DO NOTHING;
