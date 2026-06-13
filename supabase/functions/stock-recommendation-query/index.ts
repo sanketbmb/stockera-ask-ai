@@ -333,15 +333,27 @@ Deno.serve(async (req) => {
     // deterministic, explainable per-symbol risk metric = realized daily-return
     // standard deviation over up-to-20 most recent closes. Higher = riskier.
     const filteredSymbols = Array.from(new Set(filtered.map((r) => r.symbol as string)));
-    const { data: liqRows, error: liqErr } = await supabase
-      .from("stock_picker_liquidity_20d")
-      .select("symbol, record_date, close")
-      .in("symbol", filteredSymbols)
-      .order("symbol", { ascending: true })
-      .order("record_date", { ascending: false });
-
-    if (liqErr) {
-      return json({ ok: false, error: liqErr.message }, 500);
+    const liqRows: Array<{ symbol: string; record_date: string; close: number }> = [];
+    {
+      const LIQ_PAGE = 1000;
+      let liqFrom = 0;
+      while (true) {
+        const { data: page, error: liqErr } = await supabase
+          .from("stock_picker_liquidity_20d")
+          .select("symbol, record_date, close")
+          .eq("fetch_status", "ok")
+          .in("symbol", filteredSymbols)
+          .order("symbol", { ascending: true })
+          .order("record_date", { ascending: false })
+          .range(liqFrom, liqFrom + LIQ_PAGE - 1);
+        if (liqErr) {
+          return json({ ok: false, error: liqErr.message }, 500);
+        }
+        if (!page || page.length === 0) break;
+        liqRows.push(...(page as typeof liqRows));
+        if (page.length < LIQ_PAGE) break;
+        liqFrom += LIQ_PAGE;
+      }
     }
 
     interface CloseRow { close: number; record_date: string }
