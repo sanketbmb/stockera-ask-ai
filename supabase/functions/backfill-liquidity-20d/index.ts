@@ -103,6 +103,39 @@ Deno.serve(async (req) => {
     });
 
 
+    // FIX-I-PREWARM: skip pairs already at >=20 fresh liquidity rows.
+    // Coverage probe paginated to avoid PostgREST 1000-row silent cap.
+    const skipCovered = bodyJson.skip_covered !== false;
+    let skippedCovered = 0;
+    let workPairs = pairs;
+    if (skipCovered) {
+      const PAGE = 1000;
+      let from = 0;
+      const counts = new Map<string, number>();
+      while (true) {
+        const { data: page, error } = await supabase
+          .from("stock_picker_liquidity_20d")
+          .select("symbol,exchange")
+          .eq("fetch_status", "ok")
+          .order("symbol", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) return json({ ok: false, error: `coverage_probe: ${error.message}` }, 500);
+        if (!page || page.length === 0) break;
+        for (const r of page) {
+          const k = `${r.symbol}|${r.exchange}`;
+          counts.set(k, (counts.get(k) ?? 0) + 1);
+        }
+        if (page.length < PAGE) break;
+        from += PAGE;
+      }
+      const covered = new Set<string>();
+      for (const [k, c] of counts) if (c >= 20) covered.add(k);
+      workPairs = pairs.filter((p) => {
+        if (covered.has(`${p.symbol}|${p.exchange}`)) { skippedCovered++; return false; }
+        return true;
+      });
+    }
+
     const maxRuntimeMs = typeof bodyJson.max_runtime_ms === "number"
       ? Math.max(5000, Math.floor(bodyJson.max_runtime_ms))
       : 100000;
@@ -112,6 +145,8 @@ Deno.serve(async (req) => {
     let processed = 0;
     let insertedTotal = 0;
     let timedOut = false;
+
+
 
     for (const { symbol, exchange } of pairs) {
       if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
