@@ -243,7 +243,7 @@ export function StockPickerFlow() {
       risk_profile: risk,
       sector: SECTOR_DATA_LOADED ? sector : "All Sectors",
       index: INDEX_DATA_LOADED ? indexName : "All Indices",
-      stock_count: Math.max(1, Math.min(5, stockCount)),
+      stock_count: Math.max(1, Math.min(10, stockCount)),
       is_pro: proOn,
     };
 
@@ -292,26 +292,40 @@ export function StockPickerFlow() {
         {step === 0 && (
           <Card className="p-6 space-y-6">
             <div>
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Investment horizon
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Investment horizon
+                </Label>
+                {/* Phase 2X.1 (F7): horizon scoring not yet wired — flag as coming soon. */}
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                  Coming soon
+                </Badge>
+              </div>
               <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {HORIZONS.map((h) => {
                   const active = horizon === h.id;
                   return (
-                    <button
-                      key={h.id}
-                      type="button"
-                      aria-label={`Horizon: ${h.label}`}
-                      onClick={() => setHorizon(h.id)}
-                      className={`rounded-xl border px-3 py-2 text-sm transition ${
-                        active
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border hover:border-primary/40"
-                      }`}
-                    >
-                      {h.label}
-                    </button>
+                    <Tooltip key={h.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`Horizon: ${h.label} (coming soon)`}
+                          aria-disabled="true"
+                          disabled
+                          onClick={(e) => e.preventDefault()}
+                          className={`rounded-xl border px-3 py-2 text-sm transition opacity-50 cursor-not-allowed ${
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border"
+                          }`}
+                        >
+                          {h.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Horizon-aware picks coming soon
+                      </TooltipContent>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -354,7 +368,7 @@ export function StockPickerFlow() {
                 id="stock-count"
                 type="range"
                 min={1}
-                max={5}
+                max={10}
                 step={1}
                 value={stockCount}
                 aria-label="Number of stocks"
@@ -362,7 +376,7 @@ export function StockPickerFlow() {
                 className="mt-3 w-full"
               />
               <div className="flex justify-between text-[10px] text-muted-foreground mt-1 font-mono">
-                {[1, 2, 3, 4, 5].map((n) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                   <span key={n}>{n}</span>
                 ))}
               </div>

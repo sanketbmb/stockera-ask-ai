@@ -161,7 +161,8 @@ Deno.serve(async (req) => {
   const risk_profile = body.risk_profile;
   const sector = body.sector ?? ALL_SECTORS;
   const indexName = body.index ?? ALL_INDICES;
-  const stockCount = Math.max(1, Math.min(5, Number(body.stock_count) || 1));
+  // Phase 2X.1 (F1): widened cap 5 → 10 to expose more of the audited survivor pool.
+  const stockCount = Math.max(1, Math.min(10, Number(body.stock_count) || 1));
 
   const generatedAt = new Date().toISOString();
   // Phase 2U — surface SEBI RA stamp from runtime_config (no module-scope cache).
