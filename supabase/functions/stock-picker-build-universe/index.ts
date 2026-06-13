@@ -189,6 +189,55 @@ function preferNsePrimary(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
 
 
 
+// =====================================================================
+// Phase 2S.3-FIX-J: OHLCV-presence equity-purity filter.
+// Keep only (symbol, exchange) pairs that have >=20 rows of price history
+// in stock_picker_ohlcv_history. Bonds / SGB / MTN / ETF tranches have
+// none, so they drop out naturally — no symbol regex required.
+//
+// PostgREST cap-safe: we paginate the aggregate query (range loops of
+// PAGE rows) rather than relying on an unpaginated select, matching the
+// pattern used by sync-ohlcv-history's coverage probe.
+// =====================================================================
+async function loadOhlcvEligiblePairs(supabase: SupabaseClient): Promise<Set<string>> {
+  const PAGE = 1000;
+  // group_by via PostgREST isn't available; use an RPC-free approach by
+  // selecting distinct (symbol, exchange) rows from a server-side view-less
+  // path: pull rows in pages from a HEAD-counted, sorted projection.
+  // Simpler & correct: page over distinct pairs via a recursive scan using
+  // (symbol, exchange) ordering — fetch all rows of (symbol, exchange) in
+  // batches and tally counts client-side. Warehouse currently ~800 pairs
+  // with >=20 rows; total rows ~tens of thousands — well within budget.
+  const counts = new Map<string, number>();
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('stock_picker_ohlcv_history')
+      .select('symbol,exchange')
+      .order('symbol', { ascending: true })
+      .order('exchange', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`build-universe: ohlcv eligibility scan failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      const k = `${(r as any).symbol}|${(r as any).exchange}`;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  const eligible = new Set<string>();
+  for (const [k, n] of counts) if (n >= 20) eligible.add(k);
+  return eligible;
+}
+
+function filterByOhlcvPresence(
+  rows: SuccessorAppliedRow[],
+  eligible: Set<string>
+): SuccessorAppliedRow[] {
+  return rows.filter(r => eligible.has(`${r.symbol}|${r.exchange}`));
+}
+
 function dedupByIsin(rows: SuccessorAppliedRow[]): SuccessorAppliedRow[] {
   const seen = new Set<string>();
   const out: SuccessorAppliedRow[] = [];
@@ -331,7 +380,9 @@ serve(async (req: Request) => {
     const filtered = filterEquitySegments(successored);
     const segCanon = canonicalizeSegment(filtered);
     const nsePrimary = preferNsePrimary(segCanon);
-    const deduped = dedupByIsin(nsePrimary);
+    const ohlcvEligible = await loadOhlcvEligiblePairs(supabase);
+    const fueled = filterByOhlcvPresence(nsePrimary, ohlcvEligible);
+    const deduped = dedupByIsin(fueled);
     const sorted = canonicalSort(deduped);
     const members = toUniverseMembers(sorted);
 
