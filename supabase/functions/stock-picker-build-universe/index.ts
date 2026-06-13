@@ -380,7 +380,9 @@ serve(async (req: Request) => {
     const filtered = filterEquitySegments(successored);
     const segCanon = canonicalizeSegment(filtered);
     const nsePrimary = preferNsePrimary(segCanon);
-    const deduped = dedupByIsin(nsePrimary);
+    const ohlcvEligible = await loadOhlcvEligiblePairs(supabase);
+    const fueled = filterByOhlcvPresence(nsePrimary, ohlcvEligible);
+    const deduped = dedupByIsin(fueled);
     const sorted = canonicalSort(deduped);
     const members = toUniverseMembers(sorted);
 
