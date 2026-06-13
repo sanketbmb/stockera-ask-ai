@@ -386,10 +386,11 @@ async function fetchLiquidityForSymbol(args: {
         if (!Number.isFinite(t) || t <= 0) continue;
         if (!Number.isFinite(c) || c <= 0) continue;
         const vol = Number.isFinite(v) ? v : 0;
-        const upstreamTurnover = Array.isArray(turnoverArr) ? Number(turnoverArr[i]) : NaN;
-        const turnover_rs = Number.isFinite(upstreamTurnover) && upstreamTurnover > 0
-          ? upstreamTurnover
-          : c * vol;
+        // PHASE 2S.3-FIX-H0-RETRY (OUTCOME B): always derive turnover_rs from
+        // close*volume to match backfill-liquidity-20d. Ignoring upstream
+        // turnoverArr guarantees cache-path / live-path numeric parity so that
+        // canonLiquidityBundle hashing is deterministic regardless of cache state.
+        const turnover_rs = c * vol;
         const record_date = new Date((t + 19800) * 1000).toISOString().slice(0, 10);
         parsedRows.push({ record_date, close: c, volume: vol, turnover_rs });
       }
