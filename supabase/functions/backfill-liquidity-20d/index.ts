@@ -228,6 +228,8 @@ Deno.serve(async (req) => {
       ok: true,
       source: sourceLabel,
       universe_pairs: pairs.length,
+      work_pairs: workPairs.length,
+      skipped_already_covered: skippedCovered,
       symbols_processed: processed,
       rows_inserted: insertedTotal,
       timed_out: timedOut,
