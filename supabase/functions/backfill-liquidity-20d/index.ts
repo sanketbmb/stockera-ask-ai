@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
 
 
-    for (const { symbol, exchange } of pairs) {
+    for (const { symbol, exchange } of workPairs) {
       if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
       processed++;
       const { data: rows, error: histErr } = await supabase
