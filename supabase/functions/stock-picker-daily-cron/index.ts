@@ -843,11 +843,26 @@ serve(async (req: Request) => {
       console.log(`phase_universe_cleanliness start n_in=${cleanliness_n_in}`);
 
       const symbols = Array.from(new Set(canonicalMembers.map((m) => m.symbol)));
-      const { data: meta, error: metaErr } = await supabase
-        .from('stock_master')
-        .select('symbol,exchange,type,segment,isin,company_name,is_suspended,dhan_security_id')
-        .in('symbol', symbols);
-      if (metaErr) throw new Error(`cleanliness: stock_master read failed: ${metaErr.message}`);
+      // FIX-K: paginate stock_master lookup to avoid PostgREST 1000-row response cap.
+      // At N>=~500 override symbols the unpaginated .in() silently truncated NSE+BSE
+      // rows, collapsing the cleanliness map and tagging members as not_equity_type.
+      const PAGE = 1000;
+      const meta: Array<Record<string, unknown>> = [];
+      let _from = 0;
+      while (true) {
+        const { data, error: metaErr } = await supabase
+          .from('stock_master')
+          .select('symbol,exchange,type,segment,isin,company_name,is_suspended,dhan_security_id')
+          .in('symbol', symbols)
+          .order('symbol', { ascending: true })
+          .order('exchange', { ascending: true })
+          .range(_from, _from + PAGE - 1);
+        if (metaErr) throw new Error(`cleanliness: stock_master read failed: ${metaErr.message}`);
+        if (!data || data.length === 0) break;
+        meta.push(...(data as Array<Record<string, unknown>>));
+        if (data.length < PAGE) break;
+        _from += PAGE;
+      }
 
       // Aggregate per (symbol, exchange) — permissive on segment, conservative on suspended.
       type Agg = {
