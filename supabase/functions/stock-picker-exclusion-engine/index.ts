@@ -50,11 +50,37 @@ serve(async (req: Request) => {
     const config = await loadConfig(supabase);
 
     // 1. Load universe members
-    const { data: members, error: memErr } = await supabase
-      .from('stock_picker_universe_snapshot_member')
-      .select('symbol,exchange,segment')
-      .eq('universe_snapshot_id', universe_snapshot_id);
-    if (memErr) throw new Error(`exclusion: load members failed: ${memErr.message}`);
+    // Phase 2S.3-FIX-H1: paginate the members fetch. PostgREST silently caps
+    // unpaginated queries at 1000 rows, which truncated the canonical
+    // snapshot (8007 members) to the first 1000 in insertion order. With an
+    // override whitelist of ~98 symbols, only those that happened to fall in
+    // the first 1000 rows survived — collapsing exclusion_verdict_count from
+    // ~98 to 1 and breaking N_excl == N_hash. Deterministic ordering keeps
+    // replay-hash stability unchanged.
+    const MEM_PAGE_SIZE = 1000;
+    const MEM_MAX_PAGES = 500;
+    const members: Array<{ symbol: string; exchange: string; segment: string }> = [];
+    let memPages = 0;
+    for (let page = 0; page < MEM_MAX_PAGES; page++) {
+      const start = page * MEM_PAGE_SIZE;
+      const end = start + MEM_PAGE_SIZE - 1;
+      const { data: chunk, error: memErr } = await supabase
+        .from('stock_picker_universe_snapshot_member')
+        .select('symbol,exchange,segment')
+        .eq('universe_snapshot_id', universe_snapshot_id)
+        .order('symbol', { ascending: true })
+        .order('exchange', { ascending: true })
+        .range(start, end);
+      if (memErr) throw new Error(`exclusion: load members failed: ${memErr.message}`);
+      const rows = (chunk ?? []) as Array<{ symbol: string; exchange: string; segment: string }>;
+      members.push(...rows);
+      memPages += 1;
+      if (rows.length < MEM_PAGE_SIZE) break;
+      if (page === MEM_MAX_PAGES - 1 && rows.length === MEM_PAGE_SIZE) {
+        throw new Error('phase2s3h1: members_page_cap_exceeded');
+      }
+    }
+    console.log(`phase2s3h1: members_paged_fetch pages=${memPages} members_in=${members.length} snapshot=${universe_snapshot_id}`);
 
     // Build set of allowed universe keys
     const universeKeys = new Set<string>(members.map(m => `${m.symbol}|${m.exchange}`));
