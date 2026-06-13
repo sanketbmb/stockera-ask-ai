@@ -963,7 +963,12 @@ serve(async (req: Request) => {
     logDiagnosticPhase(batchId, 'phase_liquidity', 'start', tLiquidity, { universe_size: canonicalMembers.length });
     const dhanFetchUrl = `${SUPABASE_URL}/functions/v1/dhan-fetch`;
     const today = new Date();
-    const toDateIso = today.toISOString().slice(0, 10);
+    // PHASE 2S.3-FIX-H0-RETRY: exclude today's partial intraday bar from the
+    // liquidity window so that two consecutive runs minutes apart see the
+    // same closed-bar series and canonLiquidityBundle hashes identically.
+    const toDate = new Date(today);
+    toDate.setDate(toDate.getDate() - 1);
+    const toDateIso = toDate.toISOString().slice(0, 10);
     const fromDate = new Date(today);
     fromDate.setDate(fromDate.getDate() - 30);
     const fromDateIso = fromDate.toISOString().slice(0, 10);
