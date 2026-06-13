@@ -386,10 +386,11 @@ async function fetchLiquidityForSymbol(args: {
         if (!Number.isFinite(t) || t <= 0) continue;
         if (!Number.isFinite(c) || c <= 0) continue;
         const vol = Number.isFinite(v) ? v : 0;
-        const upstreamTurnover = Array.isArray(turnoverArr) ? Number(turnoverArr[i]) : NaN;
-        const turnover_rs = Number.isFinite(upstreamTurnover) && upstreamTurnover > 0
-          ? upstreamTurnover
-          : c * vol;
+        // PHASE 2S.3-FIX-H0-RETRY (OUTCOME B): always derive turnover_rs from
+        // close*volume to match backfill-liquidity-20d. Ignoring upstream
+        // turnoverArr guarantees cache-path / live-path numeric parity so that
+        // canonLiquidityBundle hashing is deterministic regardless of cache state.
+        const turnover_rs = c * vol;
         const record_date = new Date((t + 19800) * 1000).toISOString().slice(0, 10);
         parsedRows.push({ record_date, close: c, volume: vol, turnover_rs });
       }
@@ -1079,20 +1080,37 @@ serve(async (req: Request) => {
         cacheFrom += CACHE_PAGE;
       }
     }
-    const cacheByKey = new Map<string, DhanHistoricalRow[]>();
+    // PHASE 2S.3-FIX-H0-RETRY: deterministic cache materialization.
+    // The cache may contain multiple rows for the same (symbol, exchange,
+    // record_date) under different data_snapshot_at tags (legacy upstream-
+    // turnover writes vs current close*volume writes, or repeated live
+    // appends). Dedupe by record_date (last write wins by iteration order),
+    // and ALWAYS recompute turnover_rs = close * volume so that cache-path
+    // and live-path numeric values are bit-identical and canonLiquidityBundle
+    // is invariant across cache state.
+    const cacheByKeyDate = new Map<string, Map<string, DhanHistoricalRow>>();
     const cacheMaxRecord = new Map<string, string>();
     for (const r of cacheRowsAll) {
       const key = `${r.symbol}|${r.exchange}`;
-      let arr = cacheByKey.get(key);
-      if (!arr) { arr = []; cacheByKey.set(key, arr); }
-      arr.push({
+      let perDate = cacheByKeyDate.get(key);
+      if (!perDate) { perDate = new Map(); cacheByKeyDate.set(key, perDate); }
+      const close = Number(r.close);
+      const volume = Number(r.volume);
+      perDate.set(r.record_date, {
         record_date: r.record_date,
-        close: Number(r.close),
-        volume: Number(r.volume),
-        turnover_rs: Number(r.turnover_rs),
+        close,
+        volume,
+        turnover_rs: close * volume,
       });
       const prev = cacheMaxRecord.get(key);
       if (!prev || r.record_date > prev) cacheMaxRecord.set(key, r.record_date);
+    }
+    const cacheByKey = new Map<string, DhanHistoricalRow[]>();
+    for (const [key, perDate] of cacheByKeyDate) {
+      const arr = Array.from(perDate.values()).sort((a, b) =>
+        a.record_date < b.record_date ? -1 : a.record_date > b.record_date ? 1 : 0
+      );
+      cacheByKey.set(key, arr);
     }
     const cachedOutcomes: LiquidityFetchOutcome[] = [];
     const missMembers: typeof canonicalMembers = [];
