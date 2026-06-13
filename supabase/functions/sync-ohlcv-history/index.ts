@@ -406,6 +406,180 @@ Deno.serve(async (req) => {
     const toStr = isoDate(toDate);
 
     // -------------------------------------------------------------------
+    // Phase 2S.3-FIX-OHLCV-EXPANSION: Nifty 500 chunked resumable backfill.
+    // Targets the Nifty 500 constituent equities; resumable cursor lives in
+    // stock_picker_runtime_config.ohlcv_n500_cursor. Append-only writes to
+    // stock_picker_ohlcv_history via existing processOne (idempotent upsert).
+    // -------------------------------------------------------------------
+    if (mode === 'nifty500_chunk') {
+      const chunkSize = Math.max(1, Math.floor(jnum(
+        (body as Record<string, unknown>)?.chunk_size ?? cfg.get('ohlcv_n500_chunk_size'), 40)));
+      const sleepMs = Math.max(0, Math.floor(jnum(cfg.get('ohlcv_chunk_sleep_ms'), 1000)));
+      const maxRuntimeMs = Math.max(5000, Math.floor(jnum(cfg.get('ohlcv_max_runtime_ms'), 90000)));
+      const t0n = Date.now();
+
+      const csvUrl = 'https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv';
+      let csvText = '';
+      try {
+        const r = await fetch(csvUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (!r.ok) throw new Error(`csv http ${r.status}`);
+        csvText = await r.text();
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false, stage: 'csv_fetch',
+          error: e instanceof Error ? e.message : String(e),
+        }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const csvLines = csvText.split(/\r?\n/).filter((l) => l.length > 0);
+      if (csvLines.length < 2) {
+        return new Response(JSON.stringify({ ok: false, stage: 'csv_parse', error: 'empty csv' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const csvHeader = csvLines[0].split(',').map((h) => h.trim().toLowerCase());
+      const symIdx = csvHeader.indexOf('symbol');
+      if (symIdx < 0) {
+        return new Response(JSON.stringify({ ok: false, stage: 'csv_parse', error: 'no Symbol column' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const csvSymbols = Array.from(new Set(
+        csvLines.slice(1)
+          .map((l) => (l.split(',')[symIdx] ?? '').trim())
+          .filter((s) => s.length > 0),
+      )).sort();
+
+      // Resolve against stock_master (prefer NSE row; must have dhan_security_id)
+      const resolved: Target[] = [];
+      const droppedNoDhan: string[] = [];
+      const PAGE = 200;
+      for (let i = 0; i < csvSymbols.length; i += PAGE) {
+        const sl = csvSymbols.slice(i, i + PAGE);
+        const { data, error } = await supabase
+          .from('stock_master')
+          .select('symbol,exchange,dhan_security_id')
+          .in('symbol', sl)
+          .in('exchange', ['NSE', 'BSE']);
+        if (error) throw new Error(`stock_master read failed: ${error.message}`);
+        const bySym = new Map<string, Array<{ exchange: string; dhan_security_id: string | null }>>();
+        for (const r of (data ?? []) as Array<{ symbol: string; exchange: string; dhan_security_id: string | null }>) {
+          const arr = bySym.get(r.symbol) ?? [];
+          arr.push({ exchange: r.exchange, dhan_security_id: r.dhan_security_id });
+          bySym.set(r.symbol, arr);
+        }
+        for (const s of sl) {
+          const rows = bySym.get(s);
+          if (!rows || rows.length === 0) { droppedNoDhan.push(s); continue; }
+          const nse = rows.find((r) => r.exchange === 'NSE' && r.dhan_security_id);
+          const any = nse ?? rows.find((r) => !!r.dhan_security_id);
+          if (!any || !any.dhan_security_id) { droppedNoDhan.push(s); continue; }
+          resolved.push({ symbol: s, exchange: any.exchange, dhan_id: String(any.dhan_security_id) });
+        }
+      }
+      const seenT = new Set<string>();
+      const targetsN500 = resolved.filter((t) => {
+        const k = `${t.symbol}|${t.exchange}`;
+        if (seenT.has(k)) return false;
+        seenT.add(k); return true;
+      }).sort((a, b) => (a.symbol + '|' + a.exchange).localeCompare(b.symbol + '|' + b.exchange));
+
+      // Compute already-covered (>=20 rows) among targets via HEAD count per pair.
+      // Parallel batches to keep latency bounded. This is the bug-fix vs the
+      // earlier .select()-based probe, which silently hit the PostgREST 1000-row
+      // cap and under-reported cumulative coverage.
+      const coveredSet = new Set<string>();
+      const BATCH = 25;
+      for (let i = 0; i < targetsN500.length; i += BATCH) {
+        const sl = targetsN500.slice(i, i + BATCH);
+        const counts = await Promise.all(sl.map(async (t) => {
+          const { count } = await supabase
+            .from('stock_picker_ohlcv_history')
+            .select('*', { count: 'exact', head: true })
+            .eq('symbol', t.symbol).eq('exchange', t.exchange);
+          return { t, count: count ?? 0 };
+        }));
+        for (const { t, count } of counts) {
+          if (count >= 20) coveredSet.add(`${t.symbol}|${t.exchange}`);
+        }
+      }
+      const skippedAlready = coveredSet.size;
+      const pending = targetsN500.filter((t) => !coveredSet.has(`${t.symbol}|${t.exchange}`));
+
+      const cursorCfg = cfg.get('ohlcv_n500_cursor') as { idx?: number } | undefined;
+      let startIdx = Math.max(0, Math.floor(jnum(cursorCfg?.idx, 0)));
+      if (startIdx >= pending.length) startIdx = 0;
+      const work = pending.slice(startIdx, startIdx + chunkSize);
+
+      let attempted = 0, rowsInsertedRun = 0, dhanCnt = 0, tdCnt = 0, newlyCovered = 0;
+      const failures: Array<{ symbol: string; exchange: string; reason: string }> = [];
+
+      for (const t of work) {
+        if (Date.now() - t0n > maxRuntimeMs) break;
+        let res: Awaited<ReturnType<typeof processOne>>;
+        try { res = await processOne(supabase, t, fromStr, toStr); }
+        catch (e) { res = { chosen: null, rows_inserted: 0, error: e instanceof Error ? e.message : String(e) }; }
+        attempted++;
+        if (res.chosen) {
+          rowsInsertedRun += res.rows_inserted;
+          if (res.chosen === 'dhan') dhanCnt++; else tdCnt++;
+          if (res.rows_inserted >= 20) newlyCovered++;
+        } else {
+          failures.push({ symbol: t.symbol, exchange: t.exchange, reason: res.error ?? 'unknown' });
+        }
+        await supabase.from('stock_picker_ohlcv_backfill_state').upsert({
+          symbol: t.symbol, exchange: t.exchange,
+          status: res.chosen ? 'done' : 'failed',
+          rows_inserted: res.rows_inserted,
+          source: res.chosen,
+          last_error: res.error ?? null,
+          attempted_at: new Date().toISOString(),
+        }, { onConflict: 'symbol,exchange' });
+        if (sleepMs > 0) await sleep(sleepMs);
+      }
+
+      const nextIdx = startIdx + attempted;
+      const cumulative = skippedAlready + newlyCovered;
+      const exhausted = nextIdx >= pending.length;
+      const stopReached = cumulative >= 500 || exhausted;
+      const stopReason = stopReached ? (cumulative >= 500 ? 'coverage_500' : 'target_exhausted') : null;
+
+      await supabase.from('stock_picker_runtime_config').upsert({
+        config_key: 'ohlcv_n500_cursor',
+        kind: 'operational',
+        config_value: {
+          idx: stopReached ? 0 : nextIdx,
+          last_run_at: new Date().toISOString(),
+          invoked_by,
+          target_total: targetsN500.length,
+          pending_total: pending.length,
+          cumulative_symbols_20plus: cumulative,
+          stop_reached: stopReached,
+          stop_reason: stopReason,
+        },
+        description: 'Phase 2S.3-FIX-OHLCV-EXPANSION Nifty500 backfill cursor',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'config_key' });
+
+      return new Response(JSON.stringify({
+        ok: true, mode: 'nifty500_chunk', invoked_by,
+        csv_rows: csvSymbols.length,
+        target_total: targetsN500.length,
+        dropped_no_dhan: droppedNoDhan.length,
+        symbols_skipped_already_covered: skippedAlready,
+        symbols_attempted_this_run: attempted,
+        rows_inserted_this_run: rowsInsertedRun,
+        symbols_failed_this_run: failures.length,
+        dhan_used: dhanCnt, twelve_data_fallback_used: tdCnt,
+        cumulative_symbols_with_20plus_rows: cumulative,
+        cursor_idx_persisted: stopReached ? 0 : nextIdx,
+        cursor_idx_start: startIdx,
+        pending_total: pending.length,
+        stop_reached: stopReached,
+        stop_reason: stopReason,
+        elapsed_ms: Date.now() - t0n,
+        failures: failures.slice(0, 20),
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // -------------------------------------------------------------------
     // Phase 2S: chunked, resumable mode
     // -------------------------------------------------------------------
     if (mode === 'chunk') {
