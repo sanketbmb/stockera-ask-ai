@@ -243,6 +243,17 @@ serve(async (req: Request) => {
     const rejected = verdicts.filter(v => v.verdict === 'exclude').map(v => v.symbol);
     const insufficient = verdicts.filter(v => v.verdict === 'insufficient_data').map(v => v.symbol);
 
+    // Phase 2S.3-FIX-H1 instrumentation: stage row counts so we can catch any
+    // future collapse before it propagates to the cron row-count assert.
+    console.log(
+      `phase2s3h1: stage_counts members_in=${members.length} ` +
+      `liq_rows_filtered=${filteredLiq.length} liq_groups=${grouped.size} ` +
+      `liq_metrics=${liqMap.size} verdicts_out=${verdicts.length} ` +
+      `include=${survivors.length} reject=${rejected.length} insufficient=${insufficient.length} ` +
+      `hash_rows=${hashRows.length}`
+    );
+
+
     return new Response(JSON.stringify({
       ok: true,
       batch_id,
