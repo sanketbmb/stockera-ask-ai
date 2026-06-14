@@ -90,6 +90,16 @@ interface NewsItemOut {
   published_at: string;
 }
 
+interface ZoneMeta {
+  version: "zone_v2";
+  v_used: number;
+  stop_pct: number;
+  target_pct: number;
+  rr_actual: number;
+  stop_source: "vol_based" | "structural_tighten" | "min_floor";
+  profile: string;
+}
+
 interface StockOut {
   ticker: string;
   exchange: string;
@@ -105,6 +115,7 @@ interface StockOut {
   buy_zone: BuyZoneBlock;
   target: number | null;
   stop_loss: number | null;
+  zone_meta: ZoneMeta | null;
   news: NewsItemOut[];
   data_completeness: DataCompleteness;
   pending: string[];
@@ -832,27 +843,124 @@ Deno.serve(async (req) => {
       if (v == null || !Number.isFinite(v)) return knobs.vol_default;
       return clamp(v, knobs.vol_clamp_min, knobs.vol_clamp_max);
     }
-    function buildZones(cmp: number | null, tech: TechnicalsBlock): {
-      buy_zone: BuyZoneBlock; target: number | null; stop_loss: number | null;
-    } {
-      if (cmp == null) return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
-      const v = effectiveVol(tech.realized_vol_20d);
-      let upper = cmp * (1 - v * knobs.buy_upper_factor);
-      let lower = cmp * (1 - v * knobs.buy_lower_factor);
-      if (tech.low_20d != null) lower = Math.max(lower, tech.low_20d * knobs.buy_lower_floor_factor);
-      if (!(lower < upper)) {
-        return { buy_zone: { lower: null, upper: null }, target: null, stop_loss: null };
+    // === Phase 2Y.1 — Zone-math v2 (R-coupled, vol-scaled, capped) ===
+    // Pure function. Read knobs ONCE per request below and pass via `z`.
+    // Legacy knobs (target_high_factor, stop_low_factor, target_vol_mult,
+    // stop_vol_mult, buy_*_factor) are no longer referenced by buildZones.
+    type ZoneV2Knobs = {
+      stop_k: number; rr_min: number; rr_default: number;
+      max_stop_pct: number; min_stop_pct: number; max_target_pct: number;
+      buy_zone_half_pct: number; v_clamp_min: number; v_clamp_max: number;
+    };
+    const ZONE_V2_DEFAULTS: ZoneV2Knobs = {
+      stop_k: 1.5, rr_min: 1.5, rr_default: 2.0,
+      max_stop_pct: 0.04, min_stop_pct: 0.01, max_target_pct: 0.12,
+      buy_zone_half_pct: 0.005, v_clamp_min: 0.005, v_clamp_max: 0.05,
+    };
+    const zoneV2: ZoneV2Knobs = { ...ZONE_V2_DEFAULTS };
+    {
+      const v2ProfileKey = `profile_knobs_v2_${risk_profile}`;
+      const { data: v2Rows, error: v2Err } = await supabase
+        .from("stock_picker_runtime_config")
+        .select("config_key, config_value")
+        .in("config_key", ["zone_v2_globals", v2ProfileKey]);
+      if (v2Err) console.warn(`phase2y1: zone_v2_knobs_read_error ${v2Err.message}`);
+      const v2Map = new Map<string, Record<string, unknown>>();
+      for (const r of v2Rows ?? []) {
+        const v = (r as { config_value: unknown }).config_value;
+        if (v && typeof v === "object" && !Array.isArray(v)) {
+          v2Map.set((r as { config_key: string }).config_key, v as Record<string, unknown>);
+        }
       }
-      let target: number | null = cmp * (1 + v * knobs.target_vol_mult);
-      if (tech.high_20d != null) target = Math.max(target, tech.high_20d * knobs.target_high_factor);
-      if (target == null || !(target > upper)) target = null;
-      let stop: number | null = cmp * (1 - v * knobs.stop_vol_mult);
-      if (tech.low_20d != null) stop = Math.min(stop, tech.low_20d * knobs.stop_low_factor);
-      if (stop == null || !(stop < lower)) stop = null;
+      const applyKnobs = (src?: Record<string, unknown>) => {
+        if (!src) return;
+        for (const k of Object.keys(ZONE_V2_DEFAULTS) as Array<keyof ZoneV2Knobs>) {
+          const raw = src[k];
+          const n = typeof raw === "number" ? raw
+            : (typeof raw === "string" ? Number(raw) : NaN);
+          if (Number.isFinite(n)) (zoneV2 as Record<string, number>)[k as string] = n;
+        }
+      };
+      applyKnobs(v2Map.get("zone_v2_globals"));
+      applyKnobs(v2Map.get(v2ProfileKey)); // profile overrides win
+      console.log(
+        `phase2y1: zone_v2_knobs ${risk_profile} ${JSON.stringify(zoneV2)} ` +
+        `globals_loaded=${v2Map.has("zone_v2_globals")} profile_loaded=${v2Map.has(v2ProfileKey)}`
+      );
+    }
+
+    function buildZones(cmp: number | null, tech: TechnicalsBlock, z: ZoneV2Knobs, profile: string): {
+      buy_zone: BuyZoneBlock; target: number | null; stop_loss: number | null;
+      _meta: ZoneMeta | null;
+    } {
+      const nulls = () => ({
+        buy_zone: { lower: null, upper: null },
+        target: null, stop_loss: null, _meta: null,
+      });
+      if (cmp == null || !(cmp > 0)) return nulls();
+
+      // 1) Volatility (realized_vol_20d only, clamped)
+      const vRaw = tech.realized_vol_20d ?? 0.02;
+      const v = Math.max(z.v_clamp_min, Math.min(z.v_clamp_max, vRaw));
+
+      // 2) Entry anchor: buy_zone.upper == entry == CMP (single anchor for all bands)
+      const entry = cmp;
+      const buy_zone_upper = entry;
+      const buy_zone_lower = entry * (1 - z.buy_zone_half_pct);
+
+      // 3) Stop_pct: vol-scaled → capped at max → floored at min
+      let stop_pct = z.stop_k * v;
+      let stop_source: ZoneMeta["stop_source"] = "vol_based";
+      if (stop_pct > z.max_stop_pct) stop_pct = z.max_stop_pct;
+      if (stop_pct < z.min_stop_pct) { stop_pct = z.min_stop_pct; stop_source = "min_floor"; }
+      let stop = entry * (1 - stop_pct);
+
+      // 4) Structural floor (TIGHTEN-ONLY: only used if it RAISES the stop above the vol stop)
+      let structural_used = false;
+      if (tech.low_20d != null) {
+        const structural_stop = tech.low_20d * 0.95;
+        if (structural_stop > stop && structural_stop < entry) {
+          stop = structural_stop;
+          stop_pct = (entry - stop) / entry;
+          structural_used = true;
+        }
+      }
+      if (structural_used) stop_source = "structural_tighten";
+
+      // 5) R (risk unit primitive)
+      const R = entry - stop;
+      if (!(R > 0)) return nulls();
+
+      // 6) Target = entry + rr * R; rr_min is the floor
+      const rr = Math.max(z.rr_min, z.rr_default);
+      const target = entry + rr * R;
+      const target_pct = (target - entry) / entry;
+
+      // 7) Realism cap on target (rejects e.g. blown-out +27% targets)
+      if (target_pct > z.max_target_pct) return nulls();
+
+      // 8) Sanity gates
+      if (!(target > entry)) return nulls();
+      if (!(stop < entry)) return nulls();
+      if (!(stop > 0)) return nulls();
+      if (!(buy_zone_lower < buy_zone_upper)) return nulls();
+      if (!(stop < buy_zone_lower)) return nulls();
+      const rr_actual = (target - entry) / R;
+      if (!(rr_actual + 1e-9 >= z.rr_min)) return nulls();
+
       return {
-        buy_zone: { lower: round2(lower), upper: round2(upper) },
-        target: target == null ? null : round2(target),
-        stop_loss: stop == null ? null : round2(stop),
+        buy_zone: { lower: round2(buy_zone_lower), upper: round2(buy_zone_upper) },
+        target: round2(target),
+        stop_loss: round2(stop),
+        _meta: {
+          version: "zone_v2",
+          v_used: v,
+          stop_pct,
+          target_pct,
+          rr_actual,
+          stop_source,
+          profile,
+        },
       };
     }
     function previewComposite(cmp: number | null, tech: TechnicalsBlock): number | null {
