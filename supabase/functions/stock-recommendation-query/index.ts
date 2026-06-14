@@ -400,6 +400,90 @@ Deno.serve(async (req) => {
       volBySymbol.set(sym, realizedVol(closesBySymbol.get(sym)));
     }
 
+    // ============================================================
+    // PHASE 2Y.2 — Real per-stock realized vol from ohlcv_history.
+    // Overrides volBySymbol with stddev_samp of the last 20 daily
+    // log returns (21 most recent closes per symbol). One-shot,
+    // paginated fetch before the symbol loop. buildZones internals
+    // unchanged — it receives the value via tech.realized_vol_20d.
+    // Nulls (insufficient history) pass through to the existing
+    // 0.02 fallback inside buildZones.
+    // ============================================================
+    const ohlcvRows: Array<{ symbol: string; record_date: string; close: number }> = [];
+    {
+      const OHLCV_PAGE = 1000;
+      let ohFrom = 0;
+      while (true) {
+        const { data: page, error: ohErr } = await supabase
+          .from("stock_picker_ohlcv_history")
+          .select("symbol, record_date, close")
+          .in("symbol", filteredSymbols)
+          .order("symbol", { ascending: true })
+          .order("record_date", { ascending: false })
+          .range(ohFrom, ohFrom + OHLCV_PAGE - 1);
+        if (ohErr) {
+          return json({ ok: false, error: ohErr.message }, 500);
+        }
+        if (!page || page.length === 0) break;
+        ohlcvRows.push(...(page as typeof ohlcvRows));
+        if (page.length < OHLCV_PAGE) break;
+        ohFrom += OHLCV_PAGE;
+      }
+    }
+
+    const closes21BySymbol = new Map<string, Array<{ close: number; record_date: string }>>();
+    for (const row of ohlcvRows) {
+      const sym = String(row.symbol);
+      const close = Number(row.close);
+      if (!Number.isFinite(close) || close <= 0) continue;
+      const arr = closes21BySymbol.get(sym) ?? [];
+      if (arr.length < 21) arr.push({ close, record_date: String(row.record_date) });
+      closes21BySymbol.set(sym, arr);
+    }
+
+    function realizedVolLog(rowsDesc: Array<{ close: number }> | undefined): number | null {
+      if (!rowsDesc || rowsDesc.length < 21) return null;
+      const asc = [...rowsDesc].reverse(); // ascending by record_date
+      const logs: number[] = [];
+      for (let i = 1; i < asc.length; i++) {
+        const prev = asc[i - 1].close;
+        const cur = asc[i].close;
+        if (prev > 0 && cur > 0) logs.push(Math.log(cur / prev));
+      }
+      if (logs.length < 2) return null;
+      const mean = logs.reduce((a, b) => a + b, 0) / logs.length;
+      const variance = logs.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (logs.length - 1);
+      return Math.sqrt(Math.max(0, variance));
+    }
+
+    let volComputedCount = 0;
+    let volFallbackCount = 0;
+    const staleVolSymbols: string[] = [];
+    let newestObservedMs = 0;
+    for (const rows of closes21BySymbol.values()) {
+      if (rows.length > 0) {
+        const t = new Date(rows[0].record_date).getTime();
+        if (Number.isFinite(t) && t > newestObservedMs) newestObservedMs = t;
+      }
+    }
+    const STALE_THRESHOLD_MS = 14 * 86400_000;
+    for (const sym of filteredSymbols) {
+      const rows = closes21BySymbol.get(sym);
+      const v = realizedVolLog(rows);
+      volBySymbol.set(sym, v);
+      if (v == null) volFallbackCount++;
+      else volComputedCount++;
+      if (rows && rows.length > 0 && newestObservedMs > 0) {
+        const symNewest = new Date(rows[0].record_date).getTime();
+        if (Number.isFinite(symNewest) && (newestObservedMs - symNewest) > STALE_THRESHOLD_MS) {
+          staleVolSymbols.push(sym);
+        }
+      }
+    }
+    if (staleVolSymbols.length > 0) {
+      console.warn("[zone_v2.vol] stale ohlcv tail (>14d behind newest):", staleVolSymbols);
+    }
+
     // Phase 2E — fetch optional real-time LTP cache (TTL-gated), fundamentals
     // cache (merged into stock_master), and news cache (top 3 per symbol).
     // All three are populated by background sync functions (sync-ltp-dhan,
