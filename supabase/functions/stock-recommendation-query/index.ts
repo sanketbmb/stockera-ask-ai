@@ -1018,7 +1018,7 @@ Deno.serve(async (req) => {
       const cmp = buildCmp(sym);
       const tech = buildTechnicals(sym, cmp.value);
       const fund = buildFundamentals(sym);
-      const zones = buildZones(cmp.value, tech);
+      const zones = buildZones(cmp.value, tech, zoneV2, risk_profile);
       const compositePreview = previewComposite(cmp.value, tech);
 
       const cmpOk = cmp.value !== null;
