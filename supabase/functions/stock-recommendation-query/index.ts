@@ -1123,17 +1123,19 @@ Deno.serve(async (req) => {
         tier_applied: tier,
       },
       zone_engine: {
-        version: "phase-2d-dev-preview",
+        version: "zone_v2",
+        anchor: "entry == buy_zone.upper == CMP (single anchor for all bands)",
         buy_zone_formula:
-          "upper = CMP*(1 - vc*0.25); lower = max(CMP*(1 - vc*1.25), low_20d*0.98); vc = clamp(realized_vol_20d, 0.005, 0.05), default 0.02",
-        target_formula:
-          "target = max(CMP*(1 + vc*3), high_20d*1.02); null if not strictly > buy_zone.upper",
+          "upper = entry; lower = entry * (1 - buy_zone_half_pct)",
         stop_loss_formula:
-          "stop_loss = min(CMP*(1 - vc*3), low_20d*0.95); null if not strictly < buy_zone.lower",
+          "stop_pct = clamp(stop_k * v, min_stop_pct, max_stop_pct); stop = entry*(1 - stop_pct); structural floor (low_20d*0.95) used ONLY if it tightens (raises) the stop. v = clamp(realized_vol_20d, v_clamp_min, v_clamp_max).",
+        target_formula:
+          "target = entry + max(rr_min, rr_default) * (entry - stop); rejected if target_pct > max_target_pct or rr_actual < rr_min",
         composite_score_formula:
-          "0.4 * vol_score + 0.4 * trend_score + 0.2 * mean_reversion_proximity, range 0..100",
+          "0.4 * vol_score + 0.4 * trend_score + 0.2 * mean_reversion_proximity, range 0..100 (unchanged)",
+        knobs_in_effect: zoneV2,
         disclaimer:
-          "Dev-preview math only. NOT backtested. NOT persisted to stock_picker_pick_audit. composite_score_writes_enabled remains false.",
+          "Read-path only. Zones NOT persisted to stock_picker_pick_audit and NOT part of sp1-replay-v2. composite_score_writes_enabled unchanged.",
       },
       data_sources: {
         cmp: "ltp_cache (preferred) -> stock_picker_liquidity_20d latest close (fallback)",
