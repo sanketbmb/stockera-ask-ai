@@ -1078,6 +1078,7 @@ Deno.serve(async (req) => {
         buy_zone: zones.buy_zone,
         target: zones.target,
         stop_loss: zones.stop_loss,
+        zone_meta: zones._meta,
         news: newsItems,
         data_completeness: {
           cmp: cmpOk,
