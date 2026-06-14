@@ -1218,6 +1218,8 @@ Deno.serve(async (req) => {
         composite_score_formula:
           "0.4 * vol_score + 0.4 * trend_score + 0.2 * mean_reversion_proximity, range 0..100 (unchanged)",
         knobs_in_effect: zoneV2,
+        vol_source_counts: { computed: volComputedCount, fallback: volFallbackCount },
+        stale_vol_symbols: staleVolSymbols,
         disclaimer:
           "Read-path only. Zones NOT persisted to stock_picker_pick_audit and NOT part of sp1-replay-v2. composite_score_writes_enabled unchanged.",
       },
