@@ -45,9 +45,19 @@ export function SEBIDisclaimerInline({ className, text }: InlineProps) {
 interface BannerProps {
   defaultOpen?: boolean;
   className?: string;
+  customHeading?: string;
+  customBodyFirstParagraph?: string;
 }
-export function SEBIDisclaimerBanner({ defaultOpen = false, className }: BannerProps) {
+export function SEBIDisclaimerBanner({
+  defaultOpen = false,
+  className,
+  customHeading,
+  customBodyFirstParagraph,
+}: BannerProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const paragraphs = customBodyFirstParagraph
+    ? [customBodyFirstParagraph, ...FULL_TEXT.slice(1)]
+    : FULL_TEXT;
   return (
     <section
       className={cn(
@@ -60,9 +70,14 @@ export function SEBIDisclaimerBanner({ defaultOpen = false, className }: BannerP
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-gold-foreground">
-            Educational use only — Ask The Expert by Stockera is not a SEBI-registered
-            entity. Experts on the platform are SEBI registered.
+            {customHeading ?? (
+              <>
+                Educational use only — Ask The Expert by Stockera is not a SEBI-registered
+                entity. Experts on the platform are SEBI registered.
+              </>
+            )}
           </p>
+
           {open && (
             <div className="mt-3 space-y-2 text-xs leading-relaxed text-gold-foreground/90">
               {FULL_TEXT.map((p, i) => (
