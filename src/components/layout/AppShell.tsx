@@ -44,8 +44,15 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
           </div>
         </div>
-        <Badge variant="outline" className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary">
-          ₹{profile?.wallet_balance ?? 0} wallet
+        <Badge
+          variant="outline"
+          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
+        >
+          {balanceLoading ? (
+            <Skeleton className="h-3 w-16" />
+          ) : (
+            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
+          )}
         </Badge>
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
