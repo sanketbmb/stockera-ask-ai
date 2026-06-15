@@ -21,23 +21,23 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type AnalyticsEventName =
   | "page_view"
+  | "cta_click"
   | "signup_started"
   | "signup_completed"
   | "login_started"
   | "login_completed"
   | "query_submitted"
-  | "report_viewed"
-  | "report_shared"
-  | "paywall_shown"
-  | "paywall_dismissed"
-  | "checkout_started"
-  | "checkout_completed"
-  | "checkout_failed"
-  | "wallet_topup_started"
-  | "wallet_topup_completed"
-  | "welcome_bonus_granted"
-  | "first_topup_bonus_granted"
-  | "subscription_changed";
+  | "query_completed"
+  | "topup_initiated"
+  | "topup_tier_selected"
+  | "topup_abandoned"
+  | "topup_completed"
+  | "wallet_viewed"
+  | "pricing_viewed"
+  | "plan_selected"
+  | "paywall_hit"
+  | "video_request_submitted"
+  | "live_session_booked";
 
 export type AnalyticsProps = Record<string, unknown>;
 
