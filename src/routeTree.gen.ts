@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as TopupRouteImport } from './routes/topup'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as StockPickerRouteImport } from './routes/stock-picker'
 import { Route as SignupRouteImport } from './routes/signup'
@@ -52,6 +53,11 @@ import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upl
 const WalletRoute = WalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TopupRoute = TopupRouteImport.update({
+  id: '/topup',
+  path: '/topup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
+  '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
@@ -309,6 +316,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
+  '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
@@ -351,6 +359,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
+  '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
@@ -394,6 +403,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/stock-picker'
     | '/terms'
+    | '/topup'
     | '/wallet'
     | '/admin/apply'
     | '/admin/backtest'
@@ -435,6 +445,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/stock-picker'
     | '/terms'
+    | '/topup'
     | '/wallet'
     | '/admin/apply'
     | '/admin/backtest'
@@ -476,6 +487,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/stock-picker'
     | '/terms'
+    | '/topup'
     | '/wallet'
     | '/admin/apply'
     | '/admin/backtest'
@@ -518,6 +530,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   StockPickerRoute: typeof StockPickerRoute
   TermsRoute: typeof TermsRoute
+  TopupRoute: typeof TopupRoute
   WalletRoute: typeof WalletRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminBacktestRoute: typeof AdminBacktestRoute
@@ -546,6 +559,13 @@ declare module '@tanstack/react-router' {
       path: '/wallet'
       fullPath: '/wallet'
       preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/topup': {
+      id: '/topup'
+      path: '/topup'
+      fullPath: '/topup'
+      preLoaderRoute: typeof TopupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -838,6 +858,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   StockPickerRoute: StockPickerRoute,
   TermsRoute: TermsRoute,
+  TopupRoute: TopupRoute,
   WalletRoute: WalletRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminBacktestRoute: AdminBacktestRoute,
