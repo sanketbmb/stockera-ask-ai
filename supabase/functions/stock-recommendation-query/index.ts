@@ -855,7 +855,7 @@ Deno.serve(async (req) => {
     // Tier filter: keep symbols whose realized vol satisfies the tier rule.
     // Always guarantee at least 1 symbol survives (fall back to lowest-vol
     // for restrictive tiers, or all for permissive).
-    let tierFiltered = filtered.filter((r) => {
+    let tierFiltered = qFiltered.filter((r) => {
       const v = volBySymbol.get(r.symbol as string);
       if (tier === "ultra") return true;
       if (tier === "aggressive") return true; // permissive; ranking handles bias
