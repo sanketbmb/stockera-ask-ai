@@ -1270,6 +1270,7 @@ Deno.serve(async (req) => {
     return json({
       ...baseResponse,
       score_gate: scoreGate,
+      quality_gate: qualityGateMeta,
       stocks,
       risk_engine: {
         signal: "realized_vol_20d_close",
