@@ -317,7 +317,7 @@ async function flushQueue(): Promise<void> {
   try {
     const { error } = await supabase
       .from("analytics_events")
-      .insert(batch as unknown as Parameters<ReturnType<typeof supabase.from<"analytics_events">>["insert"]>[0]);
+      .insert(batch as never);
     if (error) {
       devWarn("insert failed", error);
     }
