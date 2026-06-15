@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const FULL_TEXT = [
-  "Ask The Expert by Stockera is an intermediary marketplace and is NOT itself a SEBI-registered Research Analyst or Investment Adviser.",
+  "Ask The Expert by Stockera is an intermediary marketplace platform and is NOT itself a SEBI-registered Research Analyst or Investment Adviser. The AI-generated stock picks displayed on this screen are researched and published under the registration of Stockera Technology Private Limited (INH000019071), a SEBI-registered Research Analyst.",
   "All research, recommendations and personalised advice on the platform are provided by independent SEBI-registered Research Analysts (RA) or Investment Advisers (RIA), whose registration details are shown on their profile. Content from the AI report and from the platform itself is educational and informational — not investment advice.",
   "Investments in securities markets are subject to market risks. Past performance is not indicative of future results. Read all related offer documents carefully before investing. Registration granted by SEBI, BASL membership, and NISM certifications in no way guarantee performance of the intermediary or assure returns.",
   "You are solely responsible for your investment decisions. Always assess your risk profile, time horizon and consult a qualified adviser where appropriate.",
@@ -45,19 +45,13 @@ export function SEBIDisclaimerInline({ className, text }: InlineProps) {
 interface BannerProps {
   defaultOpen?: boolean;
   className?: string;
-  customHeading?: string;
-  customBodyFirstParagraph?: string;
 }
 export function SEBIDisclaimerBanner({
   defaultOpen = false,
   className,
-  customHeading,
-  customBodyFirstParagraph,
 }: BannerProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const paragraphs = customBodyFirstParagraph
-    ? [customBodyFirstParagraph, ...FULL_TEXT.slice(1)]
-    : FULL_TEXT;
+  const paragraphs = FULL_TEXT;
   return (
     <section
       className={cn(
@@ -70,12 +64,7 @@ export function SEBIDisclaimerBanner({
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-gold-foreground">
-            {customHeading ?? (
-              <>
-                Educational use only — Ask The Expert by Stockera is not a SEBI-registered
-                entity. Experts on the platform are SEBI registered.
-              </>
-            )}
+            Educational use only — AI stock picks on this page are published by Stockera Technology Private Limited (INH000019071), a SEBI-registered Research Analyst. Ask The Expert is an intermediary marketplace platform and is not itself a SEBI-registered entity.
           </p>
 
           {open && (
