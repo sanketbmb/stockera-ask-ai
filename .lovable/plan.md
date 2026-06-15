@@ -1,71 +1,167 @@
-# W4 — Wallet Page Cutover (Plan)
+# Planned Diff
 
-## Scope
-Exactly one file modified: `src/pages/Wallet.tsx` (full replacement).
+```diff
+--- src/components/layout/AppShell.tsx
++++ src/components/layout/AppShell.tsx
+@@ -7,4 +7,6 @@
+ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+ import { useAuth } from "@/contexts/AuthContext";
+ import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+ import { cn } from "@/lib/utils";
++import { useWalletBalance, useWalletRealtime } from "@/lib/points";
++import { Skeleton } from "@/components/ui/skeleton";
+ 
+ const NAV = [
+@@ -21,4 +23,7 @@
+ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+   const { user, profile, signOut } = useAuth();
++  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
++  useWalletRealtime(user?.id);
++
+   const pathname = useRouterState({ select: (s) => s.location.pathname });
+   const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
+@@ -41,5 +46,13 @@
+         </div>
+-        <Badge variant="outline" className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary">
+-          ₹{profile?.wallet_balance ?? 0} wallet
+-        </Badge>
++        <Badge
++          variant="outline"
++          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
++        >
++          {balanceLoading ? (
++            <Skeleton className="h-3 w-16" />
++          ) : (
++            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
++          )}
++        </Badge>
+       </div>
+```
 
-Zero edits to any other file. No new dependencies. No migrations. No edge functions. No changes to AppShell / AuthContext / routes / package.json. Route path `/wallet` unchanged. Default export `WalletPage` preserved.
+---
 
-## What changes (diff summary)
+# Full Updated File Contents (`src/components/layout/AppShell.tsx`)
 
-**Removed from current `src/pages/Wallet.tsx`:**
-- `useState`, `useQueryClient` imports
-- `Input` (from `@/components/ui/input`), `Package` (lucide), `toast` (sonner) imports
-- `PRESETS` array, `POSITIVE_TYPES` set
-- `amount`, `adding` state; `qc` query client
-- `onAddDemo` (calls `add_demo_credits` RPC) and `onAddReal` handlers
-- `useQuery({ queryKey: ["wallet-txns", ...] })` against `wallet_transactions`
-- `profile?.wallet_balance` read; `profile` and `refresh` destructured from `useAuth()`
-- Four preset buttons + custom amount input + "Add via UPI" + "Add ₹100 Demo Credits"
-- `<Pack>` helper component and Bundle tile
-- Any hardcoded ₹49/₹149/₹199/₹99/₹999/₹100 strings
-- Balance column in the transactions table
+```tsx
+import { type ReactNode } from "react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Home, ListChecks, Wallet, Gift, Settings, LogOut, Menu } from "lucide-react";
+import { Logo } from "@/components/common/Logo";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { useAuth } from "@/contexts/AuthContext";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { cn } from "@/lib/utils";
+import { useWalletBalance, useWalletRealtime } from "@/lib/points";
+import { Skeleton } from "@/components/ui/skeleton";
 
-**Added:**
-- Imports from `@/lib/points` (`useWalletBalance`, `useActionCosts`, `useWalletRealtime`, `formatPoints`, `isPromoActive`, `ActionCost`)
-- Imports from `@/lib/analytics` (`track`, `trackPageView`)
-- `Link` from `@tanstack/react-router` (NOT `react-router-dom`)
-- `useWalletRealtime(user?.id)` subscription
-- Signed-out guard returning AppShell with sign-in card
-- Balance error banner with retry
-- New balance card reading `walletBalance.balance` + `welcome_bonus_remaining` + expiry badge (≤7 days)
-- Simplified "Add credits" card with single `<Link to="/topup">` CTA that fires `track("cta_click", { cta: "add_credits", source: "wallet_page" })`
-- 3-tile action-cost grid (AI Report / Video Answer / Live Session) using `useActionCosts()` + `isPromoActive` + LAUNCH badge with strike-through regular price
-- Ledger query against `wallet_ledger`, selecting ONLY `id, entry_type, amount, created_at`, limit 50, ordered by `created_at desc`, with retry-on-error UI
-- `ENTRY_LABELS` map covering all 18 W1 entry types + `describeEntry` fallback (humanized title case)
-- Transactions table: Date / Type (credit|debit badge) / Description (mapped label) / Amount (signed, colored, with arrow icon)
-- One-shot analytics effect (guarded by `useRef`) firing `void trackPageView()` and `void track("wallet_viewed", { balance, has_welcome_bonus })` after balance loads
-- `ActionTile` helper component at bottom of file
+const NAV = [
+  { to: "/dashboard", label: "Dashboard", Icon: Home },
+  { to: "/my-queries", label: "My Queries", Icon: ListChecks },
+  { to: "/wallet", label: "Wallet", Icon: Wallet },
+  { to: "/referral", label: "Refer & Earn", Icon: Gift },
+  { to: "/settings", label: "Settings", Icon: Settings },
+] as const;
 
-**Unchanged:**
-- `export default function WalletPage()` signature
-- `<AppShell title="Wallet">` wrapper
-- shadcn vocabulary: Card / Button / Badge / Skeleton / Table
-- Gradient balance card visual (primary→accent), font-display / font-mono / tabular-nums classes
+function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+  const { user, profile, signOut } = useAuth();
+  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
 
-## Data flow
-- `useAuth()` → `{ user }` only
-- `useWalletBalance(user?.id)` → balance + welcome bonus fields + loading/error/refetch
-- `useActionCosts()` → ai_report / video_answer / live_session cost objects
-- `useWalletRealtime(user?.id)` → invalidates wallet queries on `wallet_ledger` inserts
-- `useQuery(["wallet-ledger", user.id])` → last 50 ledger rows directly via supabase client (4 columns only)
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
 
-## Stop gate
-Plan only. The full replacement file body matches the spec verbatim (imports, signed-out guard, analytics effect with `useRef`, ENTRY_LABELS with all 18 values, Section 0 error banner, Section 1 balance + add-credits grid, Section 2 three ActionTiles, Section 3 ledger Card/Table, `ActionTile` helper). No writes until founder replies **apply W4**.
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-5 border-b border-border">
+        <Logo size="sm" linkTo="/" />
+      </div>
+      <div className="p-5 border-b border-border">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-10 w-10">
+            <AvatarImage src={profile?.avatar_url ?? undefined} />
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{profile?.full_name || "Welcome"}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
+        >
+          {balanceLoading ? (
+            <Skeleton className="h-3 w-16" />
+          ) : (
+            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
+          )}
+        </Badge>
+      </div>
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        {NAV.map(({ to, label, Icon }) => {
+          const active = pathname === to || pathname.startsWith(`${to}/`);
+          return (
+            <Link
+              key={to}
+              to={to}
+              onClick={onNavigate}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </Link>
+          );
+        })}
+        <button
+          onClick={async () => { await signOut(); onNavigate?.(); }}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <LogOut className="h-4 w-4" /> Sign out
+        </button>
+      </nav>
+      <div className="p-4 border-t border-border">
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          ⚠ SEBI Disclaimer: AI reports are educational. Personalized advice comes from SEBI-registered analysts only.
+        </p>
+      </div>
+    </div>
+  );
+}
 
-## Acceptance (self-check)
-- [x] Only `src/pages/Wallet.tsx` touched
-- [x] No `profiles.wallet_balance` read
-- [x] No `wallet_transactions` read
-- [x] No `add_demo_credits` RPC
-- [x] No demo-credits button, no hardcoded ₹ amounts in JSX
-- [x] `Link` from `@tanstack/react-router`; no `react-router-dom`
-- [x] Balance via `useWalletBalance`, costs via `useActionCosts`, realtime via `useWalletRealtime`
-- [x] CTA → `<Link to="/topup">`
-- [x] Three action tiles, no bundle
-- [x] Ledger select limited to `id, entry_type, amount, created_at`
-- [x] All 18 entry_type labels mapped; unknown values humanized
-- [x] `useAuth()` destructures only `user`
-- [x] Default export + `/wallet` route preserved
-- [x] AppShell named import with `title="Wallet"`
-
-Reply **apply W4** to write the file.
+export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <div className="min-h-screen bg-mesh flex">
+      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border bg-card/80 backdrop-blur sticky top-0 h-screen">
+        <SidebarBody />
+      </aside>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="lg:hidden border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
+          <div className="flex items-center justify-between px-4 py-3">
+            <Logo size="sm" />
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon"><Menu className="h-5 w-5" /></Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-0">
+                <SheetTitle className="sr-only">Navigation</SheetTitle>
+                <SidebarBody />
+              </SheetContent>
+            </Sheet>
+          </div>
+        </header>
+        <main className="flex-1 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 max-w-6xl w-full">
+          {title && <h1 className="font-display text-3xl md:text-4xl mb-6">{title}</h1>}
+          {children}
+        </main>
+      </div>
+      <MobileBottomNav />
+    </div>
+  );
+}
+```
