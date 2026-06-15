@@ -871,7 +871,7 @@ Deno.serve(async (req) => {
     if (tierFiltered.length === 0) {
       // safety net: fall back to lowest-vol single name so the API still
       // returns a deterministic answer rather than empty.
-      const lowest = [...filtered].sort((a, b) => {
+      const lowest = [...qFiltered].sort((a, b) => {
         const va = volBySymbol.get(a.symbol as string) ?? Number.POSITIVE_INFINITY;
         const vb = volBySymbol.get(b.symbol as string) ?? Number.POSITIVE_INFINITY;
         return va - vb;
