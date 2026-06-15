@@ -327,7 +327,6 @@ export function subscribeToWalletChanges(
     const channel: RealtimeChannel = supabase
       .channel(`wallet_ledger_${userId}`)
       .on(
-        // @ts-expect-error - postgres_changes is supported at runtime
         "postgres_changes",
         {
           event: "INSERT",
