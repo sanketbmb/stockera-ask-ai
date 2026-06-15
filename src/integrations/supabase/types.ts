@@ -148,6 +148,48 @@ export type Database = {
         }
         Relationships: []
       }
+      analytics_events: {
+        Row: {
+          created_at: string
+          event_name: string
+          event_props: Json
+          id: string
+          ip_hash: string | null
+          session_id: string
+          user_agent: string | null
+          user_id: string | null
+          utm_campaign: string | null
+          utm_medium: string | null
+          utm_source: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_name: string
+          event_props?: Json
+          id?: string
+          ip_hash?: string | null
+          session_id: string
+          user_agent?: string | null
+          user_id?: string | null
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_name?: string
+          event_props?: Json
+          id?: string
+          ip_hash?: string | null
+          session_id?: string
+          user_agent?: string | null
+          user_id?: string | null
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Relationships: []
+      }
       answers: {
         Row: {
           answer_type: Database["public"]["Enums"]["answer_type"]
@@ -830,6 +872,41 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      points_expiry_log: {
+        Row: {
+          expired_at: string
+          id: string
+          points_expired: number
+          reason: string
+          source_entry_id: string | null
+          user_id: string
+        }
+        Insert: {
+          expired_at?: string
+          id?: string
+          points_expired: number
+          reason: string
+          source_entry_id?: string | null
+          user_id: string
+        }
+        Update: {
+          expired_at?: string
+          id?: string
+          points_expired?: number
+          reason?: string
+          source_entry_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "points_expiry_log_source_entry_id_fkey"
+            columns: ["source_entry_id"]
+            isOneToOne: false
+            referencedRelation: "wallet_ledger"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -1818,6 +1895,54 @@ export type Database = {
           },
         ]
       }
+      subscription_plans: {
+        Row: {
+          annual_inr: number
+          created_at: string
+          display_name: string
+          free_live_count: number
+          free_video_count: number
+          id: string
+          is_active: boolean
+          monthly_inr: number
+          monthly_points: number
+          perks: Json
+          rollover_cap_points: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          annual_inr: number
+          created_at?: string
+          display_name: string
+          free_live_count?: number
+          free_video_count?: number
+          id: string
+          is_active?: boolean
+          monthly_inr: number
+          monthly_points: number
+          perks?: Json
+          rollover_cap_points: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          annual_inr?: number
+          created_at?: string
+          display_name?: string
+          free_live_count?: number
+          free_video_count?: number
+          id?: string
+          is_active?: boolean
+          monthly_inr?: number
+          monthly_points?: number
+          perks?: Json
+          rollover_cap_points?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_portfolio: {
         Row: {
           added_from_query_id: string | null
@@ -1880,6 +2005,98 @@ export type Database = {
         Update: {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_subscriptions: {
+        Row: {
+          billing_cycle: string
+          cancel_at_period_end: boolean
+          created_at: string
+          current_period_end: string
+          current_period_start: string
+          id: string
+          plan_id: string
+          razorpay_subscription_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_cycle: string
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end: string
+          current_period_start: string
+          id?: string
+          plan_id: string
+          razorpay_subscription_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_cycle?: string
+          cancel_at_period_end?: boolean
+          created_at?: string
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          plan_id?: string
+          razorpay_subscription_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallet_ledger: {
+        Row: {
+          amount: number
+          created_at: string
+          entry_type: string
+          expiry_at: string | null
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          query_id: string | null
+          query_type: string | null
+          source: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          entry_type: string
+          expiry_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          query_id?: string | null
+          query_type?: string | null
+          source?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          entry_type?: string
+          expiry_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          query_id?: string | null
+          query_type?: string | null
+          source?: string | null
           user_id?: string
         }
         Relationships: []
@@ -1956,6 +2173,16 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_balances: {
+        Row: {
+          balance: number | null
+          last_ledger_at: string | null
+          user_id: string | null
+          welcome_bonus_expires_at: string | null
+          welcome_bonus_remaining: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_demo_credits: { Args: { _amount: number }; Returns: Json }
@@ -1973,9 +2200,18 @@ export type Database = {
         }
         Returns: Json
       }
+      expire_welcome_bonus: { Args: { p_user_id: string }; Returns: Json }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
+      }
+      grant_first_topup_bonus: {
+        Args: { p_topup_amount_inr: number; p_user_id: string }
+        Returns: Json
+      }
+      grant_welcome_bonus: {
+        Args: { p_phone: string; p_user_id: string }
+        Returns: Json
       }
       has_role: {
         Args: {
@@ -2028,6 +2264,16 @@ export type Database = {
           p_universe_snapshot_id: string
         }
         Returns: string
+      }
+      wallet_apply_debit: {
+        Args: {
+          p_action_key: string
+          p_idempotency_key?: string
+          p_points: number
+          p_query_id?: string
+          p_user_id: string
+        }
+        Returns: Json
       }
     }
     Enums: {
