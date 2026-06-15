@@ -22,6 +22,9 @@ const NAV = [
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const { user, profile, signOut } = useAuth();
+  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
 
