@@ -1,89 +1,74 @@
-# Phase 2W — Plan
+# W1 — Points Economy + Analytics + Subscriptions (Migration Only)
 
-Four independent sub-tracks. Each is verifiable in isolation. No SP-1.6 invariant files touched, no universe widening, no persist-flag changes, replay schema stays `sp1-replay-v2`.
+## Scope
 
-## W-A — CMP badge honesty (frontend only)
+**Exactly one new file. Zero edits to any other file. No execution.**
 
-File: `src/components/stock-picker/StockPickerFlow.tsx` (the inline `StockCard` at line ~712 — this is the equivalent of the spec's `StockCard.tsx`).
+- New file: `supabase/migrations/{YYYYMMDDHHMMSS}_w1_points_economy_paywall_analytics.sql` (UTC timestamp prefix generated at write time)
+- Fully additive. Legacy `wallet_transactions` + `profiles.wallet_balance` untouched.
+- Ships dark: `paywall_v1_enabled = false`; all promo flags `promo_active = false` except `first_topup_bonus.active = true`.
+- Reuses existing `public.stock_picker_runtime_config` for all config seeds (no new `app_runtime_config` table). SP-1.6 rows (`zone_v2_*`, `profile_knobs_v2_*`) are not referenced.
 
-Replace the current binary `cmpSourceLabel = cmpLive ? "Live" : "EOD"` (line 732) with the 3-state derivation from `cmp.source`, `cache_health.cmp_fresh`, and `cmp.window_phase`:
+## What the migration creates
 
-- `LIVE` when `cmp_fresh === true`
-- `LAST TRADED` when `cmp.source === 'ltp_cache'` AND `cmp_fresh === false` AND `cmp.window_phase === 'post_close'`
-- `EOD CLOSE` when `cmp.source === 'liquidity_20d_close'`
-- Fallback (e.g. pre_open/weekend stale ltp_cache): `LAST TRADED`
+### Tables (5)
+1. `public.wallet_ledger` — append-only points ledger with `entry_type` CHECK over 18 enum-like values, `idempotency_key` UNIQUE, `expiry_at`, `metadata jsonb`.
+2. `public.analytics_events` — session/event log with UTM + `ip_hash`.
+3. `public.subscription_plans` — plan catalogue keyed by text id (`free`/`pro`/`expert`).
+4. `public.user_subscriptions` — per-user subscription with billing cycle, status, period bounds, Razorpay id.
+5. `public.points_expiry_log` — audit of expired points, `CHECK (points_expired > 0)`, FK → `wallet_ledger(id)`.
 
-No other UI change. Verify the badge no longer reads "EOD" for ltp_cache survivors via a preview screenshot of the picker.
+### View (1)
+6. `public.wallet_balances` — `SECURITY INVOKER` view: per-user `balance`, `welcome_bonus_remaining`, `welcome_bonus_expires_at`, `last_ledger_at`, summed from `wallet_ledger`.
 
-## W-B — Fundamentals backfill for override universe (data only)
+### RPCs (4) — all `SECURITY DEFINER` with `SET search_path = public, pg_temp`
+- `wallet_apply_debit(p_user_id, p_action_key, p_points, p_query_id, p_idempotency_key) → jsonb` — idempotent debit; advisory lock `(42001, hashtextextended(user_id))`; handles `video_answer_promo` counter increment + auto-disable when cap reached; returns `{status: ok|insufficient_funds|idempotent_replay, ...}`.
+- `grant_welcome_bonus(p_user_id, p_phone) → jsonb` — advisory lock `(42002, hashtextextended('welcome:'||phone))`; one-per-user AND one-per-phone guard; reads `welcome_bonus` config (default 250 pts / 30 days).
+- `grant_first_topup_bonus(p_user_id, p_topup_amount_inr) → jsonb` — checks `first_topup_bonus` config, signup-within-window from `auth.users.created_at`, ≥ min top-up; grants free video points from `action_costs.video_answer.points`.
+- `expire_welcome_bonus(p_user_id) → jsonb` — advisory lock `(42003, hashtextextended('expire:'||user_id))`; iterates expired welcome rows not yet in `points_expiry_log`, inserts matching `welcome_expired` negative ledger row (capped at current balance, never below 0) AND a `points_expiry_log` row (no zero-row inserts).
 
-No code edits. Invoke the existing edge function `sync-fundamentals-finedge` (already iterates `universe_override_symbols` when `finedge_api_enabled=true` and `universe_override_enabled=true`, upserts `fundamentals_cache` with sector / industry / `market_cap_rs` / `cap_band`).
+All four: `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE ... TO service_role`.
 
-Steps:
+### Triggers (3) — guarded with `DO $$ ... IF NOT EXISTS ... $$`
+- `wallet_ledger_no_update_trg` BEFORE UPDATE → `wallet_ledger_block_modify()` raises.
+- `wallet_ledger_no_delete_trg` BEFORE DELETE → same function.
+- `profiles_welcome_bonus_trg` AFTER INSERT OR UPDATE OF `phone` ON `public.profiles` → `profiles_grant_welcome_on_phone()` calls `grant_welcome_bonus` when phone is non-empty and (insert OR phone changed).
 
-1. Coverage-before query against `fundamentals_cache` filtered to the 43 override symbols: count of rows where `sector`, `industry`, `market_cap_rs`, `cap_band` are non-null.
-2. Confirm both runtime flags are `true`; if not, this sub-track is blocked (report and stop — do not flip flags).
-3. POST to `sync-fundamentals-finedge` with service role.
-4. Coverage-after query, plus a targeted lookup for `APTECHT` showing real sector / industry / market_cap_rs.
+### Config seeds into `stock_picker_runtime_config` (12 keys)
+`paywall_v1_enabled` (false), `sebi_ra_registration` (`"INH000019071"`), `action_costs`, `topup_tiers`, `welcome_bonus`, `first_topup_bonus` (active=true), `video_answer_promo` (inactive), `pro_launch_promo` (inactive), `expert_launch_promo` (inactive), `referral_config` (inactive), `preferred_language_options`, `seo_config`. All via `ON CONFLICT (config_key) DO UPDATE SET config_value, description, updated_at`.
 
-Note on visible card fields: the picker reads fundamentals from `fundamentals_cache` (merged in `stock-recommendation-query`), not `stock_master`. The verification phrasing in the spec ("stock_master fundamentals") is satisfied by the same `fundamentals_cache` rows the card consumes; no `stock_master` writes are needed and none are in scope.
+### Subscription plan seeds (3)
+`free` / `pro` (₹299/mo, 400 pts, cap 800, 1 free video) / `expert` (₹799/mo, 1200 pts, cap 2400, 2 video + 1 live). `ON CONFLICT (id) DO UPDATE` on all mutable columns.
 
-## W-C — Liquidity 20d coverage backfill (new edge function, data only)
+### RLS (all 5 tables)
+- `wallet_ledger`: SELECT own (authenticated).
+- `analytics_events`: INSERT (anon+authenticated, `user_id IS NULL OR = auth.uid()`); SELECT own.
+- `subscription_plans`: SELECT where `is_active = true` (anon+authenticated).
+- `user_subscriptions`: SELECT own.
+- `points_expiry_log`: SELECT own.
 
-New edge function: `supabase/functions/backfill-liquidity-20d/index.ts`.
+All wrapped in `DO $$ IF NOT EXISTS pg_policies ... $$` blocks for idempotency.
 
-Logic:
+### Indexes (10)
+`wallet_ledger`: `(user_id, created_at DESC)`, `(entry_type)`, partial `(query_id) WHERE NOT NULL`, partial `(expiry_at) WHERE NOT NULL`.
+`analytics_events`: `(user_id, created_at DESC)`, `(session_id, created_at DESC)`, `(event_name, created_at DESC)`.
+`user_subscriptions`: `(user_id, status)`, `(current_period_end)`.
+`points_expiry_log`: `(user_id, expired_at DESC)`.
 
-- Read `universe_override_symbols` from `stock_picker_runtime_config`.
-- For each symbol, read the last 20 trading-day rows from `stock_picker_ohlcv_history` (ordered by `trade_date desc`, limit 20).
-- Insert into `stock_picker_liquidity_20d` using upsert with `onConflict: <pk cols>, ignoreDuplicates: true` (the spec's "DO NOTHING on conflict"). Map columns exactly to existing schema (no synthesis — close, volume, turnover come straight from `stock_picker_ohlcv_history`; any column the source lacks is left null).
-- After loop, upsert a telemetry row into `stock_picker_runtime_config` with key `last_backfill_liquidity_20d` (kind `operational`), shape `{ ok, symbols_processed, rows_inserted, errors_count, ran_at }`.
+## Acceptance gates the diff will satisfy
 
-Verification:
+- 1 new file, 0 edits elsewhere
+- 5 tables + 1 view + 4 RPCs + 3 triggers + 10 indexes
+- All RPCs `SECURITY DEFINER`, pinned search_path, EXECUTE granted only to `service_role`
+- Advisory lock namespaces 42001 / 42002 / 42003 used exactly as spec
+- `points_expiry_log.points_expired > 0` CHECK; no zero-row inserts in `expire_welcome_bonus`
+- No DROP, no TRUNCATE, no backfill, no edits to `wallet_transactions` / `profiles.wallet_balance` / `profiles.phone`
+- Idempotent: `IF NOT EXISTS` on tables/indexes, guarded DO blocks on policies/triggers, `ON CONFLICT` on all seeds
 
-1. Coverage-before: `select symbol, count(*) from stock_picker_liquidity_20d where symbol = any(<override>) group by symbol` — flag symbols with <20 rows (expected: ITI and any others).
-2. Deploy + invoke once.
-3. Coverage-after: every override symbol has ≥20 rows.
-4. Reload picker for ITI horizon and confirm "TECHNICALS: Pending" pill is gone.
+## SQL body
 
-No edits to write-audit, daily-cron, exclusion-engine, replay-hash, or regulatory-status.
+The file's SQL body is exactly the SQL block you supplied (Sections 1–8), unchanged, written verbatim into the single new migration file. No additions, no omissions.
 
-## W-D — Risk-profile differentiation diagnostic (read-only)
+## Stop gate
 
-No code edits, no function deployments. From the harness, invoke `stock-recommendation-query` for the matrix:
-
-- horizons: `short`, `medium`, `long`
-- risks: `conservative`, `moderate`, `aggressive`, `ultra`
-
-For each call, capture: survivor count, top-5 tickers (in order), and score distribution (min / median / max of `composite_score`, treating null as N/A for conservative).
-
-Produce a table grouped by horizon, with one row per risk profile, so we can read off whether moderate vs aggressive top-N differ for the same horizon. Conclusion line: "diverges" vs "identical — universe-size limited" vs "identical — weight-collapse".
-
-## Final verification checklist returned to user
-
-- Files edited per sub-track (W-A only; W-C adds one new file; W-B and W-D edit nothing).
-- Edge functions invoked: `sync-fundamentals-finedge` (W-B), `backfill-liquidity-20d` (W-C).
-- Coverage-before / coverage-after tables for `fundamentals_cache` and `stock_picker_liquidity_20d`.
-- Screenshot of updated card badges (LIVE / LAST TRADED / EOD CLOSE as available in current market window).
-- W-D diagnostic table.
-- Invariant checks: `audit_rows_with_score` for conservative still 0; `replay_payload_hash_version` still `sp1-replay-v2` on recent rows.
-- Final single-line status.
-
-## Out of scope (explicit)
-
-- No edits to: `regulatory-status.ts`, `replay-hash.ts`, `stock-picker-write-audit`, `stock-picker-daily-cron`, `stock-picker-exclusion-engine`.
-- No change to `composite_score_writes_enabled` or any `composite_score_persist_*` flag.
-- No universe widening, no replay schema bump, no new secrets.  
-  
-Phase 2W plan APPROVED with 4 mandatory additions before build:
-  ADD-1 (W-A): Fallback to LAST TRADED must apply whenever cmp.source='ltp_cache' AND cmp_fresh=false, regardless of window_phase value. Only fall through to EOD CLOSE when cmp.source='liquidity_20d_close'.
-  ADD-2 (W-B): If finedge_api_enabled !== true OR universe_override_enabled !== true, return W-B as BLOCKED with both flag values in the message. Do NOT invoke sync-fundamentals-finedge. Do NOT flip flags. W-A, W-C, W-D continue independently. Final phase line becomes PHASE 2W PARTIAL — W-B BLOCKED by config flags.
-  ADD-3 (W-C): Lock the column mapping from stock_picker_ohlcv_history to stock_picker_liquidity_20d explicitly in the function. Confirm exact date column name on liquidity_20d before insert (likely record_date or trade_date). Map symbol, exchange, date, close, volume one-to-one. Leave turnover and any unmapped liquidity_20d columns null — no synthesis. If column names diverge from the schema, abort and report. Do not guess.
-  ADD-4 (W-D): For each (horizon, risk) row also capture universe_after_sp1_filters and score_spread (max - min composite_score). Conclusion line logic:
-  - identical top-5 AND universe_after_sp1_filters ≤ 5 → "identical — universe-size limited"
-  - identical top-5 AND universe_after_sp1_filters > 5 AND score_spread < 5 → "identical — weight-collapse"
-  - identical top-5 AND universe_after_sp1_filters > 5 AND score_spread ≥ 5 → "identical — risk-profile not wired into ranking"
-  - else → "diverges"
-  ADD-5 (optional, recommended): Add data-testid="cmp-source-badge" on the W-A badge element.
-  All other plan items approved as written. Proceed with build. STOP after verification. Do not start any Phase 2X work.
-  &nbsp;
+After writing the file, STOP. No `supabase db push`, no execution, no other file touched. Wait for explicit approval before any execution step.
