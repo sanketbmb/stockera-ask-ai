@@ -338,13 +338,91 @@ Deno.serve(async (req) => {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
     }
 
+    // Step 4c — Phase 2AA.1 picks quality gate (read-path floor on composite_score).
+    // Knob-driven minimum composite score per risk profile. NULL/0/below-floor
+    // are rejected from the survivor pool BEFORE the risk-tier engine runs.
+    // No scoring changes, no audit-write, no SP-1.6 impact.
+    const gateDefaults = {
+      reject_null_composite: true,
+      reject_zero_composite: true,
+      min_composite_per_profile: { conservative: 50, moderate: 40, aggressive: 30, ultra: 20 },
+      fallback_min_composite: 30,
+      shortfall_behaviour: "return_available",
+      min_publishable: 3,
+    };
+    const { data: gateRow } = await supabase
+      .from("stock_picker_runtime_config")
+      .select("config_value")
+      .eq("config_key", "picks_quality_gate")
+      .maybeSingle();
+    if (!gateRow) {
+      console.warn("phase2aa1: picks_quality_gate knob missing, using defaults");
+    }
+    const gateCfg = (gateRow?.config_value && typeof gateRow.config_value === "object")
+      ? { ...gateDefaults, ...(gateRow.config_value as Record<string, unknown>) }
+      : gateDefaults;
+    const profileMinMap = (gateCfg.min_composite_per_profile as Record<string, number>) ?? {};
+    const profileMin = profileMinMap?.[risk_profile] ?? (gateCfg.fallback_min_composite as number);
+    const rejectNull = gateCfg.reject_null_composite !== false;
+    const rejectZero = gateCfg.reject_zero_composite !== false;
+    const minPublishable = (gateCfg.min_publishable as number) ?? 3;
+
+    const beforeCount = filtered.length;
+    let nullDropped = 0;
+    let zeroDropped = 0;
+    let belowFloorDropped = 0;
+    const qFiltered = filtered.filter((r) => {
+      const raw = (r as { composite_score?: unknown }).composite_score;
+      if (raw === null || raw === undefined) {
+        if (rejectNull) { nullDropped++; return false; }
+        return true;
+      }
+      const csN = Number(raw);
+      if (!Number.isFinite(csN)) { nullDropped++; return false; }
+      if (csN === 0 && rejectZero) { zeroDropped++; return false; }
+      if (csN < profileMin) { belowFloorDropped++; return false; }
+      return true;
+    });
+
+    console.log(
+      `phase2aa1: quality_gate profile=${risk_profile} floor=${profileMin} ` +
+        `before=${beforeCount} after=${qFiltered.length} ` +
+        `null=${nullDropped} zero=${zeroDropped} below=${belowFloorDropped}`,
+    );
+
+    if (qFiltered.length < minPublishable) {
+      console.warn(
+        `phase2aa1: pool below min_publishable (${qFiltered.length} < ${minPublishable}) profile=${risk_profile}`,
+      );
+    }
+
+    const qualityGateMeta = {
+      profile: risk_profile,
+      floor: profileMin,
+      before: beforeCount,
+      after: qFiltered.length,
+      dropped_null: nullDropped,
+      dropped_zero: zeroDropped,
+      dropped_below_floor: belowFloorDropped,
+    };
+
+    if (qFiltered.length === 0) {
+      return json({
+        ...baseResponse,
+        stocks: [],
+        note: "no_survivors_pass_quality_gate",
+        quality_gate: qualityGateMeta,
+      });
+    }
+
     // Step 4b — Phase 2B risk-tier engine.
     // Available real signals on current dataset: 20d close history from
     // stock_picker_liquidity_20d. composite_score, cap_band, market_cap_rs are
     // NULL for the active 3-symbol dev override universe, so we derive a
     // deterministic, explainable per-symbol risk metric = realized daily-return
     // standard deviation over up-to-20 most recent closes. Higher = riskier.
-    const filteredSymbols = Array.from(new Set(filtered.map((r) => r.symbol as string)));
+    const filteredSymbols = Array.from(new Set(qFiltered.map((r) => r.symbol as string)));
+
     const liqRows: Array<{ symbol: string; record_date: string; close: number }> = [];
     {
       const LIQ_PAGE = 1000;
