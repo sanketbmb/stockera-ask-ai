@@ -80,7 +80,7 @@ export function SEBIDisclaimerBanner({
 
           {open && (
             <div className="mt-3 space-y-2 text-xs leading-relaxed text-gold-foreground/90">
-              {FULL_TEXT.map((p, i) => (
+              {paragraphs.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
             </div>
