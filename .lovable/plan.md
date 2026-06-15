@@ -1,80 +1,71 @@
-# W3 — Points Helper Layer (PLAN ONLY)
+# W4 — Wallet Page Cutover (Plan)
 
-## Diff Summary
-- **New file (1):** `src/lib/points.ts`
-- **Edits to other files:** none
-- **Migrations / RLS / edge functions:** none
-- **UI / JSX / component wiring:** none
+## Scope
+Exactly one file modified: `src/pages/Wallet.tsx` (full replacement).
 
-Schema verified live:
-- `wallet_balances(user_id, balance, welcome_bonus_remaining, welcome_bonus_expires_at, last_ledger_at)` ✓
-- `wallet_ledger` exists with `user_id`, INSERT events suitable for realtime ✓
-- `stock_picker_runtime_config(config_key text, config_value jsonb, ...)` ✓
-- `action_costs` and `video_answer_promo` keys present and match the W3 shape ✓
+Zero edits to any other file. No new dependencies. No migrations. No edge functions. No changes to AppShell / AuthContext / routes / package.json. Route path `/wallet` unchanged. Default export `WalletPage` preserved.
 
-## Planned file: `src/lib/points.ts`
+## What changes (diff summary)
 
-### Order of contents
-1. Header comment: "W3 — Points helper layer. Pure utilities + React Query hooks. No UI, no writes."
-2. Imports (exactly the four allowed):
-   - `useQuery`, `useQueryClient`, `type UseQueryResult` from `@tanstack/react-query`
-   - `useEffect` from `react`
-   - `supabase` from `@/integrations/supabase/client`
-   - `type RealtimeChannel` from `@supabase/supabase-js`
-3. Exported types: `ActionKey`, `ActionCost`, `ActionCostMap`, `WalletBalance` (verbatim from spec)
-4. Exported query keys: `QK_WALLET_BALANCE(userId)`, `QK_ACTION_COSTS`
-5. Internal helpers (not exported):
-   - `devWarn(...args: unknown[]): void` — `if (import.meta.env.DEV) console.warn(...)`
-   - `toFiniteNumber(n: unknown): number | null` — coerces, returns null on NaN/non-number
-   - `isFutureOrNull(iso: string | null | undefined): boolean` — true if null, or valid date strictly in the future
-   - `FALLBACK_BASE_POINTS: Record<ActionKey, number>` = `{ ai_report:50, video_answer:499, live_session:999, sector_view:30, stock_picker:80, educational:0 }`
-   - `ACTION_KEYS: readonly ActionKey[]` for safe iteration
-   - `buildFallbackCosts(): ActionCostMap` from `FALLBACK_BASE_POINTS`
-6. Pure functions:
-   - `formatPoints(n)` — `Intl.NumberFormat("en-IN")`; null/undefined/NaN → `"0 pts"`; preserves negative sign; suffix `" pts"`.
-   - `formatPointsAsRupees(n)` — same formatter; null/undefined/NaN → `"₹0"`; prefix `"₹"`; preserves sign.
-   - `canAfford(balance, cost)` — false on null/undefined/NaN on either side or `cost <= 0`; else `balance >= cost`.
-   - `isPromoActive(cost)` — true only when `cost.promo_active === true` and (`promo_ends_at` is null OR a valid future date).
-7. Async fetchers:
-   - `fetchWalletBalance(userId)` — `supabase.from("wallet_balances").select("*").eq("user_id", userId).maybeSingle()`; on error/missing → `null`; `devWarn` on error; returns typed `WalletBalance | null`.
-   - `fetchActionCosts()`:
-     - one query: `supabase.from("stock_picker_runtime_config").select("config_key, config_value").in("config_key", ["action_costs","video_answer_promo"])`
-     - on error or empty → `buildFallbackCosts()` + `devWarn`
-     - parse `action_costs.config_value` defensively (`Record<string, { points?: unknown }>`); per action use `toFiniteNumber(points)` else fallback constant
-     - parse `video_answer_promo.config_value` defensively for `promo_active`, `promo_price_points`, `regular_price_points`, `promo_ends_at`
-     - for non-video actions: `effective_points = regular_points = <base>`, `promo_active=false`, `promo_ends_at=null`
-     - for `video_answer`:
-       - `regular = toFiniteNumber(promo.regular_price_points) ?? base.video_answer ?? 499`
-       - `promoUsable = promo.promo_active === true && toFiniteNumber(promo.promo_price_points) != null && isFutureOrNull(promo.promo_ends_at)`
-       - `effective = promoUsable ? promoPrice : regular`
-       - `promo_active = promoUsable`
-       - `promo_ends_at = (typeof promo.promo_ends_at === 'string') ? promo.promo_ends_at : null`
-     - wrap whole body in try/catch → fallback map on throw
-   - `getActionCost(actionKey)` — awaits `fetchActionCosts()` and returns `map[actionKey]`.
-8. Hooks:
-   - `useWalletBalance(userId)` → `useQuery({ queryKey: QK_WALLET_BALANCE(userId), queryFn: () => fetchWalletBalance(userId as string), enabled: !!userId, staleTime: 30_000, refetchOnWindowFocus: true })` typed `UseQueryResult<WalletBalance | null>`.
-   - `useActionCosts()` → `useQuery({ queryKey: QK_ACTION_COSTS, queryFn: fetchActionCosts, staleTime: 5*60_000, refetchOnWindowFocus: false })` typed `UseQueryResult<ActionCostMap>`.
-9. Realtime:
-   - `subscribeToWalletChanges(userId, onChange): () => void`
-     - try: `const channel: RealtimeChannel = supabase.channel(`wallet_ledger_${userId}`).on('postgres_changes', { event:'INSERT', schema:'public', table:'wallet_ledger', filter:`user_id=eq.${userId}` }, () => { try { onChange(); } catch (e) { devWarn(e); } }).subscribe();`
-     - return `() => { try { supabase.removeChannel(channel); } catch (e) { devWarn(e); } }`
-     - catch: `devWarn`; return `() => {}`
-   - `useWalletRealtime(userId): void`
-     - `const qc = useQueryClient();`
-     - `useEffect(() => { if (!userId) return; const off = subscribeToWalletChanges(userId, () => { qc.invalidateQueries({ queryKey: QK_WALLET_BALANCE(userId) }); }); return off; }, [userId, qc]);`
+**Removed from current `src/pages/Wallet.tsx`:**
+- `useState`, `useQueryClient` imports
+- `Input` (from `@/components/ui/input`), `Package` (lucide), `toast` (sonner) imports
+- `PRESETS` array, `POSITIVE_TYPES` set
+- `amount`, `adding` state; `qc` query client
+- `onAddDemo` (calls `add_demo_credits` RPC) and `onAddReal` handlers
+- `useQuery({ queryKey: ["wallet-txns", ...] })` against `wallet_transactions`
+- `profile?.wallet_balance` read; `profile` and `refresh` destructured from `useAuth()`
+- Four preset buttons + custom amount input + "Add via UPI" + "Add ₹100 Demo Credits"
+- `<Pack>` helper component and Bundle tile
+- Any hardcoded ₹49/₹149/₹199/₹99/₹999/₹100 strings
+- Balance column in the transactions table
 
-## Compliance against checklist
-- One new file, zero edits elsewhere ✓
-- All 17 required exports present ✓
-- Uses `sector_view` (not `sector_report`) ✓
-- Reads only from `wallet_balances`, `stock_picker_runtime_config`, realtime on `wallet_ledger` ✓
-- No reads from `profiles.wallet_balance` or `wallet_transactions` ✓
-- No writes anywhere ✓
-- TS strict, no `any` (use `unknown` + narrowing); explicit return types on every export ✓
-- DEV-only `console.warn`; no `console.log`/`console.error` ✓
-- No JSX, no React imports beyond `useEffect` ✓
-- Only the four allowed imports ✓
-- Normalizes `video_answer` via separate `video_answer_promo` config with safe fallbacks ✓
+**Added:**
+- Imports from `@/lib/points` (`useWalletBalance`, `useActionCosts`, `useWalletRealtime`, `formatPoints`, `isPromoActive`, `ActionCost`)
+- Imports from `@/lib/analytics` (`track`, `trackPageView`)
+- `Link` from `@tanstack/react-router` (NOT `react-router-dom`)
+- `useWalletRealtime(user?.id)` subscription
+- Signed-out guard returning AppShell with sign-in card
+- Balance error banner with retry
+- New balance card reading `walletBalance.balance` + `welcome_bonus_remaining` + expiry badge (≤7 days)
+- Simplified "Add credits" card with single `<Link to="/topup">` CTA that fires `track("cta_click", { cta: "add_credits", source: "wallet_page" })`
+- 3-tile action-cost grid (AI Report / Video Answer / Live Session) using `useActionCosts()` + `isPromoActive` + LAUNCH badge with strike-through regular price
+- Ledger query against `wallet_ledger`, selecting ONLY `id, entry_type, amount, created_at`, limit 50, ordered by `created_at desc`, with retry-on-error UI
+- `ENTRY_LABELS` map covering all 18 W1 entry types + `describeEntry` fallback (humanized title case)
+- Transactions table: Date / Type (credit|debit badge) / Description (mapped label) / Amount (signed, colored, with arrow icon)
+- One-shot analytics effect (guarded by `useRef`) firing `void trackPageView()` and `void track("wallet_viewed", { balance, has_welcome_bonus })` after balance loads
+- `ActionTile` helper component at bottom of file
+
+**Unchanged:**
+- `export default function WalletPage()` signature
+- `<AppShell title="Wallet">` wrapper
+- shadcn vocabulary: Card / Button / Badge / Skeleton / Table
+- Gradient balance card visual (primary→accent), font-display / font-mono / tabular-nums classes
+
+## Data flow
+- `useAuth()` → `{ user }` only
+- `useWalletBalance(user?.id)` → balance + welcome bonus fields + loading/error/refetch
+- `useActionCosts()` → ai_report / video_answer / live_session cost objects
+- `useWalletRealtime(user?.id)` → invalidates wallet queries on `wallet_ledger` inserts
+- `useQuery(["wallet-ledger", user.id])` → last 50 ledger rows directly via supabase client (4 columns only)
 
 ## Stop gate
-Stopping here. Will not write the file or touch anything else until you reply **"apply W3"**. The next message after approval will be the full file contents as written.
+Plan only. The full replacement file body matches the spec verbatim (imports, signed-out guard, analytics effect with `useRef`, ENTRY_LABELS with all 18 values, Section 0 error banner, Section 1 balance + add-credits grid, Section 2 three ActionTiles, Section 3 ledger Card/Table, `ActionTile` helper). No writes until founder replies **apply W4**.
+
+## Acceptance (self-check)
+- [x] Only `src/pages/Wallet.tsx` touched
+- [x] No `profiles.wallet_balance` read
+- [x] No `wallet_transactions` read
+- [x] No `add_demo_credits` RPC
+- [x] No demo-credits button, no hardcoded ₹ amounts in JSX
+- [x] `Link` from `@tanstack/react-router`; no `react-router-dom`
+- [x] Balance via `useWalletBalance`, costs via `useActionCosts`, realtime via `useWalletRealtime`
+- [x] CTA → `<Link to="/topup">`
+- [x] Three action tiles, no bundle
+- [x] Ledger select limited to `id, entry_type, amount, created_at`
+- [x] All 18 entry_type labels mapped; unknown values humanized
+- [x] `useAuth()` destructures only `user`
+- [x] Default export + `/wallet` route preserved
+- [x] AppShell named import with `title="Wallet"`
+
+Reply **apply W4** to write the file.
