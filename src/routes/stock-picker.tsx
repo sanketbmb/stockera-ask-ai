@@ -21,7 +21,10 @@ export const Route = createFileRoute("/stock-picker")({
       <div className="min-h-screen bg-mesh flex flex-col">
         <MarketTicker />
         <Navbar />
-        <SEBIDisclaimerBanner />
+        <SEBIDisclaimerBanner
+          customHeading="Educational use only — AI stock picks on this page are published by Stockera Technology Private Limited (INH000019071), a SEBI-registered Research Analyst. Ask The Expert is an intermediary marketplace platform and is not itself a SEBI-registered entity."
+          customBodyFirstParagraph="Ask The Expert by Stockera is an intermediary marketplace platform and is NOT itself a SEBI-registered Research Analyst or Investment Adviser. The AI-generated stock picks displayed on this screen are researched and published under the registration of Stockera Technology Private Limited (INH000019071), a SEBI-registered Research Analyst."
+        />
         <main className="flex-1 mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 py-8">
           <header className="mb-6">
             <p className="font-mono text-xs uppercase tracking-widest text-accent">
