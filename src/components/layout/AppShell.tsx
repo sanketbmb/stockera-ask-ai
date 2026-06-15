@@ -9,6 +9,8 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/s
 import { useAuth } from "@/contexts/AuthContext";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { cn } from "@/lib/utils";
+import { useWalletBalance, useWalletRealtime } from "@/lib/points";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", Icon: Home },
@@ -20,6 +22,9 @@ const NAV = [
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const { user, profile, signOut } = useAuth();
+  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
 
@@ -39,8 +44,15 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
           </div>
         </div>
-        <Badge variant="outline" className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary">
-          ₹{profile?.wallet_balance ?? 0} wallet
+        <Badge
+          variant="outline"
+          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
+        >
+          {balanceLoading ? (
+            <Skeleton className="h-3 w-16" />
+          ) : (
+            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
+          )}
         </Badge>
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
