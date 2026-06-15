@@ -1,167 +1,72 @@
-# Planned Diff
+# W5 — Topup Page (Plan)
 
-```diff
---- src/components/layout/AppShell.tsx
-+++ src/components/layout/AppShell.tsx
-@@ -7,4 +7,6 @@
- import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
- import { useAuth } from "@/contexts/AuthContext";
- import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
- import { cn } from "@/lib/utils";
-+import { useWalletBalance, useWalletRealtime } from "@/lib/points";
-+import { Skeleton } from "@/components/ui/skeleton";
- 
- const NAV = [
-@@ -21,4 +23,7 @@
- function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
-   const { user, profile, signOut } = useAuth();
-+  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
-+  useWalletRealtime(user?.id);
-+
-   const pathname = useRouterState({ select: (s) => s.location.pathname });
-   const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
-@@ -41,5 +46,13 @@
-         </div>
--        <Badge variant="outline" className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary">
--          ₹{profile?.wallet_balance ?? 0} wallet
--        </Badge>
-+        <Badge
-+          variant="outline"
-+          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
-+        >
-+          {balanceLoading ? (
-+            <Skeleton className="h-3 w-16" />
-+          ) : (
-+            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
-+          )}
-+        </Badge>
-       </div>
+## Scope
+Create the `/topup` route so the W4 "Add Credits →" CTA stops 404-ing. Config-driven tiers from W1 `stock_picker_runtime_config`. No payment wiring — pay button disabled ("Coming soon"); Razorpay arrives in W7.
+
+## Diff Summary
+
+```
+A  src/routes/topup.tsx        (NEW, 6 lines — route plumbing)
+A  src/pages/Topup.tsx         (NEW, page component)
 ```
 
----
+Zero edits to any existing file. Zero new dependencies. Zero migrations. Zero edge functions.
 
-# Full Updated File Contents (`src/components/layout/AppShell.tsx`)
+## File 1 — `src/routes/topup.tsx` (full contents, 7 lines incl. blank)
 
 ```tsx
-import { type ReactNode } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, ListChecks, Wallet, Gift, Settings, LogOut, Menu } from "lucide-react";
-import { Logo } from "@/components/common/Logo";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
-import { useAuth } from "@/contexts/AuthContext";
-import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
-import { cn } from "@/lib/utils";
-import { useWalletBalance, useWalletRealtime } from "@/lib/points";
-import { Skeleton } from "@/components/ui/skeleton";
+import { createFileRoute } from "@tanstack/react-router";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import Topup from "@/pages/Topup";
 
-const NAV = [
-  { to: "/dashboard", label: "Dashboard", Icon: Home },
-  { to: "/my-queries", label: "My Queries", Icon: ListChecks },
-  { to: "/wallet", label: "Wallet", Icon: Wallet },
-  { to: "/referral", label: "Refer & Earn", Icon: Gift },
-  { to: "/settings", label: "Settings", Icon: Settings },
-] as const;
-
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
-  const { user, profile, signOut } = useAuth();
-  const { data: walletBalance, isLoading: balanceLoading } = useWalletBalance(user?.id);
-  useWalletRealtime(user?.id);
-
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const initials = (profile?.full_name || user?.email || "U").slice(0, 1).toUpperCase();
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="p-5 border-b border-border">
-        <Logo size="sm" linkTo="/" />
-      </div>
-      <div className="p-5 border-b border-border">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarImage src={profile?.avatar_url ?? undefined} />
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">{profile?.full_name || "Welcome"}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
-          </div>
-        </div>
-        <Badge
-          variant="outline"
-          className="mt-3 w-full justify-center font-mono text-xs bg-primary/5 border-primary/20 text-primary tabular-nums"
-        >
-          {balanceLoading ? (
-            <Skeleton className="h-3 w-16" />
-          ) : (
-            <>{(walletBalance?.balance ?? 0).toLocaleString("en-IN")} credits</>
-          )}
-        </Badge>
-      </div>
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {NAV.map(({ to, label, Icon }) => {
-          const active = pathname === to || pathname.startsWith(`${to}/`);
-          return (
-            <Link
-              key={to}
-              to={to}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </Link>
-          );
-        })}
-        <button
-          onClick={async () => { await signOut(); onNavigate?.(); }}
-          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        >
-          <LogOut className="h-4 w-4" /> Sign out
-        </button>
-      </nav>
-      <div className="p-4 border-t border-border">
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          ⚠ SEBI Disclaimer: AI reports are educational. Personalized advice comes from SEBI-registered analysts only.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
-  return (
-    <div className="min-h-screen bg-mesh flex">
-      <aside className="hidden lg:flex w-64 shrink-0 border-r border-border bg-card/80 backdrop-blur sticky top-0 h-screen">
-        <SidebarBody />
-      </aside>
-      <div className="flex-1 min-w-0 flex flex-col">
-        <header className="lg:hidden border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
-          <div className="flex items-center justify-between px-4 py-3">
-            <Logo size="sm" />
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon"><Menu className="h-5 w-5" /></Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                <SheetTitle className="sr-only">Navigation</SheetTitle>
-                <SidebarBody />
-              </SheetContent>
-            </Sheet>
-          </div>
-        </header>
-        <main className="flex-1 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 max-w-6xl w-full">
-          {title && <h1 className="font-display text-3xl md:text-4xl mb-6">{title}</h1>}
-          {children}
-        </main>
-      </div>
-      <MobileBottomNav />
-    </div>
-  );
-}
+export const Route = createFileRoute("/topup")({
+  head: () => ({ meta: [{ title: "Top up — Stockera" }] }),
+  component: () => <RequireAuth><Topup /></RequireAuth>,
+});
 ```
+
+Mirrors `src/routes/wallet.tsx` exactly.
+
+## File 2 — `src/pages/Topup.tsx` (full contents)
+
+Verbatim the component you specified in the prompt, including:
+
+- Imports: `useEffect/useMemo/useRef/useState`, `useQuery`, `Link` from `@tanstack/react-router`, lucide icons (`ArrowLeft, Sparkles, Video, Zap, Check, Info`), shadcn primitives (`Card, Button, Badge, Input, Skeleton, Tooltip*`), `AppShell` (named), `supabase`, `useAuth`, `useWalletBalance + formatPoints` from `@/lib/points`, `track + trackPageView` from `@/lib/analytics`.
+- Types: `TopupTier`, `TopupTiersConfig`, `FirstTopupBonusConfig`.
+- Constants: `FALLBACK_TIERS`, `FALLBACK_BONUS`.
+- `fetchTopupConfig()` — single Supabase `.in("config_key", ["topup_tiers", "first_topup_bonus"])` query with defensive parsing + fallbacks on any error/missing/malformed value.
+- `export default function TopupPage()` with:
+  - `useWalletBalance(user?.id)` for balance display via `formatPoints`.
+  - `useQuery({ queryKey: ["topup-config"], queryFn: fetchTopupConfig, staleTime: 5min })`.
+  - State: `selectedInr`, `customAmount`; refs: `abandonedRef`, `trackedMountRef`.
+  - Mount effect: `trackPageView()` + `track("topup_initiated", { current_balance, source: "wallet_cta" })` (one-shot).
+  - Unmount effect: `track("topup_abandoned", { selected_inr, had_custom })` if not completed.
+  - Derived: `activeInr`, `activeCredits` (preset exact match → tier.credits; custom → 1:1), `qualifiesForBonus`, `customValid` (within `min_inr..max_inr`).
+  - Handlers: `handlePresetSelect` fires `topup_tier_selected` with kind `"preset"`; `handleCustomCommit` fires it with kind `"custom"` on blur when valid.
+  - Layout: `<AppShell title="Top up">` → back-to-wallet link → balance strip card → two-column grid:
+    - Left: tier grid (renders from `config.tiers.tiers`, shows `+bonus` badge when `credits > inr`) + custom input with min/max from config + validation message + 1:1 disclaimer.
+    - Right (sticky): summary (pay/receive/bonus rows), first-topup-bonus callout when qualifying, **disabled** gradient pay button wrapped in Tooltip ("Coming soon" / "Razorpay UPI / cards / net banking launching soon."), trust strip.
+  - Loading: 4 `Skeleton` placeholders while config loads.
+
+No `topup_completed` event (that lives in W7). No Razorpay. No RPC calls. No writes.
+
+## Acceptance Checklist (all satisfied by the plan above)
+
+- [x] Exactly 2 new files; 0 edits to existing files
+- [x] `src/routes/topup.tsx` mirrors `src/routes/wallet.tsx` (RequireAuth + default import)
+- [x] Reads both config keys in ONE Supabase query
+- [x] Defensive parse + `FALLBACK_TIERS` / `FALLBACK_BONUS`
+- [x] Tiers rendered from config, not hardcoded
+- [x] Custom input clamped to config `min_inr`/`max_inr` with inline error
+- [x] Custom = 1:1 credits (display only)
+- [x] First-topup bonus callout gated on `active && free_video && activeInr >= min_topup_inr`
+- [x] Balance via `useWalletBalance` + `formatPoints` (no `profile.wallet_balance`)
+- [x] Pay button `disabled` with Tooltip "Coming soon"; no payment code path
+- [x] Analytics: `trackPageView`, `topup_initiated` (mount, once), `topup_tier_selected` (preset/custom), `topup_abandoned` (unmount). No `topup_completed`.
+- [x] `Link` from `@tanstack/react-router`
+- [x] `export default function TopupPage()`
+- [x] No new deps, no migrations, no edge functions, no edits to AppShell/AuthContext/Wallet/points.ts/analytics.ts
+
+## Stop Gate
+
+Plan only. Nothing written. Reply **"apply W5"** to write both files.
