@@ -1,62 +1,95 @@
-# W6.6 — QueryForm Wallet Source Cutover
+## W6.8 — Wire Paywall Gate Into QueryForm Actions (plan only)
 
-Single-file surgical change. Replaces the last legacy `profile?.wallet_balance` read in the repo with the W1/W3 wallet source (`useWalletBalance` + `useWalletRealtime`), preserving the `balance: number` identifier so all downstream usage in QueryForm remains untouched.
+### Files touched
+- `src/components/query/QueryForm.tsx` (only)
 
-## File modified (exactly one)
-- `src/components/query/QueryForm.tsx`
+### Handlers identified in QueryForm.tsx
+There is exactly **one** paid-action handler in this file:
 
-## Planned diff (unified, minimal)
+| Handler | Line | What it triggers |
+|---|---|---|
+| `handleSubmit` | 568 | Creates the query row and (for v1-engine intents) calls `runGenerateAiReport` at line 836. Covers all 6 routable intents: `buy_decision`, `stuck_position`, `should_average`, `sector_view`, `educational`, `other`. |
+
+No other handler in this file fires a paid action. `goNext`, the chip onClick handlers (lines 981/1022), the stock-picker nav button (1053), `setManualSector` / `setAnalystId` toggles, and the step Back/Next buttons are all pre-submit UI state changes — not gated.
+
+### Action key mapping (verified against the 5-key `ActionKey` union)
+Decision is taken from `intent` at submit time:
+
+| `intent` | `ActionKey` | Justification |
+|---|---|---|
+| `sector_view` | `sector_view` | Sector report freeze fn (`isSector` path). |
+| `buy_decision`, `stuck_position`, `should_average`, `educational`, `other` | `ai_report` | All five flow through the query-row insert + AI report generation pipeline (`runGenerateAiReport`, educational/general/sector freeze variants). `live_session`, `video_answer`, `stock_picker` are not initiated from this file (stock-picker is a `navigate({to:"/stock-picker"})` redirect, not a paid action started here). |
+
+No handler in this file maps outside the 5 verified keys — no STOP condition triggered.
+
+### Where the gate is inserted in `handleSubmit`
+Insert immediately after the routable-intent guard (line 577) and **before** `setSubmitting(true)` (line 579). That places it before any analytics, mutation, toast, or loading state — matching the spec.
+
+Also add one import at the top of the file (after the existing `@/lib/points` import on line 48).
+
+Note on toast API: this file uses **sonner** (`import { toast } from "sonner"`, line 20), not the shadcn `useToast` shape. The gate's blocked-branch toast therefore uses `toast.error(gate.reason ?? "Insufficient balance")` to match the file's existing convention (e.g. line 570, 575, 592, 607). This is functionally equivalent to the spec's destructive toast and avoids introducing a second toast API.
+
+### Unified diff
 
 ```diff
 --- a/src/components/query/QueryForm.tsx
 +++ b/src/components/query/QueryForm.tsx
-@@ -47,6 +47,7 @@ import { resolveConcept } from "@/lib/concept-alias-map";
- import { getLtpForSymbol } from "@/lib/market.functions";
-+import { useWalletBalance, useWalletRealtime } from "@/lib/points";
+@@ -48,6 +48,7 @@
+ import { useWalletBalance, useWalletRealtime } from "@/lib/points";
++import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
  import {
    ArrowLeft,
-@@ -307,7 +308,9 @@
-   });
-
--  const balance = profile?.wallet_balance ?? 0;
-+  const { data: walletBalance } = useWalletBalance(user?.id);
-+  useWalletRealtime(user?.id);
-+  const balance = walletBalance?.balance ?? 0;
-   const showStockFields = ["stuck_position", "should_average", "buy_decision"].includes(intent);
+@@ -574,6 +575,17 @@
+     if (!isRoutableIntent(intent)) {
+       toast.error("Unsupported query type");
+       return;
+     }
++
++    // W6.8 — Paywall gate (dark-by-default). When `paywall_v1_enabled` is
++    // false in `stock_picker_runtime_config`, checkPaywallGate fails open
++    // (allow=true) and this branch is a no-op — preserving today's behavior.
++    const paywallActionKey: "ai_report" | "sector_view" =
++      intent === "sector_view" ? "sector_view" : "ai_report";
++    const gate: PaywallGateResult = await checkPaywallGate({
++      userId: user?.id,
++      actionKey: paywallActionKey,
++    });
++    if (!gate.allow) {
++      toast.error(gate.reason ?? "Insufficient balance");
++      return;
++    }
+ 
+     setSubmitting(true);
+     setGenStage("creating");
 ```
 
-That is the entire change. No other lines are touched.
+(That is the entire change: 1 import line + 1 gate block. Nothing else in the file is touched. `useWalletBalance` / `useWalletRealtime` / `balance` stay exactly as today. No analytics, toasts, validations, or loading states are modified.)
 
-## Why this works without further edits
-- `user` is already destructured at line 144: `const { user, profile, refresh } = useAuth();` — no second `useAuth()` call needed.
-- `balance` stays a plain `number`, so every downstream affordability check, gating branch, and submit path keeps working unchanged.
-- `useWalletRealtime(user?.id)` mirrors the W4 (Wallet.tsx) and W6.5 (Dashboard.tsx) pattern; when the user tops up in another tab the balance re-renders here automatically.
-- No new dependencies, no router changes, no analytics events, no paywall/feature-flag work (W7 scope).
+### Anti-fabrication grep expectations (post-apply)
+| Check | Command | Expected |
+|---|---|---|
+| A | `grep -c "checkPaywallGate(" src/components/query/QueryForm.tsx` | `1` |
+| B | `grep -c 'from "@/lib/paywall"' src/components/query/QueryForm.tsx` | `1` |
+| C | `grep -c "react-router-dom" src/components/query/QueryForm.tsx` | `0` |
+| D | `grep -cE "profile\\??\\.wallet_balance" src/components/query/QueryForm.tsx` | `0` |
+| E | `grep -c "useWalletBalance(" src/components/query/QueryForm.tsx` | `1` (W6.6 hook preserved) |
+| F | `git diff --stat` | only `src/components/query/QueryForm.tsx` changed |
+| G | Action keys passed | exactly `"ai_report"` or `"sector_view"` (both ∈ verified `ActionKey` union) |
 
-## Anti-fabrication check (post-apply expectations)
-| ID | Check | Expected |
-|----|-------|----------|
-| A | `profile?.wallet_balance` in QueryForm.tsx | 0 |
-| B | `profile.wallet_balance` in QueryForm.tsx | 0 |
-| C | `useWalletBalance(` in QueryForm.tsx | ≥1 |
-| D | `useWalletRealtime(` in QueryForm.tsx | ≥1 |
-| E | `react-router-dom` in QueryForm.tsx | 0 |
-| F | `add_demo_credits` in QueryForm.tsx | 0 |
-| G | `wallet_transactions` in QueryForm.tsx | 0 |
-| H | `balance` identifier preserved, type `number` | yes |
-| I | No other file modified | yes |
+### Validation matrix (no execution — expected runtime behavior)
 
-## Validation matrix
-1. Logged-out: `user?.id` undefined → hook returns no data → `balance = 0`. No crash.
-2. Logged-in balance = 0: gating fires exactly as before.
-3. Logged-in balance > 0: submit path unchanged, value sourced from W1/W3.
-4. Top-up in another tab: realtime channel triggers refetch, gating updates without reload.
-5. TypeScript: 0 errors; no `any`; no unused imports (both new imports are used).
+| # | Condition | Expected behavior |
+|---|---|---|
+| 1 | `paywall_v1_enabled = false` (current prod) | `checkPaywallGate` → `failOpen` → `allow=true` → handler proceeds. Identical to today. Dark-by-default preserved. |
+| 2 | flag on, user logged out | `gate.allow=false`, `reason="Sign in to continue"` → `toast.error` → early `return`, no submit. |
+| 3 | flag on, balance < required | `gate.allow=false` → `toast.error(reason)` → early `return`. `paywall_hit` analytics fires from inside `checkPaywallGate`. |
+| 4 | flag on, balance ≥ required | `gate.allow=true` → handler continues into existing `setSubmitting(true)` flow unchanged. |
+| 5 | `checkPaywallGate` throws | Wrapped in `try/catch` inside `paywall.ts` → `failOpen` → `allow=true` → handler proceeds. No user-visible error. |
 
-## Full updated file
-The file is ~1639 lines. The only diff vs. current `src/components/query/QueryForm.tsx` is the 4 lines shown above (1 import insertion + 1 line replaced by 3 lines at the old line 310). Rather than dumping 1639 unchanged lines, the diff above is exact and complete — every other line is byte-identical to the current file on disk.
+### Confirmation
+- Only `src/components/query/QueryForm.tsx` is modified.
+- No changes to `src/lib/paywall.ts`, `src/lib/points.ts`, any Supabase integration file, migration, edge function, route, page, or other component.
+- No new dependencies, no default-export changes, no router redirects added in this file, no schema changes, no pricing/SEBI copy edits.
+- `useWalletBalance` + `useWalletRealtime` + `balance: number` identifier preserved verbatim.
 
-If you want me to also paste the full file contents inline before applying, say "include full file" with the apply command; otherwise reply **apply W6.6** to proceed.
-
-## Confirmation
-No file other than `src/components/query/QueryForm.tsx` will be changed.
+**STOP. Awaiting `apply W6.8`.**
