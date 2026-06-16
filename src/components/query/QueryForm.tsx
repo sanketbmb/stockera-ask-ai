@@ -577,6 +577,16 @@ export function QueryForm() {
       return;
     }
 
+    // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
+    const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
+    const gate = await checkPaywallGate(paywallActionKey, user?.id);
+    if (!gate.allow) {
+      toast.error(gate.reason ?? "Insufficient balance");
+      return;
+    }
+
+
+
     setSubmitting(true);
     setGenStage("creating");
     let createdQueryId: string | null = null;
