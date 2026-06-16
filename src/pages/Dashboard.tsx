@@ -39,6 +39,15 @@ export default function DashboardPage() {
   const { user, profile } = useAuth();
   const firstName = (profile?.full_name || "").split(" ")[0] || "investor";
 
+  const {
+    data: walletBalance,
+    isLoading: balanceLoading,
+    error: balanceError,
+    refetch: refetchBalance,
+  } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+  const liveBalance = walletBalance?.balance ?? 0;
+
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["dashboard-stats", user?.id],
     enabled: !!user,
