@@ -106,7 +106,27 @@ export default function DashboardPage() {
         <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
         <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} animate />
         <div data-tour="wallet" className="contents">
-          <StatCard label="Wallet Balance" value={profile?.wallet_balance ?? 0} prefix="₹" icon={<Wallet className="h-4 w-4" />} highlight animate />
+          {balanceError ? (
+            <Card className="glass-card p-4 bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30">
+              <div className="flex items-center justify-between text-muted-foreground text-xs">
+                <span className="uppercase tracking-wider">Wallet Balance</span>
+                <Wallet className="h-4 w-4" />
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>Couldn't load</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => refetchBalance()}>Retry</Button>
+              </div>
+            </Card>
+          ) : (
+            <StatCard
+              label="Wallet Balance"
+              value={balanceLoading ? undefined : formatPoints(liveBalance)}
+              icon={<Wallet className="h-4 w-4" />}
+              highlight
+              loading={balanceLoading}
+            />
+          )}
         </div>
         <StatCard label="Referrals" value={stats?.refs} icon={<Gift className="h-4 w-4" />} loading={statsLoading} animate />
       </section>
