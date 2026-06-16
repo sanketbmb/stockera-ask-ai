@@ -28,6 +28,9 @@ import {
   AlertTriangle,
   Info,
 } from "lucide-react";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { checkPaywallGate } from "@/lib/paywall";
 
 // ──────────────────────────────────────────────────────────────────────────
 // API contract — must match the deployed stock-recommendation-query function.

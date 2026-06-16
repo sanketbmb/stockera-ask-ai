@@ -1,95 +1,104 @@
-## W6.8 — Wire Paywall Gate Into QueryForm Actions (plan only)
+## W6.9 — Wire Paywall Gate into Stock Picker
 
-### Files touched
-- `src/components/query/QueryForm.tsx` (only)
+### 1) Discovery Results
 
-### Handlers identified in QueryForm.tsx
-There is exactly **one** paid-action handler in this file:
+Grep matrix:
 
-| Handler | Line | What it triggers |
-|---|---|---|
-| `handleSubmit` | 568 | Creates the query row and (for v1-engine intents) calls `runGenerateAiReport` at line 836. Covers all 6 routable intents: `buy_decision`, `stuck_position`, `should_average`, `sector_view`, `educational`, `other`. |
+- `stock_picker` — appears in `src/components/query/QueryForm.tsx` (a nav chip), supabase types, intent router, points.ts, paywall.ts. Only one true runtime trigger: `runQuery()` in `src/components/stock-picker/StockPickerFlow.tsx` (calls `supabase.functions.invoke("stock-recommendation-query")`).
+- `debit_stock_picker` — only a label string in `src/pages/Wallet.tsx` (display only). No external trigger.
+- `sector_view` — outside QueryForm.tsx the matches are: intent router schema/prompt, feature flags, report routing/rendering (`report.$queryId.tsx`, `SectorViewReport.tsx`), PDF + freeze functions, sector-context, Wallet label. None of these are user-facing "start the paid action" handlers; the sector-view paid action is launched only from QueryForm (already gated in W6.8).
+- `debit_sector_view` — only a label string in `src/pages/Wallet.tsx`.
+- `navigate({ to: "/stock-picker" ...})` — single occurrence in QueryForm.tsx line 1064 (forbidden file; also just navigation, not the paid action).
+- `from "@/lib/paywall"` — only QueryForm.tsx imports it today.
 
-No other handler in this file fires a paid action. `goNext`, the chip onClick handlers (lines 981/1022), the stock-picker nav button (1053), `setManualSector` / `setAnalystId` toggles, and the step Back/Next buttons are all pre-submit UI state changes — not gated.
+**Real paid-action triggers found:**
 
-### Action key mapping (verified against the 5-key `ActionKey` union)
-Decision is taken from `intent` at submit time:
+| Action | File | Handler | Why it qualifies |
+|---|---|---|---|
+| Stock Picker | `src/components/stock-picker/StockPickerFlow.tsx` | `runQuery()` (line 229) | This is the single function that calls `supabase.functions.invoke("stock-recommendation-query")` — i.e. the actual paid backend call. It is invoked from the Step C "Generate" submit button. |
+| Sector View (outside QueryForm) | — | — | None. The only external sector_view references are passive (report rendering, PDF freeze, metering map). The user-facing launch lives in QueryForm and was gated in W6.8. |
 
-| `intent` | `ActionKey` | Justification |
-|---|---|---|
-| `sector_view` | `sector_view` | Sector report freeze fn (`isSector` path). |
-| `buy_decision`, `stuck_position`, `should_average`, `educational`, `other` | `ai_report` | All five flow through the query-row insert + AI report generation pipeline (`runGenerateAiReport`, educational/general/sector freeze variants). `live_session`, `video_answer`, `stock_picker` are not initiated from this file (stock-picker is a `navigate({to:"/stock-picker"})` redirect, not a paid action started here). |
+### 2) Scope Decision
 
-No handler in this file maps outside the 5 verified keys — no STOP condition triggered.
+**1 file changed:** `src/components/stock-picker/StockPickerFlow.tsx`.
 
-### Where the gate is inserted in `handleSubmit`
-Insert immediately after the routable-intent guard (line 577) and **before** `setSubmitting(true)` (line 579). That places it before any analytics, mutation, toast, or loading state — matching the spec.
+Per spec ("If there is NO true sector-view action outside QueryForm.tsx, explicitly say so and gate ONLY Stock Picker"):
 
-Also add one import at the top of the file (after the existing `@/lib/points` import on line 48).
+> No external sector-view handler found; W6.9 gates stock picker only.
 
-Note on toast API: this file uses **sonner** (`import { toast } from "sonner"`, line 20), not the shadcn `useToast` shape. The gate's blocked-branch toast therefore uses `toast.error(gate.reason ?? "Insufficient balance")` to match the file's existing convention (e.g. line 570, 575, 592, 607). This is functionally equivalent to the spec's destructive toast and avoids introducing a second toast API.
-
-### Unified diff
+### 3) Unified Diff (planned)
 
 ```diff
---- a/src/components/query/QueryForm.tsx
-+++ b/src/components/query/QueryForm.tsx
-@@ -48,6 +48,7 @@
- import { useWalletBalance, useWalletRealtime } from "@/lib/points";
-+import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
+--- a/src/components/stock-picker/StockPickerFlow.tsx
++++ b/src/components/stock-picker/StockPickerFlow.tsx
+@@
+ import { useState } from "react";
+ import { Card } from "@/components/ui/card";
+ ...
+ import { supabase } from "@/integrations/supabase/client";
  import {
    ArrowLeft,
-@@ -574,6 +575,17 @@
-     if (!isRoutableIntent(intent)) {
-       toast.error("Unsupported query type");
-       return;
-     }
-+
-+    // W6.8 — Paywall gate (dark-by-default). When `paywall_v1_enabled` is
-+    // false in `stock_picker_runtime_config`, checkPaywallGate fails open
-+    // (allow=true) and this branch is a no-op — preserving today's behavior.
-+    const paywallActionKey: "ai_report" | "sector_view" =
-+      intent === "sector_view" ? "sector_view" : "ai_report";
-+    const gate: PaywallGateResult = await checkPaywallGate({
-+      userId: user?.id,
-+      actionKey: paywallActionKey,
-+    });
+   ArrowRight,
+   ChevronDown,
+   ChevronUp,
+   Loader2,
+   Sparkles,
+   AlertTriangle,
+   Info,
+ } from "lucide-react";
++import { toast } from "sonner";
++import { useAuth } from "@/contexts/AuthContext";
++import { checkPaywallGate } from "@/lib/paywall";
+@@ export function StockPickerFlow() {
+   const [step, setStep] = useState<0 | 1 | 2>(0);
++  const { user } = useAuth();
+@@ async function runQuery() {
+-    setSubmitting(true);
++    const gate = await checkPaywallGate("stock_picker", user?.id);
 +    if (!gate.allow) {
 +      toast.error(gate.reason ?? "Insufficient balance");
 +      return;
 +    }
- 
-     setSubmitting(true);
-     setGenStage("creating");
++
++    setSubmitting(true);
+     setResult(null);
+     setErrorMsg(null);
 ```
 
-(That is the entire change: 1 import line + 1 gate block. Nothing else in the file is touched. `useWalletBalance` / `useWalletRealtime` / `balance` stay exactly as today. No analytics, toasts, validations, or loading states are modified.)
+Notes:
+- Gate is inserted at the very top of `runQuery()`, before any state mutation, interval, or supabase call.
+- Uses the exact ActionKey `"stock_picker"`.
+- Uses sonner `toast.error` (same convention as QueryForm; this file currently has no toast import — adding sonner is consistent with the rest of the app and not a new dependency).
+- `useAuth` is the same hook used in QueryForm.
 
-### Anti-fabrication grep expectations (post-apply)
-| Check | Command | Expected |
-|---|---|---|
-| A | `grep -c "checkPaywallGate(" src/components/query/QueryForm.tsx` | `1` |
-| B | `grep -c 'from "@/lib/paywall"' src/components/query/QueryForm.tsx` | `1` |
-| C | `grep -c "react-router-dom" src/components/query/QueryForm.tsx` | `0` |
-| D | `grep -cE "profile\\??\\.wallet_balance" src/components/query/QueryForm.tsx` | `0` |
-| E | `grep -c "useWalletBalance(" src/components/query/QueryForm.tsx` | `1` (W6.6 hook preserved) |
-| F | `git diff --stat` | only `src/components/query/QueryForm.tsx` changed |
-| G | Action keys passed | exactly `"ai_report"` or `"sector_view"` (both ∈ verified `ActionKey` union) |
+### 4) Anti-fabrication Checklist
 
-### Validation matrix (no execution — expected runtime behavior)
+- A) Only one `checkPaywallGate(` call inserted, key = `"stock_picker"`. ✓
+- B) `src/components/query/QueryForm.tsx` untouched. ✓
+- C) `src/lib/paywall.ts` untouched. ✓
+- D) `src/lib/points.ts` untouched. ✓
+- E) No `react-router-dom` import. ✓
+- F) Gate placed on `runQuery()` (the actual invoke handler), not on the nav chip in QueryForm or any passive button. ✓
+- G) Files changed = 1 (≤ 2). ✓
+- H) No external sector-view handler found; W6.9 gates stock picker only. ✓
 
-| # | Condition | Expected behavior |
-|---|---|---|
-| 1 | `paywall_v1_enabled = false` (current prod) | `checkPaywallGate` → `failOpen` → `allow=true` → handler proceeds. Identical to today. Dark-by-default preserved. |
-| 2 | flag on, user logged out | `gate.allow=false`, `reason="Sign in to continue"` → `toast.error` → early `return`, no submit. |
-| 3 | flag on, balance < required | `gate.allow=false` → `toast.error(reason)` → early `return`. `paywall_hit` analytics fires from inside `checkPaywallGate`. |
-| 4 | flag on, balance ≥ required | `gate.allow=true` → handler continues into existing `setSubmitting(true)` flow unchanged. |
-| 5 | `checkPaywallGate` throws | Wrapped in `try/catch` inside `paywall.ts` → `failOpen` → `allow=true` → handler proceeds. No user-visible error. |
+### 5) Validation Matrix (expected behavior, not executed)
 
-### Confirmation
-- Only `src/components/query/QueryForm.tsx` is modified.
-- No changes to `src/lib/paywall.ts`, `src/lib/points.ts`, any Supabase integration file, migration, edge function, route, page, or other component.
-- No new dependencies, no default-export changes, no router redirects added in this file, no schema changes, no pricing/SEBI copy edits.
-- `useWalletBalance` + `useWalletRealtime` + `balance: number` identifier preserved verbatim.
+1. `paywall_v1_enabled = false` → `checkPaywallGate` fail-opens → Stock Picker behaves identically to today.
+2. `paywall_v1_enabled = true`, logged out → `user?.id` is undefined → gate returns `allow:false` → toast shown, `runQuery` returns before any submit state or invoke.
+3. `paywall_v1_enabled = true`, insufficient balance → gate returns `allow:false` with reason → toast shown, no submit, no edge call.
+4. `paywall_v1_enabled = true`, sufficient balance → gate returns `allow:true` → existing `runQuery` flow runs unchanged (loading messages, invoke, result rendering).
+5. No external sector-view handler exists → sector view continues to be gated inside QueryForm via W6.8; W6.9 adds nothing for it.
 
-**STOP. Awaiting `apply W6.8`.**
+### Dark-by-default
+
+`checkPaywallGate()` fail-opens whenever `paywall_v1_enabled` is false or absent in `stock_picker_runtime_config`. Therefore today's Stock Picker behavior is unchanged after this edit until the founder flips the flag on.
+
+### 6) Confirmations
+
+- QueryForm.tsx — unchanged.
+- paywall.ts — unchanged.
+- points.ts — unchanged.
+- No other file touched. Only `src/components/stock-picker/StockPickerFlow.tsx` is modified.
+
+Stopping. Reply `apply W6.9` to apply.
