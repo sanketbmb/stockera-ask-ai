@@ -230,11 +230,14 @@ export function StockPickerFlow() {
   const [result, setResult] = useState<StockPickerResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
+  const [paywallGate, setPaywallGate] = useState<PaywallGateResult | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   async function runQuery() {
     const gate = await checkPaywallGate("stock_picker", user?.id);
     if (!gate.allow) {
-      toast.error(gate.reason ?? "Insufficient balance");
+      setPaywallGate(gate);
+      setPaywallOpen(true);
       return;
     }
 
