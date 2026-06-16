@@ -1644,6 +1644,7 @@ export function QueryForm() {
           )}
         </div>
       </Card>
+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
     </TooltipProvider>
   );
 }
