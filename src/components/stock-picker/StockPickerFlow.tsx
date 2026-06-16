@@ -30,7 +30,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { checkPaywallGate } from "@/lib/paywall";
+import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
 
 // ──────────────────────────────────────────────────────────────────────────
 // API contract — must match the deployed stock-recommendation-query function.
@@ -229,11 +230,14 @@ export function StockPickerFlow() {
   const [result, setResult] = useState<StockPickerResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
+  const [paywallGate, setPaywallGate] = useState<PaywallGateResult | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   async function runQuery() {
     const gate = await checkPaywallGate("stock_picker", user?.id);
     if (!gate.allow) {
-      toast.error(gate.reason ?? "Insufficient balance");
+      setPaywallGate(gate);
+      setPaywallOpen(true);
       return;
     }
 
@@ -641,6 +645,7 @@ export function StockPickerFlow() {
           </Card>
         )}
       </div>
+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
     </TooltipProvider>
   );
 }

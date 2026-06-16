@@ -46,7 +46,8 @@ import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.
 import { resolveConcept } from "@/lib/concept-alias-map";
 import { getLtpForSymbol } from "@/lib/market.functions";
 import { useWalletBalance, useWalletRealtime } from "@/lib/points";
-import { checkPaywallGate } from "@/lib/paywall";
+import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
 import {
   ArrowLeft,
   ArrowRight,
@@ -566,6 +567,9 @@ export function QueryForm() {
     "idle",
   );
 
+  const [paywallGate, setPaywallGate] = useState<PaywallGateResult | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
+
   const handleSubmit = async () => {
     if (!agreeDisclaimer) {
       toast.error("Please accept the SEBI disclaimer");
@@ -581,7 +585,8 @@ export function QueryForm() {
     const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
     const gate = await checkPaywallGate(paywallActionKey, user?.id);
     if (!gate.allow) {
-      toast.error(gate.reason ?? "Insufficient balance");
+      setPaywallGate(gate);
+      setPaywallOpen(true);
       return;
     }
 
@@ -1639,6 +1644,7 @@ export function QueryForm() {
           )}
         </div>
       </Card>
+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
     </TooltipProvider>
   );
 }
