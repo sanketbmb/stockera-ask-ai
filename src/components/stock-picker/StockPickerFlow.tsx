@@ -209,6 +209,7 @@ const LOADING_MESSAGES = [
 
 export function StockPickerFlow() {
   const [step, setStep] = useState<0 | 1 | 2>(0);
+  const { user } = useAuth();
 
   // Step A — basic inputs
   const [horizon, setHorizon] = useState<Horizon>("short");
@@ -230,6 +231,12 @@ export function StockPickerFlow() {
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
 
   async function runQuery() {
+    const gate = await checkPaywallGate("stock_picker", user?.id);
+    if (!gate.allow) {
+      toast.error(gate.reason ?? "Insufficient balance");
+      return;
+    }
+
     setSubmitting(true);
     setResult(null);
     setErrorMsg(null);
