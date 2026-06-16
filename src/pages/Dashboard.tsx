@@ -135,7 +135,7 @@ export default function DashboardPage() {
         <Button asChild data-tour="post-query" className="h-14 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95">
           <Link to="/post-query"><Plus className="h-4 w-4 mr-2" /> Post a new query</Link>
         </Button>
-        <Button asChild variant="outline" className="h-14"><Link to="/wallet"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
+        <Button asChild variant="outline" className="h-14"><Link to="/topup"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
         <Button asChild variant="outline" className="h-14"><Link to="/referral"><Gift className="h-4 w-4 mr-2" /> Refer a friend</Link></Button>
       </section>
 
