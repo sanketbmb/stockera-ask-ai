@@ -645,6 +645,7 @@ export function StockPickerFlow() {
           </Card>
         )}
       </div>
+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
     </TooltipProvider>
   );
 }
