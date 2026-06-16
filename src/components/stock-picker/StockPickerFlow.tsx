@@ -30,7 +30,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { checkPaywallGate } from "@/lib/paywall";
+import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
 
 // ──────────────────────────────────────────────────────────────────────────
 // API contract — must match the deployed stock-recommendation-query function.
