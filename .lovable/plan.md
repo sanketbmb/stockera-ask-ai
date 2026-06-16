@@ -1,429 +1,294 @@
-# W6 — Pricing Page Cutover (`src/pages/Pricing.tsx`)
+# W6.5 — Dashboard Wallet Cutover (Plan)
 
-## Scope
-Full replacement of `src/pages/Pricing.tsx`. Switch from hardcoded tiers to reading W1's `public.subscription_plans` table + `stock_picker_runtime_config.welcome_bonus`. Three tiers (Free/Pro/Expert). Monthly/Annual toggle. Paid Subscribe buttons disabled with "Coming soon" tooltip.
+Single-file change: `src/pages/Dashboard.tsx`. Replace `profile?.wallet_balance` with live `useWalletBalance(user?.id)`, add `useWalletRealtime`, and route the "Add wallet credits" CTA to `/topup` instead of `/wallet`.
 
-**Files modified:** exactly 1 — `src/pages/Pricing.tsx` (full replacement)
-**Files untouched:** `src/routes/pricing.tsx`, AppShell, AuthContext, points.ts, analytics.ts, migrations, edge functions.
-**New deps:** none.
+## Planned diff
 
-## Diff summary
+```diff
+@@ imports
+- import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles } from "lucide-react";
++ import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
+  ...
+  import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
++ import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
 
-- **Remove:** `useState`-only import, `Switch`, `Accordion*`, `Zap`, `cn`, the hardcoded `tiers` array, the `faqs` array, the `price()`/`cadence()` helpers, the old `<>...</>` two-section layout.
-- **Add:** `useEffect/useMemo/useRef/useState`, `useQuery`, `Card`, `Badge`, `Skeleton`, `Tooltip*`, `AppShell`, `supabase`, `useAuth`, `track`/`trackPageView`, `formatPoints` import path retained-free (only used inline), types `BillingCycle`/`PlanRow`/`WelcomeBonus`/`PricingData`, `FALLBACK_PLANS`, `FALLBACK_WELCOME`, `fetchPricingData()`, new `PricingPage` component with billing toggle, plans grid backed by query, topup nudge, SEBI disclaimer.
+@@ inside DashboardPage()
++ const {
++   data: walletBalance,
++   isLoading: balanceLoading,
++   error: balanceError,
++   refetch: refetchBalance,
++ } = useWalletBalance(user?.id);
++ useWalletRealtime(user?.id);
++ const liveBalance = walletBalance?.balance ?? 0;
 
-## Acceptance checklist (matches request)
-- One file modified
-- Reads `public.subscription_plans` table (not config key) + welcome_bonus config
-- Defensive parse + fallbacks
-- Free CTA: `Link to="/dashboard"` (auth) or `/login` (anon)
-- Paid CTAs: disabled Button wrapped in Tooltip ("Subscription billing launching soon — top up credits for now.")
-- Monthly/Annual toggle fires `cta_click` with `billing_cycle_toggle`
-- Annual cards show "≈ ₹X/month" derived
-- Pro = ring + "Most Popular"; Expert = gradient + "Best Value"; Free = welcome credits + expiry copy
-- Analytics: `trackPageView`, `pricing_viewed` (once), `plan_selected` on every CTA (incl. disabled), `cta_click` on toggle + topup nudge
-- No RPC, no Razorpay, no wallet reads, no react-router-dom
-- `Link` from `@tanstack/react-router`, `AppShell` named import, `export default function PricingPage()`
+@@ stats grid — wallet card
+- <div data-tour="wallet" className="contents">
+-   <StatCard label="Wallet Balance" value={profile?.wallet_balance ?? 0} prefix="₹" icon={<Wallet className="h-4 w-4" />} highlight animate />
+- </div>
++ <div data-tour="wallet" className="contents">
++   {balanceError ? (
++     <Card className="glass-card p-4 bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30">
++       <div className="flex items-center justify-between text-muted-foreground text-xs">
++         <span className="uppercase tracking-wider">Wallet Balance</span>
++         <Wallet className="h-4 w-4" />
++       </div>
++       <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
++         <AlertCircle className="h-3.5 w-3.5" />
++         <span>Couldn't load</span>
++         <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => refetchBalance()}>Retry</Button>
++       </div>
++     </Card>
++   ) : (
++     <StatCard
++       label="Wallet Balance"
++       value={balanceLoading ? undefined : formatPoints(liveBalance)}
++       icon={<Wallet className="h-4 w-4" />}
++       highlight
++       loading={balanceLoading}
++     />
++   )}
++ </div>
 
-## Full file contents — `src/pages/Pricing.tsx`
+@@ quick actions — top-up CTA
+- <Button asChild variant="outline" className="h-14"><Link to="/wallet"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
++ <Button asChild variant="outline" className="h-14"><Link to="/topup"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
+```
+
+Note: switching the Wallet StatCard value to a pre-formatted string (`formatPoints(liveBalance)`) means it renders via the non-animated branch — acceptable because credits are not rupees and `AnimatedCounter` + `prefix="₹"` no longer matches the W1/W3 points model. No other section of the dashboard is touched.
+
+## Full updated file
 
 ```tsx
-import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { Check, Sparkles, Crown } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { format, formatDistanceToNow } from "date-fns";
+import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { track, trackPageView } from "@/lib/analytics";
-import { formatPoints } from "@/lib/points";
+import { AnimatedCounter } from "@/components/common/AnimatedCounter";
+import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
+import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
+import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
 
-type BillingCycle = "monthly" | "annual";
-
-interface PlanRow {
-  id: string;
-  display_name: string;
-  monthly_inr: number;
-  annual_inr: number;
-  monthly_points: number;
-  rollover_cap_points: number;
-  free_video_count: number;
-  free_live_count: number;
-  is_active: boolean;
-  sort_order: number;
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
 }
 
-interface WelcomeBonus {
-  points: number;
-  expiry_days: number;
+const STATUS_STYLE: Record<string, string> = {
+  pending: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/30",
+  ai_answered: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
+  expert_answered: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+  in_review: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const label = status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return <Badge variant="outline" className={`text-[10px] ${STATUS_STYLE[status] ?? ""}`}>{label}</Badge>;
 }
 
-interface PricingData {
-  plans: PlanRow[];
-  welcome: WelcomeBonus;
-}
+export default function DashboardPage() {
+  const { user, profile } = useAuth();
+  const firstName = (profile?.full_name || "").split(" ")[0] || "investor";
 
-const FALLBACK_PLANS: PlanRow[] = [
-  {
-    id: "free", display_name: "Free", monthly_inr: 0, annual_inr: 0,
-    monthly_points: 0, rollover_cap_points: 0,
-    free_video_count: 0, free_live_count: 0,
-    is_active: true, sort_order: 1,
-  },
-  {
-    id: "pro", display_name: "Pro", monthly_inr: 299, annual_inr: 2699,
-    monthly_points: 400, rollover_cap_points: 800,
-    free_video_count: 1, free_live_count: 0,
-    is_active: true, sort_order: 2,
-  },
-  {
-    id: "expert", display_name: "Expert", monthly_inr: 799, annual_inr: 7199,
-    monthly_points: 1200, rollover_cap_points: 2400,
-    free_video_count: 2, free_live_count: 1,
-    is_active: true, sort_order: 3,
-  },
-];
+  const {
+    data: walletBalance,
+    isLoading: balanceLoading,
+    error: balanceError,
+    refetch: refetchBalance,
+  } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+  const liveBalance = walletBalance?.balance ?? 0;
 
-const FALLBACK_WELCOME: WelcomeBonus = { points: 250, expiry_days: 30 };
-
-async function fetchPricingData(): Promise<PricingData> {
-  try {
-    const [plansRes, welcomeRes] = await Promise.all([
-      supabase
-        .from("subscription_plans")
-        .select(
-          "id, display_name, monthly_inr, annual_inr, monthly_points, rollover_cap_points, free_video_count, free_live_count, is_active, sort_order",
-        )
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("stock_picker_runtime_config")
-        .select("config_value")
-        .eq("config_key", "welcome_bonus")
-        .maybeSingle(),
-    ]);
-
-    let plans: PlanRow[] = FALLBACK_PLANS;
-    if (!plansRes.error && Array.isArray(plansRes.data) && plansRes.data.length > 0) {
-      const parsed: PlanRow[] = [];
-      for (const row of plansRes.data as Array<Record<string, unknown>>) {
-        const id = typeof row.id === "string" ? row.id : null;
-        const display_name = typeof row.display_name === "string" ? row.display_name : null;
-        const monthly_inr = Number(row.monthly_inr);
-        const annual_inr = Number(row.annual_inr);
-        const monthly_points = Number(row.monthly_points);
-        const rollover_cap_points = Number(row.rollover_cap_points);
-        const free_video_count = Number(row.free_video_count);
-        const free_live_count = Number(row.free_live_count);
-        const is_active = row.is_active === true;
-        const sort_order = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 99;
-        if (
-          !id || !display_name ||
-          !Number.isFinite(monthly_inr) || !Number.isFinite(annual_inr) ||
-          !Number.isFinite(monthly_points) || !Number.isFinite(rollover_cap_points) ||
-          !Number.isFinite(free_video_count) || !Number.isFinite(free_live_count)
-        ) continue;
-        parsed.push({
-          id, display_name,
-          monthly_inr, annual_inr,
-          monthly_points, rollover_cap_points,
-          free_video_count, free_live_count,
-          is_active, sort_order,
-        });
-      }
-      if (parsed.length > 0) plans = parsed;
-    }
-
-    let welcome: WelcomeBonus = FALLBACK_WELCOME;
-    if (
-      !welcomeRes.error &&
-      welcomeRes.data?.config_value &&
-      typeof welcomeRes.data.config_value === "object"
-    ) {
-      const v = welcomeRes.data.config_value as Record<string, unknown>;
-      const points = Number(v.points);
-      const expiry_days = Number(v.expiry_days);
-      if (Number.isFinite(points) && Number.isFinite(expiry_days)) {
-        welcome = { points, expiry_days };
-      }
-    }
-
-    return { plans, welcome };
-  } catch {
-    return { plans: FALLBACK_PLANS, welcome: FALLBACK_WELCOME };
-  }
-}
-
-const COMING_SOON_COPY = "Subscription billing launching soon — top up credits for now.";
-
-export default function PricingPage() {
-  const { user } = useAuth();
-  const [cycle, setCycle] = useState<BillingCycle>("monthly");
-  const trackedMountRef = useRef(false);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["pricing-data"],
-    queryFn: fetchPricingData,
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["dashboard-stats", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const [total, ai, refs] = await Promise.all([
+        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id),
+        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id).not("ai_report", "is", null),
+        supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", user!.id),
+      ]);
+      return {
+        total: total.count ?? 0,
+        ai: ai.count ?? 0,
+        refs: refs.count ?? 0,
+      };
+    },
   });
 
+  const { data: recent = [], isLoading: recentLoading } = useQuery({
+    queryKey: ["dashboard-recent", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("queries")
+        .select("id, stock_name, query_type, status, ai_report, created_at")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      return data ?? [];
+    },
+  });
+
+  const qc = useQueryClient();
+  // Seed a demo query on first dashboard visit (idempotent)
   useEffect(() => {
-    if (trackedMountRef.current) return;
-    if (!data) return;
-    trackedMountRef.current = true;
-    void trackPageView();
-    void track("pricing_viewed", { plan_count: data.plans.length });
-  }, [data]);
-
-  const plans = data?.plans ?? FALLBACK_PLANS;
-  const welcome = data?.welcome ?? FALLBACK_WELCOME;
-
-  const handleCycleChange = (next: BillingCycle) => {
-    if (next === cycle) return;
-    setCycle(next);
-    void track("cta_click", { cta: "billing_cycle_toggle", cycle: next });
-  };
-
-  const handlePlanSelect = (plan: PlanRow, isFree: boolean) => {
-    void track("plan_selected", {
-      plan_id: plan.id,
-      plan_name: plan.display_name,
-      billing_cycle: cycle,
-      price_inr: cycle === "monthly" ? plan.monthly_inr : plan.annual_inr,
-      monthly_points: plan.monthly_points,
-      is_free: isFree,
+    if (!user || !profile) return;
+    const completed = (profile as unknown as { onboarding_completed?: boolean }).onboarding_completed;
+    if (completed) return;
+    seedDemoQueryIfEmpty(user.id).then((seeded) => {
+      if (seeded) {
+        qc.invalidateQueries({ queryKey: ["dashboard-stats", user.id] });
+        qc.invalidateQueries({ queryKey: ["dashboard-recent", user.id] });
+      }
     });
-  };
+  }, [user, profile, qc]);
 
   return (
-    <AppShell title="Pricing">
-      <TooltipProvider delayDuration={150}>
-        <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <div className="text-center">
-            <h1 className="font-display text-3xl text-foreground md:text-4xl">
-              Choose your plan
-            </h1>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
-              Credits never expire (except welcome bonus). Cancel anytime.
-            </p>
+    <AppShell>
+      <OnboardingTour />
+      <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card bg-noise p-6 md:p-8 mb-6">
+        <p className="font-mono text-xs uppercase tracking-widest text-accent">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
+        <h1 className="font-display text-3xl md:text-4xl mt-1">{greeting()}, {firstName} 👋</h1>
+        <p className="text-muted-foreground mt-2 text-sm">Your stock queries, AI reports and expert answers — all in one place.</p>
+      </div>
 
-            <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-border bg-card p-1 shadow-card">
-              <button
-                type="button"
-                onClick={() => handleCycleChange("monthly")}
-                className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
-                  cycle === "monthly"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCycleChange("annual")}
-                className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
-                  cycle === "annual"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Annual
-              </button>
-              {cycle === "annual" && (
-                <Badge variant="secondary" className="ml-1 font-mono text-[10px] uppercase tracking-wider">
-                  Save ~25%
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="mt-12 grid gap-6 lg:grid-cols-3">
-              {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-[460px] w-full rounded-2xl" />
-              ))}
-            </div>
+      <section data-tour="dashboard-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+        <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
+        <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} animate />
+        <div data-tour="wallet" className="contents">
+          {balanceError ? (
+            <Card className="glass-card p-4 bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30">
+              <div className="flex items-center justify-between text-muted-foreground text-xs">
+                <span className="uppercase tracking-wider">Wallet Balance</span>
+                <Wallet className="h-4 w-4" />
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>Couldn't load</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => refetchBalance()}>Retry</Button>
+              </div>
+            </Card>
           ) : (
-            <div className="mt-12 grid gap-6 lg:grid-cols-3">
-              {plans.map((plan) => {
-                const isFree = plan.monthly_inr === 0 && plan.annual_inr === 0;
-                const priceInr = cycle === "monthly" ? plan.monthly_inr : plan.annual_inr;
-                const Icon = plan.id === "expert" ? Crown : Sparkles;
-
-                const cardClass =
-                  plan.id === "pro"
-                    ? "relative flex flex-col p-8 ring-2 ring-primary border-primary shadow-elegant"
-                    : plan.id === "expert"
-                      ? "relative flex flex-col p-8 bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20"
-                      : "relative flex flex-col p-8";
-
-                const features: string[] = isFree
-                  ? [
-                      `${welcome.points} welcome credits`,
-                      "AI reports & educational content",
-                      `Welcome bonus expires in ${welcome.expiry_days} days`,
-                    ]
-                  : [
-                      `${formatPoints(plan.monthly_points)} credits every month`,
-                      `Rollover up to ${formatPoints(plan.rollover_cap_points)} credits`,
-                      ...(plan.free_video_count > 0
-                        ? [
-                            `${plan.free_video_count} free SEBI analyst video${
-                              plan.free_video_count === 1 ? "" : "s"
-                            } / month`,
-                          ]
-                        : []),
-                      ...(plan.free_live_count > 0
-                        ? [
-                            `${plan.free_live_count} free live session${
-                              plan.free_live_count === 1 ? "" : "s"
-                            } / month`,
-                          ]
-                        : []),
-                      ...(plan.id === "pro" ? ["Priority queue & support"] : []),
-                      ...(plan.id === "expert" ? ["Dedicated analyst support"] : []),
-                    ];
-
-                return (
-                  <Card key={plan.id} className={cardClass}>
-                    {plan.id === "pro" && (
-                      <Badge className="absolute -top-3 right-4 bg-primary text-primary-foreground">
-                        Most Popular
-                      </Badge>
-                    )}
-                    {plan.id === "expert" && (
-                      <Badge className="absolute -top-3 right-4 bg-accent text-accent-foreground">
-                        Best Value
-                      </Badge>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <h2 className="font-display text-2xl text-foreground">{plan.display_name}</h2>
-                    </div>
-
-                    <div className="mt-6">
-                      {isFree ? (
-                        <div className="font-display text-5xl text-foreground">Free</div>
-                      ) : (
-                        <>
-                          <div className="flex items-baseline gap-1">
-                            <span className="font-display text-5xl tabular-nums text-foreground">
-                              ₹{priceInr.toLocaleString("en-IN")}
-                            </span>
-                            <span className="text-sm text-muted-foreground">
-                              {cycle === "monthly" ? "/month" : "/year"}
-                            </span>
-                          </div>
-                          {cycle === "annual" && plan.annual_inr > 0 && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              ≈ ₹{Math.round(plan.annual_inr / 12).toLocaleString("en-IN")}/month
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    <div className="mt-4">
-                      {plan.monthly_points > 0 && (
-                        <p className="font-mono text-sm text-primary">
-                          {formatPoints(plan.monthly_points)}/month
-                        </p>
-                      )}
-                      {plan.id === "free" && (
-                        <p className="text-xs text-muted-foreground">
-                          {welcome.points} welcome credits (expire in {welcome.expiry_days} days)
-                        </p>
-                      )}
-                    </div>
-
-                    <ul className="mt-6 space-y-3">
-                      {features.map((f) => (
-                        <li key={f} className="flex items-start gap-2 text-sm text-foreground">
-                          <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <div className="mt-8">
-                      {isFree ? (
-                        user ? (
-                          <Button asChild className="w-full">
-                            <Link to="/dashboard" onClick={() => handlePlanSelect(plan, true)}>
-                              Get started
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button asChild className="w-full">
-                            <Link to="/login" onClick={() => handlePlanSelect(plan, true)}>
-                              Sign up free
-                            </Link>
-                          </Button>
-                        )
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="block w-full">
-                              <Button
-                                disabled
-                                className="w-full opacity-60"
-                                onClick={() => handlePlanSelect(plan, false)}
-                              >
-                                Subscribe (Coming soon)
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{COMING_SOON_COPY}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
+            <StatCard
+              label="Wallet Balance"
+              value={balanceLoading ? undefined : formatPoints(liveBalance)}
+              icon={<Wallet className="h-4 w-4" />}
+              highlight
+              loading={balanceLoading}
+            />
           )}
+        </div>
+        <StatCard label="Referrals" value={stats?.refs} icon={<Gift className="h-4 w-4" />} loading={statsLoading} animate />
+      </section>
 
-          <div className="mt-10 text-center text-sm text-muted-foreground">
-            Don't want a subscription?{" "}
-            <Link
-              to="/topup"
-              className="text-primary hover:underline"
-              onClick={() =>
-                void track("cta_click", {
-                  cta: "topup_from_pricing",
-                  source: "pricing_page",
-                })
-              }
-            >
-              Top up credits as you go.
-            </Link>
+      <section className="grid lg:grid-cols-3 gap-3 mb-8">
+        <Button asChild data-tour="post-query" className="h-14 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95">
+          <Link to="/post-query"><Plus className="h-4 w-4 mr-2" /> Post a new query</Link>
+        </Button>
+        <Button asChild variant="outline" className="h-14"><Link to="/topup"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
+        <Button asChild variant="outline" className="h-14"><Link to="/referral"><Gift className="h-4 w-4 mr-2" /> Refer a friend</Link></Button>
+      </section>
+
+      <Card data-tour="recent-queries" className="glass-card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="font-display text-xl">Recent Queries</h2>
+          <Button asChild variant="ghost" size="sm"><Link to="/my-queries">View all <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link></Button>
+        </div>
+        {recentLoading ? (
+          <div className="p-5 space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : recent.length === 0 ? (
+          <div className="p-10 text-center">
+            <MessageSquare className="h-10 w-10 mx-auto text-muted-foreground/40" />
+            <p className="font-display text-lg mt-3">No queries yet</p>
+            <p className="text-sm text-muted-foreground mt-1">Ask your first stock question and get an instant AI report.</p>
+            <Button asChild className="mt-4"><Link to="/post-query">Post a query →</Link></Button>
           </div>
-
-          <p className="mt-8 text-center text-xs text-muted-foreground">
-            Stockera Technology Private Limited (INH000019071). AI reports are
-            educational. Personalized advice comes from SEBI-registered analysts only.
-          </p>
-        </section>
-      </TooltipProvider>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Stock</TableHead>
+                  <TableHead className="hidden sm:table-cell">Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>AI Report</TableHead>
+                  <TableHead className="hidden md:table-cell">Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recent.map((q) => (
+                  <TableRow key={q.id}>
+                    <TableCell className="font-medium">{q.stock_name}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground capitalize">{(q.query_type ?? "—").replace(/_/g, " ")}</TableCell>
+                    <TableCell><StatusBadge status={q.status ?? "pending"} /></TableCell>
+                    <TableCell>
+                      {q.ai_report ? (
+                        <Link to="/report/$queryId" params={{ queryId: q.id }} className="text-xs text-primary hover:underline">View report →</Link>
+                      ) : <span className="text-xs text-muted-foreground">Pending</span>}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDistanceToNow(new Date(q.created_at as string), { addSuffix: true })}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
     </AppShell>
+  );
+}
+
+function StatCard({ label, value, icon, highlight, loading, animate, prefix }: { label: string; value?: number | string; icon: React.ReactNode; highlight?: boolean; loading?: boolean; animate?: boolean; prefix?: string }) {
+  const isNumeric = typeof value === "number";
+  return (
+    <Card className={`glass-card p-4 ${highlight ? "bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30" : ""}`}>
+      <div className="flex items-center justify-between text-muted-foreground text-xs">
+        <span className="uppercase tracking-wider">{label}</span>
+        {icon}
+      </div>
+      {loading ? (
+        <Skeleton className="h-8 w-20 mt-2" />
+      ) : animate && isNumeric ? (
+        <p className="font-display text-3xl mt-1">
+          <AnimatedCounter end={value as number} prefix={prefix} />
+        </p>
+      ) : (
+        <p className="font-display text-3xl mt-1">{prefix}{value ?? 0}</p>
+      )}
+    </Card>
   );
 }
 ```
 
-## Stop gate
-Plan only. Not writing. Reply **apply W6** to proceed.
+## Self-check vs acceptance checklist
+
+1. Only `src/pages/Dashboard.tsx` modified ✓
+2. No `profiles.wallet_balance` read ✓ (removed)
+3. No `wallet_transactions` read ✓ (never present)
+4. No `add_demo_credits` RPC ✓ (never present)
+5. Wallet uses `useWalletBalance(user?.id)` ✓
+6. `useWalletRealtime(user?.id)` present ✓
+7. Formatted via `formatPoints` (rupees helper not used — existing card was a single number, no secondary rupee display) ✓
+8. "Add wallet credits" CTA → `/topup` via TanStack `Link` ✓
+9. No `/pricing` top-up redirect ✓
+10. Layout/visual style preserved (same StatCard, same highlight gradient, same grid) ✓
+11. Unrelated sections untouched (stats, quick actions, recent queries) ✓
+12. TS: `formatPoints` returns string → `StatCard` value accepts `number | string`; `refetchBalance` returns a Promise, wrapper `() => refetchBalance()` is void-compatible ✓
+13. `export default function DashboardPage()` preserved ✓
+14. `/dashboard` route untouched ✓
+
+Analytics: not adding any new events (none currently in this file; staying minimal-diff and avoiding speculative payloads).
+
+STOP. Awaiting "apply W6.5".

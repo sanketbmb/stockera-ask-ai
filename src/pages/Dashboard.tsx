@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
-import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedCounter } from "@/components/common/AnimatedCounter";
 import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
+import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
 
 function greeting() {
   const h = new Date().getHours();
@@ -37,6 +38,15 @@ function StatusBadge({ status }: { status: string }) {
 export default function DashboardPage() {
   const { user, profile } = useAuth();
   const firstName = (profile?.full_name || "").split(" ")[0] || "investor";
+
+  const {
+    data: walletBalance,
+    isLoading: balanceLoading,
+    error: balanceError,
+    refetch: refetchBalance,
+  } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+  const liveBalance = walletBalance?.balance ?? 0;
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["dashboard-stats", user?.id],
@@ -96,7 +106,27 @@ export default function DashboardPage() {
         <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
         <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} animate />
         <div data-tour="wallet" className="contents">
-          <StatCard label="Wallet Balance" value={profile?.wallet_balance ?? 0} prefix="₹" icon={<Wallet className="h-4 w-4" />} highlight animate />
+          {balanceError ? (
+            <Card className="glass-card p-4 bg-gradient-to-br from-primary/15 to-accent/10 border-primary/30">
+              <div className="flex items-center justify-between text-muted-foreground text-xs">
+                <span className="uppercase tracking-wider">Wallet Balance</span>
+                <Wallet className="h-4 w-4" />
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>Couldn't load</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => refetchBalance()}>Retry</Button>
+              </div>
+            </Card>
+          ) : (
+            <StatCard
+              label="Wallet Balance"
+              value={balanceLoading ? undefined : formatPoints(liveBalance)}
+              icon={<Wallet className="h-4 w-4" />}
+              highlight
+              loading={balanceLoading}
+            />
+          )}
         </div>
         <StatCard label="Referrals" value={stats?.refs} icon={<Gift className="h-4 w-4" />} loading={statsLoading} animate />
       </section>
@@ -105,7 +135,7 @@ export default function DashboardPage() {
         <Button asChild data-tour="post-query" className="h-14 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-95">
           <Link to="/post-query"><Plus className="h-4 w-4 mr-2" /> Post a new query</Link>
         </Button>
-        <Button asChild variant="outline" className="h-14"><Link to="/wallet"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
+        <Button asChild variant="outline" className="h-14"><Link to="/topup"><Wallet className="h-4 w-4 mr-2" /> Add wallet credits</Link></Button>
         <Button asChild variant="outline" className="h-14"><Link to="/referral"><Gift className="h-4 w-4 mr-2" /> Refer a friend</Link></Button>
       </section>
 
