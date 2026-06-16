@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
-import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Wallet, Gift, Plus, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedCounter } from "@/components/common/AnimatedCounter";
 import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
+import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
 
 function greeting() {
   const h = new Date().getHours();
