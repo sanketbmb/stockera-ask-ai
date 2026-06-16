@@ -1,62 +1,62 @@
-## W6.5-R1 — Dashboard Wallet Cutover Correction Pass
+# W6.6 — QueryForm Wallet Source Cutover
 
-### Status check (read of current `src/pages/Dashboard.tsx`)
+Single-file surgical change. Replaces the last legacy `profile?.wallet_balance` read in the repo with the W1/W3 wallet source (`useWalletBalance` + `useWalletRealtime`), preserving the `balance: number` identifier so all downstream usage in QueryForm remains untouched.
 
-I read the current `src/pages/Dashboard.tsx` end-to-end. The file already matches every acceptance item in W6.5-R1. The legacy markers the brief expects to find are NOT present:
+## File modified (exactly one)
+- `src/components/query/QueryForm.tsx`
 
-- `profile?.wallet_balance` → not present (only `profile?.full_name` and `profile.onboarding_completed`)
-- `prefix="₹"` → not present anywhere in the file
-- `<Link to="/wallet">` for "Add wallet credits" → not present; CTA already routes to `/topup`
+## Planned diff (unified, minimal)
 
-The wallet stat already:
-- imports `useWalletBalance`, `useWalletRealtime`, `formatPoints` from `@/lib/points` (line 17)
-- calls `useWalletBalance(user?.id)` with `data/isLoading/error/refetch` destructured (lines 42–47)
-- calls `useWalletRealtime(user?.id)` (line 48)
-- derives `const liveBalance = walletBalance?.balance ?? 0` (line 49)
-- renders an inline error card with `AlertCircle` + Retry calling `refetchBalance()` (lines 109–120)
-- otherwise renders `StatCard` with `value={balanceLoading ? undefined : formatPoints(liveBalance)}`, `loading={balanceLoading}`, `highlight`, Wallet icon, NO rupee prefix (lines 122–128)
+```diff
+--- a/src/components/query/QueryForm.tsx
++++ b/src/components/query/QueryForm.tsx
+@@ -47,6 +47,7 @@ import { resolveConcept } from "@/lib/concept-alias-map";
+ import { getLtpForSymbol } from "@/lib/market.functions";
++import { useWalletBalance, useWalletRealtime } from "@/lib/points";
+ import {
+   ArrowLeft,
+@@ -307,7 +308,9 @@
+   });
 
-CTA row (line 138) already uses `<Link to="/topup">` with the Wallet icon and "Add wallet credits" label.
-
-Default export `DashboardPage` preserved. No `react-router-dom` import. No `wallet_transactions` or `profiles.wallet_balance` reads. No `add_demo_credits` RPC.
-
-### Planned diff
-
+-  const balance = profile?.wallet_balance ?? 0;
++  const { data: walletBalance } = useWalletBalance(user?.id);
++  useWalletRealtime(user?.id);
++  const balance = walletBalance?.balance ?? 0;
+   const showStockFields = ["stuck_position", "should_average", "buy_decision"].includes(intent);
 ```
-src/pages/Dashboard.tsx — NO CHANGES
-```
 
-There is no diff to apply. The file on disk already satisfies all 13 acceptance items from W6.5-R1.
+That is the entire change. No other lines are touched.
 
-### Acceptance checklist (verified against current file)
+## Why this works without further edits
+- `user` is already destructured at line 144: `const { user, profile, refresh } = useAuth();` — no second `useAuth()` call needed.
+- `balance` stays a plain `number`, so every downstream affordability check, gating branch, and submit path keeps working unchanged.
+- `useWalletRealtime(user?.id)` mirrors the W4 (Wallet.tsx) and W6.5 (Dashboard.tsx) pattern; when the user tops up in another tab the balance re-renders here automatically.
+- No new dependencies, no router changes, no analytics events, no paywall/feature-flag work (W7 scope).
 
-1. Only `src/pages/Dashboard.tsx` would change — N/A, no change needed ✓
-2. No `profile?.wallet_balance` remains — ✓ (grep: absent)
-3. No `profiles.wallet_balance` reads — ✓
-4. No `wallet_transactions` reads — ✓
-5. `useWalletBalance(user?.id)` present and used — ✓ (lines 42–47)
-6. `useWalletRealtime(user?.id)` present — ✓ (line 48)
-7. `liveBalance = walletBalance?.balance ?? 0` — ✓ (line 49)
-8. Wallet stat no longer uses `prefix="₹"` — ✓ (no prefix passed)
-9. Wallet display uses `formatPoints(liveBalance)` — ✓ (line 124)
-10. "Add wallet credits" CTA points to `/topup` — ✓ (line 138)
-11. No unrelated files changed — ✓ (nothing to change)
-12. Default export preserved — ✓ (`export default function DashboardPage`)
-13. TypeScript compiles — ✓ (no edits proposed)
+## Anti-fabrication check (post-apply expectations)
+| ID | Check | Expected |
+|----|-------|----------|
+| A | `profile?.wallet_balance` in QueryForm.tsx | 0 |
+| B | `profile.wallet_balance` in QueryForm.tsx | 0 |
+| C | `useWalletBalance(` in QueryForm.tsx | ≥1 |
+| D | `useWalletRealtime(` in QueryForm.tsx | ≥1 |
+| E | `react-router-dom` in QueryForm.tsx | 0 |
+| F | `add_demo_credits` in QueryForm.tsx | 0 |
+| G | `wallet_transactions` in QueryForm.tsx | 0 |
+| H | `balance` identifier preserved, type `number` | yes |
+| I | No other file modified | yes |
 
-### Likely cause of the perceived regression
+## Validation matrix
+1. Logged-out: `user?.id` undefined → hook returns no data → `balance = 0`. No crash.
+2. Logged-in balance = 0: gating fires exactly as before.
+3. Logged-in balance > 0: submit path unchanged, value sourced from W1/W3.
+4. Top-up in another tab: realtime channel triggers refetch, gating updates without reload.
+5. TypeScript: 0 errors; no `any`; no unused imports (both new imports are used).
 
-The W6.5 cutover IS already on disk from the prior apply. If the running preview still shows a rupee value or routes "Add wallet credits" to `/wallet`, the most likely causes are:
+## Full updated file
+The file is ~1639 lines. The only diff vs. current `src/components/query/QueryForm.tsx` is the 4 lines shown above (1 import insertion + 1 line replaced by 3 lines at the old line 310). Rather than dumping 1639 unchanged lines, the diff above is exact and complete — every other line is byte-identical to the current file on disk.
 
-- Stale browser cache / preview iframe holding the pre-W6.5 bundle — hard-refresh the preview.
-- A different "dashboard"-looking page is being viewed (e.g. `src/pages/admin/AdminDashboard.tsx`, or the landing/index page wallet widget), not `/dashboard`. R1 explicitly forbids touching admin/route files, so any wallet UI in those would need its own scoped pass.
-- The legacy display is sourced from a component rendered inside `AppShell` (e.g. a navbar wallet pill reading `profile.wallet_balance`), not from `Dashboard.tsx` itself.
+If you want me to also paste the full file contents inline before applying, say "include full file" with the apply command; otherwise reply **apply W6.6** to proceed.
 
-### Recommendation
-
-Do not issue "apply W6.5-R1" — there is nothing to write. Instead, confirm one of:
-
-(a) Hard-refresh `/dashboard` in the preview and re-verify; or
-(b) Tell me exactly which UI element still shows the legacy behavior (screenshot or selector text) so I can locate the actual offending file and scope a fresh, minimal correction pass for that file.
-
-STOP. Awaiting founder direction.
+## Confirmation
+No file other than `src/components/query/QueryForm.tsx` will be changed.

@@ -45,6 +45,7 @@ import { inferSectorFromText, type InferredSector } from "@/lib/sector-infer.fun
 import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.functions";
 import { resolveConcept } from "@/lib/concept-alias-map";
 import { getLtpForSymbol } from "@/lib/market.functions";
+import { useWalletBalance, useWalletRealtime } from "@/lib/points";
 import {
   ArrowLeft,
   ArrowRight,
@@ -307,7 +308,9 @@ export function QueryForm() {
     },
   });
 
-  const balance = profile?.wallet_balance ?? 0;
+  const { data: walletBalance } = useWalletBalance(user?.id);
+  useWalletRealtime(user?.id);
+  const balance = walletBalance?.balance ?? 0;
   const showStockFields = ["stuck_position", "should_average", "buy_decision"].includes(intent);
   const showBuyPrice = ["stuck_position", "should_average"].includes(intent);
   // Phase 2 — existing position / averaging both ask for entry_price; averaging additionally requires qty.
