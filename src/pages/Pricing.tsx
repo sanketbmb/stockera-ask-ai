@@ -1,211 +1,395 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Check, Sparkles, Crown, Zap } from "lucide-react";
+import { Check, Sparkles, Crown } from "lucide-react";
+import { AppShell } from "@/components/layout/AppShell";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { track, trackPageView } from "@/lib/analytics";
+import { formatPoints } from "@/lib/points";
 
-type Tier = {
-  name: string;
-  icon: typeof Sparkles;
-  monthly: number;
-  blurb: string;
-  features: string[];
-  cta: string;
-  href: string;
-  featured?: boolean;
-  ctaClass?: string;
-};
+type BillingCycle = "monthly" | "annual";
 
-const tiers: Tier[] = [
+interface PlanRow {
+  id: string;
+  display_name: string;
+  monthly_inr: number;
+  annual_inr: number;
+  monthly_points: number;
+  rollover_cap_points: number;
+  free_video_count: number;
+  free_live_count: number;
+  is_active: boolean;
+  sort_order: number;
+}
+
+interface WelcomeBonus {
+  points: number;
+  expiry_days: number;
+}
+
+interface PricingData {
+  plans: PlanRow[];
+  welcome: WelcomeBonus;
+}
+
+const FALLBACK_PLANS: PlanRow[] = [
   {
-    name: "Free",
-    icon: Sparkles,
-    monthly: 0,
-    blurb: "Try the platform with no commitment.",
-    features: [
-      "2 AI Reports / month",
-      "Text query only",
-      "No expert video answers",
-      "Community support",
-    ],
-    cta: "Start Free →",
-    href: "/signup",
+    id: "free", display_name: "Free", monthly_inr: 0, annual_inr: 0,
+    monthly_points: 0, rollover_cap_points: 0,
+    free_video_count: 0, free_live_count: 0,
+    is_active: true, sort_order: 1,
   },
   {
-    name: "Pro",
-    icon: Zap,
-    monthly: 199,
-    blurb: "For active retail investors.",
-    features: [
-      "10 AI Reports / month",
-      "3 Expert Video Answers",
-      "Priority assignment",
-      "Download PDF reports",
-      "WhatsApp notifications",
-    ],
-    cta: "Get Pro →",
-    href: "/signup?plan=pro",
-    featured: true,
-    ctaClass: "bg-gradient-brand text-white shadow-glow-teal",
+    id: "pro", display_name: "Pro", monthly_inr: 299, annual_inr: 2699,
+    monthly_points: 400, rollover_cap_points: 800,
+    free_video_count: 1, free_live_count: 0,
+    is_active: true, sort_order: 2,
   },
   {
-    name: "Expert",
-    icon: Crown,
-    monthly: 499,
-    blurb: "For serious portfolios that need an analyst on call.",
-    features: [
-      "Unlimited AI Reports",
-      "10 Expert Video Answers",
-      "Same-day response SLA",
-      "1 Live 30-min session / month",
-      "Dedicated analyst",
-    ],
-    cta: "Go Expert →",
-    href: "/signup?plan=expert",
+    id: "expert", display_name: "Expert", monthly_inr: 799, annual_inr: 7199,
+    monthly_points: 1200, rollover_cap_points: 2400,
+    free_video_count: 2, free_live_count: 1,
+    is_active: true, sort_order: 3,
   },
 ];
 
-const faqs = [
-  {
-    q: "Can I switch plans anytime?",
-    a: "Yes. Upgrades take effect immediately and we pro-rate the difference. Downgrades apply at the start of your next billing cycle.",
-  },
-  {
-    q: "What if I run out of AI reports mid-month?",
-    a: "You can buy top-up credits from your wallet (₹49 per 2 AI reports) without changing your plan.",
-  },
-  {
-    q: "Do I get a refund if I'm not satisfied?",
-    a: "Unused expert video credits are refundable within 7 days of purchase. AI reports already generated are non-refundable.",
-  },
-  {
-    q: "How is annual billing discounted?",
-    a: "Annual plans are billed once a year and save you 20% compared to month-to-month — equivalent to 2.4 months free.",
-  },
-  {
-    q: "Are SEBI fees included in the price?",
-    a: "Yes. Subscription pricing is inclusive of GST and SEBI-mandated charges. There are no hidden fees.",
-  },
-];
+const FALLBACK_WELCOME: WelcomeBonus = { points: 250, expiry_days: 30 };
 
-export default function Pricing() {
-  const [annual, setAnnual] = useState(false);
+async function fetchPricingData(): Promise<PricingData> {
+  try {
+    const [plansRes, welcomeRes] = await Promise.all([
+      supabase
+        .from("subscription_plans")
+        .select(
+          "id, display_name, monthly_inr, annual_inr, monthly_points, rollover_cap_points, free_video_count, free_live_count, is_active, sort_order",
+        )
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("stock_picker_runtime_config")
+        .select("config_value")
+        .eq("config_key", "welcome_bonus")
+        .maybeSingle(),
+    ]);
 
-  const price = (m: number) => (annual ? Math.round(m * 12 * 0.8) : m);
-  const cadence = annual ? "/year" : "/month";
+    let plans: PlanRow[] = FALLBACK_PLANS;
+    if (!plansRes.error && Array.isArray(plansRes.data) && plansRes.data.length > 0) {
+      const parsed: PlanRow[] = [];
+      for (const row of plansRes.data as Array<Record<string, unknown>>) {
+        const id = typeof row.id === "string" ? row.id : null;
+        const display_name = typeof row.display_name === "string" ? row.display_name : null;
+        const monthly_inr = Number(row.monthly_inr);
+        const annual_inr = Number(row.annual_inr);
+        const monthly_points = Number(row.monthly_points);
+        const rollover_cap_points = Number(row.rollover_cap_points);
+        const free_video_count = Number(row.free_video_count);
+        const free_live_count = Number(row.free_live_count);
+        const is_active = row.is_active === true;
+        const sort_order = Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 99;
+        if (
+          !id || !display_name ||
+          !Number.isFinite(monthly_inr) || !Number.isFinite(annual_inr) ||
+          !Number.isFinite(monthly_points) || !Number.isFinite(rollover_cap_points) ||
+          !Number.isFinite(free_video_count) || !Number.isFinite(free_live_count)
+        ) continue;
+        parsed.push({
+          id, display_name,
+          monthly_inr, annual_inr,
+          monthly_points, rollover_cap_points,
+          free_video_count, free_live_count,
+          is_active, sort_order,
+        });
+      }
+      if (parsed.length > 0) plans = parsed;
+    }
+
+    let welcome: WelcomeBonus = FALLBACK_WELCOME;
+    if (
+      !welcomeRes.error &&
+      welcomeRes.data?.config_value &&
+      typeof welcomeRes.data.config_value === "object"
+    ) {
+      const v = welcomeRes.data.config_value as Record<string, unknown>;
+      const points = Number(v.points);
+      const expiry_days = Number(v.expiry_days);
+      if (Number.isFinite(points) && Number.isFinite(expiry_days)) {
+        welcome = { points, expiry_days };
+      }
+    }
+
+    return { plans, welcome };
+  } catch {
+    return { plans: FALLBACK_PLANS, welcome: FALLBACK_WELCOME };
+  }
+}
+
+const COMING_SOON_COPY = "Subscription billing launching soon — top up credits for now.";
+
+export default function PricingPage() {
+  const { user } = useAuth();
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  const trackedMountRef = useRef(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["pricing-data"],
+    queryFn: fetchPricingData,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (trackedMountRef.current) return;
+    if (!data) return;
+    trackedMountRef.current = true;
+    void trackPageView();
+    void track("pricing_viewed", { plan_count: data.plans.length });
+  }, [data]);
+
+  const plans = data?.plans ?? FALLBACK_PLANS;
+  const welcome = data?.welcome ?? FALLBACK_WELCOME;
+
+  const handleCycleChange = (next: BillingCycle) => {
+    if (next === cycle) return;
+    setCycle(next);
+    void track("cta_click", { cta: "billing_cycle_toggle", cycle: next });
+  };
+
+  const handlePlanSelect = (plan: PlanRow, isFree: boolean) => {
+    void track("plan_selected", {
+      plan_id: plan.id,
+      plan_name: plan.display_name,
+      billing_cycle: cycle,
+      price_inr: cycle === "monthly" ? plan.monthly_inr : plan.annual_inr,
+      monthly_points: plan.monthly_points,
+      is_free: isFree,
+    });
+  };
 
   return (
-    <>
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <div className="text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-accent">
-            Pricing
-          </p>
-          <h1 className="mt-2 font-display text-4xl text-foreground sm:text-5xl">
-            Plans that grow with your portfolio
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base text-muted-foreground">
-            Start free. Upgrade when you want video answers from SEBI-registered experts.
-          </p>
+    <AppShell title="Pricing">
+      <TooltipProvider delayDuration={150}>
+        <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="text-center">
+            <h1 className="font-display text-3xl text-foreground md:text-4xl">
+              Choose your plan
+            </h1>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
+              Credits never expire (except welcome bonus). Cancel anytime.
+            </p>
 
-          <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-border bg-card px-4 py-2 shadow-card">
-            <span className={cn("text-sm", !annual && "font-semibold text-foreground", annual && "text-muted-foreground")}>
-              Monthly
-            </span>
-            <Switch checked={annual} onCheckedChange={setAnnual} aria-label="Toggle annual billing" />
-            <span className={cn("text-sm", annual && "font-semibold text-foreground", !annual && "text-muted-foreground")}>
-              Annual
-            </span>
-            <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-gold-foreground">
-              Save 20%
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {tiers.map((t) => {
-            const Icon = t.icon;
-            const isFeatured = !!t.featured;
-            return (
-              <div
-                key={t.name}
-                className={cn(
-                  "relative flex flex-col rounded-2xl border bg-card p-8 transition-all hover:-translate-y-0.5",
-                  isFeatured
-                    ? "border-gold/60 shadow-card-lg ring-1 ring-gold/40"
-                    : "border-border shadow-card hover:shadow-card-hover",
-                )}
+            <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-border bg-card p-1 shadow-card">
+              <button
+                type="button"
+                onClick={() => handleCycleChange("monthly")}
+                className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
+                  cycle === "monthly"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                {isFeatured && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-gold px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-gold-foreground shadow-glow-gold">
-                    Most Popular
-                  </span>
-                )}
-                <div className="flex items-center gap-2">
-                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-full",
-                    isFeatured ? "bg-gold/20 text-gold-foreground" : "bg-accent/10 text-accent")}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <h2 className="font-display text-2xl text-foreground">{t.name}</h2>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{t.blurb}</p>
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCycleChange("annual")}
+                className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
+                  cycle === "annual"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Annual
+              </button>
+              {cycle === "annual" && (
+                <Badge variant="secondary" className="ml-1 font-mono text-[10px] uppercase tracking-wider">
+                  Save ~25%
+                </Badge>
+              )}
+            </div>
+          </div>
 
-                <div className="mt-6 flex items-baseline gap-1">
-                  <span className="font-mono text-4xl font-semibold text-foreground">
-                    ₹{price(t.monthly).toLocaleString("en-IN")}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{t.monthly === 0 ? "" : cadence}</span>
-                </div>
+          {isLoading ? (
+            <div className="mt-12 grid gap-6 lg:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-[460px] w-full rounded-2xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-12 grid gap-6 lg:grid-cols-3">
+              {plans.map((plan) => {
+                const isFree = plan.monthly_inr === 0 && plan.annual_inr === 0;
+                const priceInr = cycle === "monthly" ? plan.monthly_inr : plan.annual_inr;
+                const Icon = plan.id === "expert" ? Crown : Sparkles;
 
-                <ul className="mt-6 space-y-3">
-                  {t.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-foreground">
-                      <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
+                const cardClass =
+                  plan.id === "pro"
+                    ? "relative flex flex-col p-8 ring-2 ring-primary border-primary shadow-elegant"
+                    : plan.id === "expert"
+                      ? "relative flex flex-col p-8 bg-gradient-to-br from-primary/5 to-accent/5 border-primary/20"
+                      : "relative flex flex-col p-8";
 
-                <Button
-                  asChild
-                  className={cn(
-                    "mt-8 rounded-full active:scale-[0.97]",
-                    t.ctaClass ?? "bg-primary text-primary-foreground hover:bg-primary/90",
-                  )}
-                >
-                  <Link to={t.href as never}>{t.cta}</Link>
-                </Button>
-              </div>
-            );
-          })}
-        </div>
+                const features: string[] = isFree
+                  ? [
+                      `${welcome.points} welcome credits`,
+                      "AI reports & educational content",
+                      `Welcome bonus expires in ${welcome.expiry_days} days`,
+                    ]
+                  : [
+                      `${formatPoints(plan.monthly_points)} credits every month`,
+                      `Rollover up to ${formatPoints(plan.rollover_cap_points)} credits`,
+                      ...(plan.free_video_count > 0
+                        ? [
+                            `${plan.free_video_count} free SEBI analyst video${
+                              plan.free_video_count === 1 ? "" : "s"
+                            } / month`,
+                          ]
+                        : []),
+                      ...(plan.free_live_count > 0
+                        ? [
+                            `${plan.free_live_count} free live session${
+                              plan.free_live_count === 1 ? "" : "s"
+                            } / month`,
+                          ]
+                        : []),
+                      ...(plan.id === "pro" ? ["Priority queue & support"] : []),
+                      ...(plan.id === "expert" ? ["Dedicated analyst support"] : []),
+                    ];
 
-        <p className="mt-10 text-center text-xs text-muted-foreground">
-          All prices in INR, inclusive of GST. SEBI-mandated charges included.
-        </p>
-      </section>
+                return (
+                  <Card key={plan.id} className={cardClass}>
+                    {plan.id === "pro" && (
+                      <Badge className="absolute -top-3 right-4 bg-primary text-primary-foreground">
+                        Most Popular
+                      </Badge>
+                    )}
+                    {plan.id === "expert" && (
+                      <Badge className="absolute -top-3 right-4 bg-accent text-accent-foreground">
+                        Best Value
+                      </Badge>
+                    )}
 
-      <section className="border-t border-border bg-mesh">
-        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-          <h2 className="text-center font-display text-3xl text-foreground">
-            Pricing & refund questions
-          </h2>
-          <Accordion type="single" collapsible className="mt-8">
-            {faqs.map((f, i) => (
-              <AccordionItem key={i} value={`faq-${i}`} className="border-border">
-                <AccordionTrigger className="text-left text-base font-medium text-foreground">
-                  {f.q}
-                </AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground">
-                  {f.a}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
-      </section>
-    </>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <h2 className="font-display text-2xl text-foreground">{plan.display_name}</h2>
+                    </div>
+
+                    <div className="mt-6">
+                      {isFree ? (
+                        <div className="font-display text-5xl text-foreground">Free</div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-display text-5xl tabular-nums text-foreground">
+                              ₹{priceInr.toLocaleString("en-IN")}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {cycle === "monthly" ? "/month" : "/year"}
+                            </span>
+                          </div>
+                          {cycle === "annual" && plan.annual_inr > 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              ≈ ₹{Math.round(plan.annual_inr / 12).toLocaleString("en-IN")}/month
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="mt-4">
+                      {plan.monthly_points > 0 && (
+                        <p className="font-mono text-sm text-primary">
+                          {formatPoints(plan.monthly_points)}/month
+                        </p>
+                      )}
+                      {plan.id === "free" && (
+                        <p className="text-xs text-muted-foreground">
+                          {welcome.points} welcome credits (expire in {welcome.expiry_days} days)
+                        </p>
+                      )}
+                    </div>
+
+                    <ul className="mt-6 space-y-3">
+                      {features.map((f) => (
+                        <li key={f} className="flex items-start gap-2 text-sm text-foreground">
+                          <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="mt-8">
+                      {isFree ? (
+                        user ? (
+                          <Button asChild className="w-full">
+                            <Link to="/dashboard" onClick={() => handlePlanSelect(plan, true)}>
+                              Get started
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button asChild className="w-full">
+                            <Link to="/login" onClick={() => handlePlanSelect(plan, true)}>
+                              Sign up free
+                            </Link>
+                          </Button>
+                        )
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="block w-full">
+                              <Button
+                                disabled
+                                className="w-full opacity-60"
+                                onClick={() => handlePlanSelect(plan, false)}
+                              >
+                                Subscribe (Coming soon)
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{COMING_SOON_COPY}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-10 text-center text-sm text-muted-foreground">
+            Don't want a subscription?{" "}
+            <Link
+              to="/topup"
+              className="text-primary hover:underline"
+              onClick={() =>
+                void track("cta_click", {
+                  cta: "topup_from_pricing",
+                  source: "pricing_page",
+                })
+              }
+            >
+              Top up credits as you go.
+            </Link>
+          </div>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            Stockera Technology Private Limited (INH000019071). AI reports are
+            educational. Personalized advice comes from SEBI-registered analysts only.
+          </p>
+        </section>
+      </TooltipProvider>
+    </AppShell>
   );
 }
