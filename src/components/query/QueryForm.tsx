@@ -46,7 +46,8 @@ import { inferConceptFromText, type InferredConcept } from "@/lib/concept-infer.
 import { resolveConcept } from "@/lib/concept-alias-map";
 import { getLtpForSymbol } from "@/lib/market.functions";
 import { useWalletBalance, useWalletRealtime } from "@/lib/points";
-import { checkPaywallGate } from "@/lib/paywall";
+import { checkPaywallGate, type PaywallGateResult } from "@/lib/paywall";
+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
 import {
   ArrowLeft,
   ArrowRight,
