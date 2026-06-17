@@ -283,7 +283,7 @@ export function StockPickerFlow() {
             p_user_id: user.id,
             p_action_key: "stock_picker",
             p_points: gate.required_points,
-            p_query_id: null,
+            p_query_id: undefined,
             p_idempotency_key: `debit:stock_picker:${batchId}`,
           });
           const debitStatus =
