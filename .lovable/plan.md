@@ -1,253 +1,170 @@
-## W6.10 — Premium Paywall Modal (Dummy Topup CTA)
+# W6.11 (Final) — Wallet Debit Wiring for Paid Actions
 
-### 1) Discovery — Current Toast-Only Blocked Call Sites
+## 1) Success points
 
-Two sites match `if (!gate.allow) { toast.error(...); return; }`:
+- **QueryForm.tsx** — line 792, immediately after `const queryId = inserted.id as string;` (post `queries.insert(...).select("id").single()`). Debit runs before either navigation path (line 846 or line 879).
+- **StockPickerFlow.tsx** — inside `runQuery`'s `try`, after the three success guards (`error`, `!data`, `!data.ok`) and before `setResult(data)` (line 272).
 
-| File | Line | Action keys it gates |
+## 2) Stable idempotency anchors
+
+- **QueryForm**: `queryId` (UUID from `queries.id`) → key `debit:${debitActionKey}:${queryId}`.
+- **StockPickerFlow**: `data.stocks[0]?.batch_id` (server-issued UUID) → key `debit:stock_picker:${batchId}`. **No fallback.** If `batch_id` is missing or `data.stocks.length === 0`, the debit is skipped entirely (option **b**).
+
+## 3) QueryForm action-key correction
+
+Replace
+```ts
+const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
+```
+with
+```ts
+const paywallActionKey =
+  intent === "sector_view" ? "sector_view" :
+  intent === "educational" ? "educational" :
+  "ai_report";
+```
+Reused as `debitActionKey`. Educational has `required_points <= 0` today, so the `paywall_active && required_points > 0` guard prevents any RPC call (and prevents the SQL function from rejecting an unknown action key). No SQL change in W6.11.
+
+## 4) Unified diffs (2 files only)
+
+### `src/components/query/QueryForm.tsx`
+
+```diff
+@@ -582,12 +582,16 @@
+-    // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
+-    const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
++    // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
++    // W6.11 — corrected mapping: educational no longer masquerades as ai_report.
++    const paywallActionKey =
++      intent === "sector_view" ? "sector_view" :
++      intent === "educational" ? "educational" :
++      "ai_report";
+     const gate = await checkPaywallGate(paywallActionKey, user?.id);
+     if (!gate.allow) {
+       setPaywallGate(gate);
+       setPaywallOpen(true);
+       return;
+     }
+@@ -791,6 +795,38 @@
+       const queryId = inserted.id as string;
+       createdQueryId = queryId;
+ 
++      // W6.11 — wallet debit (dark-by-default).
++      // Only debit when paywall is actively enforced AND the action has a real cost.
++      if (gate.paywall_active && gate.required_points > 0) {
++        const debitActionKey = paywallActionKey;
++        const debitPoints = gate.required_points;
++        const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
++          p_user_id: freshUser.id,
++          p_action_key: debitActionKey,
++          p_points: debitPoints,
++          p_query_id: queryId,
++          p_idempotency_key: `debit:${debitActionKey}:${queryId}`,
++        });
++        const debitStatus =
++          (debitData && typeof debitData === "object" && "status" in debitData)
++            ? (debitData as { status?: string }).status
++            : undefined;
++        if (debitErr) {
++          console.error("[wallet_apply_debit] rpc error", debitErr);
++          toast.error("Could not debit your wallet. Please try again.");
++          setGenStage("idle");
++          setSubmitting(false);
++          return;
++        }
++        if (debitStatus === "insufficient_funds") {
++          toast.error("Insufficient credits. Please top up to continue.");
++          setGenStage("idle");
++          setSubmitting(false);
++          return;
++        }
++        // "ok" and "idempotent_replay" → continue normally.
++      }
++
+       supabase
+         .from("audit_events")
+```
+
+### `src/components/stock-picker/StockPickerFlow.tsx`
+
+```diff
+@@ -268,7 +268,43 @@
+       if (error) throw new Error(error.message);
+       if (!data) throw new Error("Empty response from server.");
+       if (!data.ok) throw new Error(data.error || "Server returned an error.");
+-      setResult(data);
++
++      // W6.11 — wallet debit (dark-by-default), batch_id-anchored only.
++      // Server returns ok:true with stocks:[] in legitimate empty-universe
++      // cases (no_completed_batch / no_survivors_match_filter). Those carry
++      // no batch_id, so we skip the debit and notify the user — option (b).
++      if (gate.paywall_active && gate.required_points > 0 && user?.id) {
++        const batchId = data.stocks[0]?.batch_id;
++        if (!batchId) {
++          toast.message("No picks available — you were not charged.");
++        } else {
++          const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
++            p_user_id: user.id,
++            p_action_key: "stock_picker",
++            p_points: gate.required_points,
++            p_query_id: null,
++            p_idempotency_key: `debit:stock_picker:${batchId}`,
++          });
++          const debitStatus =
++            (debitData && typeof debitData === "object" && "status" in debitData)
++              ? (debitData as { status?: string }).status
++              : undefined;
++          if (debitErr) {
++            console.error("[wallet_apply_debit] rpc error", debitErr);
++            toast.error("Could not debit your wallet. Please try again.");
++            return;
++          }
++          if (debitStatus === "insufficient_funds") {
++            toast.error("Insufficient credits. Please top up to continue.");
++            return;
++          }
++          // "ok" and "idempotent_replay" → continue normally.
++        }
++      }
++
++      setResult(data);
+     } catch (e) {
+       setErrorMsg((e as Error).message || "Unknown error");
+     } finally {
+```
+
+`gate` is the existing local from `runQuery` (line 237). Early `return`s fall through to the existing `finally` which clears the interval and `setSubmitting(false)`. Empty-state path still calls `setResult(data)` so the existing empty UI renders.
+
+## 5) Anti-fabrication checklist
+
+- A. Only QueryForm.tsx and StockPickerFlow.tsx changed ✓
+- B. `src/lib/paywall.ts` untouched ✓
+- C. `src/lib/points.ts` untouched ✓
+- D. QueryForm mapping covers `sector_view`, `educational`, `ai_report` ✓
+- E. No debit when `paywall_active === false` or `required_points <= 0` ✓
+- F. RPC params exact: `p_user_id`, `p_action_key`, `p_points`, `p_query_id`, `p_idempotency_key` ✓
+- G. StockPicker uses literal `"stock_picker"` ✓
+- H. Educational does not debit as `ai_report` ✓
+- I. Idempotency anchors are server-issued UUIDs only (`queries.id`, `batch_id`); no `generated_at`, `Date.now`, or `Math.random` ✓
+- J. No `react-router-dom` imports ✓
+
+## 6) Validation matrix
+
+| # | Scenario | Expected |
 |---|---|---|
-| `src/components/query/QueryForm.tsx` | 583–586 | `sector_view`, `ai_report` |
-| `src/components/stock-picker/StockPickerFlow.tsx` | 235 (block follows) | `stock_picker` |
+| 1 | Flag OFF | Gate fail-opens, no RPC, behavior unchanged |
+| 2 | Flag ON, sufficient, `ai_report` | Insert → RPC once → `debit_ai_report` row → navigate |
+| 3 | Flag ON, sufficient, `sector_view` | Insert → `debit_sector_view` row → navigate |
+| 4 | Flag ON, `educational` (0 points) | Guard skips RPC → free |
+| 5 | Flag ON, `stock_picker`, picks returned | RPC once → `debit_stock_picker` → `setResult`; replay same `batch_id` → `idempotent_replay`, no double charge |
+| 6 | Flag ON, `stock_picker`, `stocks: []` | No RPC, toast "No picks available — you were not charged.", `setResult(data)` renders empty state |
+| 7 | RPC `insufficient_funds` | Toast, no navigation / no `setResult`, submitting cleared via `finally` |
+| 8 | RPC unexpected error | Toast, halt downstream, submitting cleared |
 
-No other `checkPaywallGate` consumers exist. (Confirmed by grep of `gate.allow` and `checkPaywallGate` across `src/`.)
+## 7) Confirmation
 
-### 2) Existing Topup/Payment Destination
+- No file outside the two listed is touched.
+- `paywall.ts`, `points.ts`, `PaywallDialog`, all pages, Supabase client, auth, pricing, SEBI/legal copy, dummy topup flow, welcome bonus, edge functions, SQL — all untouched.
+- Razorpay remains ON HOLD.
 
-Route exists at `src/routes/topup.tsx` → `/topup` (wraps `RequireAuth` + the dummy `Topup` page). Already linked from:
-- `src/pages/Dashboard.tsx` ("Add wallet credits")
-- `src/pages/Pricing.tsx`
-- `src/pages/Wallet.tsx` ("Add Credits →")
-
-Primary CTA destination = **`/topup`** (matches every existing wallet/topup CTA in product).
-
-Optional tertiary text CTA = **`/pricing`** ("See pricing"), already exists and is linked from Navbar/Footer.
-
-Dialog primitive: `src/components/ui/dialog.tsx` already present (shadcn). Reuse it; no new dependency.
-
-### 3) Files To Change (3 total)
-
-1. **NEW** `src/components/paywall/PaywallDialog.tsx` — shared premium blocked-state dialog.
-2. **EDIT** `src/components/query/QueryForm.tsx` — replace toast-only block with dialog state + render dialog.
-3. **EDIT** `src/components/stock-picker/StockPickerFlow.tsx` — same.
-
-No other file is touched.
-
-### 4) Unified Diff (planned)
-
-**(a) NEW `src/components/paywall/PaywallDialog.tsx`**
-
-```tsx
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { useNavigate } from "@tanstack/react-router";
-import { Sparkles, Wallet } from "lucide-react";
-import type { PaywallGateResult } from "@/lib/paywall";
-import type { ActionKey } from "@/lib/points";
-
-const ACTION_LABEL: Record<ActionKey, string> = {
-  stock_picker: "Stock Picker",
-  sector_view: "Sector View",
-  ai_report: "AI Report",
-  video_answer: "Video Answer",
-  live_session: "1:1 Private Session",
-  educational: "Educational Report",
-};
-
-const ACTION_SUBTITLE: Record<ActionKey, string> = {
-  stock_picker: "Run a fresh, filter-aware pick from today's verified universe.",
-  sector_view: "Get a structured 12-month view across an entire sector.",
-  ai_report: "Generate a personalised, source-backed equity report.",
-  video_answer: "Get a recorded analyst response tailored to your question.",
-  live_session: "Book a private session with a SEBI-registered analyst.",
-  educational: "Unlock the full educational deep-dive.",
-};
-
-export function PaywallDialog({
-  open,
-  onOpenChange,
-  gate,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  gate: PaywallGateResult | null;
-}) {
-  const navigate = useNavigate();
-  if (!gate) return null;
-
-  const label = ACTION_LABEL[gate.action_key] ?? "Premium Action";
-  const subtitle = ACTION_SUBTITLE[gate.action_key] ?? "Unlock this premium action.";
-  const shortfall = Math.max(0, gate.required_points - gate.current_balance);
-  const isSignIn = gate.reason === "Sign in to continue";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none" />
-        <DialogHeader className="relative">
-          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <DialogTitle className="text-center text-xl">
-            Unlock {label}
-          </DialogTitle>
-          <DialogDescription className="text-center">
-            {subtitle}
-          </DialogDescription>
-        </DialogHeader>
-
-        {!isSignIn && gate.required_points > 0 && (
-          <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2">
-            <Row label="Required credits" value={`${gate.required_points}`} strong />
-            <Row label="Your balance" value={`${gate.current_balance}`} />
-            {shortfall > 0 && (
-              <Row label="Shortfall" value={`${shortfall}`} accent />
-            )}
-            <p className="pt-2 text-xs text-muted-foreground">
-              Your welcome credits can be used toward premium actions.
-            </p>
-          </div>
-        )}
-
-        {isSignIn && (
-          <p className="text-sm text-muted-foreground text-center">
-            Sign in to access premium actions and use your welcome credits.
-          </p>
-        )}
-
-        <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button
-            className="w-full"
-            onClick={() => {
-              onOpenChange(false);
-              navigate({ to: "/topup" });
-            }}
-          >
-            <Wallet className="mr-2 h-4 w-4" />
-            Add Wallet Credits
-          </Button>
-          <button
-            type="button"
-            onClick={() => {
-              onOpenChange(false);
-              navigate({ to: "/pricing" });
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-          >
-            See pricing
-          </button>
-          <Button variant="ghost" className="w-full" onClick={() => onOpenChange(false)}>
-            Maybe later
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function Row({
-  label,
-  value,
-  strong,
-  accent,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={
-          accent ? "font-mono text-destructive" : strong ? "font-mono font-semibold" : "font-mono"
-        }
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-```
-
-**(b) `src/components/query/QueryForm.tsx`**
-
-```diff
- import { checkPaywallGate } from "@/lib/paywall";
-+import type { PaywallGateResult } from "@/lib/paywall";
-+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
-@@ // inside component, alongside other useState hooks
-+  const [paywallGate, setPaywallGate] = useState<PaywallGateResult | null>(null);
-+  const [paywallOpen, setPaywallOpen] = useState(false);
-@@
-   const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
-   const gate = await checkPaywallGate(paywallActionKey, user?.id);
-   if (!gate.allow) {
--    toast.error(gate.reason ?? "Insufficient balance");
-+    setPaywallGate(gate);
-+    setPaywallOpen(true);
-     return;
-   }
-@@ // near the existing top-level JSX return wrapper
-+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
-```
-
-(Exact placement: append `<PaywallDialog .../>` as a sibling at the end of the component's existing top-level fragment/wrapper return.)
-
-**(c) `src/components/stock-picker/StockPickerFlow.tsx`**
-
-```diff
- import { checkPaywallGate } from "@/lib/paywall";
-+import type { PaywallGateResult } from "@/lib/paywall";
-+import { PaywallDialog } from "@/components/paywall/PaywallDialog";
-@@ export function StockPickerFlow() {
-   const { user } = useAuth();
-+  const [paywallGate, setPaywallGate] = useState<PaywallGateResult | null>(null);
-+  const [paywallOpen, setPaywallOpen] = useState(false);
-@@ async function runQuery() {
-   const gate = await checkPaywallGate("stock_picker", user?.id);
-   if (!gate.allow) {
--    toast.error(gate.reason ?? "Insufficient balance");
-+    setPaywallGate(gate);
-+    setPaywallOpen(true);
-     return;
-   }
-@@ // append inside the existing top-level <TooltipProvider><div>...</div></TooltipProvider>
-+      <PaywallDialog open={paywallOpen} onOpenChange={setPaywallOpen} gate={paywallGate} />
-```
-
-(The `toast` import already added in W6.9 stays — still used by error states elsewhere only if present; if not, it'll be removed only if unused. Plan keeps it; harmless either way.)
-
-### 5) Anti-Fabrication Checklist
-
-- A) `src/lib/paywall.ts` — untouched.
-- B) `src/lib/points.ts` — untouched.
-- C) No new backend/SQL/edge-function files. CTA uses existing `/topup` route only.
-- D) Dummy payment flow internals (`src/pages/Topup.tsx`) — untouched.
-- E) Modal renders only when `paywallOpen === true`, set only inside the existing `if (!gate.allow)` branch.
-- F) When `gate.allow === true`, no state change and no modal — original flow untouched.
-- G) Files changed = 3 (1 new + 2 edits). ✓
-- H) No `react-router-dom`. Uses `useNavigate` from `@tanstack/react-router`.
-- I) Both QueryForm and StockPickerFlow consume the same `PaywallDialog` component.
-- J) No other paywall call sites exist; nothing else expanded.
-
-### 6) Validation Matrix (expected, not executed)
-
-1. `paywall_v1_enabled = false` → `checkPaywallGate` fail-opens → `gate.allow === true` → no `setPaywallOpen(true)` → modal never appears. Identical to today.
-2. `paywall_v1_enabled = true`, logged out → `gate.allow === false`, `reason === "Sign in to continue"` → dialog renders sign-in copy, primary CTA → `/topup` (which is `RequireAuth`-wrapped and will redirect to auth).
-3. `paywall_v1_enabled = true`, low balance → dialog shows Required / Balance / Shortfall + welcome-credits note; primary CTA → `/topup` dummy flow unchanged.
-4. `paywall_v1_enabled = true`, sufficient balance → `gate.allow === true` → no modal → action proceeds unchanged.
-5. Founder demo → modal opens, premium framing, CTA opens current dummy `/topup` page; no real payment processing involved.
-
-### 7) Razorpay Confirmation
-
-Razorpay remains ON HOLD. No Razorpay code, no payment SDK, no edge function, no env var, no DB write touched in W6.10. CTA only navigates to the pre-existing dummy `/topup` page.
-
-Stopping. Reply `apply W6.10` to apply.
+STOP. Awaiting `apply W6.11`.

@@ -582,7 +582,11 @@ export function QueryForm() {
     }
 
     // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
-    const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
+    // W6.11 — corrected mapping: educational no longer masquerades as ai_report.
+    const paywallActionKey =
+      intent === "sector_view" ? "sector_view" :
+      intent === "educational" ? "educational" :
+      "ai_report";
     const gate = await checkPaywallGate(paywallActionKey, user?.id);
     if (!gate.allow) {
       setPaywallGate(gate);
@@ -791,6 +795,39 @@ export function QueryForm() {
 
       const queryId = inserted.id as string;
       createdQueryId = queryId;
+
+      // W6.11 — wallet debit (dark-by-default).
+      // Only debit when paywall is actively enforced AND the action has a real cost.
+      if (gate.paywall_active && gate.required_points > 0) {
+        const debitActionKey = paywallActionKey;
+        const debitPoints = gate.required_points;
+        const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
+          p_user_id: freshUser.id,
+          p_action_key: debitActionKey,
+          p_points: debitPoints,
+          p_query_id: queryId,
+          p_idempotency_key: `debit:${debitActionKey}:${queryId}`,
+        });
+        const debitStatus =
+          (debitData && typeof debitData === "object" && "status" in debitData)
+            ? (debitData as { status?: string }).status
+            : undefined;
+        if (debitErr) {
+          console.error("[wallet_apply_debit] rpc error", debitErr);
+          toast.error("Could not debit your wallet. Please try again.");
+          setGenStage("idle");
+          setSubmitting(false);
+          return;
+        }
+        if (debitStatus === "insufficient_funds") {
+          toast.error("Insufficient credits. Please top up to continue.");
+          setGenStage("idle");
+          setSubmitting(false);
+          return;
+        }
+        // "ok" and "idempotent_replay" → continue normally.
+      }
+
 
       supabase
         .from("audit_events")
