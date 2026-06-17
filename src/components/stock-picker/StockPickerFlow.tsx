@@ -269,6 +269,40 @@ export function StockPickerFlow() {
       if (error) throw new Error(error.message);
       if (!data) throw new Error("Empty response from server.");
       if (!data.ok) throw new Error(data.error || "Server returned an error.");
+
+      // W6.11 — wallet debit (dark-by-default), batch_id-anchored only.
+      // Server returns ok:true with stocks:[] in legitimate empty-universe
+      // cases (no_completed_batch / no_survivors_match_filter). Those carry
+      // no batch_id, so we skip the debit and notify the user — option (b).
+      if (gate.paywall_active && gate.required_points > 0 && user?.id) {
+        const batchId = data.stocks[0]?.batch_id;
+        if (!batchId) {
+          toast.message("No picks available — you were not charged.");
+        } else {
+          const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
+            p_user_id: user.id,
+            p_action_key: "stock_picker",
+            p_points: gate.required_points,
+            p_query_id: undefined,
+            p_idempotency_key: `debit:stock_picker:${batchId}`,
+          });
+          const debitStatus =
+            (debitData && typeof debitData === "object" && "status" in debitData)
+              ? (debitData as { status?: string }).status
+              : undefined;
+          if (debitErr) {
+            console.error("[wallet_apply_debit] rpc error", debitErr);
+            toast.error("Could not debit your wallet. Please try again.");
+            return;
+          }
+          if (debitStatus === "insufficient_funds") {
+            toast.error("Insufficient credits. Please top up to continue.");
+            return;
+          }
+          // "ok" and "idempotent_replay" → continue normally.
+        }
+      }
+
       setResult(data);
     } catch (e) {
       setErrorMsg((e as Error).message || "Unknown error");
