@@ -1,170 +1,82 @@
-# W6.11 (Final) — Wallet Debit Wiring for Paid Actions
+# W6.12 — Dashboard Stats Counter Fix
 
-## 1) Success points
+## 1) Discovery Summary
 
-- **QueryForm.tsx** — line 792, immediately after `const queryId = inserted.id as string;` (post `queries.insert(...).select("id").single()`). Debit runs before either navigation path (line 846 or line 879).
-- **StockPickerFlow.tsx** — inside `runQuery`'s `try`, after the three success guards (`error`, `!data`, `!data.ok`) and before `setResult(data)` (line 272).
+**Stat cards rendered:** `src/pages/Dashboard.tsx` (lines 105–132) — `<StatCard>` for *Queries Posted*, *AI Reports*, *Wallet Balance*, *Referrals*.
 
-## 2) Stable idempotency anchors
+**Stats fetched in:** same file, `useQuery(["dashboard-stats", user.id])` at lines 51–66.
 
-- **QueryForm**: `queryId` (UUID from `queries.id`) → key `debit:${debitActionKey}:${queryId}`.
-- **StockPickerFlow**: `data.stocks[0]?.batch_id` (server-issued UUID) → key `debit:stock_picker:${batchId}`. **No fallback.** If `batch_id` is missing or `data.stocks.length === 0`, the debit is skipped entirely (option **b**).
+**Current filters:**
 
-## 3) QueryForm action-key correction
-
-Replace
-```ts
-const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
-```
-with
-```ts
-const paywallActionKey =
-  intent === "sector_view" ? "sector_view" :
-  intent === "educational" ? "educational" :
-  "ai_report";
-```
-Reused as `debitActionKey`. Educational has `required_points <= 0` today, so the `paywall_active && required_points > 0` guard prevents any RPC call (and prevents the SQL function from rejecting an unknown action key). No SQL change in W6.11.
-
-## 4) Unified diffs (2 files only)
-
-### `src/components/query/QueryForm.tsx`
-
-```diff
-@@ -582,12 +582,16 @@
--    // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
--    const paywallActionKey = intent === "sector_view" ? "sector_view" : "ai_report";
-+    // W6.8 — Paywall gate (dark by default; fail-OPEN on any error).
-+    // W6.11 — corrected mapping: educational no longer masquerades as ai_report.
-+    const paywallActionKey =
-+      intent === "sector_view" ? "sector_view" :
-+      intent === "educational" ? "educational" :
-+      "ai_report";
-     const gate = await checkPaywallGate(paywallActionKey, user?.id);
-     if (!gate.allow) {
-       setPaywallGate(gate);
-       setPaywallOpen(true);
-       return;
-     }
-@@ -791,6 +795,38 @@
-       const queryId = inserted.id as string;
-       createdQueryId = queryId;
- 
-+      // W6.11 — wallet debit (dark-by-default).
-+      // Only debit when paywall is actively enforced AND the action has a real cost.
-+      if (gate.paywall_active && gate.required_points > 0) {
-+        const debitActionKey = paywallActionKey;
-+        const debitPoints = gate.required_points;
-+        const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
-+          p_user_id: freshUser.id,
-+          p_action_key: debitActionKey,
-+          p_points: debitPoints,
-+          p_query_id: queryId,
-+          p_idempotency_key: `debit:${debitActionKey}:${queryId}`,
-+        });
-+        const debitStatus =
-+          (debitData && typeof debitData === "object" && "status" in debitData)
-+            ? (debitData as { status?: string }).status
-+            : undefined;
-+        if (debitErr) {
-+          console.error("[wallet_apply_debit] rpc error", debitErr);
-+          toast.error("Could not debit your wallet. Please try again.");
-+          setGenStage("idle");
-+          setSubmitting(false);
-+          return;
-+        }
-+        if (debitStatus === "insufficient_funds") {
-+          toast.error("Insufficient credits. Please top up to continue.");
-+          setGenStage("idle");
-+          setSubmitting(false);
-+          return;
-+        }
-+        // "ok" and "idempotent_replay" → continue normally.
-+      }
-+
-       supabase
-         .from("audit_events")
-```
-
-### `src/components/stock-picker/StockPickerFlow.tsx`
-
-```diff
-@@ -268,7 +268,43 @@
-       if (error) throw new Error(error.message);
-       if (!data) throw new Error("Empty response from server.");
-       if (!data.ok) throw new Error(data.error || "Server returned an error.");
--      setResult(data);
-+
-+      // W6.11 — wallet debit (dark-by-default), batch_id-anchored only.
-+      // Server returns ok:true with stocks:[] in legitimate empty-universe
-+      // cases (no_completed_batch / no_survivors_match_filter). Those carry
-+      // no batch_id, so we skip the debit and notify the user — option (b).
-+      if (gate.paywall_active && gate.required_points > 0 && user?.id) {
-+        const batchId = data.stocks[0]?.batch_id;
-+        if (!batchId) {
-+          toast.message("No picks available — you were not charged.");
-+        } else {
-+          const { data: debitData, error: debitErr } = await supabase.rpc("wallet_apply_debit", {
-+            p_user_id: user.id,
-+            p_action_key: "stock_picker",
-+            p_points: gate.required_points,
-+            p_query_id: null,
-+            p_idempotency_key: `debit:stock_picker:${batchId}`,
-+          });
-+          const debitStatus =
-+            (debitData && typeof debitData === "object" && "status" in debitData)
-+              ? (debitData as { status?: string }).status
-+              : undefined;
-+          if (debitErr) {
-+            console.error("[wallet_apply_debit] rpc error", debitErr);
-+            toast.error("Could not debit your wallet. Please try again.");
-+            return;
-+          }
-+          if (debitStatus === "insufficient_funds") {
-+            toast.error("Insufficient credits. Please top up to continue.");
-+            return;
-+          }
-+          // "ok" and "idempotent_replay" → continue normally.
-+        }
-+      }
-+
-+      setResult(data);
-     } catch (e) {
-       setErrorMsg((e as Error).message || "Unknown error");
-     } finally {
-```
-
-`gate` is the existing local from `runQuery` (line 237). Early `return`s fall through to the existing `finally` which clears the interval and `setSubmitting(false)`. Empty-state path still calls `setResult(data)` so the existing empty UI renders.
-
-## 5) Anti-fabrication checklist
-
-- A. Only QueryForm.tsx and StockPickerFlow.tsx changed ✓
-- B. `src/lib/paywall.ts` untouched ✓
-- C. `src/lib/points.ts` untouched ✓
-- D. QueryForm mapping covers `sector_view`, `educational`, `ai_report` ✓
-- E. No debit when `paywall_active === false` or `required_points <= 0` ✓
-- F. RPC params exact: `p_user_id`, `p_action_key`, `p_points`, `p_query_id`, `p_idempotency_key` ✓
-- G. StockPicker uses literal `"stock_picker"` ✓
-- H. Educational does not debit as `ai_report` ✓
-- I. Idempotency anchors are server-issued UUIDs only (`queries.id`, `batch_id`); no `generated_at`, `Date.now`, or `Math.random` ✓
-- J. No `react-router-dom` imports ✓
-
-## 6) Validation matrix
-
-| # | Scenario | Expected |
+| Card | Source | Current filter |
 |---|---|---|
-| 1 | Flag OFF | Gate fail-opens, no RPC, behavior unchanged |
-| 2 | Flag ON, sufficient, `ai_report` | Insert → RPC once → `debit_ai_report` row → navigate |
-| 3 | Flag ON, sufficient, `sector_view` | Insert → `debit_sector_view` row → navigate |
-| 4 | Flag ON, `educational` (0 points) | Guard skips RPC → free |
-| 5 | Flag ON, `stock_picker`, picks returned | RPC once → `debit_stock_picker` → `setResult`; replay same `batch_id` → `idempotent_replay`, no double charge |
-| 6 | Flag ON, `stock_picker`, `stocks: []` | No RPC, toast "No picks available — you were not charged.", `setResult(data)` renders empty state |
-| 7 | RPC `insufficient_funds` | Toast, no navigation / no `setResult`, submitting cleared via `finally` |
-| 8 | RPC unexpected error | Toast, halt downstream, submitting cleared |
+| Queries Posted | `queries` count | `user_id = me` |
+| AI Reports | `queries` count | `user_id = me` AND `ai_report IS NOT NULL` (the legacy `queries.ai_report` jsonb column) |
+| Wallet Balance | `useWalletBalance(user.id)` hook | — (real source, untouched) |
+| Referrals | `referrals` count | `referrer_id = me` (matches `/referral` page logic) |
 
-## 7) Confirmation
+**Why AI Reports is wrong:**
 
-- No file outside the two listed is touched.
-- `paywall.ts`, `points.ts`, `PaywallDialog`, all pages, Supabase client, auth, pricing, SEBI/legal copy, dummy topup flow, welcome bonus, edge functions, SQL — all untouched.
-- Razorpay remains ON HOLD.
+Live DB shows:
+- `queries.status = 'ai_answered'` → **132** rows (real completed AI reports)
+- `queries.ai_report IS NOT NULL` → **105** rows (legacy jsonb only)
+- `ai_reports` table → **10** distinct query_ids (new pipeline)
 
-STOP. Awaiting `apply W6.11`.
+The current filter relies on the legacy `queries.ai_report` jsonb column, but the newer report pipeline persists into the separate `ai_reports` table and only flips `queries.status` to `'ai_answered'`. Result: dashboard under-counts AI Reports for any user whose reports were generated by the newer flow.
+
+`status = 'ai_answered'` is the canonical "AI report is ready" signal already used throughout the app (`STATUS_STYLE`, `report.functions.ts`, MyQueries, etc.) and matches the user-stated verified fact.
+
+**Queries Posted, Wallet, Referrals:** filters already align with real data. No change needed.
+
+## 2) Proposed Minimal-Scope Fix
+
+Single line change in `src/pages/Dashboard.tsx` (line 57): replace the `ai_report IS NOT NULL` filter with `status = 'ai_answered'`.
+
+- Files changed: **1**
+- No schema, RLS, route, label, layout, or wallet-source changes.
+
+## 3) Unified Diff
+
+```diff
+--- a/src/pages/Dashboard.tsx
++++ b/src/pages/Dashboard.tsx
+@@ -54,7 +54,7 @@ export default function DashboardPage() {
+     queryFn: async () => {
+       const [total, ai, refs] = await Promise.all([
+         supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id),
+-        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id).not("ai_report", "is", null),
++        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id).eq("status", "ai_answered"),
+         supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", user!.id),
+       ]);
+       return {
+```
+
+## 4) Anti-Fabrication Checklist
+
+- [x] Current filters identified by reading `Dashboard.tsx` lines 51–66 verbatim.
+- [x] Only real DB values used: `status = 'ai_answered'` confirmed present in live `queries` table (132 rows) and already referenced in `STATUS_STYLE`.
+- [x] No invented status name (no `'ai_report'`, no `'completed'`).
+- [x] Max files changed = 1 (`src/pages/Dashboard.tsx`).
+- [x] Paywall / wallet debit logic untouched.
+- [x] No SQL / migration / edge function changes.
+- [x] No route changes.
+- [x] Card labels unchanged ("Queries Posted", "AI Reports", "Wallet Balance", "Referrals").
+- [x] Wallet balance source (`useWalletBalance`) unchanged.
+- [x] No forbidden file touched (paywall.ts, points.ts, QueryForm.tsx, StockPickerFlow.tsx, auth/topup/pricing/onboarding).
+
+## 5) Validation Matrix
+
+| Scenario | Queries Posted | AI Reports | Wallet | Referrals |
+|---|---|---|---|---|
+| New user, 0 queries | 0 | 0 | real balance | 0 |
+| User with only `pending` queries | N | 0 | real balance | real |
+| User with mix of `pending` + `ai_answered` | total N | only `ai_answered` subset | real | real |
+| User whose reports live in new `ai_reports` table (status=`ai_answered`, jsonb null) | correct | **now counted** (was missed before) | real | real |
+| User with `expert_answered` only | N | 0 (expert, not AI) | real | real |
+| Referrer with N rows in `referrals` | — | — | — | N |
+
+## 6) Untouched Confirmation
+
+Only `src/pages/Dashboard.tsx` is modified, single line (57). No changes to: `paywall.ts`, `points.ts`, `QueryForm.tsx`, `StockPickerFlow.tsx`, any SQL/migration/edge function, auth, topup, pricing, onboarding, Razorpay, labels, layout, wallet hook, or referrals page.
+
+**STOP — awaiting `apply W6.12`.**

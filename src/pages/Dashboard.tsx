@@ -54,7 +54,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const [total, ai, refs] = await Promise.all([
         supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id),
-        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id).not("ai_report", "is", null),
+        supabase.from("queries").select("id", { count: "exact", head: true }).eq("user_id", user!.id).eq("status", "ai_answered"),
         supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", user!.id),
       ]);
       return {
