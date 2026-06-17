@@ -112,6 +112,11 @@ export async function checkPaywallGate(
       });
     }
 
+    const paywall_active = true;
+    const required_points = required;
+    const current_balance = current;
+    console.log("[paywall-debug] final gate decision:", { allow, paywall_active, required_points, current_balance });
+
     return {
       allow,
       paywall_active: true,
@@ -120,7 +125,8 @@ export async function checkPaywallGate(
       current_balance: current,
       action_key: actionKey,
     };
-  } catch {
+  } catch (err) {
+    console.error("[paywall-debug] checkPaywallGate threw:", err);
     return failOpen(actionKey);
   }
 }
