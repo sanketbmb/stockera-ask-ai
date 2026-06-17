@@ -42,11 +42,14 @@ function failOpen(actionKey: ActionKey): PaywallGateResult {
 
 async function readPaywallFlag(): Promise<boolean> {
   try {
+    console.log("[paywall-debug] reading flag from DB...");
     const { data, error } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_value")
       .eq("config_key", "paywall_v1_enabled")
       .maybeSingle();
+
+    console.log("[paywall-debug] flag query result:", { data, error });
 
     if (error || !data) return false;
 
@@ -57,7 +60,8 @@ async function readPaywallFlag(): Promise<boolean> {
       return enabled === true;
     }
     return false;
-  } catch {
+  } catch (err) {
+    console.error("[paywall-debug] readPaywallFlag threw:", err);
     return false;
   }
 }
@@ -108,6 +112,11 @@ export async function checkPaywallGate(
       });
     }
 
+    const paywall_active = true;
+    const required_points = required;
+    const current_balance = current;
+    console.log("[paywall-debug] final gate decision:", { allow, paywall_active, required_points, current_balance });
+
     return {
       allow,
       paywall_active: true,
@@ -116,7 +125,8 @@ export async function checkPaywallGate(
       current_balance: current,
       action_key: actionKey,
     };
-  } catch {
+  } catch (err) {
+    console.error("[paywall-debug] checkPaywallGate threw:", err);
     return failOpen(actionKey);
   }
 }
