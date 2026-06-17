@@ -588,7 +588,6 @@ export function QueryForm() {
       intent === "educational" ? "educational" :
       "ai_report";
     const gate = await checkPaywallGate(paywallActionKey, user?.id);
-    console.log("[W6.11-DEBUG] gate result:", JSON.stringify(gate, null, 2), "actionKey:", paywallActionKey);
     if (!gate.allow) {
       setPaywallGate(gate);
       setPaywallOpen(true);

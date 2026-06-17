@@ -42,14 +42,11 @@ function failOpen(actionKey: ActionKey): PaywallGateResult {
 
 async function readPaywallFlag(): Promise<boolean> {
   try {
-    console.log("[paywall-debug] reading flag from DB...");
     const { data, error } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_value")
       .eq("config_key", "paywall_v1_enabled")
       .maybeSingle();
-
-    console.log("[paywall-debug] flag query result:", { data, error });
 
     if (error || !data) return false;
 
