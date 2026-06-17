@@ -112,7 +112,6 @@ export async function checkPaywallGate(
     const paywall_active = true;
     const required_points = required;
     const current_balance = current;
-    console.log("[paywall-debug] final gate decision:", { allow, paywall_active, required_points, current_balance });
 
     return {
       allow,
