@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedCounter } from "@/components/common/AnimatedCounter";
 import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
+import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
 import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
 
@@ -96,6 +97,7 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <OnboardingTour />
+      <WelcomeModal />
       <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card bg-noise p-6 md:p-8 mb-6">
         <p className="font-mono text-xs uppercase tracking-widest text-accent">{format(new Date(), "EEEE, d MMMM yyyy")}</p>
         <h1 className="font-display text-3xl md:text-4xl mt-1">{greeting()}, {firstName} 👋</h1>
