@@ -18,8 +18,8 @@ const STEPS: Step[] = [
   },
   {
     target: '[data-tour="wallet"]',
-    title: "₹100 free credits",
-    content: "We've added ₹100 to your wallet — that's 2 free AI reports. Top up anytime.",
+    title: "250 free credits",
+    content: "We've credited 250 points to your wallet (valid for 30 days) — enough for ~5 AI reports. Use them to research stocks, get sector views, or ask SEBI-registered analysts.",
     placement: "bottom",
   },
   {
