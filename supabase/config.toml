@@ -66,3 +66,6 @@ verify_jwt = false
 
 [functions.compute-long-term-quality]
 verify_jwt = false
+
+[functions.ask-claude]
+verify_jwt = true
