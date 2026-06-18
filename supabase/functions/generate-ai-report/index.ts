@@ -7,6 +7,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const LLM_PROVIDER = Deno.env.get("LLM_PROVIDER") ?? "claude";
+const CLAUDE_MODEL = Deno.env.get("CLAUDE_MODEL") ?? "claude-3-5-sonnet-latest";
 
 
 const PROMPT_VERSION = "1.2.0";
