@@ -7,6 +7,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const LLM_PROVIDER = Deno.env.get("LLM_PROVIDER") ?? "claude";
+const CLAUDE_MODEL = Deno.env.get("CLAUDE_MODEL") ?? "claude-3-5-sonnet-latest";
 
 
 const PROMPT_VERSION = "1.2.0";
@@ -225,7 +228,44 @@ async function fetchStockData(symbol: string, supabase: any) {
 
 
 
+async function callClaude(userPrompt: string) {
+  const modelName = CLAUDE_MODEL;
+  console.log("CLAUDE_MODEL_RESOLVED", modelName);
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: modelName,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+  const j = await r.json().catch(() => null);
+  console.log("STEP 5z: Claude", { ok: r.ok, status: r.status, model: modelName, stop: j?.stop_reason });
+  if (!r.ok) {
+    throw new Error(`Claude HTTP ${r.status}: ${j?.error?.message ?? JSON.stringify(j).slice(0, 300)}`);
+  }
+  const rawText = j?.content?.[0]?.text ?? "";
+  if (!rawText) throw new Error("Claude returned empty content");
+  const clean = rawText.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
+  const parsed = JSON.parse(clean);
+  return { json: parsed, provider: "claude", model: modelName };
+}
+
 async function callLLM(userPrompt: string) {
+  console.warn("LLM_ROUTING", { llm_provider_pref: LLM_PROVIDER, anthropic_key_set: !!ANTHROPIC_API_KEY, gemini_key_set: !!GEMINI_API_KEY, lovable_key_set: !!LOVABLE_API_KEY });
+  if (LLM_PROVIDER === "claude" && ANTHROPIC_API_KEY) {
+    try {
+      return await callClaude(userPrompt);
+    } catch (e) {
+      console.warn("CLAUDE_FAIL→gemini", (e as Error).message);
+    }
+  }
   if (GEMINI_API_KEY) {
     try {
       const r = await fetch(
