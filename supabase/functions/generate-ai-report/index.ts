@@ -228,9 +228,6 @@ async function fetchStockData(symbol: string, supabase: any) {
 
 
 
-async function callLLM(userPrompt: string) {
-  if (GEMINI_API_KEY) {
-    try {
 async function callClaude(userPrompt: string) {
   const modelName = CLAUDE_MODEL;
   console.log("CLAUDE_MODEL_RESOLVED", modelName);
