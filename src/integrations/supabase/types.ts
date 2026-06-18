@@ -14,6 +14,94 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_followups: {
+        Row: {
+          analyst_id: string | null
+          content: string
+          conversation_mode: string
+          created_at: string
+          id: string
+          ip_address: unknown
+          llm_cost_usd: number | null
+          llm_input_tokens: number | null
+          llm_model: string | null
+          llm_output_tokens: number | null
+          llm_provider: string | null
+          parent_followup_id: string | null
+          query_id: string | null
+          role: string
+          route_decision: string | null
+          routed_query_id: string | null
+          sources_used: Json
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          analyst_id?: string | null
+          content: string
+          conversation_mode: string
+          created_at?: string
+          id?: string
+          ip_address?: unknown
+          llm_cost_usd?: number | null
+          llm_input_tokens?: number | null
+          llm_model?: string | null
+          llm_output_tokens?: number | null
+          llm_provider?: string | null
+          parent_followup_id?: string | null
+          query_id?: string | null
+          role: string
+          route_decision?: string | null
+          routed_query_id?: string | null
+          sources_used?: Json
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          analyst_id?: string | null
+          content?: string
+          conversation_mode?: string
+          created_at?: string
+          id?: string
+          ip_address?: unknown
+          llm_cost_usd?: number | null
+          llm_input_tokens?: number | null
+          llm_model?: string | null
+          llm_output_tokens?: number | null
+          llm_provider?: string | null
+          parent_followup_id?: string | null
+          query_id?: string | null
+          role?: string
+          route_decision?: string | null
+          routed_query_id?: string | null
+          sources_used?: Json
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_followups_parent_followup_id_fkey"
+            columns: ["parent_followup_id"]
+            isOneToOne: false
+            referencedRelation: "ai_followups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_followups_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "queries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_followups_routed_query_id_fkey"
+            columns: ["routed_query_id"]
+            isOneToOne: false
+            referencedRelation: "queries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_reports: {
         Row: {
           analyst_assigned_id: string | null
@@ -2170,6 +2258,18 @@ export type Database = {
           symbol: string | null
           turnover_rs: number | null
           volume: number | null
+        }
+        Relationships: []
+      }
+      v_ai_followup_usage_daily: {
+        Row: {
+          conversation_mode: string | null
+          cost_usd: number | null
+          day: string | null
+          input_tokens: number | null
+          llm_provider: string | null
+          msg_count: number | null
+          output_tokens: number | null
         }
         Relationships: []
       }
