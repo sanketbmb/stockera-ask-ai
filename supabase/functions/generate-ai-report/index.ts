@@ -217,36 +217,9 @@ async function fetchStockData(symbol: string, supabase: any) {
     console.error("get-price-data fetch err", e);
   }
 
-  // Last-resort Gemini estimate (kept for resilience).
-  if (GEMINI_API_KEY) {
-    try {
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `Return ONLY raw JSON. Realistic current NSE price in INR for ${symbol}. Format: {"price": 1234.56}` }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 200 },
-          }),
-        },
-      );
-      const j = await r.json();
-      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
-        const clean = text.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-        const parsed = JSON.parse(clean);
-        if (parsed?.price) {
-          return {
-            ltp: Number(parsed.price),
-            ltp_timestamp: new Date().toISOString(),
-            source: "Gemini estimate",
-            exchange,
-          };
-        }
-      }
-    } catch (e) { console.error("gemini ltp fallback err", e); }
-  }
+  // SEBI compliance: no hallucinated price fallback. If get-price-data
+  // returned no live price, mark the LTP as unavailable. The downstream
+  // handler distinguishes liveLtp vs userReferencePrice.
   return { ltp: null, ltp_timestamp: null, source: "unavailable", exchange };
 }
 
@@ -416,12 +389,24 @@ Deno.serve(async (req) => {
     const stockData = ["buy_decision", "stuck_position", "should_average"].includes(intent) && query.stock_symbol
       ? await fetchStockData(query.stock_symbol, supabase)
       : null;
-    const ltp = stockData?.ltp ?? query.current_price ?? null;
-    const pnl_state = computePnlState(query.buy_price, ltp);
-    console.log("STEP 4b: LTP resolved", { ltp, source: stockData?.source, pnl_state });
+    // SEBI compliance split:
+    //  - liveLtp           : ONLY a real live/EOD provider price (or null)
+    //  - userReferencePrice: price the user typed into the query form
+    //  - analysisPrice     : internal-only blend for PnL math
+    const liveLtp = stockData?.ltp ?? null;
+    const userReferencePrice = query.current_price ?? null;
+    const analysisPrice = liveLtp ?? userReferencePrice ?? null;
+    const pnl_state = computePnlState(query.buy_price, analysisPrice);
+    console.log("STEP 4b: LTP resolved", {
+      liveLtp,
+      userReferencePrice,
+      analysisPrice,
+      source: stockData?.source ?? "unavailable",
+      pnl_state,
+    });
 
-    const pnl_pct = (query.buy_price && ltp)
-      ? Number((((ltp - query.buy_price) / query.buy_price) * 100).toFixed(2))
+    const pnl_pct = (query.buy_price && analysisPrice)
+      ? Number((((analysisPrice - query.buy_price) / query.buy_price) * 100).toFixed(2))
       : null;
 
     const contextObj = {
@@ -431,9 +416,11 @@ Deno.serve(async (req) => {
         symbol: query.stock_symbol ?? null,
         name: query.stock_name ?? null,
         exchange: stockData?.exchange ?? null,
-        ltp,
-        ltp_timestamp: stockData?.ltp_timestamp ?? null,
-        ltp_source: stockData?.source ?? (query.current_price ? "user-provided" : null),
+        ltp: liveLtp,
+        ltp_timestamp: liveLtp !== null ? (stockData?.ltp_timestamp ?? null) : null,
+        ltp_source: liveLtp !== null ? (stockData?.source ?? "get-price-data") : "unavailable",
+        user_reference_price: userReferencePrice,
+        user_reference_price_source: userReferencePrice !== null ? "query.current_price" : null,
       },
       user_position: {
         buy_price: query.buy_price ?? null,
@@ -465,10 +452,14 @@ Deno.serve(async (req) => {
       ...llm.json,
       stock_symbol: query.stock_symbol,
       stock_name: query.stock_name,
-      ltp_value: ltp,
-      ltp_timestamp: stockData?.ltp_timestamp ?? null,
-      ltp_source: stockData?.source ?? (query.current_price ? "user-provided" : null),
+      ltp_value: liveLtp,
+      ltp_timestamp: liveLtp !== null ? (stockData?.ltp_timestamp ?? null) : null,
+      ltp_source: liveLtp !== null
+        ? (stockData?.source ?? "get-price-data")
+        : (userReferencePrice !== null ? "user-provided-reference" : "unavailable"),
       ltp_exchange: stockData?.exchange ?? null,
+      user_reference_price: userReferencePrice,
+      user_reference_price_source: userReferencePrice !== null ? "query.current_price" : null,
       pnl_state,
       intent,
       report_id: crypto.randomUUID(),
@@ -483,9 +474,11 @@ Deno.serve(async (req) => {
       intent,
       stock_symbol: query.stock_symbol,
       stock_exchange: stockData?.exchange ?? null,
-      ltp_value: ltp,
-      ltp_timestamp: stockData?.ltp_timestamp ?? null,
-      ltp_source: stockData?.source ?? (query.current_price ? "user-provided" : null),
+      ltp_value: liveLtp,
+      ltp_timestamp: liveLtp !== null ? (stockData?.ltp_timestamp ?? null) : null,
+      ltp_source: liveLtp !== null
+        ? (stockData?.source ?? "get-price-data")
+        : (userReferencePrice !== null ? "user-provided-reference" : "unavailable"),
       pnl_state,
       prompt_version: PROMPT_VERSION,
       llm_provider: llm.provider,
