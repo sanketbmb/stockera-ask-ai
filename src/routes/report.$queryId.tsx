@@ -34,6 +34,7 @@ import { GeneralReport } from "@/components/report/GeneralReport";
 import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/report/DownloadPdfButton";
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
+import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -196,6 +197,11 @@ function TierShapedReportContent({
       <YouAlsoAskedSection
         answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
       />
+      {data.success && (data.audit_meta as { report_artifact_status?: string }).report_artifact_status === "frozen" && (
+        <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pb-2">
+          <AskClaudeFollowup queryId={queryId} aiReport={data} />
+        </div>
+      )}
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>

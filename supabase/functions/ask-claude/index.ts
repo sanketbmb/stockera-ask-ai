@@ -33,7 +33,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const REPORT_FOLLOWUP_SYSTEM = `You are Stockera's follow-up analyst. The user has already received a structured AI report (provided as context). Answer ONLY about this specific report. Do not invent new prices, targets, or stop-losses. If asked about a different stock, instruct the user to use Ask Anything. Always preserve SEBI compliance: no guaranteed returns, no insider claims. Cite which report section your answer comes from.`;
+const REPORT_FOLLOWUP_SYSTEM = `You are Stockera's read-only report explainer.
+You are explaining a deterministic research report that has already been generated. You do NOT generate research. You do NOT generate new verdicts, new prices, new targets, new stop-losses, new entry zones, or new trade plans.
+You may only explain, paraphrase, translate, or expand on fields already present in the provided projected report JSON.
+If a field the user asks about is missing or null in the projected JSON, respond exactly: "Our engine has not produced [X] for this query, so I cannot speculate. The available analysis covers [Y]." — replacing [X] and [Y] with the relevant field names from the JSON.
+If the user asks "Should I buy/sell/hold?" — do NOT answer directly. Instead explain final_verdict.action and final_verdict.summary_reason, and remind the user that the final judgment rests with a SEBI-registered analyst.
+When quoting any number, cite the exact JSON field name in parentheses, e.g. "The engine reports an RSI of 43.21 (technical_snapshot.rsi)."
+If audit_meta.verdict_suppressed = true, you must NOT unsuppress, override, or contradict the suppression — explain why suppression was applied using audit_meta.suppressed_reason and audit_meta.suppressed_rule_id.
+Refuse insider tips, guaranteed returns, and pump-and-dump narratives. SEBI compliance is non-negotiable.`;
 
 const HOMEPAGE_ASSISTANT_SYSTEM = `You are Stockera's homepage assistant. Help users understand market concepts, product features, and general investing education. You MUST NOT give personalized stock advice, targets, stop-losses, or live prices. If the user asks about a specific stock action, instruct them to use Ask Anything. No guaranteed returns. No insider claims. Keep replies under 200 words.`;
 
@@ -45,8 +52,14 @@ const HANDOFF_MSG =
 
 // ---------- LLM callers ----------
 
-async function callClaude(system: string, userMessage: string, history: Array<{role: string; content: string}>) {
+async function callClaude(
+  system: string,
+  userMessage: string,
+  history: Array<{role: string; content: string}>,
+  opts?: { model?: string; max_tokens?: number; temperature?: number },
+) {
   const messages = [...history, { role: "user", content: userMessage }];
+  const modelToUse = opts?.model ?? CLAUDE_MODEL;
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -55,8 +68,9 @@ async function callClaude(system: string, userMessage: string, history: Array<{r
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 800,
+      model: modelToUse,
+      max_tokens: opts?.max_tokens ?? 800,
+      temperature: opts?.temperature,
       system,
       messages,
     }),
@@ -74,7 +88,7 @@ async function callClaude(system: string, userMessage: string, history: Array<{r
   return {
     text,
     provider: "claude",
-    model: CLAUDE_MODEL,
+    model: modelToUse,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cost_usd: cost,
@@ -149,14 +163,16 @@ async function runFallbackChain(opts: {
   userMessage: string;
   history: Array<{role: string; content: string}>;
   skipClaude: boolean;
+  claudeOverrides?: { model?: string; max_tokens?: number; temperature?: number };
 }) {
-  const { system, userMessage, history, skipClaude } = opts;
+  const { system, userMessage, history, skipClaude, claudeOverrides } = opts;
   let claudeUsed = !skipClaude;
 
   if (!skipClaude && LLM_PROVIDER === "claude" && ANTHROPIC_API_KEY) {
-    console.log("CLAUDE_MODEL_RESOLVED", CLAUDE_MODEL);
+    const resolvedModel = claudeOverrides?.model ?? CLAUDE_MODEL;
+    console.log("CLAUDE_MODEL_RESOLVED", resolvedModel);
     try {
-      const out = await callClaude(system, userMessage, history);
+      const out = await callClaude(system, userMessage, history, claudeOverrides);
       return { ...out, claudeUsed: true };
     } catch (e) {
       console.warn("CLAUDE_FAIL_FALLBACK_TO_GEMINI_DIRECT", (e as Error).message);
@@ -224,6 +240,30 @@ Deno.serve(async (req: Request) => {
     .gte("created_at", since);
   if ((userMsgCount ?? 0) >= DAILY_USER_MSG_CAP) {
     return json({ error: "daily_limit_reached", limit: DAILY_USER_MSG_CAP }, 429);
+  }
+
+  // Stage 2 — per-thread (10) and per-day (50) caps for report_followup only.
+  // Option A: HTTP 429 with NO row insert to ai_followups.
+  if (mode === "report_followup") {
+    const { count: threadCount } = await supabase
+      .from("ai_followups")
+      .select("id", { count: "exact", head: true })
+      .eq("thread_id", thread_id)
+      .eq("user_id", user_id)
+      .eq("role", "user");
+    if ((threadCount ?? 0) >= 10) {
+      return json({ error: "thread_limit_reached", limit: 10 }, 429);
+    }
+    const { count: dayCount } = await supabase
+      .from("ai_followups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user_id)
+      .eq("role", "user")
+      .eq("conversation_mode", "report_followup")
+      .gte("created_at", since);
+    if ((dayCount ?? 0) >= 50) {
+      return json({ error: "daily_limit_reached", limit: 50 }, 429);
+    }
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
@@ -328,20 +368,51 @@ Deno.serve(async (req: Request) => {
     .map((r) => ({ role: r.role, content: r.content }));
 
   if (mode === "report_followup") {
-    const { data: report, error: repErr } = await supabase
-      .from("ai_reports")
-      .select("*")
-      .eq("query_id", query_id)
+    const { data: qrow, error: qErr } = await supabase
+      .from("queries")
+      .select("ai_report, stock_symbol, stock_name, horizon")
+      .eq("id", query_id)
       .maybeSingle();
-    if (repErr || !report) return json({ error: "report_not_found" }, 404);
-    const reportContext = `\n\n=== AI REPORT CONTEXT (read-only) ===\n${JSON.stringify(report).slice(0, 6000)}\n=== END REPORT CONTEXT ===`;
+    if (qErr || !qrow || !qrow.ai_report) return json({ error: "report_not_found" }, 404);
+    const ai: any = qrow.ai_report;
+    const pick = (obj: any, keys: string[]) =>
+      keys.reduce((acc: any, k) => { acc[k] = obj?.[k] ?? null; return acc; }, {});
+    const projected = {
+      stock: { symbol: qrow.stock_symbol ?? null, name: qrow.stock_name ?? null, horizon: qrow.horizon ?? null },
+      price_context: pick(ai.price_context, ["current_price", "price_source", "as_of"]),
+      final_verdict: pick(ai.final_verdict, ["action", "confidence_pct", "overall_score", "risk_label", "summary_reason"]),
+      audit_meta: {
+        regime: ai.audit_meta?.regime ?? null,
+        verdict_suppressed: ai.audit_meta?.verdict_suppressed ?? null,
+        suppressed_reason: ai.audit_meta?.suppressed_reason ?? null,
+        suppressed_rule_id: ai.audit_meta?.suppressed_rule_id ?? null,
+        entry_strategy: { reasoning_text: ai.audit_meta?.entry_strategy?.reasoning_text ?? ai.levels?.entry_strategy?.reasoning_text ?? null },
+      },
+      score_breakdown: pick(ai.score_breakdown, ["fundamental_score", "technical_score", "risk_score", "momentum_score", "sentiment_score"]),
+      risk_snapshot: pick(ai.risk_snapshot, ["beta", "var_95", "max_drawdown", "sharpe_ratio", "volatility_1y", "liquidity_label"]),
+      technical_snapshot: pick(ai.technical_snapshot, ["rsi", "adx", "macd_signal", "trend_label", "ema_stack"]),
+      fundamental_snapshot: pick(ai.fundamental_snapshot, ["pe_ratio", "roe", "altman_z_score", "piotroski_f_score", "valuation_label"]),
+      returns_snapshot: pick(ai.returns_snapshot, ["one_week", "one_month", "three_month", "one_year", "vs_nifty_one_month", "vs_nifty_three_month"]),
+      momentum_snapshot: pick(ai.momentum_snapshot, ["momentum_label", "trend_strength", "volume_confirmation"]),
+      sentiment_snapshot: pick(ai.sentiment_snapshot, ["sentiment_label", "news_sentiment_score", "top_news_driver"]),
+      long_term_quality_snapshot: pick(ai.long_term_quality_snapshot, ["quality_label", "roe_5y_avg", "eps_cagr_5y", "roce_5y_avg"]),
+    };
+    const projectedJson = JSON.stringify(projected);
+    // Deterministic char-count heuristic: ~4 chars/token, 3500-token input cap = 14000 chars ceiling.
+    if (projectedJson.length > 14000) {
+      return json({ error: "context_too_large", chars: projectedJson.length, ceiling_chars: 14000 }, 413);
+    }
+    const reportContext = `\n\n=== PROJECTED REPORT CONTEXT (read-only, sanitized) ===\n${projectedJson}\n=== END PROJECTED REPORT CONTEXT ===`;
     system = system + reportContext;
   }
 
   // Step 8: Call LLM with fallback
   let llm;
+  const claudeOverrides = mode === "report_followup"
+    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: 0.05 }
+    : undefined;
   try {
-    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude });
+    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
   } catch (e) {
     console.error("LLM_UNAVAILABLE", (e as Error).message);
     return json({ error: "llm_unavailable" }, 503);
