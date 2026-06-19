@@ -1,7 +1,7 @@
 // src/components/report/AskClaudeFollowup.tsx
-// Stage 2 — read-only Claude follow-up explainer below V1 report.
-// Calls deployed `ask-claude` edge function in `report_followup` mode.
-// No new research; only explains fields already in queries.ai_report JSON.
+// Stage 2 — Claude follow-up below V1 report.
+// Two modes: "explain" (stay inside report JSON) and "open" (Ask anything,
+// using report as priming + general market knowledge). Both SEBI-safe.
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryTypeDetection } from "@/hooks/useQueryTypeDetection";
 import type { StockAnalysisPayload } from "@/types/stock-analysis";
 
 type Turn = {
@@ -19,19 +20,18 @@ type Turn = {
   route_decision: string | null;
 };
 
+type FollowupMode = "explain" | "open";
+
 const FALLBACK_LINE = "Our analyst team will reply within 24h.";
-const THREAD_CAP = 10; // per-thread user turns; server is authoritative
+const THREAD_CAP = 10;
 
 function deriveThreadId(queryId: string): string {
-  // Deterministic thread id keyed off queryId so refresh restores the same
-  // thread. Both queryId and ai_followups.thread_id are uuid; reusing the
-  // queryId verbatim is schema-safe and idempotent across reloads.
   return queryId;
 }
 
 export function AskClaudeFollowup({
   queryId,
-  aiReport: _aiReport, // intentionally unused; server reads canonical JSON
+  aiReport: _aiReport,
 }: {
   queryId: string;
   aiReport: StockAnalysisPayload;
@@ -43,9 +43,17 @@ export function AskClaudeFollowup({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [realtimeOk, setRealtimeOk] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [followupMode, setFollowupMode] = useState<FollowupMode>("explain");
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // Resolve current user id once (used for RLS-safe filters on load + realtime).
+  const detectedType = useQueryTypeDetection(input);
+  const shouldSuggestOpen =
+    followupMode === "explain" &&
+    (detectedType === "News / Latest" ||
+      detectedType === "Educational" ||
+      detectedType === "Sectorial View" ||
+      detectedType === "Live Price");
+
   useEffect(() => {
     let active = true;
     supabase.auth.getUser().then(({ data }) => {
@@ -63,7 +71,7 @@ export function AskClaudeFollowup({
       .from("ai_followups")
       .select("id, role, content, created_at, route_decision")
       .eq("thread_id", threadId)
-      .eq("user_id", userId) // RLS-safe; never see other users' turns
+      .eq("user_id", userId)
       .in("role", ["user", "assistant"])
       .order("created_at", { ascending: true });
     if (error) {
@@ -74,13 +82,11 @@ export function AskClaudeFollowup({
     setTurns((data ?? []) as Turn[]);
   };
 
-  // Initial load + reload when user resolves.
   useEffect(() => {
     if (userId) void loadTurns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, threadId]);
 
-  // Realtime subscription scoped to BOTH thread_id and user_id.
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
@@ -95,7 +101,7 @@ export function AskClaudeFollowup({
         },
         (payload) => {
           const row = payload.new as Turn & { user_id: string };
-          if (row.user_id !== userId) return; // defensive: drop cross-user rows
+          if (row.user_id !== userId) return;
           if (row.role !== "user" && row.role !== "assistant") return;
           setTurns((prev) =>
             prev.some((t) => t.id === row.id) ? prev : [...prev, row],
@@ -112,7 +118,6 @@ export function AskClaudeFollowup({
     };
   }, [userId, threadId]);
 
-  // Auto-scroll on new turns.
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, sending]);
@@ -138,7 +143,6 @@ export function AskClaudeFollowup({
     if (!msg || sending || atCap) return;
     setSending(true);
     setLoadError(null);
-    // Optimistically render the user's question immediately.
     appendLocal("user", msg);
     setInput("");
     try {
@@ -148,6 +152,7 @@ export function AskClaudeFollowup({
           query_id: queryId,
           thread_id: threadId,
           user_message: msg,
+          followup_mode: followupMode,
         },
       });
       if (error) {
@@ -164,8 +169,6 @@ export function AskClaudeFollowup({
         }
         return;
       }
-      // Success: render assistant answer from response payload immediately,
-      // do not depend on realtime delivery.
       const payload = data as
         | { ok?: boolean; content?: string; followup_id?: string; route_decision?: string | null }
         | null;
@@ -188,7 +191,6 @@ export function AskClaudeFollowup({
       } else {
         setLoadError("The assistant returned an empty response. Please try again.");
       }
-      // Belt-and-suspenders: reconcile with authoritative server state.
       void loadTurns();
     } catch (e) {
       console.error("ask-claude invoke failed", e);
@@ -197,6 +199,11 @@ export function AskClaudeFollowup({
       setSending(false);
     }
   };
+
+  const modeHint =
+    followupMode === "open"
+      ? "Wider answers using market knowledge. Still SEBI-safe — no new buy/sell calls."
+      : "Stays inside this report. SEBI-safe.";
 
   return (
     <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur p-5 md:p-6 space-y-4">
@@ -207,8 +214,8 @@ export function AskClaudeFollowup({
 
       {turns.length === 0 && !loadError && (
         <p className="text-sm text-muted-foreground">
-          Ask anything about this analysis. We'll only explain what's in this
-          report — no new recommendations.
+          Ask anything about this analysis. Switch to <strong>Ask anything</strong>{" "}
+          mode for wider context (news, education, sector views).
         </p>
       )}
 
@@ -228,19 +235,25 @@ export function AskClaudeFollowup({
             className={
               t.role === "user"
                 ? "rounded-lg bg-muted/60 px-3 py-2 text-sm"
-                : "rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-sm prose prose-sm dark:prose-invert max-w-none"
+                : "rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-sm"
             }
           >
             {t.role === "user" ? (
               <p className="whitespace-pre-wrap">{t.content}</p>
             ) : (
-              <ReactMarkdown
-                allowedElements={["p", "strong", "em", "ul", "ol", "li", "code"]}
-                unwrapDisallowed
-                skipHtml
-              >
-                {t.content}
-              </ReactMarkdown>
+              <div className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-2 [&_h1]:text-base [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-3 [&_h2]:mt-3 [&_h3]:mt-3 [&_h1]:mb-1 [&_h2]:mb-1 [&_h3]:mb-1 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5 [&_table]:my-3 [&_table]:w-full [&_table]:text-xs [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_td]:p-2 [&_td]:border-t [&_td]:border-border/40 [&_hr]:my-3 [&_hr]:border-border/40 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:italic">
+                <ReactMarkdown
+                  allowedElements={[
+                    "p", "strong", "em", "ul", "ol", "li", "code", "pre",
+                    "h1", "h2", "h3", "h4", "blockquote", "hr",
+                    "table", "thead", "tbody", "tr", "th", "td", "br",
+                  ]}
+                  unwrapDisallowed
+                  skipHtml
+                >
+                  {t.content}
+                </ReactMarkdown>
+              </div>
             )}
           </div>
         ))}
@@ -253,13 +266,62 @@ export function AskClaudeFollowup({
       </div>
 
       <div className="flex flex-col gap-2">
+        {/* Mode toggle */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-full border border-border/60 bg-muted/40 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setFollowupMode("explain")}
+              className={
+                "px-3 py-1 rounded-full transition " +
+                (followupMode === "explain"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              Explain this report
+            </button>
+            <button
+              type="button"
+              onClick={() => setFollowupMode("open")}
+              className={
+                "px-3 py-1 rounded-full transition " +
+                (followupMode === "open"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              Ask anything
+            </button>
+          </div>
+          <span className="text-[11px] text-muted-foreground">{modeHint}</span>
+        </div>
+
+        {shouldSuggestOpen && (
+          <div className="text-xs rounded-md border border-primary/30 bg-primary/5 px-3 py-2 flex items-center justify-between gap-2">
+            <span>
+              💡 Looks like a <strong>{detectedType}</strong> question. Try{" "}
+              <em>Ask anything</em> mode for a wider answer.
+            </span>
+            <button
+              type="button"
+              onClick={() => setFollowupMode("open")}
+              className="underline text-primary whitespace-nowrap"
+            >
+              Switch mode
+            </button>
+          </div>
+        )}
+
         <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={
             atCap
               ? "You've reached 10 follow-ups for this report."
-              : "Ask a follow-up question about this report…"
+              : followupMode === "open"
+                ? "Ask anything — news, sector, education, general market…"
+                : "Ask a follow-up question about this report…"
           }
           rows={2}
           disabled={atCap || sending}
@@ -272,7 +334,9 @@ export function AskClaudeFollowup({
         />
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-            {userTurns}/{THREAD_CAP} follow-ups · explainer only · SEBI-compliance aware
+            {userTurns}/{THREAD_CAP} follow-ups ·{" "}
+            {followupMode === "open" ? "open mode" : "explainer mode"} ·
+            SEBI-compliance aware
           </span>
           <Button
             size="sm"
