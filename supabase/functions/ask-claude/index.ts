@@ -33,7 +33,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const REPORT_FOLLOWUP_SYSTEM = `You are Stockera's follow-up analyst. The user has already received a structured AI report (provided as context). Answer ONLY about this specific report. Do not invent new prices, targets, or stop-losses. If asked about a different stock, instruct the user to use Ask Anything. Always preserve SEBI compliance: no guaranteed returns, no insider claims. Cite which report section your answer comes from.`;
+const REPORT_FOLLOWUP_SYSTEM = `You are Stockera's read-only report explainer.
+You are explaining a deterministic research report that has already been generated. You do NOT generate research. You do NOT generate new verdicts, new prices, new targets, new stop-losses, new entry zones, or new trade plans.
+You may only explain, paraphrase, translate, or expand on fields already present in the provided projected report JSON.
+If a field the user asks about is missing or null in the projected JSON, respond exactly: "Our engine has not produced [X] for this query, so I cannot speculate. The available analysis covers [Y]." — replacing [X] and [Y] with the relevant field names from the JSON.
+If the user asks "Should I buy/sell/hold?" — do NOT answer directly. Instead explain final_verdict.action and final_verdict.summary_reason, and remind the user that the final judgment rests with a SEBI-registered analyst.
+When quoting any number, cite the exact JSON field name in parentheses, e.g. "The engine reports an RSI of 43.21 (technical_snapshot.rsi)."
+If audit_meta.verdict_suppressed = true, you must NOT unsuppress, override, or contradict the suppression — explain why suppression was applied using audit_meta.suppressed_reason and audit_meta.suppressed_rule_id.
+Refuse insider tips, guaranteed returns, and pump-and-dump narratives. SEBI compliance is non-negotiable.`;
 
 const HOMEPAGE_ASSISTANT_SYSTEM = `You are Stockera's homepage assistant. Help users understand market concepts, product features, and general investing education. You MUST NOT give personalized stock advice, targets, stop-losses, or live prices. If the user asks about a specific stock action, instruct them to use Ask Anything. No guaranteed returns. No insider claims. Keep replies under 200 words.`;
 
@@ -45,8 +52,14 @@ const HANDOFF_MSG =
 
 // ---------- LLM callers ----------
 
-async function callClaude(system: string, userMessage: string, history: Array<{role: string; content: string}>) {
+async function callClaude(
+  system: string,
+  userMessage: string,
+  history: Array<{role: string; content: string}>,
+  opts?: { model?: string; max_tokens?: number; temperature?: number },
+) {
   const messages = [...history, { role: "user", content: userMessage }];
+  const modelToUse = opts?.model ?? CLAUDE_MODEL;
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -55,8 +68,9 @@ async function callClaude(system: string, userMessage: string, history: Array<{r
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 800,
+      model: modelToUse,
+      max_tokens: opts?.max_tokens ?? 800,
+      temperature: opts?.temperature,
       system,
       messages,
     }),
@@ -74,7 +88,7 @@ async function callClaude(system: string, userMessage: string, history: Array<{r
   return {
     text,
     provider: "claude",
-    model: CLAUDE_MODEL,
+    model: modelToUse,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cost_usd: cost,
@@ -149,14 +163,16 @@ async function runFallbackChain(opts: {
   userMessage: string;
   history: Array<{role: string; content: string}>;
   skipClaude: boolean;
+  claudeOverrides?: { model?: string; max_tokens?: number; temperature?: number };
 }) {
-  const { system, userMessage, history, skipClaude } = opts;
+  const { system, userMessage, history, skipClaude, claudeOverrides } = opts;
   let claudeUsed = !skipClaude;
 
   if (!skipClaude && LLM_PROVIDER === "claude" && ANTHROPIC_API_KEY) {
-    console.log("CLAUDE_MODEL_RESOLVED", CLAUDE_MODEL);
+    const resolvedModel = claudeOverrides?.model ?? CLAUDE_MODEL;
+    console.log("CLAUDE_MODEL_RESOLVED", resolvedModel);
     try {
-      const out = await callClaude(system, userMessage, history);
+      const out = await callClaude(system, userMessage, history, claudeOverrides);
       return { ...out, claudeUsed: true };
     } catch (e) {
       console.warn("CLAUDE_FAIL_FALLBACK_TO_GEMINI_DIRECT", (e as Error).message);
@@ -224,6 +240,30 @@ Deno.serve(async (req: Request) => {
     .gte("created_at", since);
   if ((userMsgCount ?? 0) >= DAILY_USER_MSG_CAP) {
     return json({ error: "daily_limit_reached", limit: DAILY_USER_MSG_CAP }, 429);
+  }
+
+  // Stage 2 — per-thread (10) and per-day (50) caps for report_followup only.
+  // Option A: HTTP 429 with NO row insert to ai_followups.
+  if (mode === "report_followup") {
+    const { count: threadCount } = await supabase
+      .from("ai_followups")
+      .select("id", { count: "exact", head: true })
+      .eq("thread_id", thread_id)
+      .eq("user_id", user_id)
+      .eq("role", "user");
+    if ((threadCount ?? 0) >= 10) {
+      return json({ error: "thread_limit_reached", limit: 10 }, 429);
+    }
+    const { count: dayCount } = await supabase
+      .from("ai_followups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user_id)
+      .eq("role", "user")
+      .eq("conversation_mode", "report_followup")
+      .gte("created_at", since);
+    if ((dayCount ?? 0) >= 50) {
+      return json({ error: "daily_limit_reached", limit: 50 }, 429);
+    }
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
