@@ -52,6 +52,17 @@ function truncate(s: string, n: number): string {
   return s.slice(0, n - 1).trimEnd() + "…";
 }
 
+// Bug 3 — reject HTML banner timestamps that masquerade as article titles.
+export function sanitizeTitle(t: string): string {
+  const cleaned = stripHtml(String(t ?? "")).trim();
+  if (!cleaned) return "";
+  if (/^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(cleaned)) return "";
+  if (/^\d{1,2}[\s\-/](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(cleaned)) return "";
+  if (/\d{1,2}:\d{2}\s?(am|pm|ist)/i.test(cleaned) && cleaned.length < 50) return "";
+  return cleaned.slice(0, 200);
+}
+
+
 export async function callMarketauxForClaude(
   args: MarketauxClaudeArgs,
   userJwt: string,
@@ -100,13 +111,20 @@ export async function callMarketauxForClaude(
       : Array.isArray(j?.data)
         ? j.data
         : [];
-    const articles: MarketauxArticle[] = raw.slice(0, MAX_ARTICLES).map((a) => ({
-      title: String(a.title ?? "").slice(0, 200),
-      url: String(a.url ?? ""),
-      source: String(a.source ?? a.source_name ?? "Unknown"),
-      published_at: String(a.published_at ?? a.publishedAt ?? ""),
-      summary: truncate(stripHtml(String(a.description ?? a.summary ?? "")), MAX_SUMMARY_LEN),
-    }));
+    const articles: MarketauxArticle[] = raw.slice(0, MAX_ARTICLES).map((a) => {
+      const source = String(a.source ?? a.source_name ?? "Unknown");
+      const rawTitle = sanitizeTitle(String(a.title ?? ""));
+      const summary = truncate(stripHtml(String(a.description ?? a.summary ?? "")), MAX_SUMMARY_LEN);
+      const title = rawTitle || (summary ? `${source} article` : "");
+      return {
+        title,
+        url: String(a.url ?? ""),
+        source,
+        published_at: String(a.published_at ?? a.publishedAt ?? ""),
+        summary,
+      };
+    }).filter((a) => a.url && (a.title || a.summary));
+
 
     out.ok = true;
     out.articles = articles;

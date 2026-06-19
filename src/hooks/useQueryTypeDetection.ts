@@ -78,6 +78,12 @@ const RULES: { type: DetectedQueryType; keywords: RegExp[] }[] = [
   },
 ];
 
+// Report-anchor words that indicate the user is asking about the CURRENT report,
+// not a generic educational concept. If any of these appear, suppress the
+// Educational chip (it would otherwise mis-fire on words like "explain").
+const REPORT_ANCHOR_RE =
+  /\b(verdict|this report|the report|this analysis|the analysis|this stock|this company|score|rating|confidence|pillars?|hold|buy|sell|watchlist|avoid)\b/i;
+
 export function useQueryTypeDetection(text: string, delay = 500) {
   const [detected, setDetected] = useState<DetectedQueryType | null>(null);
 
@@ -90,6 +96,11 @@ export function useQueryTypeDetection(text: string, delay = 500) {
       }
       for (const rule of RULES) {
         if (rule.keywords.some((k) => k.test(trimmed))) {
+          // Bug 1 guard: Educational must not fire when the user is asking
+          // about the current report (e.g. "explain the verdict").
+          if (rule.type === "Educational" && REPORT_ANCHOR_RE.test(trimmed)) {
+            continue;
+          }
           setDetected(rule.type);
           return;
         }
@@ -101,5 +112,6 @@ export function useQueryTypeDetection(text: string, delay = 500) {
 
   return detected;
 }
+
 
 export default useQueryTypeDetection;

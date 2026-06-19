@@ -4,7 +4,7 @@
 // Fallback chain: Claude → Gemini-direct → Lovable-Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { routeMessage } from "../_shared/deterministic_router.ts";
-import { callMarketauxForClaude } from "../_shared/marketaux-claude-tool.ts";
+import { callMarketauxForClaude, sanitizeTitle } from "../_shared/marketaux-claude-tool.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -85,8 +85,12 @@ async function callClaudeWithTools(opts: {
       if (blk?.type === "web_search_tool_result" && Array.isArray(blk.content)) {
         for (const wr of blk.content) {
           if (wr?.type === "web_search_result" && wr.url) {
+            const cleanTitle = sanitizeTitle(wr.title ?? "");
+            const desc = String(wr.description ?? wr.snippet ?? "").trim();
+            // Bug 3: drop junk citations with no usable title AND no description
+            if (!cleanTitle && !desc) continue;
             citations.push({
-              title: wr.title ?? wr.url,
+              title: cleanTitle || (wr.source ? `${wr.source} article` : wr.url),
               url: wr.url,
               source: wr.source ?? "web",
               published_at: wr.page_age ?? wr.published_at ?? "",
@@ -95,6 +99,7 @@ async function callClaudeWithTools(opts: {
           }
         }
       }
+
     }
 
     const toolUseBlocks = blocks.filter((b: any) => b.type === "tool_use");
@@ -701,9 +706,11 @@ Deno.serve(async (req: Request) => {
     }
 
     if (useWeb) {
-      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 3 });
+      // Bug 2: lower max_uses 3→2 to keep per-turn cost under TURN_COST_CAP_USD.
+      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 2 });
       toolPlanUsedWeb = true;
     }
+
     if (useMx) {
       anthropicTools.push({
         name: "marketaux_news_search",
@@ -735,7 +742,8 @@ Deno.serve(async (req: Request) => {
         history,
         tools: anthropicTools,
         model: "claude-sonnet-4-6",
-        max_tokens: 1500,
+        // Bug 2: 1500 → 1100 keeps projected per-turn cost within TURN_COST_CAP_USD.
+        max_tokens: 1100,
         temperature: followup_mode === "open" ? 0.25 : 0.05,
       });
       llm = { ...out, claudeUsed: true };
@@ -753,7 +761,7 @@ Deno.serve(async (req: Request) => {
     }
   } else {
     const claudeOverrides = mode === "report_followup"
-      ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
+      ? { model: "claude-sonnet-4-6", max_tokens: 1100, temperature: followup_mode === "open" ? 0.25 : 0.05 }
       : undefined;
     try {
       llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
@@ -764,10 +772,22 @@ Deno.serve(async (req: Request) => {
   }
 
   let finalText: string = llm.text ?? "";
-  let costUsd: number = Number(llm.cost_usd ?? 0);
+  // Bug 2: recompute exact cost (sonnet-4-6 $3/M in, $15/M out; web_search $10/1k uses).
+  const inTok = Number(llm.input_tokens ?? 0);
+  const outTok = Number(llm.output_tokens ?? 0);
+  const webCount = Number(llm.web_search_count ?? 0);
+  let costUsd = (inTok / 1_000_000) * 3 + (outTok / 1_000_000) * 15 + webCount * 0.01;
+  if (!Number.isFinite(costUsd) || costUsd < 0) costUsd = Number(llm.cost_usd ?? 0);
+  if (costUsd > TURN_COST_CAP_USD * 1.5) {
+    console.error("COST_OVERRUN", {
+      user_id, cost_usd: costUsd, web_search_count: webCount,
+      input_tokens: inTok, output_tokens: outTok, followup_mode,
+    });
+  }
   if (costUsd > TURN_COST_CAP_USD && finalText.length > 800) {
     finalText = finalText.slice(0, 800);
   }
+
 
   const routeDecision = !llm.claudeUsed ? "fallback_used" : "answered_direct";
 
