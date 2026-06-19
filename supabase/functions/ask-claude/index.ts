@@ -395,7 +395,11 @@ Deno.serve(async (req: Request) => {
   if (skipClaude) console.warn("DAILY_CAP_HIT_SKIP_CLAUDE", { spend_usd: claudeSpendToday });
 
   // Step 7: Build context
-  let system = mode === "report_followup" ? REPORT_FOLLOWUP_SYSTEM : HOMEPAGE_ASSISTANT_SYSTEM;
+  const baseSystem = mode === "report_followup"
+    ? (followup_mode === "open" ? REPORT_FOLLOWUP_OPEN_SYSTEM : REPORT_FOLLOWUP_EXPLAIN_SYSTEM)
+    : HOMEPAGE_ASSISTANT_SYSTEM;
+  let system = baseSystem;
+
   const historyLimit = mode === "report_followup" ? 8 : 6;
   const { data: histRows } = await supabase
     .from("ai_followups")
@@ -446,13 +450,18 @@ Deno.serve(async (req: Request) => {
     }
     const reportContext = `\n\n=== PROJECTED REPORT CONTEXT (read-only, sanitized) ===\n${projectedJson}\n=== END PROJECTED REPORT CONTEXT ===`;
     system = system + reportContext;
+    if (followup_mode === "open") {
+      system = system + "\n\nYou MAY answer using general knowledge beyond this report, subject to the absolute rules above.";
+    }
   }
+
 
   // Step 8: Call LLM with fallback
   let llm;
   const claudeOverrides = mode === "report_followup"
-    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: 0.05 }
+    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
     : undefined;
+
   try {
     llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
   } catch (e) {
@@ -470,9 +479,10 @@ Deno.serve(async (req: Request) => {
     user_id,
     role: "assistant",
     content: llm.text,
-    sources_used: [],
+    sources_used: mode === "report_followup" ? [{ followup_mode }] : [],
     route_decision: routeDecision,
     llm_provider: llm.provider,
+
     llm_model: llm.model,
     llm_input_tokens: llm.input_tokens,
     llm_output_tokens: llm.output_tokens,
