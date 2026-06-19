@@ -706,9 +706,11 @@ Deno.serve(async (req: Request) => {
     }
 
     if (useWeb) {
-      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 3 });
+      // Bug 2: lower max_uses 3→2 to keep per-turn cost under TURN_COST_CAP_USD.
+      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 2 });
       toolPlanUsedWeb = true;
     }
+
     if (useMx) {
       anthropicTools.push({
         name: "marketaux_news_search",
