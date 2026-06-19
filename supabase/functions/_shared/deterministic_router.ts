@@ -135,3 +135,26 @@ export function routeMessage(
   // (B4) Pure education / product question — default.
   return { action: "answered_direct", reason: "education_default" };
 }
+
+// Frontend helper — suggests follow-up mode based on the user's draft text.
+// "unsafe" → block via existing refusal flow.
+// "open"   → suggest switching to Ask-anything mode (news / education / sector / general).
+// "explain" → default; stay inside report context.
+export function detectFollowupQueryHint(msg: string): {
+  hint: "explain" | "open" | "unsafe";
+  reason: string;
+} {
+  const text = (msg ?? "").trim();
+  for (const re of UNSAFE_PATTERNS) {
+    if (re.test(text)) return { hint: "unsafe", reason: "unsafe_pattern_matched" };
+  }
+  if (
+    /\b(news|latest|today|this week|sector|industry|company|product|business|what is|explain|how does|meaning of)\b/i.test(
+      text,
+    )
+  ) {
+    return { hint: "open", reason: "open_intent_matched" };
+  }
+  return { hint: "explain", reason: "explain_default" };
+}
+
