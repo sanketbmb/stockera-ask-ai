@@ -1,14 +1,18 @@
-// Deterministic router for ask-claude (Stage 1).
-// Rule-first, no LLM on hot path. First matching rule wins.
+// Deterministic router for ask-claude.
+// Stage 2.3 — adds CTA deep-link routes for stock-picker / educational / sector.
 
 export type RouteAction =
   | "answered_direct"
   | "routed_to_ask_anything"
-  | "refused_unsafe";
+  | "refused_unsafe"
+  | "routed_to_stock_picker"
+  | "routed_to_educational_report"
+  | "routed_to_sector_report";
 
 export interface RouteResult {
   action: RouteAction;
   reason: string;
+  hint?: "explain" | "open" | "unsafe";
 }
 
 // (A) Unsafe patterns — applied to BOTH modes.
@@ -23,7 +27,35 @@ const UNSAFE_PATTERNS: RegExp[] = [
   /\b100%\s*return\b/i,
 ];
 
-// (B1) Personalized action intent.
+// Stage 2.3 CTA intent patterns
+const STOCK_PICKER_INTENT: RegExp[] = [
+  /\bwhich stock should i buy\b/i,
+  /\bwhat should i buy\b/i,
+  /\bbest stock to buy\b/i,
+  /\btop stock to buy\b/i,
+  /\bstock (recommendation|pick)\b/i,
+  /\brecommend a stock\b/i,
+  /\bany stock to buy\b/i,
+  /\bwhat can i invest in\b/i,
+];
+
+const EDUCATIONAL_DEEPLINK_INTENT: RegExp[] = [
+  /\bwhat is rsi\b/i, /\bwhat is macd\b/i, /\bwhat is pe\b/i, /\bwhat is pb\b/i,
+  /\bwhat is beta\b/i, /\bwhat is (cagr|eps|roe|roce)\b/i,
+  /\bexplain (rsi|macd|pe|pb|beta|cagr|eps|roe|roce)\b/i,
+  /\bhow (does|do) (rsi|macd|pe|pb|beta|cagr|eps|roe|roce) work\b/i,
+  /\bwhat does (rsi|macd|pe|pb|beta|cagr|eps|roe|roce) mean\b/i,
+  /\bdefine (rsi|macd|pe|pb|beta|cagr|eps|roe|roce)\b/i,
+  /\b(investment|trading) (basics|terms|concepts|jargon)\b/i,
+];
+
+const SECTORIAL_DEEPLINK_INTENT: RegExp[] = [
+  /\b(industry|sector) (view|outlook|analysis|trend|performance)\b/i,
+  /\b(how is|how's) the (it|banking|pharma|auto|metal|energy|fmcg|realty) sector\b/i,
+  /\b(sector|sectoral) (summary|report|update|breakdown)\b/i,
+];
+
+// (B1) Personalized action intent (homepage).
 const PERSONALIZED_INTENT: RegExp[] = [
   /\b(should i|shall i|can i)\s+(buy|sell|hold|book|exit|enter)/i,
   /\b(buy|sell|short|long)\s+(at|now|tomorrow|today)/i,
@@ -31,20 +63,16 @@ const PERSONALIZED_INTENT: RegExp[] = [
   /\bi\s+(bought|sold|hold|own)\b.*\b(at|@)\s*\d/i,
 ];
 
-// (B2) Stock-specific action keywords (paired with a known symbol).
 const STOCK_ACTION_KEYWORDS = [
   "buy", "sell", "target", "should", "will",
   "fall", "rise", "crash", "moon", "tomorrow", "today",
 ];
 
-// (B3) Live market state.
 const LIVE_MARKET_PATTERNS: RegExp[] = [
   /\b(nifty|sensex|banknifty|bank\s*nifty)\b.*\b(today|now|live|current)/i,
   /\bmarket\s+(today|now|live|current)/i,
 ];
 
-// Top NSE F&O symbols (Stage 1 starter set — ~200).
-// Expanded list ships in Stage 3.
 const NSE_BSE_SYMBOLS = new Set<string>([
   "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","SBIN","BHARTIARTL",
   "ITC","KOTAKBANK","LT","AXISBANK","BAJFINANCE","ASIANPAINT","MARUTI","HCLTECH",
@@ -61,25 +89,8 @@ const NSE_BSE_SYMBOLS = new Set<string>([
   "TATAPOWER","NHPC","SJVN","BHEL","SAIL","NMDC","VEDL","HINDZINC","NATIONALUM",
   "JINDALSTEL","APLAPOLLO","RATNAMANI","WELCORP","BHARATFORG","MOTHERSON","BOSCHLTD",
   "MRF","CEAT","APOLLOTYRE","BALKRISIND","TVSMOTOR","ASHOKLEY","ESCORTS","BAJAJHLDNG",
-  "PNB","BANKBARODA","CANBK","UNIONBANK","IDBI","IDFCFIRSTB","FEDERALBNK","RBLBANK",
-  "AUBANK","BANDHANBNK","YESBANK","CHOLAFIN","BAJFINANCE","M&MFIN","SHRIRAMFIN",
-  "LICHSGFIN","HDFCAMC","NAM-INDIA","UTIAMC","ABCAPITAL","PEL","MFSL","MUTHOOTFIN",
-  "MANAPPURAM","CDSL","BSE","MCX","ANGELONE","MOTILALOFS","ICICIGI","STARHEALTH",
-  "GICRE","NIACL","HDFCFINBLD","POLYCAB","SIEMENS","ABB","CUMMINSIND","HONAUT",
-  "THERMAX","KIRLOSENG","BHARATELE","BEL","HAL","BEML","COCHINSHIP","MAZDOCK",
-  "GRSE","RVNL","IRFC","RAILTEL","RITES","IRCON","NBCC","NCC","KEC","KALPATPOWR",
-  "GMRINFRA","ADANIINFRA","SUPREMEIND","ASTRAL","FINOLEXIND","NILKAMAL","KAJARIACER",
-  "CERA","SOMANYCERA","CENTURYTEX","JKCEMENT","RAMCOCEM","DALBHARAT","HEIDELBERG",
-  "ACC","AMBUJACEM","INDIACEM","ZEEL","SUNTV","PVRINOX","DISHTV","NETWORK18",
-  "TV18BRDCST","TRENT","ABFRL","PAGEIND","VBL","UBL","JUBLFOOD","DEVYANI","WESTLIFE",
-  "NYKAA","ZOMATO","PAYTM","POLICYBZR","CARTRADE","DELHIVERY","FSL","INDIAMART",
-  "JUSTDIAL","TANLA","ROUTE","KFINTECH","CAMS","COMPUTAGE","SBICARD","BAJAJHOUSING",
-  "SUZLON","INOXWIND","RPOWER","RTNINDIA","JPPOWER","TORNTPOWER","CESC","KEI",
-  "POLYMED","LAURUSLABS","SYNGENE","GLAND","SOLARINDS","DEEPAKNTR","SRF","GHCL",
-  "TATACHEM","CHAMBLFERT","COROMANDEL","UPL","PIIND","RALLIS","BAYERCROP","SUMICHEM",
 ]);
 
-// Pull all ALL-CAPS tokens (length 2–12) from a message.
 const UPPER_TOKEN_RE = /\b[A-Z][A-Z0-9&-]{1,11}\b/g;
 
 function containsKnownSymbol(msg: string): boolean {
@@ -94,67 +105,83 @@ function containsActionKeyword(msg: string): boolean {
   return STOCK_ACTION_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-export function routeMessage(
-  mode: "report_followup" | "homepage_assistant",
-  userMessageRaw: string,
-): RouteResult {
-  const msg = (userMessageRaw ?? "").trim();
+export type FollowupRouterHint = {
+  hint: "explain" | "open" | "unsafe";
+  reason: string;
+  route_intent: RouteAction;
+};
 
-  // (A) Unsafe — applies to both modes.
+export function detectFollowupQueryHint(message: string): FollowupRouterHint {
+  const text = String(message ?? "").trim();
+
+  if (UNSAFE_PATTERNS.some((re) => re.test(text))) {
+    return { hint: "unsafe", reason: "unsafe_pattern_match", route_intent: "refused_unsafe" };
+  }
+  if (STOCK_PICKER_INTENT.some((re) => re.test(text))) {
+    return { hint: "explain", reason: "stock_picker_intent", route_intent: "routed_to_stock_picker" };
+  }
+  if (EDUCATIONAL_DEEPLINK_INTENT.some((re) => re.test(text))) {
+    return { hint: "explain", reason: "educational_intent", route_intent: "routed_to_educational_report" };
+  }
+  if (SECTORIAL_DEEPLINK_INTENT.some((re) => re.test(text))) {
+    return { hint: "explain", reason: "sector_intent", route_intent: "routed_to_sector_report" };
+  }
+
+  const OPEN_SIGNALS = [
+    /\b(latest|news|today|this week|recent|headline|announcement|update on|happen|developments?)\b/i,
+    /\b(compare|correlate|impact of)\b/i,
+  ];
+  if (OPEN_SIGNALS.some((re) => re.test(text))) {
+    return { hint: "open", reason: "open_signals", route_intent: "answered_direct" };
+  }
+
+  return { hint: "explain", reason: "default_explain", route_intent: "answered_direct" };
+}
+
+// Backward-compatible routeMessage. Supports both:
+//   routeMessage(mode, message)         — Stage 1 callers
+//   routeMessage(message, { mode })     — Stage 2.3 callers
+export function routeMessage(
+  a: string,
+  b?: string | { mode?: string },
+): RouteResult {
+  let mode: string;
+  let message: string;
+  if (typeof b === "string") {
+    mode = a;
+    message = b;
+  } else {
+    message = a;
+    mode = b?.mode ?? "report_followup";
+  }
+
+  const msg = (message ?? "").trim();
+
+  // Unsafe always wins
   for (const re of UNSAFE_PATTERNS) {
     if (re.test(msg)) {
-      return { action: "refused_unsafe", reason: "unsafe_pattern_matched" };
+      return { action: "refused_unsafe", reason: "unsafe_pattern_matched", hint: "unsafe" };
     }
   }
 
-  // (B) report_followup — evidence pack exists; default to direct answer.
   if (mode === "report_followup") {
-    return { action: "answered_direct", reason: "report_followup_default" };
+    const h = detectFollowupQueryHint(msg);
+    return { action: h.route_intent, reason: h.reason, hint: h.hint };
   }
 
-  // (B) homepage_assistant sub-rules:
-  // (B1) Personalized action intent.
+  // homepage_assistant rules
   for (const re of PERSONALIZED_INTENT) {
     if (re.test(msg)) {
       return { action: "routed_to_ask_anything", reason: "personalized_action_intent" };
     }
   }
-
-  // (B2) Specific stock + intent.
   if (containsKnownSymbol(msg) && containsActionKeyword(msg)) {
     return { action: "routed_to_ask_anything", reason: "stock_specific_action" };
   }
-
-  // (B3) Live market state.
   for (const re of LIVE_MARKET_PATTERNS) {
     if (re.test(msg)) {
       return { action: "routed_to_ask_anything", reason: "live_market_state" };
     }
   }
-
-  // (B4) Pure education / product question — default.
   return { action: "answered_direct", reason: "education_default" };
 }
-
-// Frontend helper — suggests follow-up mode based on the user's draft text.
-// "unsafe" → block via existing refusal flow.
-// "open"   → suggest switching to Ask-anything mode (news / education / sector / general).
-// "explain" → default; stay inside report context.
-export function detectFollowupQueryHint(msg: string): {
-  hint: "explain" | "open" | "unsafe";
-  reason: string;
-} {
-  const text = (msg ?? "").trim();
-  for (const re of UNSAFE_PATTERNS) {
-    if (re.test(text)) return { hint: "unsafe", reason: "unsafe_pattern_matched" };
-  }
-  if (
-    /\b(news|latest|today|this week|sector|industry|company|product|business|what is|explain|how does|meaning of)\b/i.test(
-      text,
-    )
-  ) {
-    return { hint: "open", reason: "open_intent_matched" };
-  }
-  return { hint: "explain", reason: "explain_default" };
-}
-

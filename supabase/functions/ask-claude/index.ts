@@ -4,6 +4,7 @@
 // Fallback chain: Claude → Gemini-direct → Lovable-Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { routeMessage } from "../_shared/deterministic_router.ts";
+import { callMarketauxForClaude } from "../_shared/marketaux-claude-tool.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -19,12 +20,146 @@ const CLAUDE_DAILY_CAP_USD = 60.24;
 // Stage-1 flat per-user daily message cap (Plus/Pro tiers wired in Stage 2).
 const DAILY_USER_MSG_CAP = 15;
 
+// Stage 2.3 — tool caps
+const WEB_SEARCH_DAILY_CAP_PER_USER = 5;
+const MARKETAUX_DAILY_CAP_PER_USER = 20;
+const TOOL_LOOP_MAX_ITERATIONS = 2;
+const TURN_COST_CAP_USD = 0.05;
+const WEB_SEARCH_PRICE_USD_PER_1000 = 10; // Anthropic web_search_20250305 ref
+
+type Citation = {
+  title: string;
+  url: string;
+  source: string;
+  published_at?: string;
+  tool: "web_search" | "marketaux";
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Max-Age": "86400",
 };
+
+async function callClaudeWithTools(opts: {
+  system: string;
+  userMessage: string;
+  history: Array<{ role: string; content: any }>;
+  tools: any[];
+  model: string;
+  max_tokens: number;
+  temperature: number;
+}) {
+  const { system, userMessage, history, tools, model, max_tokens, temperature } = opts;
+  let messages: any[] = [...history, { role: "user", content: userMessage }];
+  const citations: Citation[] = [];
+  let inputTokensTotal = 0;
+  let outputTokensTotal = 0;
+  let webSearchInvocations = 0;
+  let finalText = "";
+
+  for (let iter = 0; iter < TOOL_LOOP_MAX_ITERATIONS; iter++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model, max_tokens, temperature, system, messages,
+        tools: tools.length ? tools : undefined,
+      }),
+    });
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Claude HTTP ${r.status}: ${j?.error?.message ?? "unknown"}`);
+    inputTokensTotal += j?.usage?.input_tokens ?? 0;
+    outputTokensTotal += j?.usage?.output_tokens ?? 0;
+
+    const blocks: any[] = Array.isArray(j?.content) ? j.content : [];
+    for (const blk of blocks) {
+      if (blk?.type === "server_tool_use" && blk?.name === "web_search") {
+        webSearchInvocations++;
+      }
+      if (blk?.type === "web_search_tool_result" && Array.isArray(blk.content)) {
+        for (const wr of blk.content) {
+          if (wr?.type === "web_search_result" && wr.url) {
+            citations.push({
+              title: wr.title ?? wr.url,
+              url: wr.url,
+              source: wr.source ?? "web",
+              published_at: wr.page_age ?? wr.published_at ?? "",
+              tool: "web_search",
+            });
+          }
+        }
+      }
+    }
+
+    const toolUseBlocks = blocks.filter((b: any) => b.type === "tool_use");
+    if (toolUseBlocks.length === 0) {
+      finalText = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      break;
+    }
+    if (iter >= TOOL_LOOP_MAX_ITERATIONS - 1) {
+      const partial = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      finalText = partial || "I've gathered what I can from the tools available. Please refine your question if you need more detail.";
+      break;
+    }
+
+    const toolResults: any[] = [];
+    for (const tb of toolUseBlocks) {
+      if (tb.name === "marketaux_news_search") {
+        const mr = await callMarketauxForClaude(tb.input ?? {}, "");
+        if (mr.ok) {
+          for (const a of mr.articles) {
+            citations.push({
+              title: a.title, url: a.url, source: a.source,
+              published_at: a.published_at, tool: "marketaux",
+            });
+          }
+        }
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tb.id,
+          content: JSON.stringify({ ok: mr.ok, articles: mr.articles, error_code: mr.error_code ?? null }),
+        });
+      } else {
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tb.id,
+          content: JSON.stringify({ ok: false, error: "unknown_tool" }),
+        });
+      }
+    }
+    messages = messages.concat(
+      { role: "assistant", content: blocks },
+      { role: "user", content: toolResults },
+    );
+  }
+
+  // dedupe citations
+  const seen = new Set<string>();
+  const dedup = citations.filter((c) => {
+    if (!c.url || seen.has(c.url)) return false;
+    seen.add(c.url);
+    return true;
+  }).slice(0, 12);
+
+  const baseCost = (inputTokensTotal / 1_000_000) * 3 + (outputTokensTotal / 1_000_000) * 15;
+  const toolCost = webSearchInvocations * (WEB_SEARCH_PRICE_USD_PER_1000 / 1000);
+  return {
+    text: finalText,
+    citations: dedup,
+    provider: "claude",
+    model,
+    input_tokens: inputTokensTotal,
+    output_tokens: outputTokensTotal,
+    cost_usd: baseCost + toolCost,
+    web_search_count: webSearchInvocations,
+  };
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -370,6 +505,73 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Stage 2.3 — CTA deep-link routes (report_followup only)
+
+  const ctaPlan: { cta_action: "stock_picker" | "educational_report" | "sector_report"; text: string; url: string; label: string } | null =
+    mode === "report_followup"
+      ? route.action === "routed_to_stock_picker"
+        ? {
+            cta_action: "stock_picker",
+            text: "I can't recommend a specific stock to buy. Stockera's Stock Picker runs a rules-based sweep across our universe and shows you the strongest candidates right now — it only takes a moment.",
+            url: "/stock-picker",
+            label: "Open Stockera Stock Picker",
+          }
+        : route.action === "routed_to_educational_report"
+          ? {
+              cta_action: "educational_report",
+              text: "This sounds like a concept question. Stockera can run a structured explainer for it — open it with one click.",
+              url: `/post-query?type=educational&q=${encodeURIComponent(user_message)}`,
+              label: "Open Stockera Explain this",
+            }
+          : route.action === "routed_to_sector_report"
+            ? {
+                cta_action: "sector_report",
+                text: "This looks like a sector-level question. Stockera can generate a Sector View report — here's the deep-link, ready to use.",
+                url: `/post-query?type=sector_view&q=${encodeURIComponent(user_message)}`,
+                label: "Open Stockera Sector View",
+              }
+            : null
+      : null;
+
+  if (ctaPlan) {
+    const sourcesUsedForCta = [
+      { tool: "router" },
+      { cta_action: ctaPlan.cta_action },
+      { kind: "citation", url: ctaPlan.url, title: ctaPlan.label, source: "internal", tool: "router" },
+    ];
+    const { data: row, error } = await supabase.from("ai_followups").insert({
+      conversation_mode: mode,
+      thread_id,
+      query_id,
+      user_id,
+      role: "assistant",
+      content: ctaPlan.text,
+      route_decision: "routed_to_ask_anything", // CHECK whitelist
+      sources_used: sourcesUsedForCta,
+      llm_provider: "router",
+      llm_model: "deterministic-router",
+      llm_input_tokens: 0,
+      llm_output_tokens: 0,
+      llm_cost_usd: 0,
+      ip_address: ip,
+    }).select("id").single();
+    if (error) return json({ error: "persist_failed", detail: error.message }, 500);
+    return json({
+      ok: true,
+      thread_id,
+      followup_id: row.id,
+      content: ctaPlan.text,
+      sources_used: sourcesUsedForCta,
+      sources: [{ title: ctaPlan.label, url: ctaPlan.url, source: "internal" }],
+      cta_action: ctaPlan.cta_action,
+      llm_provider: "router",
+      llm_model: "deterministic-router",
+      route_decision: "routed_to_ask_anything",
+      routed_query_id: null,
+    });
+  }
+
+
   // Step 6: Daily Claude cap check
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
@@ -456,51 +658,171 @@ Deno.serve(async (req: Request) => {
   }
 
 
-  // Step 8: Call LLM with fallback
-  let llm;
-  const claudeOverrides = mode === "report_followup"
-    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
-    : undefined;
+  // Step 8: Build tool plan (report_followup only)
+  let toolCitations: Citation[] = [];
+  const anthropicTools: any[] = [];
+  let toolPlanUsedWeb = false;
+  let toolPlanUsedMx = false;
 
-  try {
-    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
-  } catch (e) {
-    console.error("LLM_UNAVAILABLE", (e as Error).message);
-    return json({ error: "llm_unavailable" }, 503);
+  if (mode === "report_followup" && !skipClaude && ANTHROPIC_API_KEY) {
+    const lowerMsg = user_message.toLowerCase();
+    let useWeb = false;
+    let useMx = false;
+    if (followup_mode === "open") {
+      if (/(news|latest|today|this week|recent|headline|announcement|what(?:'s| is) happening|update on|developments?)/i.test(lowerMsg)) {
+        useWeb = true;
+      }
+      if (/(tcs|reliance|hdfcbank|infy|nifty|sensex|bank|\bit\b|pharma|auto|metal|energy|fmcg)/i.test(user_message)) {
+        useMx = true;
+      }
+    } else {
+      // explain mode: marketaux only if a ticker is explicitly mentioned (uppercase token)
+      if (/\b[A-Z][A-Z0-9&-]{1,11}\b/.test(user_message)) useMx = true;
+    }
+
+    // Per-user daily caps
+    if (useWeb) {
+      const { count: webCount } = await supabase
+        .from("ai_followups")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .gte("created_at", since)
+        .contains("sources_used", [{ tool: "web_search" }]);
+      if ((webCount ?? 0) >= WEB_SEARCH_DAILY_CAP_PER_USER) useWeb = false;
+    }
+    if (useMx) {
+      const { count: mxCount } = await supabase
+        .from("ai_followups")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .gte("created_at", since)
+        .contains("sources_used", [{ tool: "marketaux" }]);
+      if ((mxCount ?? 0) >= MARKETAUX_DAILY_CAP_PER_USER) useMx = false;
+    }
+
+    if (useWeb) {
+      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 3 });
+      toolPlanUsedWeb = true;
+    }
+    if (useMx) {
+      anthropicTools.push({
+        name: "marketaux_news_search",
+        description: "Fetch recent company/sector news from Marketaux. Use when the user asks for latest news, announcements, or sector developments relevant to the report.",
+        input_schema: {
+          type: "object",
+          properties: {
+            symbols: { type: "array", items: { type: "string" } },
+            industry_tags: { type: "array", items: { type: "string" } },
+            days_back: { type: "integer", minimum: 1, maximum: 30, default: 7 },
+            limit: { type: "integer", minimum: 1, maximum: 12, default: 12 },
+            language: { type: "string", default: "en" },
+          },
+        },
+      });
+      toolPlanUsedMx = true;
+    }
+  }
+
+  // Step 9: Call LLM — tool-loop path if tools enabled, else legacy fallback chain
+  let llm: any;
+  let claudeUsed = !skipClaude;
+
+  if (mode === "report_followup" && anthropicTools.length > 0) {
+    try {
+      const out = await callClaudeWithTools({
+        system,
+        userMessage: user_message,
+        history,
+        tools: anthropicTools,
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        temperature: followup_mode === "open" ? 0.25 : 0.05,
+      });
+      llm = { ...out, claudeUsed: true };
+      toolCitations = out.citations;
+    } catch (e) {
+      console.warn("CLAUDE_TOOLS_FAIL_FALLBACK", (e as Error).message);
+      try {
+        llm = await runFallbackChain({
+          system, userMessage: user_message, history, skipClaude: true,
+        });
+      } catch (e2) {
+        console.error("LLM_UNAVAILABLE", (e2 as Error).message);
+        return json({ error: "llm_unavailable" }, 503);
+      }
+    }
+  } else {
+    const claudeOverrides = mode === "report_followup"
+      ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
+      : undefined;
+    try {
+      llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
+    } catch (e) {
+      console.error("LLM_UNAVAILABLE", (e as Error).message);
+      return json({ error: "llm_unavailable" }, 503);
+    }
+  }
+
+  let finalText: string = llm.text ?? "";
+  let costUsd: number = Number(llm.cost_usd ?? 0);
+  if (costUsd > TURN_COST_CAP_USD && finalText.length > 800) {
+    finalText = finalText.slice(0, 800);
   }
 
   const routeDecision = !llm.claudeUsed ? "fallback_used" : "answered_direct";
 
-  // Step 9: Persist assistant
+  // Stage 2.3 sources_used array
+  const sourcesUsedArray: any[] =
+    mode === "report_followup"
+      ? [
+          ...(toolPlanUsedWeb ? [{ tool: "web_search" }] : []),
+          ...(toolPlanUsedMx ? [{ tool: "marketaux" }] : []),
+          { followup_mode },
+          ...toolCitations.map((c) => ({
+            kind: "citation",
+            url: c.url,
+            title: c.title,
+            source: c.source,
+            published_at: c.published_at ?? null,
+            tool: c.tool,
+          })),
+        ]
+      : [];
+
+  // Step 10: Persist assistant
   const { data: arow, error: aerr } = await supabase.from("ai_followups").insert({
     conversation_mode: mode,
     thread_id,
     query_id: mode === "report_followup" ? query_id : null,
     user_id,
     role: "assistant",
-    content: llm.text,
-    sources_used: mode === "report_followup" ? [{ followup_mode }] : [],
+    content: finalText,
+    sources_used: sourcesUsedArray,
     route_decision: routeDecision,
     llm_provider: llm.provider,
-
     llm_model: llm.model,
     llm_input_tokens: llm.input_tokens,
     llm_output_tokens: llm.output_tokens,
-    llm_cost_usd: llm.cost_usd,
+    llm_cost_usd: costUsd,
     ip_address: ip,
   }).select("id").single();
   if (aerr) return json({ error: "persist_failed", detail: aerr.message }, 500);
 
-  // Step 10: Return
+  // Step 11: Return
   return json({
     ok: true,
     thread_id,
     followup_id: arow.id,
-    content: llm.text,
-    sources_used: [],
+    content: finalText,
+    sources_used: sourcesUsedArray,
+    sources: toolCitations.map((c) => ({
+      title: c.title, url: c.url, source: c.source,
+      published_at: c.published_at ?? null, tool: c.tool,
+    })),
     llm_provider: llm.provider,
     llm_model: llm.model,
     route_decision: routeDecision,
     routed_query_id: null,
   });
 });
+
