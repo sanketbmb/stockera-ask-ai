@@ -111,13 +111,20 @@ export async function callMarketauxForClaude(
       : Array.isArray(j?.data)
         ? j.data
         : [];
-    const articles: MarketauxArticle[] = raw.slice(0, MAX_ARTICLES).map((a) => ({
-      title: String(a.title ?? "").slice(0, 200),
-      url: String(a.url ?? ""),
-      source: String(a.source ?? a.source_name ?? "Unknown"),
-      published_at: String(a.published_at ?? a.publishedAt ?? ""),
-      summary: truncate(stripHtml(String(a.description ?? a.summary ?? "")), MAX_SUMMARY_LEN),
-    }));
+    const articles: MarketauxArticle[] = raw.slice(0, MAX_ARTICLES).map((a) => {
+      const source = String(a.source ?? a.source_name ?? "Unknown");
+      const rawTitle = sanitizeTitle(String(a.title ?? ""));
+      const summary = truncate(stripHtml(String(a.description ?? a.summary ?? "")), MAX_SUMMARY_LEN);
+      const title = rawTitle || (summary ? `${source} article` : "");
+      return {
+        title,
+        url: String(a.url ?? ""),
+        source,
+        published_at: String(a.published_at ?? a.publishedAt ?? ""),
+        summary,
+      };
+    }).filter((a) => a.url && (a.title || a.summary));
+
 
     out.ok = true;
     out.articles = articles;
