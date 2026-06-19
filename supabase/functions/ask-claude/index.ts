@@ -268,6 +268,8 @@ Deno.serve(async (req: Request) => {
   }
   const thread_id = body?.thread_id ?? crypto.randomUUID();
   const parent_followup_id = body?.parent_followup_id ?? null;
+  const followup_mode: "explain" | "open" = body?.followup_mode === "open" ? "open" : "explain";
+
 
   // Step 3: Rate limit
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
