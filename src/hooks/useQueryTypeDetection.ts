@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
 export type DetectedQueryType =
+  | "Which Stock to Buy"
+  | "Sectorial View"
+  | "Educational"
+  | "News / Latest"
+  | "Live Price"
   | "Should I Average?"
   | "Sell or Hold?"
   | "Set Stop Loss"
@@ -9,6 +14,44 @@ export type DetectedQueryType =
   | "Fresh Entry";
 
 const RULES: { type: DetectedQueryType; keywords: RegExp[] }[] = [
+  {
+    type: "Which Stock to Buy",
+    keywords: [
+      /\bwhich stock\b/i,
+      /\bwhat (stock|to buy)\b/i,
+      /\bbest stock\b/i,
+      /\bstock recommendation\b/i,
+      /\bwhere (to|should i) invest\b/i,
+      /\bgive me a stock\b/i,
+      /\bsuggest (a |me )?stock\b/i,
+    ],
+  },
+  {
+    type: "Sectorial View",
+    keywords: [
+      /\b(sector|industry) (view|outlook|future|growth|forecast)?\b/i,
+      /\b(it|banking|auto|pharma|fmcg|metal|energy|infra|realty) sector\b/i,
+    ],
+  },
+  {
+    type: "Educational",
+    keywords: [
+      /\bwhat is\b/i,
+      /\bexplain\b/i,
+      /\bhow does\b/i,
+      /\bmeaning of\b/i,
+      /\bdifference between\b/i,
+      /\bdefine\b/i,
+    ],
+  },
+  {
+    type: "News / Latest",
+    keywords: [/\b(latest|recent) news\b/i, /\bnews\b/i, /\bwhat happened\b/i, /\btoday'?s\b/i],
+  },
+  {
+    type: "Live Price",
+    keywords: [/\b(current|live|now|today'?s) price\b/i, /\b(ltp|last traded price)\b/i],
+  },
   {
     type: "Should I Average?",
     keywords: [/\baveraging?\b/i, /\bbuy more\b/i, /\bdouble down\b/i, /\baverage\b/i],
