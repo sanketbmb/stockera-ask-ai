@@ -503,8 +503,10 @@ Deno.serve(async (req: Request) => {
       sources_used: [], llm_provider: null, llm_model: null,
       route_decision: "routed_to_ask_anything", routed_query_id: null,
     });
+  }
 
   // Stage 2.3 — CTA deep-link routes (report_followup only)
+
   const ctaPlan: { cta_action: "stock_picker" | "educational_report" | "sector_report"; text: string; url: string; label: string } | null =
     mode === "report_followup"
       ? route.action === "routed_to_stock_picker"
