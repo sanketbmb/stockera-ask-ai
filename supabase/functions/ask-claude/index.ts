@@ -503,7 +503,72 @@ Deno.serve(async (req: Request) => {
       sources_used: [], llm_provider: null, llm_model: null,
       route_decision: "routed_to_ask_anything", routed_query_id: null,
     });
+
+  // Stage 2.3 — CTA deep-link routes (report_followup only)
+  const ctaPlan: { cta_action: "stock_picker" | "educational_report" | "sector_report"; text: string; url: string; label: string } | null =
+    mode === "report_followup"
+      ? route.action === "routed_to_stock_picker"
+        ? {
+            cta_action: "stock_picker",
+            text: "I can't recommend a specific stock to buy. Stockera's Stock Picker runs a rules-based sweep across our universe and shows you the strongest candidates right now — it only takes a moment.",
+            url: "/stock-picker",
+            label: "Open Stockera Stock Picker",
+          }
+        : route.action === "routed_to_educational_report"
+          ? {
+              cta_action: "educational_report",
+              text: "This sounds like a concept question. Stockera can run a structured explainer for it — open it with one click.",
+              url: `/post-query?type=educational&q=${encodeURIComponent(user_message)}`,
+              label: "Open Stockera Explain this",
+            }
+          : route.action === "routed_to_sector_report"
+            ? {
+                cta_action: "sector_report",
+                text: "This looks like a sector-level question. Stockera can generate a Sector View report — here's the deep-link, ready to use.",
+                url: `/post-query?type=sector_view&q=${encodeURIComponent(user_message)}`,
+                label: "Open Stockera Sector View",
+              }
+            : null
+      : null;
+
+  if (ctaPlan) {
+    const sourcesUsedForCta = [
+      { tool: "router" },
+      { cta_action: ctaPlan.cta_action },
+      { kind: "citation", url: ctaPlan.url, title: ctaPlan.label, source: "internal", tool: "router" },
+    ];
+    const { data: row, error } = await supabase.from("ai_followups").insert({
+      conversation_mode: mode,
+      thread_id,
+      query_id,
+      user_id,
+      role: "assistant",
+      content: ctaPlan.text,
+      route_decision: "routed_to_ask_anything", // CHECK whitelist
+      sources_used: sourcesUsedForCta,
+      llm_provider: "router",
+      llm_model: "deterministic-router",
+      llm_input_tokens: 0,
+      llm_output_tokens: 0,
+      llm_cost_usd: 0,
+      ip_address: ip,
+    }).select("id").single();
+    if (error) return json({ error: "persist_failed", detail: error.message }, 500);
+    return json({
+      ok: true,
+      thread_id,
+      followup_id: row.id,
+      content: ctaPlan.text,
+      sources_used: sourcesUsedForCta,
+      sources: [{ title: ctaPlan.label, url: ctaPlan.url, source: "internal" }],
+      cta_action: ctaPlan.cta_action,
+      llm_provider: "router",
+      llm_model: "deterministic-router",
+      route_decision: "routed_to_ask_anything",
+      routed_query_id: null,
+    });
   }
+
 
   // Step 6: Daily Claude cap check
   const todayStart = new Date();
