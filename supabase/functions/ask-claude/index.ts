@@ -368,20 +368,51 @@ Deno.serve(async (req: Request) => {
     .map((r) => ({ role: r.role, content: r.content }));
 
   if (mode === "report_followup") {
-    const { data: report, error: repErr } = await supabase
-      .from("ai_reports")
-      .select("*")
-      .eq("query_id", query_id)
+    const { data: qrow, error: qErr } = await supabase
+      .from("queries")
+      .select("ai_report, stock_symbol, stock_name, horizon")
+      .eq("id", query_id)
       .maybeSingle();
-    if (repErr || !report) return json({ error: "report_not_found" }, 404);
-    const reportContext = `\n\n=== AI REPORT CONTEXT (read-only) ===\n${JSON.stringify(report).slice(0, 6000)}\n=== END REPORT CONTEXT ===`;
+    if (qErr || !qrow || !qrow.ai_report) return json({ error: "report_not_found" }, 404);
+    const ai: any = qrow.ai_report;
+    const pick = (obj: any, keys: string[]) =>
+      keys.reduce((acc: any, k) => { acc[k] = obj?.[k] ?? null; return acc; }, {});
+    const projected = {
+      stock: { symbol: qrow.stock_symbol ?? null, name: qrow.stock_name ?? null, horizon: qrow.horizon ?? null },
+      price_context: pick(ai.price_context, ["current_price", "price_source", "as_of"]),
+      final_verdict: pick(ai.final_verdict, ["action", "confidence_pct", "overall_score", "risk_label", "summary_reason"]),
+      audit_meta: {
+        regime: ai.audit_meta?.regime ?? null,
+        verdict_suppressed: ai.audit_meta?.verdict_suppressed ?? null,
+        suppressed_reason: ai.audit_meta?.suppressed_reason ?? null,
+        suppressed_rule_id: ai.audit_meta?.suppressed_rule_id ?? null,
+        entry_strategy: { reasoning_text: ai.audit_meta?.entry_strategy?.reasoning_text ?? ai.levels?.entry_strategy?.reasoning_text ?? null },
+      },
+      score_breakdown: pick(ai.score_breakdown, ["fundamental_score", "technical_score", "risk_score", "momentum_score", "sentiment_score"]),
+      risk_snapshot: pick(ai.risk_snapshot, ["beta", "var_95", "max_drawdown", "sharpe_ratio", "volatility_1y", "liquidity_label"]),
+      technical_snapshot: pick(ai.technical_snapshot, ["rsi", "adx", "macd_signal", "trend_label", "ema_stack"]),
+      fundamental_snapshot: pick(ai.fundamental_snapshot, ["pe_ratio", "roe", "altman_z_score", "piotroski_f_score", "valuation_label"]),
+      returns_snapshot: pick(ai.returns_snapshot, ["one_week", "one_month", "three_month", "one_year", "vs_nifty_one_month", "vs_nifty_three_month"]),
+      momentum_snapshot: pick(ai.momentum_snapshot, ["momentum_label", "trend_strength", "volume_confirmation"]),
+      sentiment_snapshot: pick(ai.sentiment_snapshot, ["sentiment_label", "news_sentiment_score", "top_news_driver"]),
+      long_term_quality_snapshot: pick(ai.long_term_quality_snapshot, ["quality_label", "roe_5y_avg", "eps_cagr_5y", "roce_5y_avg"]),
+    };
+    const projectedJson = JSON.stringify(projected);
+    // Deterministic char-count heuristic: ~4 chars/token, 3500-token input cap = 14000 chars ceiling.
+    if (projectedJson.length > 14000) {
+      return json({ error: "context_too_large", chars: projectedJson.length, ceiling_chars: 14000 }, 413);
+    }
+    const reportContext = `\n\n=== PROJECTED REPORT CONTEXT (read-only, sanitized) ===\n${projectedJson}\n=== END PROJECTED REPORT CONTEXT ===`;
     system = system + reportContext;
   }
 
   // Step 8: Call LLM with fallback
   let llm;
+  const claudeOverrides = mode === "report_followup"
+    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: 0.05 }
+    : undefined;
   try {
-    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude });
+    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
   } catch (e) {
     console.error("LLM_UNAVAILABLE", (e as Error).message);
     return json({ error: "llm_unavailable" }, 503);
