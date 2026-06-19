@@ -85,8 +85,12 @@ async function callClaudeWithTools(opts: {
       if (blk?.type === "web_search_tool_result" && Array.isArray(blk.content)) {
         for (const wr of blk.content) {
           if (wr?.type === "web_search_result" && wr.url) {
+            const cleanTitle = sanitizeTitle(wr.title ?? "");
+            const desc = String(wr.description ?? wr.snippet ?? "").trim();
+            // Bug 3: drop junk citations with no usable title AND no description
+            if (!cleanTitle && !desc) continue;
             citations.push({
-              title: wr.title ?? wr.url,
+              title: cleanTitle || (wr.source ? `${wr.source} article` : wr.url),
               url: wr.url,
               source: wr.source ?? "web",
               published_at: wr.page_age ?? wr.published_at ?? "",
@@ -95,6 +99,7 @@ async function callClaudeWithTools(opts: {
           }
         }
       }
+
     }
 
     const toolUseBlocks = blocks.filter((b: any) => b.type === "tool_use");
