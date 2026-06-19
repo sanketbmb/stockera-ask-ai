@@ -137,6 +137,10 @@ export function AskClaudeFollowup({
     const msg = input.trim();
     if (!msg || sending || atCap) return;
     setSending(true);
+    setLoadError(null);
+    // Optimistically render the user's question immediately.
+    appendLocal("user", msg);
+    setInput("");
     try {
       const { data, error } = await supabase.functions.invoke("ask-claude", {
         body: {
@@ -154,16 +158,38 @@ export function AskClaudeFollowup({
           appendLocal("assistant", FALLBACK_LINE);
         } else if (status === 413) {
           toast.error("This report is too large for follow-up context.");
+          appendLocal("assistant", "This report is too large for follow-up context.");
         } else {
           appendLocal("assistant", FALLBACK_LINE);
         }
-        setInput("");
         return;
       }
-      // Success: realtime should deliver rows; reload as belt-and-suspenders.
-      setInput("");
-      if (!realtimeOk) await loadTurns();
-      void data;
+      // Success: render assistant answer from response payload immediately,
+      // do not depend on realtime delivery.
+      const payload = data as
+        | { ok?: boolean; content?: string; followup_id?: string; route_decision?: string | null }
+        | null;
+      const answer = payload?.content?.trim();
+      if (answer) {
+        setTurns((prev) => {
+          const id = payload?.followup_id ?? `local-${Date.now()}`;
+          if (prev.some((t) => t.id === id)) return prev;
+          return [
+            ...prev,
+            {
+              id,
+              role: "assistant",
+              content: answer,
+              created_at: new Date().toISOString(),
+              route_decision: payload?.route_decision ?? null,
+            },
+          ];
+        });
+      } else {
+        setLoadError("The assistant returned an empty response. Please try again.");
+      }
+      // Belt-and-suspenders: reconcile with authoritative server state.
+      void loadTurns();
     } catch (e) {
       console.error("ask-claude invoke failed", e);
       appendLocal("assistant", FALLBACK_LINE);
