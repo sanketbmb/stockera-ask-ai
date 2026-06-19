@@ -4,6 +4,7 @@
 // Fallback chain: Claude → Gemini-direct → Lovable-Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { routeMessage } from "../_shared/deterministic_router.ts";
+import { callMarketauxForClaude } from "../_shared/marketaux-claude-tool.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -19,12 +20,146 @@ const CLAUDE_DAILY_CAP_USD = 60.24;
 // Stage-1 flat per-user daily message cap (Plus/Pro tiers wired in Stage 2).
 const DAILY_USER_MSG_CAP = 15;
 
+// Stage 2.3 — tool caps
+const WEB_SEARCH_DAILY_CAP_PER_USER = 5;
+const MARKETAUX_DAILY_CAP_PER_USER = 20;
+const TOOL_LOOP_MAX_ITERATIONS = 2;
+const TURN_COST_CAP_USD = 0.05;
+const WEB_SEARCH_PRICE_USD_PER_1000 = 10; // Anthropic web_search_20250305 ref
+
+type Citation = {
+  title: string;
+  url: string;
+  source: string;
+  published_at?: string;
+  tool: "web_search" | "marketaux";
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Max-Age": "86400",
 };
+
+async function callClaudeWithTools(opts: {
+  system: string;
+  userMessage: string;
+  history: Array<{ role: string; content: any }>;
+  tools: any[];
+  model: string;
+  max_tokens: number;
+  temperature: number;
+}) {
+  const { system, userMessage, history, tools, model, max_tokens, temperature } = opts;
+  let messages: any[] = [...history, { role: "user", content: userMessage }];
+  const citations: Citation[] = [];
+  let inputTokensTotal = 0;
+  let outputTokensTotal = 0;
+  let webSearchInvocations = 0;
+  let finalText = "";
+
+  for (let iter = 0; iter < TOOL_LOOP_MAX_ITERATIONS; iter++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model, max_tokens, temperature, system, messages,
+        tools: tools.length ? tools : undefined,
+      }),
+    });
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Claude HTTP ${r.status}: ${j?.error?.message ?? "unknown"}`);
+    inputTokensTotal += j?.usage?.input_tokens ?? 0;
+    outputTokensTotal += j?.usage?.output_tokens ?? 0;
+
+    const blocks: any[] = Array.isArray(j?.content) ? j.content : [];
+    for (const blk of blocks) {
+      if (blk?.type === "server_tool_use" && blk?.name === "web_search") {
+        webSearchInvocations++;
+      }
+      if (blk?.type === "web_search_tool_result" && Array.isArray(blk.content)) {
+        for (const wr of blk.content) {
+          if (wr?.type === "web_search_result" && wr.url) {
+            citations.push({
+              title: wr.title ?? wr.url,
+              url: wr.url,
+              source: wr.source ?? "web",
+              published_at: wr.page_age ?? wr.published_at ?? "",
+              tool: "web_search",
+            });
+          }
+        }
+      }
+    }
+
+    const toolUseBlocks = blocks.filter((b: any) => b.type === "tool_use");
+    if (toolUseBlocks.length === 0) {
+      finalText = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      break;
+    }
+    if (iter >= TOOL_LOOP_MAX_ITERATIONS - 1) {
+      const partial = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+      finalText = partial || "I've gathered what I can from the tools available. Please refine your question if you need more detail.";
+      break;
+    }
+
+    const toolResults: any[] = [];
+    for (const tb of toolUseBlocks) {
+      if (tb.name === "marketaux_news_search") {
+        const mr = await callMarketauxForClaude(tb.input ?? {}, "");
+        if (mr.ok) {
+          for (const a of mr.articles) {
+            citations.push({
+              title: a.title, url: a.url, source: a.source,
+              published_at: a.published_at, tool: "marketaux",
+            });
+          }
+        }
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tb.id,
+          content: JSON.stringify({ ok: mr.ok, articles: mr.articles, error_code: mr.error_code ?? null }),
+        });
+      } else {
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tb.id,
+          content: JSON.stringify({ ok: false, error: "unknown_tool" }),
+        });
+      }
+    }
+    messages = messages.concat(
+      { role: "assistant", content: blocks },
+      { role: "user", content: toolResults },
+    );
+  }
+
+  // dedupe citations
+  const seen = new Set<string>();
+  const dedup = citations.filter((c) => {
+    if (!c.url || seen.has(c.url)) return false;
+    seen.add(c.url);
+    return true;
+  }).slice(0, 12);
+
+  const baseCost = (inputTokensTotal / 1_000_000) * 3 + (outputTokensTotal / 1_000_000) * 15;
+  const toolCost = webSearchInvocations * (WEB_SEARCH_PRICE_USD_PER_1000 / 1000);
+  return {
+    text: finalText,
+    citations: dedup,
+    provider: "claude",
+    model,
+    input_tokens: inputTokensTotal,
+    output_tokens: outputTokensTotal,
+    cost_usd: baseCost + toolCost,
+    web_search_count: webSearchInvocations,
+  };
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
