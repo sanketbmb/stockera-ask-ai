@@ -742,7 +742,8 @@ Deno.serve(async (req: Request) => {
         history,
         tools: anthropicTools,
         model: "claude-sonnet-4-6",
-        max_tokens: 1500,
+        // Bug 2: 1500 → 1100 keeps projected per-turn cost within TURN_COST_CAP_USD.
+        max_tokens: 1100,
         temperature: followup_mode === "open" ? 0.25 : 0.05,
       });
       llm = { ...out, claudeUsed: true };
@@ -760,7 +761,7 @@ Deno.serve(async (req: Request) => {
     }
   } else {
     const claudeOverrides = mode === "report_followup"
-      ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
+      ? { model: "claude-sonnet-4-6", max_tokens: 1100, temperature: followup_mode === "open" ? 0.25 : 0.05 }
       : undefined;
     try {
       llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
@@ -771,10 +772,22 @@ Deno.serve(async (req: Request) => {
   }
 
   let finalText: string = llm.text ?? "";
-  let costUsd: number = Number(llm.cost_usd ?? 0);
+  // Bug 2: recompute exact cost (sonnet-4-6 $3/M in, $15/M out; web_search $10/1k uses).
+  const inTok = Number(llm.input_tokens ?? 0);
+  const outTok = Number(llm.output_tokens ?? 0);
+  const webCount = Number(llm.web_search_count ?? 0);
+  let costUsd = (inTok / 1_000_000) * 3 + (outTok / 1_000_000) * 15 + webCount * 0.01;
+  if (!Number.isFinite(costUsd) || costUsd < 0) costUsd = Number(llm.cost_usd ?? 0);
+  if (costUsd > TURN_COST_CAP_USD * 1.5) {
+    console.error("COST_OVERRUN", {
+      user_id, cost_usd: costUsd, web_search_count: webCount,
+      input_tokens: inTok, output_tokens: outTok, followup_mode,
+    });
+  }
   if (costUsd > TURN_COST_CAP_USD && finalText.length > 800) {
     finalText = finalText.slice(0, 800);
   }
+
 
   const routeDecision = !llm.claudeUsed ? "fallback_used" : "answered_direct";
 
