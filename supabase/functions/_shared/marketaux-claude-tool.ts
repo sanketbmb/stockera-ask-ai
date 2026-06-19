@@ -52,6 +52,17 @@ function truncate(s: string, n: number): string {
   return s.slice(0, n - 1).trimEnd() + "…";
 }
 
+// Bug 3 — reject HTML banner timestamps that masquerade as article titles.
+export function sanitizeTitle(t: string): string {
+  const cleaned = stripHtml(String(t ?? "")).trim();
+  if (!cleaned) return "";
+  if (/^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(cleaned)) return "";
+  if (/^\d{1,2}[\s\-/](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(cleaned)) return "";
+  if (/\d{1,2}:\d{2}\s?(am|pm|ist)/i.test(cleaned) && cleaned.length < 50) return "";
+  return cleaned.slice(0, 200);
+}
+
+
 export async function callMarketauxForClaude(
   args: MarketauxClaudeArgs,
   userJwt: string,
