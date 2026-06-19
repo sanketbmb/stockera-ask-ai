@@ -245,6 +245,7 @@ Deno.serve(async (req: Request) => {
   // Stage 2 — per-thread (10) and per-day (50) caps for report_followup only.
   // Option A: HTTP 429 with NO row insert to ai_followups.
   if (mode === "report_followup") {
+    const since = new Date(Date.now() - 86_400_000).toISOString();
     const { count: threadCount } = await supabase
       .from("ai_followups")
       .select("id", { count: "exact", head: true })
