@@ -4,7 +4,7 @@
 // Fallback chain: Claude → Gemini-direct → Lovable-Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { routeMessage } from "../_shared/deterministic_router.ts";
-import { callMarketauxForClaude } from "../_shared/marketaux-claude-tool.ts";
+import { callMarketauxForClaude, sanitizeTitle } from "../_shared/marketaux-claude-tool.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
