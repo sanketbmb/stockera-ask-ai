@@ -656,51 +656,171 @@ Deno.serve(async (req: Request) => {
   }
 
 
-  // Step 8: Call LLM with fallback
-  let llm;
-  const claudeOverrides = mode === "report_followup"
-    ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
-    : undefined;
+  // Step 8: Build tool plan (report_followup only)
+  let toolCitations: Citation[] = [];
+  const anthropicTools: any[] = [];
+  let toolPlanUsedWeb = false;
+  let toolPlanUsedMx = false;
 
-  try {
-    llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
-  } catch (e) {
-    console.error("LLM_UNAVAILABLE", (e as Error).message);
-    return json({ error: "llm_unavailable" }, 503);
+  if (mode === "report_followup" && !skipClaude && ANTHROPIC_API_KEY) {
+    const lowerMsg = user_message.toLowerCase();
+    let useWeb = false;
+    let useMx = false;
+    if (followup_mode === "open") {
+      if (/(news|latest|today|this week|recent|headline|announcement|what(?:'s| is) happening|update on|developments?)/i.test(lowerMsg)) {
+        useWeb = true;
+      }
+      if (/(tcs|reliance|hdfcbank|infy|nifty|sensex|bank|\bit\b|pharma|auto|metal|energy|fmcg)/i.test(user_message)) {
+        useMx = true;
+      }
+    } else {
+      // explain mode: marketaux only if a ticker is explicitly mentioned (uppercase token)
+      if (/\b[A-Z][A-Z0-9&-]{1,11}\b/.test(user_message)) useMx = true;
+    }
+
+    // Per-user daily caps
+    if (useWeb) {
+      const { count: webCount } = await supabase
+        .from("ai_followups")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .gte("created_at", since)
+        .contains("sources_used", [{ tool: "web_search" }]);
+      if ((webCount ?? 0) >= WEB_SEARCH_DAILY_CAP_PER_USER) useWeb = false;
+    }
+    if (useMx) {
+      const { count: mxCount } = await supabase
+        .from("ai_followups")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .gte("created_at", since)
+        .contains("sources_used", [{ tool: "marketaux" }]);
+      if ((mxCount ?? 0) >= MARKETAUX_DAILY_CAP_PER_USER) useMx = false;
+    }
+
+    if (useWeb) {
+      anthropicTools.push({ type: "web_search_20250305", name: "web_search", max_uses: 3 });
+      toolPlanUsedWeb = true;
+    }
+    if (useMx) {
+      anthropicTools.push({
+        name: "marketaux_news_search",
+        description: "Fetch recent company/sector news from Marketaux. Use when the user asks for latest news, announcements, or sector developments relevant to the report.",
+        input_schema: {
+          type: "object",
+          properties: {
+            symbols: { type: "array", items: { type: "string" } },
+            industry_tags: { type: "array", items: { type: "string" } },
+            days_back: { type: "integer", minimum: 1, maximum: 30, default: 7 },
+            limit: { type: "integer", minimum: 1, maximum: 12, default: 12 },
+            language: { type: "string", default: "en" },
+          },
+        },
+      });
+      toolPlanUsedMx = true;
+    }
+  }
+
+  // Step 9: Call LLM — tool-loop path if tools enabled, else legacy fallback chain
+  let llm: any;
+  let claudeUsed = !skipClaude;
+
+  if (mode === "report_followup" && anthropicTools.length > 0) {
+    try {
+      const out = await callClaudeWithTools({
+        system,
+        userMessage: user_message,
+        history,
+        tools: anthropicTools,
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        temperature: followup_mode === "open" ? 0.25 : 0.05,
+      });
+      llm = { ...out, claudeUsed: true };
+      toolCitations = out.citations;
+    } catch (e) {
+      console.warn("CLAUDE_TOOLS_FAIL_FALLBACK", (e as Error).message);
+      try {
+        llm = await runFallbackChain({
+          system, userMessage: user_message, history, skipClaude: true,
+        });
+      } catch (e2) {
+        console.error("LLM_UNAVAILABLE", (e2 as Error).message);
+        return json({ error: "llm_unavailable" }, 503);
+      }
+    }
+  } else {
+    const claudeOverrides = mode === "report_followup"
+      ? { model: "claude-sonnet-4-6", max_tokens: 1500, temperature: followup_mode === "open" ? 0.25 : 0.05 }
+      : undefined;
+    try {
+      llm = await runFallbackChain({ system, userMessage: user_message, history, skipClaude, claudeOverrides });
+    } catch (e) {
+      console.error("LLM_UNAVAILABLE", (e as Error).message);
+      return json({ error: "llm_unavailable" }, 503);
+    }
+  }
+
+  let finalText: string = llm.text ?? "";
+  let costUsd: number = Number(llm.cost_usd ?? 0);
+  if (costUsd > TURN_COST_CAP_USD && finalText.length > 800) {
+    finalText = finalText.slice(0, 800);
   }
 
   const routeDecision = !llm.claudeUsed ? "fallback_used" : "answered_direct";
 
-  // Step 9: Persist assistant
+  // Stage 2.3 sources_used array
+  const sourcesUsedArray: any[] =
+    mode === "report_followup"
+      ? [
+          ...(toolPlanUsedWeb ? [{ tool: "web_search" }] : []),
+          ...(toolPlanUsedMx ? [{ tool: "marketaux" }] : []),
+          { followup_mode },
+          ...toolCitations.map((c) => ({
+            kind: "citation",
+            url: c.url,
+            title: c.title,
+            source: c.source,
+            published_at: c.published_at ?? null,
+            tool: c.tool,
+          })),
+        ]
+      : [];
+
+  // Step 10: Persist assistant
   const { data: arow, error: aerr } = await supabase.from("ai_followups").insert({
     conversation_mode: mode,
     thread_id,
     query_id: mode === "report_followup" ? query_id : null,
     user_id,
     role: "assistant",
-    content: llm.text,
-    sources_used: mode === "report_followup" ? [{ followup_mode }] : [],
+    content: finalText,
+    sources_used: sourcesUsedArray,
     route_decision: routeDecision,
     llm_provider: llm.provider,
-
     llm_model: llm.model,
     llm_input_tokens: llm.input_tokens,
     llm_output_tokens: llm.output_tokens,
-    llm_cost_usd: llm.cost_usd,
+    llm_cost_usd: costUsd,
     ip_address: ip,
   }).select("id").single();
   if (aerr) return json({ error: "persist_failed", detail: aerr.message }, 500);
 
-  // Step 10: Return
+  // Step 11: Return
   return json({
     ok: true,
     thread_id,
     followup_id: arow.id,
-    content: llm.text,
-    sources_used: [],
+    content: finalText,
+    sources_used: sourcesUsedArray,
+    sources: toolCitations.map((c) => ({
+      title: c.title, url: c.url, source: c.source,
+      published_at: c.published_at ?? null, tool: c.tool,
+    })),
     llm_provider: llm.provider,
     llm_model: llm.model,
     route_decision: routeDecision,
     routed_query_id: null,
   });
 });
+
