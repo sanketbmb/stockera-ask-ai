@@ -346,3 +346,76 @@ function ActionTile({
     </Card>
   );
 }
+
+function DemoTopupCard({ userId, onCredited }: { userId: string; onCredited: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [lockedReason, setLockedReason] = useState<string | null>(null);
+
+  const { data: isBeta } = useTanQuery({
+    queryKey: ["profile-founder-beta", userId],
+    enabled: !!userId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles").select("founder_beta").eq("id", userId).maybeSingle();
+      return (data as any)?.founder_beta === true;
+    },
+  });
+
+  const handleClick = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("demo-topup-credit", { body: {} });
+      if (error) {
+        const status = (error as unknown as { context?: Response }).context?.status;
+        if (status === 403) {
+          setLockedReason("Top-up will be enabled after demo approval.");
+          toast.info("Demo top-up not available right now.");
+        } else {
+          toast.error("Demo top-up failed.");
+        }
+        return;
+      }
+      const st = (data as any)?.status;
+      if (st === "ok") toast.success("+100 pts credited");
+      else if (st === "idempotent_replay") toast.info("Demo top-up already used today.");
+      else toast.error("Unexpected response.");
+      onCredited();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="p-5 mb-6 border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-display text-lg">Demo top-up</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Founder demo only — credits added free for testing the wallet flow.
+          </p>
+        </div>
+        <TestModeBadge />
+      </div>
+
+      <div className="mt-4">
+        {isBeta && !lockedReason ? (
+          <Button onClick={handleClick} disabled={busy} className="bg-amber-600 hover:bg-amber-700 text-white">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Demo Top-Up (+100 pts)
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {lockedReason ?? "Top-up will be enabled after demo approval."}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-amber-500/20">
+        <SebiFooterNote />
+      </div>
+    </Card>
+  );
+}
+
