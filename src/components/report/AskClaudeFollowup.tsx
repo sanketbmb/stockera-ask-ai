@@ -33,7 +33,14 @@ type Turn = {
 
 type FollowupMode = "explain" | "open";
 
-const FALLBACK_LINE = "Our analyst team will reply within 24h.";
+const RATE_LIMIT_LINE =
+  "You've used today's free follow-up quota. Try again tomorrow.";
+const NETWORK_ERROR_LINE =
+  "We couldn't reach our AI service right now. Please try again in a moment.";
+const UNKNOWN_ERROR_LINE =
+  "Something went wrong on our end. Please try again, or rephrase your question.";
+const CONTEXT_TOO_LARGE_LINE =
+  "This report is too large for follow-up context.";
 const THREAD_CAP = 10;
 
 function deriveThreadId(queryId: string): string {
@@ -221,12 +228,12 @@ export function AskClaudeFollowup({
         const status = ctx?.status;
         if (status === 429) {
           toast.info("Daily limit reached.");
-          appendLocal("assistant", FALLBACK_LINE);
+          appendLocal("assistant", RATE_LIMIT_LINE);
         } else if (status === 413) {
-          toast.error("This report is too large for follow-up context.");
-          appendLocal("assistant", "This report is too large for follow-up context.");
+          toast.error(CONTEXT_TOO_LARGE_LINE);
+          appendLocal("assistant", CONTEXT_TOO_LARGE_LINE);
         } else {
-          appendLocal("assistant", FALLBACK_LINE);
+          appendLocal("assistant", NETWORK_ERROR_LINE);
         }
         return;
       }
@@ -264,7 +271,7 @@ export function AskClaudeFollowup({
       void loadTurns();
     } catch (e) {
       console.error("ask-claude invoke failed", e);
-      appendLocal("assistant", FALLBACK_LINE);
+      appendLocal("assistant", NETWORK_ERROR_LINE);
     } finally {
       setSending(false);
     }
