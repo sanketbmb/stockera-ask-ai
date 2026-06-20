@@ -1001,6 +1001,7 @@ export type Database = {
           avatar_url: string | null
           bio: string | null
           created_at: string | null
+          founder_beta: boolean
           full_name: string | null
           id: string
           is_verified: boolean | null
@@ -1017,6 +1018,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string | null
+          founder_beta?: boolean
           full_name?: string | null
           id: string
           is_verified?: boolean | null
@@ -1033,6 +1035,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string | null
+          founder_beta?: boolean
           full_name?: string | null
           id?: string
           is_verified?: boolean | null
@@ -2147,6 +2150,45 @@ export type Database = {
           },
         ]
       }
+      wallet_debit_failures: {
+        Row: {
+          action_key: string
+          assistant_row_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string | null
+          points_attempted: number
+          query_id: string | null
+          rpc_payload: Json | null
+          rpc_status: string
+          user_id: string
+        }
+        Insert: {
+          action_key: string
+          assistant_row_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          points_attempted: number
+          query_id?: string | null
+          rpc_payload?: Json | null
+          rpc_status: string
+          user_id: string
+        }
+        Update: {
+          action_key?: string
+          assistant_row_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          points_attempted?: number
+          query_id?: string | null
+          rpc_payload?: Json | null
+          rpc_status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       wallet_ledger: {
         Row: {
           amount: number
@@ -2291,6 +2333,16 @@ export type Database = {
         Returns: Json
       }
       cleanup_ltp_history: { Args: never; Returns: undefined }
+      credit_wallet_topup: {
+        Args: {
+          p_idempotency_key: string
+          p_metadata?: Json
+          p_points: number
+          p_source: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       deduct_wallet_balance: {
         Args: {
           _amount: number
