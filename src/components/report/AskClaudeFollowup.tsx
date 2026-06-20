@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send, Sparkles, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryTypeDetection } from "@/hooks/useQueryTypeDetection";
+import { PaywallPopup } from "@/components/monetization/PaywallPopup";
 import type { StockAnalysisPayload } from "@/types/stock-analysis";
 
 type Citation = {
@@ -86,6 +87,7 @@ export function AskClaudeFollowup({
   const [userId, setUserId] = useState<string | null>(null);
   const [followupMode, setFollowupMode] = useState<FollowupMode>("explain");
   const [modeToast, setModeToast] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState<{ required: number; balance: number } | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const detectedType = useQueryTypeDetection(input);
@@ -226,7 +228,17 @@ export function AskClaudeFollowup({
       if (error) {
         const ctx = (error as unknown as { context?: Response }).context;
         const status = ctx?.status;
-        if (status === 429) {
+        if (status === 402) {
+          let bodyJson: any = null;
+          try { bodyJson = await ctx!.clone().json(); } catch { /* noop */ }
+          setPaywall({
+            required: Number(bodyJson?.points_required ?? 20),
+            balance: Number(bodyJson?.points_available ?? 0),
+          });
+          // Remove the optimistic user turn so they can retry after top-up.
+          setTurns((prev) => prev.filter((t) => !(t.role === "user" && t.id.startsWith("local-") && t.content === msg)));
+          setInput(msg);
+        } else if (status === 429) {
           toast.info("Daily limit reached.");
           appendLocal("assistant", RATE_LIMIT_LINE);
         } else if (status === 413) {
@@ -534,6 +546,16 @@ export function AskClaudeFollowup({
           </button>
         )}
       </div>
+
+      <PaywallPopup
+        open={!!paywall}
+        onClose={() => setPaywall(null)}
+        required={paywall?.required ?? 20}
+        balance={paywall?.balance ?? 0}
+        userId={userId}
+        onCredited={() => void loadTurns()}
+      />
     </section>
   );
 }
+
