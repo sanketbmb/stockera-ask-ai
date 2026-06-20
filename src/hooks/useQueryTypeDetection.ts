@@ -33,6 +33,16 @@ const RULES: { type: DetectedQueryType; keywords: RegExp[] }[] = [
       /\b(it|banking|auto|pharma|fmcg|metal|energy|infra|realty) sector\b/i,
     ],
   },
+  // Stage 2.3.2: News / Latest + Live Price must precede Educational
+  // so "what is the latest news of X" routes correctly.
+  {
+    type: "Live Price",
+    keywords: [/\b(current|live|now|today'?s) price\b/i, /\b(ltp|last traded price)\b/i],
+  },
+  {
+    type: "News / Latest",
+    keywords: [/\b(latest|recent) news\b/i, /\bnews\b/i, /\bwhat happened\b/i, /\btoday'?s\b/i],
+  },
   {
     type: "Educational",
     keywords: [
@@ -44,14 +54,7 @@ const RULES: { type: DetectedQueryType; keywords: RegExp[] }[] = [
       /\bdefine\b/i,
     ],
   },
-  {
-    type: "News / Latest",
-    keywords: [/\b(latest|recent) news\b/i, /\bnews\b/i, /\bwhat happened\b/i, /\btoday'?s\b/i],
-  },
-  {
-    type: "Live Price",
-    keywords: [/\b(current|live|now|today'?s) price\b/i, /\b(ltp|last traded price)\b/i],
-  },
+
   {
     type: "Should I Average?",
     keywords: [/\baveraging?\b/i, /\bbuy more\b/i, /\bdouble down\b/i, /\baverage\b/i],
