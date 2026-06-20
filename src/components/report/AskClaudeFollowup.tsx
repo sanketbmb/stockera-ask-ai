@@ -228,12 +228,12 @@ export function AskClaudeFollowup({
         const status = ctx?.status;
         if (status === 429) {
           toast.info("Daily limit reached.");
-          appendLocal("assistant", FALLBACK_LINE);
+          appendLocal("assistant", RATE_LIMIT_LINE);
         } else if (status === 413) {
-          toast.error("This report is too large for follow-up context.");
-          appendLocal("assistant", "This report is too large for follow-up context.");
+          toast.error(CONTEXT_TOO_LARGE_LINE);
+          appendLocal("assistant", CONTEXT_TOO_LARGE_LINE);
         } else {
-          appendLocal("assistant", FALLBACK_LINE);
+          appendLocal("assistant", NETWORK_ERROR_LINE);
         }
         return;
       }
@@ -271,7 +271,7 @@ export function AskClaudeFollowup({
       void loadTurns();
     } catch (e) {
       console.error("ask-claude invoke failed", e);
-      appendLocal("assistant", FALLBACK_LINE);
+      appendLocal("assistant", NETWORK_ERROR_LINE);
     } finally {
       setSending(false);
     }
