@@ -8,7 +8,9 @@ export const FIRM = {
   sebiType: "Research Analyst",
   sebiRegNumber: "INH000019071",
   bseEnlistment: "N/A",
-  // Internal note only — never render in product UI. Use MONETIZATION_DISCLAIMER below.
+  // SEBI/legal disclosure pages may render this. Do NOT render on monetization
+  // surfaces (Wallet, PaywallPopup, Topup) — those must use MONETIZATION_DISCLAIMER.
+  validity: "Perpetual (subject to annual fee compliance)",
   validityInternalNote: "Perpetual (subject to annual fee compliance)",
   email: "Contact@stockera.com",
   phone: "+91 90220 44633",
