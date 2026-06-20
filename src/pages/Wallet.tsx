@@ -187,6 +187,10 @@ export default function WalletPage() {
         </Card>
       </div>
 
+      <DemoTopupCard userId={user.id} onCredited={() => void refetchBalance()} />
+
+
+
       <section className="grid sm:grid-cols-3 gap-3 mb-6">
         <ActionTile
           icon={<Sparkles className="h-4 w-4" />}
