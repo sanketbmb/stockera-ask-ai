@@ -454,6 +454,30 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // Stage 3A: Open-mode wallet preflight (20 pts) — founder_beta bypass.
+  const OPEN_FOLLOWUP_COST_PTS = 20;
+  let isBeta = false;
+  if (mode === "report_followup" && followup_mode === "open") {
+    const { data: prof } = await supabase
+      .from("profiles").select("founder_beta").eq("id", user_id).maybeSingle();
+    isBeta = (prof as any)?.founder_beta === true;
+    if (!isBeta) {
+      const { data: wb } = await supabase
+        .from("wallet_balances").select("balance").eq("user_id", user_id).maybeSingle();
+      const bal = Number((wb as any)?.balance ?? 0);
+      if (bal < OPEN_FOLLOWUP_COST_PTS) {
+        return json({
+          error: "insufficient_points",
+          points_required: OPEN_FOLLOWUP_COST_PTS,
+          points_available: bal,
+          paywall: true,
+        }, 402);
+      }
+    }
+  }
+
+
+
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 
   // Step 4: Insert user message
@@ -877,6 +901,37 @@ Deno.serve(async (req: Request) => {
     ip_address: ip,
   }).select("id").single();
   if (aerr) return json({ error: "persist_failed", detail: aerr.message }, 500);
+
+  // Stage 3A: Open-mode post-success debit. Founder_beta bypassed in preflight.
+  if (mode === "report_followup" && followup_mode === "open" && !isBeta && arow?.id) {
+    try {
+      const idem = `followup_open:${arow.id}`;
+      const { data: dr } = await supabase.rpc("wallet_apply_debit", {
+        p_user_id: user_id,
+        p_action_key: "followup_open",
+        p_points: OPEN_FOLLOWUP_COST_PTS,
+        p_query_id: query_id ?? null,
+        p_idempotency_key: idem,
+      });
+      const st = (dr as any)?.status;
+      if (st !== "ok" && st !== "idempotent_replay") {
+        await supabase.from("wallet_debit_failures").insert({
+          user_id, assistant_row_id: arow.id, query_id: query_id ?? null,
+          action_key: "followup_open", points_attempted: OPEN_FOLLOWUP_COST_PTS,
+          rpc_status: st ?? "null", rpc_payload: dr ?? null, idempotency_key: idem,
+        });
+        console.error("WALLET_DEBIT_FAIL", { user_id, assistant_row_id: arow.id, status: st });
+      }
+    } catch (e) {
+      console.error("WALLET_DEBIT_THROW", (e as Error).message);
+      await supabase.from("wallet_debit_failures").insert({
+        user_id, assistant_row_id: arow.id, query_id: query_id ?? null,
+        action_key: "followup_open", points_attempted: OPEN_FOLLOWUP_COST_PTS,
+        rpc_status: "exception", rpc_payload: { message: (e as Error).message },
+        idempotency_key: `followup_open:${arow.id}`,
+      });
+    }
+  }
 
   // Step 11: Return
   return json({

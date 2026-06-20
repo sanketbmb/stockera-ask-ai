@@ -69,3 +69,6 @@ verify_jwt = false
 
 [functions.ask-claude]
 verify_jwt = true
+
+[functions.demo-topup-credit]
+verify_jwt = true

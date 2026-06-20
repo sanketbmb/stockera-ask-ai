@@ -8,7 +8,8 @@ export const FIRM = {
   sebiType: "Research Analyst",
   sebiRegNumber: "INH000019071",
   bseEnlistment: "N/A",
-  validity: "Perpetual (subject to annual fee compliance)",
+  // Internal note only — never render in product UI. Use MONETIZATION_DISCLAIMER below.
+  validityInternalNote: "Perpetual (subject to annual fee compliance)",
   email: "Contact@stockera.com",
   phone: "+91 90220 44633",
   address:
@@ -44,3 +45,8 @@ export const GRIEVANCE_CATEGORIES = [
   "Misleading communication",
   "Other",
 ] as const;
+
+// Single source of truth for monetization / wallet / paywall surfaces.
+export const MONETIZATION_DISCLAIMER =
+  "Stockera Technology Private Limited is a SEBI-registered Research Analyst (Registration No. INH000019071). Research reports and AI-generated analyses are for informational purposes only and do not constitute personalized investment advice. Investments in securities are subject to market risks; please read all related documents carefully before investing. Past performance is not indicative of future returns. Investors may verify our registration status at www.sebi.gov.in.";
+
