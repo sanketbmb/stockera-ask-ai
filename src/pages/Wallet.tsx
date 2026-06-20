@@ -20,6 +20,12 @@ import {
   type ActionCost,
 } from "@/lib/points";
 import { track, trackPageView } from "@/lib/analytics";
+import { useQuery as useTanQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { SebiFooterNote } from "@/components/monetization/SebiFooterNote";
+import { TestModeBadge } from "@/components/monetization/TestModeBadge";
+import { useState } from "react";
 
 const ENTRY_LABELS: Record<string, string> = {
   welcome_bonus: "Welcome bonus",
@@ -36,10 +42,12 @@ const ENTRY_LABELS: Record<string, string> = {
   debit_live_session: "Live session",
   debit_sector_view: "Sector view",
   debit_stock_picker: "Stock picker",
+  debit_followup_open: "Open mode follow-up",
   admin_grant: "Admin grant",
   admin_revoke: "Admin revoke",
   refund_quality: "Quality refund",
   refund_failed_action: "Failed action refund",
+  demo_grant: "Demo top-up",
 };
 
 function describeEntry(entry_type: string): string {

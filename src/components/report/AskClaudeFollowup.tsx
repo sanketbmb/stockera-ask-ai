@@ -546,6 +546,16 @@ export function AskClaudeFollowup({
           </button>
         )}
       </div>
+
+      <PaywallPopup
+        open={!!paywall}
+        onClose={() => setPaywall(null)}
+        required={paywall?.required ?? 20}
+        balance={paywall?.balance ?? 0}
+        userId={userId}
+        onCredited={() => void loadTurns()}
+      />
     </section>
   );
 }
+
