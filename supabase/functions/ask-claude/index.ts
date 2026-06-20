@@ -27,6 +27,12 @@ const TOOL_LOOP_MAX_ITERATIONS = 2;
 const TURN_COST_CAP_USD = 0.05;
 const WEB_SEARCH_PRICE_USD_PER_1000 = 10; // Anthropic web_search_20250305 ref
 
+// Stage 2.3.2: shared news-keyword detector. Used by Step 6b (predictive
+// tool-plan), Step 7 (context shape), and Step 8 (actual tool enable).
+const NEWS_KEYWORD_RE = /(news|latest|today|this week|recent|headline|announcement|what(?:'s| is) happening|update on|developments?)/i;
+
+
+
 type Citation = {
   title: string;
   url: string;
@@ -601,6 +607,27 @@ Deno.serve(async (req: Request) => {
   const skipClaude = claudeSpendToday >= CLAUDE_DAILY_CAP_USD;
   if (skipClaude) console.warn("DAILY_CAP_HIT_SKIP_CLAUDE", { spend_usd: claudeSpendToday });
 
+  // Step 6b (Stage 2.3.2): predictive web_search plan.
+  // Single DB read for the daily cap; reused by Step 7 (context shape) and
+  // Step 8 (actual tool enable) — no duplicate query.
+  let webSearchUsesToday = 0;
+  if (mode === "report_followup" && followup_mode === "open" && !skipClaude && ANTHROPIC_API_KEY) {
+    const { count } = await supabase
+      .from("ai_followups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user_id)
+      .gte("created_at", since)
+      .contains("sources_used", [{ tool: "web_search" }]);
+    webSearchUsesToday = count ?? 0;
+  }
+  const plannedUseWebSearch =
+    mode === "report_followup" &&
+    followup_mode === "open" &&
+    !skipClaude &&
+    !!ANTHROPIC_API_KEY &&
+    NEWS_KEYWORD_RE.test(user_message) &&
+    webSearchUsesToday < WEB_SEARCH_DAILY_CAP_PER_USER;
+
   // Step 7: Build context
   const baseSystem = mode === "report_followup"
     ? (followup_mode === "open" ? REPORT_FOLLOWUP_OPEN_SYSTEM : REPORT_FOLLOWUP_EXPLAIN_SYSTEM)
@@ -630,7 +657,22 @@ Deno.serve(async (req: Request) => {
     const ai: any = qrow.ai_report;
     const pick = (obj: any, keys: string[]) =>
       keys.reduce((acc: any, k) => { acc[k] = obj?.[k] ?? null; return acc; }, {});
-    const projected = {
+
+    // Stage 2.3.2: minimal identity-only context when web_search is in play.
+    // Input tokens drop from ~14000 to ~400, cutting per-turn cost from $0.062 → ~$0.021.
+    const projectedMinimal = {
+      stock: {
+        symbol: qrow.stock_symbol ?? null,
+        name: qrow.stock_name ?? null,
+        horizon: qrow.horizon ?? null,
+      },
+      final_verdict: {
+        action: ai.final_verdict?.action ?? null,
+        summary_reason: ai.final_verdict?.summary_reason ?? null,
+      },
+    };
+
+    const projectedFull = {
       stock: { symbol: qrow.stock_symbol ?? null, name: qrow.stock_name ?? null, horizon: qrow.horizon ?? null },
       price_context: pick(ai.price_context, ["current_price", "price_source", "as_of"]),
       final_verdict: pick(ai.final_verdict, ["action", "confidence_pct", "overall_score", "risk_label", "summary_reason"]),
@@ -650,7 +692,19 @@ Deno.serve(async (req: Request) => {
       sentiment_snapshot: pick(ai.sentiment_snapshot, ["sentiment_label", "news_sentiment_score", "top_news_driver"]),
       long_term_quality_snapshot: pick(ai.long_term_quality_snapshot, ["quality_label", "roe_5y_avg", "eps_cagr_5y", "roce_5y_avg"]),
     };
+
+    const projected = plannedUseWebSearch ? projectedMinimal : projectedFull;
     const projectedJson = JSON.stringify(projected);
+
+    console.log("CONTEXT_PLAN", {
+      followup_mode,
+      plannedUseWebSearch,
+      web_search_uses_today: webSearchUsesToday,
+      web_search_daily_cap: WEB_SEARCH_DAILY_CAP_PER_USER,
+      projected_chars: projectedJson.length,
+      projected_shape: plannedUseWebSearch ? "minimal" : "full",
+    });
+
     // Deterministic char-count heuristic: ~4 chars/token, 3500-token input cap = 14000 chars ceiling.
     if (projectedJson.length > 14000) {
       return json({ error: "context_too_large", chars: projectedJson.length, ceiling_chars: 14000 }, 413);
@@ -661,6 +715,7 @@ Deno.serve(async (req: Request) => {
       system = system + "\n\nYou MAY answer using general knowledge beyond this report, subject to the absolute rules above.";
     }
   }
+
 
 
   // Step 8: Build tool plan (report_followup only)
@@ -674,7 +729,7 @@ Deno.serve(async (req: Request) => {
     let useWeb = false;
     let useMx = false;
     if (followup_mode === "open") {
-      if (/(news|latest|today|this week|recent|headline|announcement|what(?:'s| is) happening|update on|developments?)/i.test(lowerMsg)) {
+      if (NEWS_KEYWORD_RE.test(user_message)) {
         useWeb = true;
       }
       if (/(tcs|reliance|hdfcbank|infy|nifty|sensex|bank|\bit\b|pharma|auto|metal|energy|fmcg)/i.test(user_message)) {
@@ -685,16 +740,11 @@ Deno.serve(async (req: Request) => {
       if (/\b[A-Z][A-Z0-9&-]{1,11}\b/.test(user_message)) useMx = true;
     }
 
-    // Per-user daily caps
+    // Per-user daily caps — web_search count was hoisted to Step 6b; reuse it.
     if (useWeb) {
-      const { count: webCount } = await supabase
-        .from("ai_followups")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user_id)
-        .gte("created_at", since)
-        .contains("sources_used", [{ tool: "web_search" }]);
-      if ((webCount ?? 0) >= WEB_SEARCH_DAILY_CAP_PER_USER) useWeb = false;
+      if (webSearchUsesToday >= WEB_SEARCH_DAILY_CAP_PER_USER) useWeb = false;
     }
+
     if (useMx) {
       const { count: mxCount } = await supabase
         .from("ai_followups")
