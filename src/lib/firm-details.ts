@@ -10,7 +10,7 @@ export const FIRM = {
   bseEnlistment: "N/A",
   // SEBI/legal disclosure pages may render this. Do NOT render on monetization
   // surfaces (Wallet, PaywallPopup, Topup) — those must use MONETIZATION_DISCLAIMER.
-  validity: "Perpetual (subject to annual fee compliance)",
+  validity: "Valid until suspended or cancelled per SEBI (Research Analysts) Regulations, 2014",
   validityInternalNote: "Perpetual (subject to annual fee compliance)",
   email: "Contact@stockera.com",
   phone: "+91 90220 44633",
