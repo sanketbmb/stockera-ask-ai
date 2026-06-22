@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { VideoAnswerPaymentModal } from "@/components/payment/VideoAnswerPaymentModal";
 import { SESSION_TIERS, formatINR } from "@/lib/session-tiers";
 import { FIRM } from "@/lib/firm-details";
+import { Logo } from "@/components/common/Logo";
 
 // Canonical video price (₹100). Mirrors VIDEO_PRICE_PAISE in payments.functions.ts.
 const VIDEO_PRICE_PAISE = 10000;
@@ -115,7 +116,10 @@ export function AnalystCtaCard({
         <div className="relative rounded-[calc(1.5rem-1px)] bg-card/80 backdrop-blur-sm">
           {/* Top strip */}
           <div className="flex items-center justify-between gap-3 px-6 pt-5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary/80">
+            <span
+              className="ctacard-aurora-text font-mono text-[10px] uppercase tracking-[0.18em]"
+              aria-label="Premium · Human Analyst"
+            >
               Premium · Human Analyst
             </span>
             <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -126,6 +130,7 @@ export function AnalystCtaCard({
               SEBI-registered analysts on standby
             </span>
           </div>
+
 
           <div className="grid grid-cols-1 gap-px bg-border/40 px-6 pb-6 pt-4 md:grid-cols-2 md:gap-0 md:px-0 md:pt-0">
             {/* LEFT — Video offer */}
@@ -149,7 +154,13 @@ export function AnalystCtaCard({
 
               <div className="mt-5 flex items-end justify-between gap-4">
                 <div>
-                  <div className="font-display text-3xl tabular-nums text-foreground">
+                  <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="inline-flex items-center justify-center" style={{ width: 22, height: 22 }}>
+                      <Logo variant="compact" size="sm" linkTo={null} showTagline={false} />
+                    </span>
+                    <span>Stockera · Verified</span>
+                  </div>
+                  <div className="mt-1 font-display text-3xl tabular-nums text-foreground">
                     ₹{priceRupees.toLocaleString("en-IN")}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
@@ -164,6 +175,7 @@ export function AnalystCtaCard({
                   Request Analyst Video — ₹{VIDEO_PRICE_PAISE / 100}
                 </Button>
               </div>
+
             </div>
 
             {/* RIGHT — Consultation offer */}
@@ -177,14 +189,18 @@ export function AnalystCtaCard({
                 SEBI-registered analyst.
               </p>
 
-              <ul className="mt-4 space-y-1.5" aria-label="Consultation tiers">
+              <ul
+                className="mt-4 space-y-1.5 select-none"
+                aria-label="Consultation tiers (preview)"
+              >
                 {SESSION_TIERS.map((tier) => {
                   const isRec = tier.id === recommendedTier.id;
                   return (
                     <li
                       key={tier.id}
+                      aria-disabled="true"
                       className={
-                        "flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] " +
+                        "pointer-events-none flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] opacity-[0.86] " +
                         (isRec
                           ? "border-primary/40 bg-primary/[0.04]"
                           : "border-border/60 bg-muted/20")
@@ -211,6 +227,10 @@ export function AnalystCtaCard({
                   );
                 })}
               </ul>
+              <p className="mt-2 text-[11px] text-muted-foreground/90">
+                Pick your session length on the next page →
+              </p>
+
 
               <div className="mt-5 flex flex-col gap-1.5">
                 <Button
@@ -293,11 +313,34 @@ function ScopedStyles() {
       .ctacard-ping { animation: ctacard-ping 2.4s cubic-bezier(0,0,0.2,1) infinite; }
       .ctacard-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.46); }
       .ctacard-glow:hover { box-shadow: 0 14px 36px -14px hsl(var(--primary) / 0.6); }
+      @keyframes ctacard-aurora-text-shift {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .ctacard-aurora-text {
+        background-image: linear-gradient(
+          90deg,
+          hsl(258 90% 60%) 0%,
+          hsl(217 91% 60%) 35%,
+          hsl(160 84% 39%) 70%,
+          hsl(258 90% 60%) 100%
+        );
+        background-size: 220% 100%;
+        background-position: 0% 50%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        animation: ctacard-aurora-text-shift 6s ease-in-out infinite;
+      }
       @media (prefers-reduced-motion: reduce) {
         .ctacard-aurora,
         .ctacard-shield-pulse,
-        .ctacard-ping { animation: none !important; }
+        .ctacard-ping,
+        .ctacard-aurora-text { animation: none !important; }
       }
+
     `}</style>
   );
 }
