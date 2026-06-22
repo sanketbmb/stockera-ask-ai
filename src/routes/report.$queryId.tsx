@@ -321,6 +321,14 @@ function LegacyReportContent({
 
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
+
+  // Bug 3 fix — reports were auto-scrolling to the bottom on first mount.
+  // Force scroll-to-top per queryId so every variant (tier-shaped, general,
+  // sector, educational, legacy) opens at the report header.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, [queryId]);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId],
     queryFn: async () => {
