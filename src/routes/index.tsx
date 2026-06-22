@@ -33,6 +33,7 @@ function Index() {
       <main className="flex-1">
         <HeroSection />
         <LiveStatsBar />
+        <LiveDemandBlock />
         <HowItWorks />
         <ExpertListing />
         <PopularQuestions />
