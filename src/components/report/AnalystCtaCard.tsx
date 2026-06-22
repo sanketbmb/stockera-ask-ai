@@ -73,6 +73,15 @@ export function AnalystCtaCard({
   context = "general",
   variant = "report",
 }: AnalystCtaCardProps) {
+  const reducedMotion = useReducedMotion();
+  const [videoOpen, setVideoOpen] = useState(false);
+  const consultationHref = `/analyst/${APPROVED_DEMO_ANALYST_ID}`;
+  const priceRupees = useCountUp(VIDEO_PRICE_PAISE / 100, 800, !reducedMotion);
+  const recommendedTier = useMemo(
+    () => SESSION_TIERS.find((t) => t.highlight) ?? SESSION_TIERS[0],
+    []
+  );
+
   if (variant !== "report") {
     if (import.meta.env.DEV) {
       return (
@@ -83,15 +92,6 @@ export function AnalystCtaCard({
     }
     return null;
   }
-
-  const reducedMotion = useReducedMotion();
-  const [videoOpen, setVideoOpen] = useState(false);
-  const consultationHref = `/analyst/${APPROVED_DEMO_ANALYST_ID}`;
-  const priceRupees = useCountUp(VIDEO_PRICE_PAISE / 100, 800, !reducedMotion);
-  const recommendedTier = useMemo(
-    () => SESSION_TIERS.find((t) => t.highlight) ?? SESSION_TIERS[0],
-    []
-  );
 
   return (
     <>
