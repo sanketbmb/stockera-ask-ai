@@ -302,6 +302,13 @@ function LegacyReportContent({
   const safeReport: Record<string, unknown> = { ...rawReport };
   for (const k of LEGACY_KEYS) delete safeReport[k];
 
+  // HOTFIX Bug A — mount AnalystCtaCard on legacy stock reports too, but
+  // skip rows that already use the modern phase-2 artifact (defensive guard
+  // against future double-mount if legacy rows get re-tagged).
+  const legacyAuditMeta = (rawReport.audit_meta ?? {}) as Record<string, unknown>;
+  const legacyArtifactStatus = (legacyAuditMeta.report_artifact_status as string | undefined) ?? null;
+  const shouldMountLegacyCta = legacyArtifactStatus !== "phase2_artifact_v0";
+
   return (
     <div className="min-h-screen bg-mesh">
       <Navbar />
@@ -314,7 +321,13 @@ function LegacyReportContent({
             hidden. Use Regenerate Free above to get the new tier-shaped report.
           </div>
         )}
+        {shouldMountLegacyCta && (
+          <div className="mx-auto max-w-4xl mb-4">
+            <AnalystCtaCard queryId={data.id} context="general" />
+          </div>
+        )}
         <AIReportCardV2 report={safeReport as unknown as AIReportV2} meta={meta} />
+
         <ExpertAnswerSection
           queryId={data.id}
           assignedAnalystId={(data as { assigned_analyst_id?: string | null }).assigned_analyst_id ?? null}
