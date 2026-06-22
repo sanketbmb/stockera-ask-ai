@@ -1,12 +1,9 @@
-import { AnimatedCounter } from "@/components/common/AnimatedCounter";
-
 const items = [
-  { icon: "📊", value: 50247, suffix: " Queries Answered" },
-  { icon: "⭐", value: 4.8, suffix: "/5 Avg Rating", decimals: 1 },
-  { icon: "🛡️", value: 12, suffix: " SEBI-Verified Experts" },
-  { icon: "⚡", value: 47, suffix: " min Avg Response" },
-  { icon: "🏆", prefix: "₹", value: 2.4, suffix: " Cr+ Losses Prevented", decimals: 1 },
-  { icon: "📈", value: 143, suffix: " queries today" },
+  { icon: "🛡️", label: "SEBI-Registered Research Analyst · INH000019071" },
+  { icon: "📊", label: "AI reports from real NSE/BSE data" },
+  { icon: "🎥", label: "Personalized video answers in 24 hours" },
+  { icon: "🎁", label: "First 2 reports free" },
+  { icon: "🗣️", label: "Hindi & English" },
 ];
 
 export function LiveStatsBar() {
@@ -17,7 +14,7 @@ export function LiveStatsBar() {
         {loop.map((t, i) => (
           <span key={i} className="flex items-center gap-2">
             <span>{t.icon}</span>
-            <AnimatedCounter end={t.value} prefix={t.prefix} suffix={t.suffix} decimals={t.decimals ?? 0} />
+            <span>{t.label}</span>
             <span className="text-white/30">·</span>
           </span>
         ))}
