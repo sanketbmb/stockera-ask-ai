@@ -151,9 +151,19 @@ function TierShapedReportContent({
 
   const mfRejected = isMfOrPortfolioQuestion(customQuestion);
 
+  const ctaContext: "position" | "fresh" | "general" =
+    queryType === "fresh_entry" || queryType === "buy_decision"
+      ? "fresh"
+      : queryType === "existing_position" ||
+        queryType === "stuck_position" ||
+        queryType === "averaging" ||
+        queryType === "should_average"
+      ? "position"
+      : "general";
+
   const phase2Addendum = phase2Ctx ? (
     <div className="space-y-6">
-      <AnalystCtaCard queryId={queryId} />
+      <AnalystCtaCard queryId={queryId} context={ctaContext} />
       {phase2Ctx.position_state === "profit_review" && <ProfitReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
       {(phase2Ctx.position_state === "loss_review" || phase2Ctx.position_state === "neutral_review") && (
         <LossReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />
