@@ -11,6 +11,7 @@ import { AIReportPreview } from "@/components/landing/AIReportPreview";
 import { Testimonials } from "@/components/landing/Testimonials";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { PromoToast } from "@/components/landing/PromoToast";
+import { LiveDemandBlock } from "@/components/landing/LiveDemandBlock";
 
 export const Route = createFileRoute("/")({
   head: () => ({
