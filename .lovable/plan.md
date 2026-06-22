@@ -1,4 +1,6 @@
-## D1) Exact source: `ask-claude/index.ts` lines 440–490
+## D1) `supabase/functions/ask-claude/index.ts` — verbatim
+
+### Lines 440–490
 
 ```ts
       .eq("user_id", user_id)
@@ -54,7 +56,7 @@
     query_id: mode === "report_followup" ? query_id : null,
 ```
 
-## D1) Exact source: `ask-claude/index.ts` lines 880–940
+### Lines 880–940
 
 ```ts
             title: c.title,
@@ -119,90 +121,62 @@
   return json({
 ```
 
-## D2) Variables used at L908
+### Deployed function version / timestamp
 
-- **`mode` check:** reads local `const mode = body?.mode;` from parsed request JSON at line 403.
-- **`followup_mode` check:** reads local `const followup_mode: "explain" | "open" = body?.followup_mode === "open" ? "open" : "explain";` at line 417.
-- **`arow` variable:** assigned at lines 889–904 from the assistant insert:
+I do not have a tool that returns the Supabase Edge Function deployment version number or deploy timestamp from the dashboard. The most recent deploy I performed in this thread was `ask-claude` at `2026-06-22 07:43:55 UTC` (reported earlier). For the authoritative version+timestamp please check: https://supabase.com/dashboard/project/pwicwmnutyahscbreqvg/functions/ask-claude/details
 
-```ts
-const { data: arow, error: aerr } = await supabase.from("ai_followups").insert({ ... }).select("id").single();
-```
+## D2) Variables used at the L908 gate
 
-Assignment happens immediately before the debit gate. If the insert succeeds and `.single()` returns the inserted id, `arow?.id` should be present. If `aerr` exists, code returns 500 before the gate. The code does not log the `arow?.id` value before the gate.
+- **`mode`** — assigned at **L403**: `const mode = body?.mode;` where `body = await req.json()`. Validated at L404 to be either `"report_followup"` or `"homepage_assistant"`. For Open follow-ups it equals `"report_followup"`.
+- **`followup_mode`** — assigned at **L417**: `const followup_mode: "explain" | "open" = body?.followup_mode === "open" ? "open" : "explain";`. Strictly `"explain"` unless the request body contains the literal string `"open"`.
+- **`arow`** — assigned at **L889** from `supabase.from("ai_followups").insert({...}).select("id").single()`, awaited. If `aerr` is non-null, code returns 500 at **L905** before reaching the gate. Therefore at L908 either we have already returned, or `arow` is a row object — but `arow?.id` can still be falsy if PostgREST returned `data: null` despite no error (uncommon for `.single()` after a successful insert, but possible).
 
-## D3) Frontend request body shape on Open-mode submit
+The assignment is definitely BEFORE the debit gate (L889 → L908).
 
-From `src/components/report/AskClaudeFollowup.tsx` lines 219–226:
+## D3) Frontend invoke body — `src/components/report/AskClaudeFollowup.tsx` L219–226
 
 ```ts
-{
-  mode,
-  query_id,
-  thread_id,
-  user_message,
-  followup_mode,
-}
+const { data, error } = await supabase.functions.invoke("ask-claude", {
+  body: {
+    mode: "report_followup",       // literal string
+    query_id: <redacted>,
+    thread_id: <redacted>,
+    user_message: <redacted>,
+    followup_mode: <"explain" | "open">,
+  },
+});
 ```
 
-The frontend sends **`mode` and `followup_mode` as separate top-level fields**, not nested under another key.
+Top-level keys: `mode`, `query_id`, `thread_id`, `user_message`, `followup_mode`. None are nested. `mode` is the literal string `"report_followup"`. `followupMode` state in the component is `"explain"` by default and toggles to `"open"` when the user picks the **Ask anything** tab (see L86 `useState<FollowupMode>("explain")` and toggle buttons at L494/L504).
 
-Open-mode submit uses these top-level keys:
+## D4) Repo grep — debit flags
 
-```json
-{
-  "mode": "...",
-  "query_id": "...",
-  "thread_id": "...",
-  "user_message": "...",
-  "followup_mode": "..."
-}
+```
+$ rg -n "STAGE_3A_DEBIT_ENABLED|MONETIZATION_ENABLED|DEBIT_ENABLED|debit.*flag|skip.*debit"
+src/components/stock-picker/StockPickerFlow.tsx:276:      // no batch_id, so we skip the debit and notify the user — option (b).
 ```
 
-## D4) Early return / try-catch swallow / feature flag between assistant insert and debit block
+- `STAGE_3A_DEBIT_ENABLED`: **0 matches**.
+- `MONETIZATION_ENABLED`: **0 matches**.
+- `DEBIT_ENABLED`: **0 matches**.
+- `debit.*flag`: **0 matches**.
+- `skip.*debit`: 1 match, unrelated (comment in `StockPickerFlow.tsx` about Stock Picker batch handling, not follow-ups).
 
-Between assistant insert and debit gate:
+`stock_picker_runtime_config` rows: this table is used for things like `paywall_v1_enabled`, `welcome_bonus`, `first_topup_bonus`, `action_costs`, `active_universe_snapshot_id`, `compute_fundamentals_twelvedata_fallback_enabled`, `video_answer_promo`. **`ask-claude/index.ts` does not read from `stock_picker_runtime_config` at all** (verified via grep — zero references in that file). Therefore no runtime-config flag can be silently disabling the Open-mode debit.
 
-```ts
-if (aerr) return json({ error: "persist_failed", detail: aerr.message }, 500);
+## D5) Execution order in `ask-claude/index.ts`
 
-// Stage 3A: Open-mode post-success debit. Founder_beta bypassed in preflight.
-if (!isExplainFollowup && mode === "report_followup" && followup_mode === "open" && !isBeta && arow?.id) {
-```
+a) **Assistant row INSERT** into `ai_followups`: **L889–L904** (`const { data: arow, error: aerr } = await supabase.from("ai_followups").insert({...}).select("id").single();`), with `if (aerr) return json(..., 500)` at L905.
 
-There is **no early return, try/catch swallow, or feature flag between the assistant row insert and the L908 debit gate**.
+b) **Debit gate** runs at **L908**.
 
-I found **no `STAGE_3A_DEBIT_ENABLED`, `MONETIZATION_ENABLED`, or similar debit feature flag** in `ask-claude/index.ts`. The only environment reads in this file are:
+c) (a) is **BEFORE** (b). Linear flow, no branching between them.
 
-```ts
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-ANTHROPIC_API_KEY
-GEMINI_API_KEY
-LOVABLE_API_KEY
-LLM_PROVIDER
-CLAUDE_MODEL
-```
+d) Yes — `arow` is the result of step (a), and the `await` on the insert resolves before L905's error check, which is itself before L908. So by the time the gate evaluates, `arow` is either a row object (proceed) or the function has already returned 500 (gate never runs).
 
-So there is no prod flag value to paste for debit enablement.
+## D6) Diagnostic logging — confirmation
 
-## D5) Assistant row insert order vs debit block
-
-The assistant row insert happens **BEFORE** the debit block.
-
-Execution order:
-
-1. Build `sourcesUsedArray`.
-2. Insert assistant row into `ai_followups` and assign `arow`.
-3. If `aerr`, return 500.
-4. Run L908 debit gate using `arow?.id`.
-5. Return success response.
-
-Therefore, `arow?.id` should not be null due to execution order, assuming `.insert(...).select("id").single()` returns data.
-
-## D6) Temporary diagnostic logging proposal
-
-Confirmed: in the fix deploy, I will include this log immediately before the L908 gate:
+**Yes, confirmed.** When you approve the fix, I will insert the following block immediately before the L908 gate, deploy `ask-claude`, and leave it in place for at least one Open-mode UAT cycle:
 
 ```ts
 console.log("[debit-gate]", {
@@ -217,25 +191,8 @@ console.log("[debit-gate]", {
 });
 ```
 
-## Diagnosis summary
+No other code change is bundled with this log — it is purely observational, and will reveal which of the 5 conditions is false on the production rows you cited (`a76d85b3…` and `5f9ec188…`).
 
-The deployed code still has `!isBeta` in the post-success debit gate:
+## Hard stops re-confirmed
 
-```ts
-if (!isExplainFollowup && mode === "report_followup" && followup_mode === "open" && !isBeta && arow?.id) {
-```
-
-That means founder-beta users will be preflight-bypassed **and debit-bypassed**. The current comment says “Founder_beta bypassed in preflight,” but the code also bypasses post-success debit for beta users.
-
-For non-beta reproductions, the most likely silent skip variable is one of: `followup_mode !== "open"`, `mode !== "report_followup"`, or `!arow?.id`; the proposed `[debit-gate]` log will identify which condition is false on the next deploy.
-
-## Proposed fix plan for later approval only
-
-After founder reply `APPLY DEBIT FIX`:
-
-1. Add the `[debit-gate]` diagnostic log immediately before L908.
-2. Remove `!isBeta` from the post-success debit gate so founder-beta only bypasses preflight, not post-success debit.
-3. Keep Explain invariant unchanged: Explain mode never preflights and never debits.
-4. Do not touch Razorpay, subscriptions, Analyst Video, homepage, deterministic router, query type detection, Stage 2.3.2 context logic, Explain success path, Claude model, Stage 2.3.3 copy, or `Topup.tsx`.
-5. Deploy only `ask-claude` if approved.
-6. Verify logs and DB evidence only; do not run founder UAT.
+No files written. No deploy. No migration. Razorpay / subscriptions / Analyst Video / homepage untouched. Awaiting founder `APPLY DEBIT FIX`.
