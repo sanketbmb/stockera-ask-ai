@@ -16,6 +16,7 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   analystId: string;
   analystName: string;
+  defaultTier?: SessionTier["id"];
 }
 
 function nextSlots(): { label: string; date: Date }[] {
@@ -35,15 +36,27 @@ function nextSlots(): { label: string; date: Date }[] {
   return slots;
 }
 
-export function BookSessionModal({ open, onOpenChange, analystId, analystName }: Props) {
+export function BookSessionModal({ open, onOpenChange, analystId, analystName, defaultTier }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [tier, setTier] = useState<SessionTier | null>(null);
+  const initialTier = defaultTier ? SESSION_TIERS.find((t) => t.id === defaultTier) ?? null : null;
+  const [step, setStep] = useState<1 | 2 | 3>(initialTier ? 2 : 1);
+  const [tier, setTier] = useState<SessionTier | null>(initialTier);
   const [slotIdx, setSlotIdx] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const slots = nextSlots();
+
+  // Re-sync when caller changes the desired default tier between opens.
+  useEffect(() => {
+    if (!open) return;
+    if (initialTier) {
+      setTier(initialTier);
+      setStep(2);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultTier]);
+
 
   const reset = () => {
     setStep(1);
