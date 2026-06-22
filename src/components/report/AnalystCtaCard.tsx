@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { VideoAnswerPaymentModal } from "@/components/payment/VideoAnswerPaymentModal";
 import { SESSION_TIERS, formatINR } from "@/lib/session-tiers";
 import { FIRM } from "@/lib/firm-details";
+import { Logo } from "@/components/common/Logo";
 
 // Canonical video price (₹100). Mirrors VIDEO_PRICE_PAISE in payments.functions.ts.
 const VIDEO_PRICE_PAISE = 10000;
