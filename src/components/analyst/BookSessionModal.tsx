@@ -57,6 +57,30 @@ export function BookSessionModal({ open, onOpenChange, analystId, analystName, d
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultTier]);
 
+  // HARD-STOP-SAFE MICRO-FIX — proper body scroll-lock while modal is open
+  // so the page behind doesn't jump when focus moves into the dialog.
+  useEffect(() => {
+    if (!open) return;
+    const prev = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+    };
+    const scrollY = window.scrollY;
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    return () => {
+      const y = document.body.style.top;
+      document.body.style.overflow = prev.overflow;
+      document.body.style.position = prev.position;
+      document.body.style.top = prev.top;
+      window.scrollTo(0, parseInt(y || "0") * -1);
+    };
+  }, [open]);
+
+
+
 
   const reset = () => {
     setStep(1);
