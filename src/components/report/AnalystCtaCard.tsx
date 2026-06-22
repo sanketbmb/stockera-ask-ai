@@ -189,14 +189,18 @@ export function AnalystCtaCard({
                 SEBI-registered analyst.
               </p>
 
-              <ul className="mt-4 space-y-1.5" aria-label="Consultation tiers">
+              <ul
+                className="mt-4 space-y-1.5 select-none"
+                aria-label="Consultation tiers (preview)"
+              >
                 {SESSION_TIERS.map((tier) => {
                   const isRec = tier.id === recommendedTier.id;
                   return (
                     <li
                       key={tier.id}
+                      aria-disabled="true"
                       className={
-                        "flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] " +
+                        "pointer-events-none flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] opacity-[0.86] " +
                         (isRec
                           ? "border-primary/40 bg-primary/[0.04]"
                           : "border-border/60 bg-muted/20")
@@ -223,6 +227,10 @@ export function AnalystCtaCard({
                   );
                 })}
               </ul>
+              <p className="mt-2 text-[11px] text-muted-foreground/90">
+                Pick your session length on the next page →
+              </p>
+
 
               <div className="mt-5 flex flex-col gap-1.5">
                 <Button
