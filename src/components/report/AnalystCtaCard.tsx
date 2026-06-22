@@ -291,7 +291,7 @@ function ScopedStyles() {
       }
       .ctacard-shield-pulse { animation: ctacard-shield-pulse 3.6s ease-in-out infinite; }
       .ctacard-ping { animation: ctacard-ping 2.4s cubic-bezier(0,0,0.2,1) infinite; }
-      .ctacard-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.45); }
+      .ctacard-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.46); }
       .ctacard-glow:hover { box-shadow: 0 14px 36px -14px hsl(var(--primary) / 0.6); }
       @media (prefers-reduced-motion: reduce) {
         .ctacard-aurora,
