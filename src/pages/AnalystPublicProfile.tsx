@@ -27,6 +27,10 @@ const flagMap: Record<string, string> = {
 export default function AnalystPublicProfile() {
   const { analystId } = useParams({ from: "/analyst/$analystId" });
   const [bookOpen, setBookOpen] = useState(false);
+  const [selectedTierId, setSelectedTierId] = useState<SessionTier["id"]>(
+    (SESSION_TIERS.find((t) => t.highlight) ?? SESSION_TIERS[0]).id
+  );
+
 
   const { data: analyst, isLoading } = useQuery({
     queryKey: ["analyst-public", analystId],
