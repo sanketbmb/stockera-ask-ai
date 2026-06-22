@@ -12,6 +12,7 @@ import { Testimonials } from "@/components/landing/Testimonials";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { PromoToast } from "@/components/landing/PromoToast";
 import { LiveDemandBlock } from "@/components/landing/LiveDemandBlock";
+import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -33,6 +34,7 @@ function Index() {
       <main className="flex-1">
         <HeroSection />
         <LiveStatsBar />
+        <HomeAnalystCta />
         <LiveDemandBlock />
         <HowItWorks />
         <ExpertListing />
