@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import stockeraLogo from "@/assets/stockera-logo.png";
 import { BookSessionModal } from "@/components/analyst/BookSessionModal";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { SESSION_TIERS, formatINR, type SessionTier } from "@/lib/session-tiers";
