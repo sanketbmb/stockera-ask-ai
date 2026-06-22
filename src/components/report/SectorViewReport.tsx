@@ -20,6 +20,7 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
