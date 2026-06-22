@@ -154,7 +154,13 @@ export function AnalystCtaCard({
 
               <div className="mt-5 flex items-end justify-between gap-4">
                 <div>
-                  <div className="font-display text-3xl tabular-nums text-foreground">
+                  <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="inline-flex items-center justify-center" style={{ width: 22, height: 22 }}>
+                      <Logo variant="compact" size="sm" linkTo={null} showTagline={false} />
+                    </span>
+                    <span>Stockera · Verified</span>
+                  </div>
+                  <div className="mt-1 font-display text-3xl tabular-nums text-foreground">
                     ₹{priceRupees.toLocaleString("en-IN")}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
@@ -169,6 +175,7 @@ export function AnalystCtaCard({
                   Request Analyst Video — ₹{VIDEO_PRICE_PAISE / 100}
                 </Button>
               </div>
+
             </div>
 
             {/* RIGHT — Consultation offer */}
