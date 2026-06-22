@@ -16,6 +16,7 @@ import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
 import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
+import { FounderPulseCard } from "@/components/dashboard/FounderPulseCard";
 
 function greeting() {
   const h = new Date().getHours();
