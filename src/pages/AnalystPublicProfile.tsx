@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import stockeraLogo from "@/assets/stockera-logo.png";
 import { BookSessionModal } from "@/components/analyst/BookSessionModal";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { SESSION_TIERS, formatINR, type SessionTier } from "@/lib/session-tiers";
@@ -121,7 +122,13 @@ export default function AnalystPublicProfile() {
             <div className="relative">
               <Avatar className="h-28 w-28 sm:h-36 sm:w-36 ring-4 ring-card shadow-card-hover">
                 <AvatarImage src={analyst.avatar_url ?? undefined} />
-                <AvatarFallback className="bg-gradient-brand text-white text-3xl">{initials}</AvatarFallback>
+                <AvatarFallback className="bg-gradient-brand p-4">
+                  <img
+                    src={stockeraLogo}
+                    alt="Stockera"
+                    className="h-full w-full object-contain drop-shadow"
+                  />
+                </AvatarFallback>
               </Avatar>
               <span className={`absolute bottom-2 right-2 h-5 w-5 rounded-full ring-4 ring-card ${available ? "bg-success animate-pulse" : "bg-muted-foreground"}`} />
             </div>
