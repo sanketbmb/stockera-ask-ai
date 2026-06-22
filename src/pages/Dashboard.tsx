@@ -105,6 +105,8 @@ export default function DashboardPage() {
         <p className="text-muted-foreground mt-2 text-sm">Your stock queries, AI reports and expert answers — all in one place.</p>
       </div>
 
+      <FounderPulseCard />
+
       <section data-tour="dashboard-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
         <StatCard label="AI Reports" value={stats?.ai} icon={<Sparkles className="h-4 w-4" />} loading={statsLoading} animate />
