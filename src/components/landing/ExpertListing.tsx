@@ -23,13 +23,6 @@ interface Expert {
   avatar_url?: string | null;
 }
 
-const fallbackExperts: Expert[] = [
-  { display_name: "Mayank Sharma", sebi_reg_number: "INH000012345", sebi_type: "RA", years_experience: 8, specializations: ["Technical Analysis", "Price Action"], rating: 4.8, total_sessions: 1240, languages: ["Hindi", "English"], is_available: true },
-  { display_name: "Priya Desai", sebi_reg_number: "INH000067890", sebi_type: "RA", years_experience: 12, specializations: ["Fundamental", "Long Term"], rating: 4.9, total_sessions: 2100, languages: ["English", "Gujarati"], is_available: true },
-  { display_name: "Arjun Mehta", sebi_reg_number: "INA000054321", sebi_type: "RIA", years_experience: 6, specializations: ["Swing Trading", "F&O"], rating: 4.7, total_sessions: 870, languages: ["Hindi", "English"], is_available: false },
-  { display_name: "Sneha Kulkarni", sebi_reg_number: "INH000098765", sebi_type: "RA", years_experience: 10, specializations: ["Sectoral", "Technical"], rating: 4.6, total_sessions: 1560, languages: ["English", "Marathi"], is_available: true },
-];
-
 const flagMap: Record<string, string> = {
   English: "🇬🇧", Hindi: "🇮🇳", Gujarati: "🇮🇳", Marathi: "🇮🇳", Tamil: "🇮🇳", Telugu: "🇮🇳", Kannada: "🇮🇳", Bengali: "🇮🇳",
 };
@@ -39,7 +32,7 @@ const tabs = ["All", "Technical", "Fundamental", "F&O & Swing", "Long Term"] as 
 export function ExpertListing() {
   const [tab, setTab] = useState<(typeof tabs)[number]>("All");
 
-  const { data: experts = fallbackExperts } = useQuery({
+  const { data: experts = [] } = useQuery({
     queryKey: ["landing-experts"],
     queryFn: async (): Promise<Expert[]> => {
       const { data, error } = await supabase
@@ -47,7 +40,7 @@ export function ExpertListing() {
         .select("id, display_name, sebi_reg_number, sebi_type, years_experience, specializations, rating, total_sessions, languages, is_available, avatar_url")
         .eq("is_approved", true)
         .limit(8);
-      if (error || !data || data.length === 0) return fallbackExperts;
+      if (error || !data || data.length === 0) return [];
       return data as Expert[];
     },
     staleTime: 60_000,
@@ -67,28 +60,38 @@ export function ExpertListing() {
           <p className="mt-3 text-muted-foreground">Real analysts. Real registrations. Real answers — not anonymous tips.</p>
         </Reveal>
 
-        <div className="mt-8 flex flex-wrap justify-center gap-2">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {experts.length > 0 && (
+          <div className="mt-8 flex flex-wrap justify-center gap-2">
+            {tabs.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                  tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {(filtered.length > 0 ? filtered : experts).slice(0, 8).map((e, i) => (
-            <Reveal key={(e.id ?? e.sebi_reg_number) + i} delay={i * 0.05}>
-              <ExpertCard expert={e} />
-            </Reveal>
-          ))}
-        </div>
+        {experts.length === 0 ? (
+          <div className="mt-12 flex flex-col items-center justify-center text-center p-8 rounded-2xl border border-dashed border-border bg-card/40 max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-base">
+              Our SEBI-registered analyst roster is being onboarded. Check back shortly.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {(filtered.length > 0 ? filtered : experts).slice(0, 8).map((e, i) => (
+              <Reveal key={(e.id ?? e.sebi_reg_number) + i} delay={i * 0.05}>
+                <ExpertCard expert={e} />
+              </Reveal>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
