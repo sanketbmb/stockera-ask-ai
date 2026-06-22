@@ -163,7 +163,7 @@ export default function AnalystPublicProfile() {
                   </Link>
                 </Button>
                 <Button size="lg" onClick={() => setBookOpen(true)} className="bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-card-hover">
-                  <Video className="h-4 w-4 mr-2" /> Book 1:1 private session
+                  <Video className="h-4 w-4 mr-2" /> Book 1:1 Private Session
                 </Button>
               </div>
             </div>
