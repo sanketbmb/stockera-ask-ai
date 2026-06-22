@@ -116,7 +116,10 @@ export function AnalystCtaCard({
         <div className="relative rounded-[calc(1.5rem-1px)] bg-card/80 backdrop-blur-sm">
           {/* Top strip */}
           <div className="flex items-center justify-between gap-3 px-6 pt-5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary/80">
+            <span
+              className="ctacard-aurora-text font-mono text-[10px] uppercase tracking-[0.18em]"
+              aria-label="Premium · Human Analyst"
+            >
               Premium · Human Analyst
             </span>
             <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -127,6 +130,7 @@ export function AnalystCtaCard({
               SEBI-registered analysts on standby
             </span>
           </div>
+
 
           <div className="grid grid-cols-1 gap-px bg-border/40 px-6 pb-6 pt-4 md:grid-cols-2 md:gap-0 md:px-0 md:pt-0">
             {/* LEFT — Video offer */}
