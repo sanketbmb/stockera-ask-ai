@@ -172,11 +172,11 @@ function VideoAnswerTab({
   if (readyVideos.length === 0 && pendingVideos.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-border bg-card/40 p-6 text-center">
-          <VideoIcon className="h-8 w-8 mx-auto text-muted-foreground/50" />
-          <p className="font-display text-lg mt-2">No video answers yet</p>
-          <p className="text-muted-foreground text-sm mt-1">
-            Request a SEBI-registered analyst video on any stock report.
+        <div className="rounded-2xl border border-border bg-card/40 p-8 text-center max-w-2xl mx-auto">
+          <VideoIcon className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+          <h3 className="font-display text-2xl font-semibold tracking-tight">No video answers yet</h3>
+          <p className="text-muted-foreground text-sm mt-2 max-w-md mx-auto leading-relaxed">
+            You haven’t requested any premium video answers yet. Get a SEBI-registered Research Analyst’s video view on your stock query, or book a 1:1 private session.
           </p>
         </div>
         <AnalystCtaCard queryId={bottomQueryId} context="general" />
