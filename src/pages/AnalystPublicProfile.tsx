@@ -283,7 +283,7 @@ export default function AnalystPublicProfile() {
         </Button>
       </div>
 
-      <BookSessionModal open={bookOpen} onOpenChange={setBookOpen} analystId={analystId} analystName={analyst.display_name} />
+      <BookSessionModal open={bookOpen} onOpenChange={setBookOpen} analystId={analystId} analystName={analyst.display_name} defaultTier={selectedTierId} />
     </div>
   );
 }
