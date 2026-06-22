@@ -161,17 +161,25 @@ function TierShapedReportContent({
       ? "position"
       : "general";
 
-  const phase2Addendum = phase2Ctx ? (
+  // HOTFIX Bug A — AnalystCtaCard must mount on every stock-report path
+  // (Phase 2 position addendum, Fresh Entry addendum, and the no-addendum
+  // fallback). Previously it only rendered inside the phase2Addendum branch,
+  // which hid the CTA on fresh-entry / buy-decision reports.
+  const phase2Addendum = (
     <div className="space-y-6">
       <AnalystCtaCard queryId={queryId} context={ctaContext} />
-      {phase2Ctx.position_state === "profit_review" && <ProfitReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
-      {(phase2Ctx.position_state === "loss_review" || phase2Ctx.position_state === "neutral_review") && (
-        <LossReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />
+      {phase2Ctx ? (
+        <>
+          {phase2Ctx.position_state === "profit_review" && <ProfitReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
+          {(phase2Ctx.position_state === "loss_review" || phase2Ctx.position_state === "neutral_review") && (
+            <LossReviewAddendum ctx={phase2Ctx} payload={data} tier={horizon} />
+          )}
+          {phase2Ctx.position_state === "averaging" && <AveragingDisciplineAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
+        </>
+      ) : (
+        <FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />
       )}
-      {phase2Ctx.position_state === "averaging" && <AveragingDisciplineAddendum ctx={phase2Ctx} payload={data} tier={horizon} />}
     </div>
-  ) : (
-    <FreshEntryAddendum levels={data.levels} tier={horizon} validationReasons={validationReasons} />
   );
 
   const topBannerNode = (
@@ -294,6 +302,13 @@ function LegacyReportContent({
   const safeReport: Record<string, unknown> = { ...rawReport };
   for (const k of LEGACY_KEYS) delete safeReport[k];
 
+  // HOTFIX Bug A — mount AnalystCtaCard on legacy stock reports too, but
+  // skip rows that already use the modern phase-2 artifact (defensive guard
+  // against future double-mount if legacy rows get re-tagged).
+  const legacyAuditMeta = (rawReport.audit_meta ?? {}) as Record<string, unknown>;
+  const legacyArtifactStatus = (legacyAuditMeta.report_artifact_status as string | undefined) ?? null;
+  const shouldMountLegacyCta = legacyArtifactStatus !== "phase2_artifact_v0";
+
   return (
     <div className="min-h-screen bg-mesh">
       <Navbar />
@@ -306,7 +321,13 @@ function LegacyReportContent({
             hidden. Use Regenerate Free above to get the new tier-shaped report.
           </div>
         )}
+        {shouldMountLegacyCta && (
+          <div className="mx-auto max-w-4xl mb-4">
+            <AnalystCtaCard queryId={data.id} context="general" />
+          </div>
+        )}
         <AIReportCardV2 report={safeReport as unknown as AIReportV2} meta={meta} />
+
         <ExpertAnswerSection
           queryId={data.id}
           assignedAnalystId={(data as { assigned_analyst_id?: string | null }).assigned_analyst_id ?? null}
