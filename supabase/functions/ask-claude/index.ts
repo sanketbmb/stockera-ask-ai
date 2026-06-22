@@ -455,9 +455,11 @@ Deno.serve(async (req: Request) => {
   }
 
   // Stage 3A: Open-mode wallet preflight (20 pts) — founder_beta bypass.
+  // INVARIANT: Explain mode is FREE. Never preflight, never debit.
   const OPEN_FOLLOWUP_COST_PTS = 20;
+  const isExplainFollowup = mode === "report_followup" && followup_mode === "explain";
   let isBeta = false;
-  if (mode === "report_followup" && followup_mode === "open") {
+  if (!isExplainFollowup && mode === "report_followup" && followup_mode === "open") {
     const { data: prof } = await supabase
       .from("profiles").select("founder_beta").eq("id", user_id).maybeSingle();
     isBeta = (prof as any)?.founder_beta === true;
@@ -903,7 +905,7 @@ Deno.serve(async (req: Request) => {
   if (aerr) return json({ error: "persist_failed", detail: aerr.message }, 500);
 
   // Stage 3A: Open-mode post-success debit. Founder_beta bypassed in preflight.
-  if (mode === "report_followup" && followup_mode === "open" && !isBeta && arow?.id) {
+  if (!isExplainFollowup && mode === "report_followup" && followup_mode === "open" && !isBeta && arow?.id) {
     try {
       const idem = `followup_open:${arow.id}`;
       const { data: dr } = await supabase.rpc("wallet_apply_debit", {
