@@ -22,6 +22,7 @@ import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
+import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
 
@@ -204,6 +205,10 @@ export function EducationalReportBody({
       <ConceptBrief payload={payload} />
 
       {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
+
+      {!printMode && queryId && (
+        <AnalystCtaCard queryId={queryId} context="general" />
+      )}
 
       {!printMode && (
         <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5">

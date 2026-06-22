@@ -198,7 +198,7 @@ function GeneralReportBody({
         </section>
       )}
 
-      <AnalystCtaCard queryId={queryId} />
+      <AnalystCtaCard queryId={queryId} context="general" />
 
       <section className="rounded-xl border border-muted bg-muted/30 px-4 py-3 flex items-start gap-2 text-xs text-muted-foreground">
         <ShieldCheck className="h-4 w-4 text-primary mt-0.5 shrink-0" />

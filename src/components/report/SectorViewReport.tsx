@@ -20,6 +20,7 @@ import type { RouterOutput } from "@/lib/intent-router-schema";
 import { confidenceBand } from "@/lib/intent-router-schema";
 import { FIRM } from "@/lib/firm-details";
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton";
+import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { MotionConfig } from "framer-motion";
@@ -277,28 +278,8 @@ export function SectorReportBody({
 
       {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
 
-      {!printMode && (
-        <section
-          aria-label="SEBI analyst guidance"
-          className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-primary">
-                <ShieldCheck className="h-3.5 w-3.5" /> SEBI-Registered Analyst
-              </div>
-              <p className="mt-1.5 font-display text-base text-foreground">
-                Talk to an analyst about positioning in this sector
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                A SEBI-registered analyst can frame how to think about exposure within {payload.sector_display}.
-              </p>
-            </div>
-            <Button asChild size="sm" className="gap-1.5">
-              <Link to="/post-query">Request analyst follow-up</Link>
-            </Button>
-          </div>
-        </section>
+      {!printMode && queryId && (
+        <AnalystCtaCard queryId={queryId} context="general" />
       )}
 
       <SEBIDisclaimerInline />
