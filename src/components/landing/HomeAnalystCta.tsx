@@ -153,7 +153,7 @@ export function HomeAnalystCta() {
                       variant="outline"
                       className="hac-glow group gap-1.5 rounded-full border-primary/30 bg-card px-5"
                     >
-                      <Link to={CONSULTATION_HREF}>
+                      <Link to="/analyst/$analystId" params={{ analystId: APPROVED_DEMO_ANALYST_ID }}>
                         <Phone className="h-4 w-4" aria-hidden />
                         Browse Analyst &amp; Book
                         <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
