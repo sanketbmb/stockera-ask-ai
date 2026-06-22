@@ -313,11 +313,34 @@ function ScopedStyles() {
       .ctacard-ping { animation: ctacard-ping 2.4s cubic-bezier(0,0,0.2,1) infinite; }
       .ctacard-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.46); }
       .ctacard-glow:hover { box-shadow: 0 14px 36px -14px hsl(var(--primary) / 0.6); }
+      @keyframes ctacard-aurora-text-shift {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .ctacard-aurora-text {
+        background-image: linear-gradient(
+          90deg,
+          hsl(258 90% 60%) 0%,
+          hsl(217 91% 60%) 35%,
+          hsl(160 84% 39%) 70%,
+          hsl(258 90% 60%) 100%
+        );
+        background-size: 220% 100%;
+        background-position: 0% 50%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        animation: ctacard-aurora-text-shift 6s ease-in-out infinite;
+      }
       @media (prefers-reduced-motion: reduce) {
         .ctacard-aurora,
         .ctacard-shield-pulse,
-        .ctacard-ping { animation: none !important; }
+        .ctacard-ping,
+        .ctacard-aurora-text { animation: none !important; }
       }
+
     `}</style>
   );
 }
