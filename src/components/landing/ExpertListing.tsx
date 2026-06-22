@@ -60,28 +60,38 @@ export function ExpertListing() {
           <p className="mt-3 text-muted-foreground">Real analysts. Real registrations. Real answers — not anonymous tips.</p>
         </Reveal>
 
-        <div className="mt-8 flex flex-wrap justify-center gap-2">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {experts.length > 0 && (
+          <div className="mt-8 flex flex-wrap justify-center gap-2">
+            {tabs.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                  tab === t ? "bg-primary text-primary-foreground shadow" : "bg-card text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {(filtered.length > 0 ? filtered : experts).slice(0, 8).map((e, i) => (
-            <Reveal key={(e.id ?? e.sebi_reg_number) + i} delay={i * 0.05}>
-              <ExpertCard expert={e} />
-            </Reveal>
-          ))}
-        </div>
+        {experts.length === 0 ? (
+          <div className="mt-12 flex flex-col items-center justify-center text-center p-8 rounded-2xl border border-dashed border-border bg-card/40 max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-base">
+              Our SEBI-registered analyst roster is being onboarded. Check back shortly.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {(filtered.length > 0 ? filtered : experts).slice(0, 8).map((e, i) => (
+              <Reveal key={(e.id ?? e.sebi_reg_number) + i} delay={i * 0.05}>
+                <ExpertCard expert={e} />
+              </Reveal>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
