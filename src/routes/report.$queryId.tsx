@@ -223,6 +223,23 @@ function TierShapedReportContent({
       <main id="analyst-answer" className="px-4 sm:px-6 lg:px-8 pb-12">
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
+
+      {/* Bottom premium-human-analysis surface — calmer repeat after the full
+          AI report stack so users always see a monetization surface at
+          end-of-report. Stock-report path only. */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-16">
+        <div className="mx-auto max-w-5xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-px flex-1 bg-border/60" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Still deciding? Get a human second opinion
+            </span>
+            <div className="h-px flex-1 bg-border/60" />
+          </div>
+          <AnalystCtaCard queryId={queryId} context={ctaContext} />
+        </div>
+      </section>
+
       {/* Phase 1.1 — when frozen >24h, mute live-price chips and explain why. */}
       {isStale && (
         <style>{`
