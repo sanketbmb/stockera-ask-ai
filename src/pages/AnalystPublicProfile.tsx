@@ -15,7 +15,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { BookSessionModal } from "@/components/analyst/BookSessionModal";
 import { VERDICT_MAP } from "@/lib/verdict";
-import { SESSION_TIERS, formatINR } from "@/lib/session-tiers";
+import { SESSION_TIERS, formatINR, type SessionTier } from "@/lib/session-tiers";
+import { Logo } from "@/components/common/Logo";
+import { cn } from "@/lib/utils";
 
 const flagMap: Record<string, string> = {
   English: "🇬🇧", Hindi: "🇮🇳", Gujarati: "🇮🇳", Marathi: "🇮🇳", Tamil: "🇮🇳",
