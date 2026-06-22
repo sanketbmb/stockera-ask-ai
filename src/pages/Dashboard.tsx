@@ -16,6 +16,7 @@ import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import { seedDemoQueryIfEmpty } from "@/lib/seedDemoQuery";
 import { useWalletBalance, useWalletRealtime, formatPoints } from "@/lib/points";
+import { FounderPulseCard } from "@/components/dashboard/FounderPulseCard";
 
 function greeting() {
   const h = new Date().getHours();
@@ -103,6 +104,8 @@ export default function DashboardPage() {
         <h1 className="font-display text-3xl md:text-4xl mt-1">{greeting()}, {firstName} 👋</h1>
         <p className="text-muted-foreground mt-2 text-sm">Your stock queries, AI reports and expert answers — all in one place.</p>
       </div>
+
+      <FounderPulseCard />
 
       <section data-tour="dashboard-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <StatCard label="Queries Posted" value={stats?.total} icon={<FileText className="h-4 w-4" />} loading={statsLoading} animate />
