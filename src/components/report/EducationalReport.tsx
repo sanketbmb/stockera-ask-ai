@@ -205,6 +205,10 @@ export function EducationalReportBody({
 
       {!printMode && <YouAlsoAskedSection answers={secondaryAnswers ?? null} />}
 
+      {!printMode && queryId && (
+        <AnalystCtaCard queryId={queryId} context="general" />
+      )}
+
       {!printMode && (
         <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5 px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
