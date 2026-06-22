@@ -350,6 +350,20 @@ function LegacyReportContent({
           assignedAnalystId={(data as { assigned_analyst_id?: string | null }).assigned_analyst_id ?? null}
           queryCreatedAt={data.created_at as string}
         />
+
+        {/* Bottom premium-human-analysis surface — calmer end-of-report repeat. */}
+        {shouldMountLegacyCta && (
+          <div className="mx-auto max-w-4xl mt-10">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-px flex-1 bg-border/60" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                Still deciding? Get a human second opinion
+              </span>
+              <div className="h-px flex-1 bg-border/60" />
+            </div>
+            <AnalystCtaCard queryId={data.id} context="general" />
+          </div>
+        )}
       </main>
     </div>
   );
