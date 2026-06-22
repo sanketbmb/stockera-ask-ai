@@ -177,6 +177,9 @@ export function AskClaudeFollowup({
   }, [userId, threadId]);
 
   useEffect(() => {
+    // Only auto-scroll once the user has actually started a conversation —
+    // firing on initial mount yanks the whole report page to the bottom.
+    if (turns.length === 0) return;
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, sending]);
 
