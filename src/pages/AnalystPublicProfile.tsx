@@ -186,23 +186,60 @@ export default function AnalystPublicProfile() {
         {/* Pricing tiers preview */}
         <section className="space-y-4">
           <h2 className="font-display text-2xl">Session plans</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            {SESSION_TIERS.map((t) => (
-              <Card key={t.id} className={`p-5 relative ${t.highlight ? "border-accent shadow-card-hover" : ""}`}>
-                {t.highlight && <Badge className="absolute -top-2 right-4 bg-gradient-to-r from-primary to-accent text-primary-foreground border-0 text-[10px]">Best value</Badge>}
-                <p className="font-display text-lg">{t.label}</p>
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> {t.minutes} minutes</p>
-                <p className="mt-3 font-mono text-2xl font-bold text-accent">{formatINR(t.amountPaise)}</p>
-                <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{t.blurb}</p>
-              </Card>
-            ))}
+          <div className="grid sm:grid-cols-3 gap-4" role="radiogroup" aria-label="Session plan">
+            {SESSION_TIERS.map((t) => {
+              const isSelected = selectedTierId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => setSelectedTierId(t.id)}
+                  className={cn(
+                    "text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-transform hover:-translate-y-0.5",
+                  )}
+                >
+                  <Card
+                    className={cn(
+                      "p-5 relative h-full transition-all",
+                      isSelected
+                        ? "border-accent shadow-card-hover ring-2 ring-accent/40"
+                        : "hover:border-accent/60",
+                    )}
+                  >
+                    {t.highlight && (
+                      <Badge className="absolute -top-2 right-4 bg-gradient-to-r from-primary to-accent text-primary-foreground border-0 text-[10px]">
+                        Best value
+                      </Badge>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <p className="font-display text-lg">{t.label}</p>
+                      {isSelected && <CheckCircle2 className="h-4 w-4 text-accent" aria-label="Selected" />}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> {t.minutes} minutes</p>
+                    <p className="mt-3 font-mono text-2xl font-bold text-accent">{formatINR(t.amountPaise)}</p>
+                    <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{t.blurb}</p>
+                  </Card>
+                </button>
+              );
+            })}
           </div>
-          <div className="text-center">
+          <div className="text-center space-y-2">
             <Button size="lg" onClick={() => setBookOpen(true)} className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
               Book your slot <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
+            <div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+              <div className="inline-flex items-center justify-center" style={{ width: 24, height: 24 }}>
+                <Logo variant="compact" size="sm" linkTo={null} showTagline={false} />
+              </div>
+              <span>
+                Booked through Stockera · SEBI-registered · Secure
+              </span>
+            </div>
           </div>
         </section>
+
 
         {/* Recent answers */}
         {recentAnswers && recentAnswers.length > 0 && (
