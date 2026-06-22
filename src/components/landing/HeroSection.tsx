@@ -9,7 +9,7 @@ const badges = [
   { icon: ShieldCheck, text: "SEBI Registered Analysts" },
   { icon: Lock, text: "Private & Secure" },
   { icon: Zap, text: "AI Report in 30 sec" },
-  { icon: Video, text: "Video Answer in 2 hrs" },
+  { icon: Video, text: "Video Answer in 24 hrs" },
   { icon: Wallet, text: "First 2 queries FREE" },
 ];
 
@@ -21,7 +21,7 @@ export function HeroSection() {
         <Reveal>
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
-              <ShieldCheck className="h-3.5 w-3.5" /> SEBI-Verified Experts · Trusted by 50,000+ investors
+              <ShieldCheck className="h-3.5 w-3.5" /> SEBI-Verified Experts
             </div>
 
             <h1 className="mt-5 font-display text-4xl leading-[1.1] text-foreground sm:text-5xl lg:text-[52px]">
@@ -64,7 +64,7 @@ export function HeroSection() {
   );
 }
 
-const stockName = "IDFC First Bank";
+const stockName = "SAMPLE LTD";
 const queryText = "Bought at ₹85, now at ₹67. Should I average, hold or sell?";
 
 type Phase = "typing-stock" | "typing-query" | "analyzing" | "report";
@@ -114,7 +114,7 @@ function LiveDemoWidget() {
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-success" />
-            <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Live Query Demo</span>
+            <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Live Query Demo (Illustration)</span>
           </div>
           <span className="rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent">NSE · BSE</span>
         </div>
@@ -160,9 +160,14 @@ function LiveDemoWidget() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI Verdict</span>
-                <span className="rounded-full bg-warning/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-[hsl(var(--gold-foreground))]">
-                  HOLD
-                </span>
+                <div className="relative">
+                  <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold uppercase tracking-wider text-muted-foreground blur-xs select-none">
+                    HOLD
+                  </span>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-foreground tracking-tight whitespace-nowrap bg-card/60 backdrop-blur-[0.5px] rounded-full px-2">
+                    Sign up to view
+                  </span>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 {[
@@ -176,9 +181,6 @@ function LiveDemoWidget() {
                   </div>
                 ))}
               </div>
-              <p className="mt-3 border-l-2 border-accent pl-3 text-xs italic text-muted-foreground">
-                "Support holds at ₹60. Averaging only if you can hold 12+ months. — Mayank S., SEBI RA"
-              </p>
               <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
                 See Full Report <TrendingUp className="h-3 w-3" />
               </button>
