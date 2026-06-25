@@ -24,7 +24,7 @@ const steps = [
     color: "text-primary",
     bg: "bg-primary/10",
     title: "Expert Video Answer",
-    body: "A SEBI-registered RA or RIA records a personalized video answer — in Hindi or English — within 2 hours.",
+    body: "A SEBI-registered RA or RIA records a personalized video answer — in Hindi or English — within 24 hours.",
   },
 ];
 
@@ -60,8 +60,8 @@ export function HowItWorks() {
         <Reveal className="mt-12 text-center">
           <p className="text-sm text-muted-foreground">
             And if you're still unsure —{" "}
-            <a href="#experts" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
-              book a 1:1 live session with your expert <ArrowRight className="h-3.5 w-3.5" />
+            <a href="/experts" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+              book a 1:1 live session with a SEBI-registered analyst <ArrowRight className="h-3.5 w-3.5" />
             </a>
           </p>
         </Reveal>

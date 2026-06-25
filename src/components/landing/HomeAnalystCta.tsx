@@ -25,7 +25,7 @@ export function HomeAnalystCta() {
 
   const onVideoClick = () => {
     if (!user) {
-      navigate({ to: "/signup" });
+      navigate({ to: "/signup", search: { next: "/analyst/4e534d46-709e-4eaf-a6f1-07f24d7b1d3e" } });
       return;
     }
     setVideoOpen(true);
@@ -45,7 +45,7 @@ export function HomeAnalystCta() {
           <div className="relative rounded-[calc(1.5rem-1px)] bg-card/80 backdrop-blur-sm">
             {/* Top strip */}
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
-              <span className="hac-aurora-text font-mono text-[10px] uppercase tracking-[0.18em]">
+              <span className="hac-label-ink font-mono text-[10px] uppercase tracking-[0.18em]">
                 Premium · Human Analyst
               </span>
               <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -162,7 +162,7 @@ export function HomeAnalystCta() {
                   ) : (
                     <Button
                       variant="outline"
-                      onClick={() => navigate({ to: "/signup" })}
+                      onClick={() => navigate({ to: "/signup", search: { next: "/analyst/4e534d46-709e-4eaf-a6f1-07f24d7b1d3e" } })}
                       className="hac-glow group gap-1.5 rounded-full border-primary/30 bg-card px-5"
                     >
                       <Phone className="h-4 w-4" aria-hidden />
