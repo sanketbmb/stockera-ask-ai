@@ -13,7 +13,7 @@ const TRUST_BADGES = [
   { icon: Wallet, text: "First 2 queries free" },
 ];
 
-const LINE_1_WORDS = ["Don't", "act", "on", "tips."];
+const LINE_1_WORDS = ["Who", "are", "you", "about", "to", "take", "advice", "from?"];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
