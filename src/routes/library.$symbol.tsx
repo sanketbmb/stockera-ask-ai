@@ -108,14 +108,18 @@ export const Route = createFileRoute("/library/$symbol")({
         { property: "og:description", content: description },
         { property: "og:url", content: url },
         { property: "og:type", content: "website" },
-        { name: "twitter:card", content: "summary" },
+        { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/eryFVTpnbyUAD07bQk2YgBPPUs13/social-images/social-1780395980513-Stock_queries_AI_answered.webp" },
+        { property: "og:site_name", content: "Ask The Expert by Stockera" },
+        { name: "twitter:card", content: "summary_large_image" },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: description },
+        { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/eryFVTpnbyUAD07bQk2YgBPPUs13/social-images/social-1780395980513-Stock_queries_AI_answered.webp" },
       ],
       links: [{ rel: "canonical", href: url }],
       scripts,
     };
   },
+
   component: SymbolLibraryPage,
 });
 
