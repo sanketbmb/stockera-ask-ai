@@ -1,0 +1,116 @@
+# Stockera Ask The Expert — robots.txt
+# SEBI Research Analyst INH000019071
+# Last reviewed: 2026-06
+
+# ─────────────────────────────────────────────
+# Default policy for all crawlers
+# ─────────────────────────────────────────────
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /faq
+Allow: /investor-charter
+Allow: /risk-disclosure
+Allow: /grievance-redressal
+Allow: /fee-schedule
+Allow: /privacy
+Allow: /terms
+Allow: /sebi-compliance
+Allow: /library/
+
+# Auth-gated and user-private surface (noindex'd at meta level too)
+Disallow: /login
+Disallow: /signup
+Disallow: /dashboard
+Disallow: /my-queries
+Disallow: /post-query
+Disallow: /wallet
+Disallow: /topup
+Disallow: /portfolio
+Disallow: /settings
+Disallow: /referral
+Disallow: /stock-picker
+Disallow: /report/
+Disallow: /r/
+Disallow: /analysis/
+Disallow: /analyst/
+Disallow: /dev-checklist
+
+# Admin / operational surface
+Disallow: /admin
+Disallow: /admin/
+
+# Print / export routes
+Disallow: /print
+Disallow: /print/
+Disallow: /print-stock/
+Disallow: /print-sector/
+Disallow: /print-educational/
+
+# Query-string variants (prevent duplicate-content indexing)
+Disallow: /*?utm_source=
+Disallow: /*?utm_medium=
+Disallow: /*?utm_campaign=
+Disallow: /*?ref=
+Disallow: /*?prefill_symbol=
+Disallow: /*&utm_source=
+Disallow: /*&utm_medium=
+Disallow: /*&utm_campaign=
+Disallow: /*&ref=
+
+# ─────────────────────────────────────────────
+# AI training crawlers — explicitly disallowed
+# Stockera content is SEBI-regulated research; not for LLM training
+# ─────────────────────────────────────────────
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: OAI-SearchBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: ImagesiftBot
+Disallow: /
+
+User-agent: Diffbot
+Disallow: /
+
+User-agent: cohere-ai
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+# ─────────────────────────────────────────────
+# Sitemap (will be available once SEO-5 ships)
+# ─────────────────────────────────────────────
+Sitemap: https://asktheexpert.lovable.app/sitemap.xml
