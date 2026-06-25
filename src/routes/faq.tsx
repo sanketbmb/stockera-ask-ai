@@ -1,10 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
-import FAQ from "@/pages/FAQ";
+import FAQ, { FAQ_SECTIONS } from "@/pages/FAQ";
 import { PublicShell } from "@/components/layout/PublicShell";
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
 const TITLE = "Frequently Asked Questions — Ask The Expert by Stockera";
 const DESCRIPTION = "Answers about SEBI registration, pricing, video turnaround time, refund policy, and how Stockera's AI + analyst workflow protects retail investors.";
+
+const sanitize = (t: string) => t.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ_SECTIONS.flatMap((s) =>
+    s.items.map((it) => ({
+      "@type": "Question",
+      name: sanitize(it.q),
+      acceptedAnswer: { "@type": "Answer", text: sanitize(it.a) },
+    })),
+  ),
+};
+
+const breadcrumbLd = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_ORIGIN}/` },
+    { "@type": "ListItem", position: 2, name: "FAQ", item: `${SITE_ORIGIN}/faq` },
+  ],
+};
 
 export const Route = createFileRoute("/faq")({
   head: () => ({
@@ -20,6 +43,10 @@ export const Route = createFileRoute("/faq")({
       { name: "twitter:description", content: DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: `${SITE_ORIGIN}/faq` }],
+    scripts: [
+      { type: "application/ld+json", children: JSON.stringify(faqLd) },
+      { type: "application/ld+json", children: JSON.stringify(breadcrumbLd) },
+    ],
   }),
   component: () => (
     <PublicShell

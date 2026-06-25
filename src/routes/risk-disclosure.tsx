@@ -21,6 +21,19 @@ export const Route = createFileRoute("/risk-disclosure")({
       { name: "twitter:description", content: DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: `${SITE_ORIGIN}/risk-disclosure` }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_ORIGIN}/` },
+            { "@type": "ListItem", position: 2, name: "Risk Disclosure", item: `${SITE_ORIGIN}/risk-disclosure` },
+          ],
+        }),
+      },
+    ],
   }),
   component: RiskDisclosurePage,
 });

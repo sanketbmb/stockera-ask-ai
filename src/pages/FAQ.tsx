@@ -1,6 +1,6 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-const sections = [
+export const FAQ_SECTIONS = [
   {
     title: "Getting Started",
     items: [
@@ -98,7 +98,7 @@ const sections = [
 export default function FAQ() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
-      {sections.map((s) => (
+      {FAQ_SECTIONS.map((s) => (
         <div key={s.title} className="mb-10">
           <h2 className="font-display text-2xl text-foreground">{s.title}</h2>
           <Accordion type="single" collapsible className="mt-4">
