@@ -20,7 +20,7 @@ export function FinalCtaStrip() {
 
       <div className="relative mx-auto max-w-3xl px-4 text-center sm:px-6">
         <h2 className="font-display text-3xl text-white sm:text-4xl">
-          One question can change how you trade.
+          One question can change how you invest.
         </h2>
         <p className="mt-3 text-white/70">
           Two free reports. No card. SEBI-registered analyst on standby.

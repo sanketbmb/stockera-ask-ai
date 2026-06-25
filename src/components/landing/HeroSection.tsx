@@ -13,7 +13,7 @@ const TRUST_BADGES = [
   { icon: Wallet, text: "First 2 queries free" },
 ];
 
-const LINE_1_WORDS = ["Don't", "trade", "tips."];
+const LINE_1_WORDS = ["Don't", "act", "on", "tips."];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
@@ -34,7 +34,7 @@ export function HeroSection() {
             <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
               <span className="block">
                 {reduced
-                  ? <span>Don't trade tips.</span>
+                  ? <span>Don't act on tips.</span>
                   : LINE_1_WORDS.map((w, i) => (
                       <motion.span
                         key={`${w}-${i}`}
@@ -51,7 +51,7 @@ export function HeroSection() {
             </h1>
 
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
-              Post your stock question. Get an AI-grounded report and, if you want, a personalized video answer from a SEBI-registered Research Analyst — in 24 hours. Calm, educational, on the record.
+              Whether you trade or invest — post any stock question. Get an AI-grounded report in 30 seconds, and if you want, a personalized video answer from a SEBI-registered Research Analyst within 24 hours. Calm. Educational. On the record.
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -94,8 +94,8 @@ export function HeroSection() {
   );
 }
 
-const stockName = "SAMPLE LTD";
-const queryText = "Bought at ₹85, now at ₹67. Should I average, hold or sell?";
+const stockName = "Suzlon Energy";
+const queryText = "Bought at ₹68, now at ₹57. Should I average, hold or sell?";
 
 type Phase = "typing-stock" | "typing-query" | "analyzing" | "report";
 

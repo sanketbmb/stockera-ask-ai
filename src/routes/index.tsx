@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
@@ -36,6 +37,10 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+  }, []);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <script
