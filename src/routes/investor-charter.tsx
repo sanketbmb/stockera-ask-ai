@@ -3,19 +3,24 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const TITLE = "Investor Charter — SEBI Research Analyst Disclosure | Stockera";
+const DESCRIPTION = "Investor charter, services offered, rights and obligations under SEBI Research Analyst Regulations, 2014. Stockera Technology Private Limited · INH000019071.";
+
 export const Route = createFileRoute("/investor-charter")({
   head: () => ({
     meta: [
-      { title: "Investor Charter — Stockera Research Analyst" },
-      {
-        name: "description",
-        content:
-          "SEBI-mandated Investor Charter for Stockera Technology Private Limited, Research Analyst (INH000019071) — vision, services, rights and grievance redressal.",
-      },
-      { property: "og:title", content: "Investor Charter — Stockera" },
-      { property: "og:description", content: "Rights and responsibilities of investors as per SEBI." },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
+      { property: "og:url", content: `${SITE_ORIGIN}/investor-charter` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: DESCRIPTION },
     ],
-    links: [{ rel: "canonical", href: "/investor-charter" }],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/investor-charter` }],
   }),
   component: InvestorCharterPage,
 });
