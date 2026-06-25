@@ -17,25 +17,103 @@ type Kind = "all" | "report" | "video" | "community_query";
 
 const ORIGIN = "https://asktheexpert.lovable.app";
 
+function fallbackResponse(input: string): SymbolLibraryResponse {
+  return {
+    input_symbol: input,
+    normalized_symbol: null,
+    counts: { all: 0, reports: 0, videos: 0, community: 0 },
+    items: [],
+    faq_questions: [],
+  };
+}
+
 export const Route = createFileRoute("/library/$symbol")({
-  head: ({ params }) => {
-    const sym = (params.symbol ?? "").toUpperCase();
+  loader: async ({ params }): Promise<SymbolLibraryResponse> => {
+    try {
+      const { data, error } = await supabase.functions.invoke("library-symbol", {
+        body: { symbol: params.symbol, kind: "all", limit: 24 },
+      });
+      if (error || !data) return fallbackResponse(params.symbol);
+      return data as SymbolLibraryResponse;
+    } catch {
+      return fallbackResponse(params.symbol);
+    }
+  },
+  head: ({ loaderData, params }) => {
+    const data = loaderData ?? fallbackResponse(params.symbol);
+    const symbol = (data.normalized_symbol ?? data.input_symbol ?? params.symbol).toUpperCase();
+    const counts = data.counts;
+    const shouldNoIndex = !data.normalized_symbol || counts.all === 0;
+
+    const title = `${symbol} — Analyst Reports, Videos & Community Questions | Stockera Research Library`;
+    const description = `${counts.all} analyst-verified items for ${symbol}: ${counts.reports} written reports, ${counts.videos} videos, ${counts.community} community questions. Curated by SEBI-registered research analysts. Stockera Research Library.`;
+    const url = `${ORIGIN}/library/${symbol}`;
+
+    const items = data.items ?? [];
+    const faq = data.faq_questions ?? [];
+
+    const itemListLd = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: `${symbol} Research Library`,
+      numberOfItems: counts.all,
+      itemListElement: items.slice(0, 10).map((item, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: item.title,
+        url: item.related_query_id ? `${ORIGIN}/report/${item.related_query_id}` : undefined,
+      })),
+    };
+
+    const faqLd =
+      faq.length > 0
+        ? {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: faq.map((q) => ({
+              "@type": "Question",
+              name: q,
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "Get a SEBI-registered analyst's verdict on this question in 24 hours. Post your question on Stockera.",
+              },
+            })),
+          }
+        : null;
+
+    const breadcrumbLd = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: `${ORIGIN}/` },
+        { "@type": "ListItem", position: 2, name: "Library", item: url },
+        { "@type": "ListItem", position: 3, name: symbol, item: url },
+      ],
+    };
+
+    const scripts: Array<{ type: string; children: string }> = [
+      { type: "application/ld+json", children: JSON.stringify(itemListLd) },
+      { type: "application/ld+json", children: JSON.stringify(breadcrumbLd) },
+    ];
+    if (faqLd) {
+      scripts.push({ type: "application/ld+json", children: JSON.stringify(faqLd) });
+    }
+
     return {
       meta: [
-        {
-          title: `${sym} — Analyst Reports, Videos & Community Questions | Stockera Research Library`,
-        },
-        {
-          property: "og:title",
-          content: `${sym} — Research Library | Stockera`,
-        },
-        {
-          property: "og:url",
-          content: `${ORIGIN}/library/${sym}`,
-        },
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: shouldNoIndex ? "noindex,nofollow" : "index,follow" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
         { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
       ],
-      links: [{ rel: "canonical", href: `${ORIGIN}/library/${sym}` }],
+      links: [{ rel: "canonical", href: url }],
+      scripts,
     };
   },
   component: SymbolLibraryPage,
@@ -43,6 +121,7 @@ export const Route = createFileRoute("/library/$symbol")({
 
 function SymbolLibraryPage() {
   const { symbol } = Route.useParams();
+  const initialData = Route.useLoaderData();
   const [activeKind, setActiveKind] = useState<Kind>("all");
 
   useEffect(() => {
@@ -58,83 +137,16 @@ function SymbolLibraryPage() {
       if (error) throw error;
       return data as SymbolLibraryResponse;
     },
+    initialData: activeKind === "all" ? initialData : undefined,
   });
 
   const displaySymbol = (data?.normalized_symbol ?? symbol).toUpperCase();
   const counts = data?.counts ?? { all: 0, reports: 0, videos: 0, community: 0 };
-  const items = data?.items ?? [];
-  const faq = data?.faq_questions ?? [];
-
-  // Dynamic description + noindex via document head
-  useEffect(() => {
-    if (!data) return;
-    const desc = `${counts.all} analyst-verified items for ${displaySymbol}: ${counts.reports} written reports, ${counts.videos} videos, ${counts.community} community questions. Curated by SEBI-registered research analysts. Stockera Research Library.`;
-    setMeta("description", desc);
-    setMeta("og:description", desc, true);
-    const shouldNoIndex = data.normalized_symbol == null || counts.all === 0;
-    setMeta("robots", shouldNoIndex ? "noindex,nofollow" : "index,follow");
-    return () => {
-      // leave tags in place; subsequent navigation will overwrite
-    };
-  }, [data, counts.all, counts.reports, counts.videos, counts.community, displaySymbol]);
-
-  const itemListLd = {
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    "name": `${displaySymbol} Research Library`,
-    "numberOfItems": counts.all,
-    "itemListElement": items.slice(0, 10).map((item, i) => ({
-      "@type": "ListItem",
-      "position": i + 1,
-      "name": item.title,
-      "url": item.related_query_id ? `${ORIGIN}/report/${item.related_query_id}` : undefined,
-    })),
-  };
-
-  const faqLd =
-    faq.length > 0
-      ? {
-          "@context": "https://schema.org",
-          "@type": "FAQPage",
-          "mainEntity": faq.map((q) => ({
-            "@type": "Question",
-            "name": q,
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Get a SEBI-registered analyst's verdict on this question in 24 hours. Post your question on Stockera.",
-            },
-          })),
-        }
-      : null;
-
-  const breadcrumbLd = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      { "@type": "ListItem", position: 1, name: "Home", item: `${ORIGIN}/` },
-      // Library index does not exist yet — temporary self-reference until L5.
-      { "@type": "ListItem", position: 2, name: "Library", item: `${ORIGIN}/library/${displaySymbol}` },
-      { "@type": "ListItem", position: 3, name: displaySymbol, item: `${ORIGIN}/library/${displaySymbol}` },
-    ],
-  };
+  const items: SymbolLibraryResponse["items"] = data?.items ?? [];
+  const faq: string[] = data?.faq_questions ?? [];
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListLd) }}
-      />
-      {faqLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
-        />
-      )}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
-      />
-
       <Navbar />
       <main className="flex-1">
         <SymbolHeader
@@ -180,16 +192,4 @@ function SymbolLibraryPage() {
       <SiteFooter />
     </div>
   );
-}
-
-function setMeta(name: string, content: string, isProperty = false) {
-  if (typeof document === "undefined") return;
-  const attr = isProperty || name.startsWith("og:") ? "property" : "name";
-  let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${name}"]`);
-  if (!el) {
-    el = document.createElement("meta");
-    el.setAttribute(attr, name);
-    document.head.appendChild(el);
-  }
-  el.setAttribute("content", content);
 }
