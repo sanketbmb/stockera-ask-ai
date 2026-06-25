@@ -79,7 +79,7 @@ export function HomeAnalystCta() {
                     Verified human review
                   </span>
                 </div>
-                <div className="mt-5 flex items-end justify-between gap-4">
+                <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                       Stockera · Verified
@@ -93,10 +93,11 @@ export function HomeAnalystCta() {
                   </div>
                   <Button
                     onClick={onVideoClick}
-                    className="hac-glow gap-1.5 rounded-full px-5"
+                    className="hac-glow gap-1.5 rounded-full px-4 sm:px-5 w-full sm:w-auto"
                   >
                     <Video className="h-4 w-4" aria-hidden />
-                    Request Analyst Video — ₹{VIDEO_PRICE_PAISE / 100}
+                    <span className="md:hidden">Request Video — ₹{VIDEO_PRICE_PAISE / 100}</span>
+                    <span className="hidden md:inline">Request Analyst Video — ₹{VIDEO_PRICE_PAISE / 100}</span>
                   </Button>
                 </div>
               </div>
