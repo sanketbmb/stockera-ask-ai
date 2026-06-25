@@ -1,57 +1,87 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowRight, Play, ShieldCheck, Lock, Zap, Video, Wallet, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "./motion-helpers";
 
-const badges = [
-  { icon: ShieldCheck, text: "SEBI Registered Analysts" },
+const TRUST_BADGES = [
+  { icon: ShieldCheck, text: "SEBI-Registered RA" },
   { icon: Lock, text: "Private & Secure" },
   { icon: Zap, text: "AI Report in 30 sec" },
   { icon: Video, text: "Video Answer in 24 hrs" },
-  { icon: Wallet, text: "First 2 queries FREE" },
+  { icon: Wallet, text: "First 2 queries free" },
 ];
 
+const LINE_1_WORDS = ["Don't", "trade", "tips."];
+
 export function HeroSection() {
+  const reduced = useReducedMotion();
+
   return (
-    <section className="relative overflow-hidden bg-mesh bg-noise">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-grid opacity-60" />
+    <section
+      className="relative overflow-hidden"
+      style={{ backgroundColor: "hsl(var(--brand-ink))", color: "white" }}
+    >
       <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
         <Reveal>
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
-              <ShieldCheck className="h-3.5 w-3.5" /> SEBI-Verified Experts
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] uppercase tracking-wider text-white">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+              SEBI-Registered Research Analyst · INH000019071
             </div>
 
-            <h1 className="mt-5 font-display text-4xl leading-[1.1] text-foreground sm:text-5xl lg:text-[52px]">
-              Your Stock in Loss?
-              <br />
-              <span className="text-shimmer">Ask The Expert.</span>
+            <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
+              <span className="block">
+                {reduced
+                  ? <span>Don't trade tips.</span>
+                  : LINE_1_WORDS.map((w, i) => (
+                      <motion.span
+                        key={`${w}-${i}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                        className="inline-block"
+                      >
+                        {w}{i < LINE_1_WORDS.length - 1 ? "\u00A0" : ""}
+                      </motion.span>
+                    ))}
+              </span>
+              <span className="text-shimmer-on-ink block">Get a SEBI-registered second opinion.</span>
             </h1>
 
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Post your stock query — get an instant AI analysis + video answer from a SEBI-registered Research Analyst.
-              In plain Hindi or English.
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
+              Post your stock question. Get an AI-grounded report and, if you want, a personalized video answer from a SEBI-registered Research Analyst — in 24 hours. Calm, educational, on the record.
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg" className="rounded-full bg-gradient-brand text-white shadow-glow-teal hover:opacity-95">
-                <Link to="/post-query">Post My Query Free <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
+                <Link to="/post-query">
+                  Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
+                </Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="rounded-full border-border bg-card">
-                <a href="#how-it-works"><Play className="mr-1 h-4 w-4" /> Watch How It Works</a>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10"
+              >
+                <a href="#how-it-works">
+                  <Play className="mr-1 h-4 w-4" aria-hidden /> See how it works
+                </a>
               </Button>
             </div>
 
-            <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              {badges.map((b) => (
-                <li key={b.text} className="flex items-center gap-1.5"><b.icon className="h-3.5 w-3.5 text-accent" /> {b.text}</li>
+            <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-xs text-white/60">
+              {TRUST_BADGES.map((b) => (
+                <li key={b.text} className="flex items-center gap-1.5">
+                  <b.icon className="h-3.5 w-3.5 text-accent" aria-hidden /> {b.text}
+                </li>
               ))}
             </ul>
 
-            <p className="mt-6 max-w-md text-[11px] leading-relaxed text-muted-foreground/80">
-              Not SEBI investment advice. For educational purposes only.
+            <p className="mt-6 max-w-md text-[11px] text-white/40">
+              Educational analysis only. Not investment advice. Investments in securities are subject to market risks.
             </p>
           </div>
         </Reveal>
@@ -109,7 +139,7 @@ function LiveDemoWidget() {
 
   return (
     <div className="relative">
-      <div className="absolute -inset-4 -z-10 rounded-3xl bg-gradient-brand-soft opacity-20 blur-2xl" />
+      <div aria-hidden className="absolute -inset-4 -z-10 rounded-3xl bg-accent/10 blur-2xl" />
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card-lg sm:p-6">
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="flex items-center gap-2">
@@ -146,7 +176,7 @@ function LiveDemoWidget() {
               <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
               <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
               <div className="h-2 w-2 animate-bounce rounded-full bg-accent" />
-              <span className="ml-2 text-sm font-medium text-accent">Analyzing with Gemini AI...</span>
+              <span className="ml-2 text-sm font-medium text-accent">Analyzing…</span>
             </motion.div>
           )}
 
@@ -161,10 +191,10 @@ function LiveDemoWidget() {
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI Verdict</span>
                 <div className="relative">
-                  <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold uppercase tracking-wider text-muted-foreground blur-xs select-none">
+                  <span className="rounded-full bg-muted px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground blur-sm select-none">
                     HOLD
                   </span>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-foreground tracking-tight whitespace-nowrap bg-card/60 backdrop-blur-[0.5px] rounded-full px-2">
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-card/60 px-2 text-[10px] font-medium tracking-tight text-foreground backdrop-blur-[0.5px] whitespace-nowrap">
                     Sign up to view
                   </span>
                 </div>
@@ -172,8 +202,8 @@ function LiveDemoWidget() {
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 {[
                   { l: "Risk", v: "Medium" },
-                  { l: "Confidence", v: "74%" },
-                  { l: "Trend", v: "↑ Recovering" },
+                  { l: "Confidence", v: "Educational" },
+                  { l: "Trend", v: "Neutral" },
                 ].map((m) => (
                   <div key={m.l} className="rounded-lg bg-card px-2 py-2">
                     <div className="text-[10px] uppercase text-muted-foreground">{m.l}</div>
@@ -181,9 +211,9 @@ function LiveDemoWidget() {
                   </div>
                 ))}
               </div>
-              <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
-                See Full Report <TrendingUp className="h-3 w-3" />
-              </button>
+              <Link to="/signup" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+                See full report <TrendingUp className="h-3 w-3" aria-hidden />
+              </Link>
             </motion.div>
           )}
         </AnimatePresence>

@@ -219,3 +219,17 @@
   font-weight: 600;
   letter-spacing: 0.18em;
 }
+
+.text-shimmer-on-ink {
+  background: linear-gradient(110deg,
+    hsl(var(--accent)) 0%,
+    hsl(0 0% 100%) 35%,
+    hsl(var(--gold)) 60%,
+    hsl(0 0% 100%) 80%,
+    hsl(var(--accent)) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 6s ease-in-out infinite;
+}
