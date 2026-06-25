@@ -52,3 +52,6 @@ export const GRIEVANCE_CATEGORIES = [
 export const MONETIZATION_DISCLAIMER =
   "Stockera Technology Private Limited is a SEBI-registered Research Analyst (Registration No. INH000019071). Research reports and AI-generated analyses are for informational purposes only and do not constitute personalized investment advice. Investments in securities are subject to market risks; please read all related documents carefully before investing. Past performance is not indicative of future returns. Investors may verify our registration status at www.sebi.gov.in.";
 
+// Library — verdicts older than this are flagged as stale on public surfaces.
+export const STALE_VERDICT_DAYS = 60;
+
