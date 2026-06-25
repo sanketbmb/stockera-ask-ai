@@ -99,6 +99,7 @@ function Index() {
         <LiveStatsBar />
         <ProblemsWeSolve />
         <StockRecommenderTeaser />
+        <MasterSearchHero />
         <QueryTypesOverview />
         <HomeAnalystCta />
         <LiveDemandBlock />
