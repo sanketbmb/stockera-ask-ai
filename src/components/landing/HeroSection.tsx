@@ -13,7 +13,7 @@ const TRUST_BADGES = [
   { icon: Wallet, text: "First 2 queries free" },
 ];
 
-const LINE_1_WORDS = ["Who", "are", "you", "about", "to", "take", "advice", "from?"];
+const LINE_1_WORDS = ["Every", "stock", "decision", "deserves", "a", "second", "opinion."];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
@@ -34,7 +34,7 @@ export function HeroSection() {
             <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
               <span className="block">
                 {reduced
-                  ? <span>Who are you about to take advice from?</span>
+                  ? <span>Every stock decision deserves a second opinion.</span>
                   : LINE_1_WORDS.map((w, i) => (
                       <motion.span
                         key={`${w}-${i}`}
@@ -47,11 +47,11 @@ export function HeroSection() {
                       </motion.span>
                     ))}
               </span>
-              <span className="text-shimmer-on-ink block">Get a SEBI-registered second opinion.</span>
+              <span className="text-shimmer-on-ink block">Not a tip. A SEBI-registered one.</span>
             </h1>
 
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
-              A WhatsApp forward isn't research. Get a written verdict from a registered analyst — not an algorithm, not a tipster.
+              Stuck on a losing trade? Sitting on profit and don't know whether to book? Heard about a stock and don't know if it's worth it? Post the question. Our AI grounds the answer in real NSE/BSE data. A SEBI-registered analyst records your personalized video answer within 24 hours.
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
