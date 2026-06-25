@@ -3,6 +3,6 @@ import { RequireAdmin } from "@/components/auth/RequireAuth";
 import SuperAdmin from "@/pages/admin/SuperAdmin";
 
 export const Route = createFileRoute("/admin/super")({
-  head: () => ({ meta: [{ title: "Admin Console — Stockera" }] }),
+  head: () => ({ meta: [{ title: "Admin Console — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: () => <RequireAdmin><SuperAdmin /></RequireAdmin>,
 });
