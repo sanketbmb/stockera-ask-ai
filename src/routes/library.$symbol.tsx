@@ -142,8 +142,8 @@ function SymbolLibraryPage() {
 
   const displaySymbol = (data?.normalized_symbol ?? symbol).toUpperCase();
   const counts = data?.counts ?? { all: 0, reports: 0, videos: 0, community: 0 };
-  const items = data?.items ?? [];
-  const faq = data?.faq_questions ?? [];
+  const items: SymbolLibraryResponse["items"] = data?.items ?? [];
+  const faq: string[] = data?.faq_questions ?? [];
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
