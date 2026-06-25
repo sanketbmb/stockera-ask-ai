@@ -28,6 +28,7 @@ export const Route = createFileRoute("/analysis/$symbol")({
     meta: [
       { title: `${params.symbol} — Stock Analysis · Stockera` },
       { name: "description", content: `Brain v2 analysis for ${params.symbol}: verdict, score, levels, technicals, fundamentals, risk and sentiment.` },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: AnalysisPage,
