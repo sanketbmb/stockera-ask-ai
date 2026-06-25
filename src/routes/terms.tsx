@@ -20,6 +20,19 @@ export const Route = createFileRoute("/terms")({
       { name: "twitter:description", content: DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: `${SITE_ORIGIN}/terms` }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_ORIGIN}/` },
+            { "@type": "ListItem", position: 2, name: "Terms & Conditions", item: `${SITE_ORIGIN}/terms` },
+          ],
+        }),
+      },
+    ],
   }),
   component: () => (
     <PublicShell eyebrow="Legal" title="Terms of Service">
