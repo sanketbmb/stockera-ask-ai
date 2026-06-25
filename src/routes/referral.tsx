@@ -3,6 +3,6 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import Referral from "@/pages/Referral";
 
 export const Route = createFileRoute("/referral")({
-  head: () => ({ meta: [{ title: "Refer & Earn — Stockera" }] }),
+  head: () => ({ meta: [{ title: "Refer & Earn — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: () => <RequireAuth><Referral /></RequireAuth>,
 });
