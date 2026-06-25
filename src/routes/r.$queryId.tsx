@@ -182,7 +182,7 @@ function Perk({ icon, text }: { icon: React.ReactNode; text: string }) {
 }
 
 export const Route = createFileRoute("/r/$queryId")({
-  head: () => ({ meta: [{ title: "SEBI Analyst Verdict — Stockera" }] }),
+  head: () => ({ meta: [{ title: "SEBI Analyst Verdict — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: PublicReportPage,
 });
 
