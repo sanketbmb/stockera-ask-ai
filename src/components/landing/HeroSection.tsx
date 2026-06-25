@@ -94,8 +94,8 @@ export function HeroSection() {
   );
 }
 
-const stockName = "SAMPLE LTD";
-const queryText = "Bought at ₹85, now at ₹67. Should I average, hold or sell?";
+const stockName = "Suzlon Energy";
+const queryText = "Bought at ₹68, now at ₹57. Should I average, hold or sell?";
 
 type Phase = "typing-stock" | "typing-query" | "analyzing" | "report";
 
