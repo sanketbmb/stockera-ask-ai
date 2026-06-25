@@ -2560,6 +2560,29 @@ export type Database = {
       }
       expire_welcome_bonus: { Args: { p_user_id: string }; Returns: Json }
       fn_aggregate_library_views: { Args: never; Returns: undefined }
+      fn_library_search: {
+        Args: { limit_n?: number; q: string }
+        Returns: {
+          analyst_id: string
+          analyst_name: string
+          analyst_sebi_reg_number: string
+          body_excerpt: string
+          id: string
+          is_tombstoned: boolean
+          kind: string
+          published_at: string
+          rank: number
+          related_query_id: string
+          sector: string
+          source_id: string
+          source_table: string
+          symbol: string
+          symbol_exchange: string
+          title: string
+          verdict: string
+          view_count: number
+        }[]
+      }
       fn_normalize_symbol: { Args: { raw: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
