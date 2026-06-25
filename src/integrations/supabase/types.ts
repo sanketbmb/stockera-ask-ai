@@ -2559,6 +2559,7 @@ export type Database = {
         Returns: Json
       }
       expire_welcome_bonus: { Args: { p_user_id: string }; Returns: Json }
+      fn_aggregate_library_views: { Args: never; Returns: undefined }
       fn_normalize_symbol: { Args: { raw: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
