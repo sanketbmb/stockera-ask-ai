@@ -9,6 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { MasterSearch } from "./MasterSearch";
 
+const isMac =
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
+
 export function MasterSearchTrigger() {
   const [open, setOpen] = useState(false);
 
