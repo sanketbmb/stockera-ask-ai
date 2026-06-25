@@ -11,6 +11,7 @@ import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
 import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTeaser";
 import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
+import { MasterSearchHero } from "@/components/library/MasterSearchHero";
 import { TrustCompliance } from "@/components/landing/TrustCompliance";
 import { FAQ } from "@/components/landing/FAQ";
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
