@@ -30,6 +30,7 @@ import { Route as FeeScheduleRouteImport } from './routes/fee-schedule'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
@@ -156,6 +157,11 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SplatRoute = SplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -261,6 +267,7 @@ const AdminUploadAnswerQueryIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
@@ -304,6 +311,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
@@ -348,6 +356,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
   '/faq': typeof FaqRoute
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$'
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
@@ -436,6 +446,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$'
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
@@ -479,6 +490,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/$'
     | '/dashboard'
     | '/dev-checklist'
     | '/faq'
@@ -523,6 +535,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SplatRoute: typeof SplatRoute
   DashboardRoute: typeof DashboardRoute
   DevChecklistRoute: typeof DevChecklistRoute
   FaqRoute: typeof FaqRoute
@@ -714,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$': {
+      id: '/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -859,6 +879,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SplatRoute: SplatRoute,
   DashboardRoute: DashboardRoute,
   DevChecklistRoute: DevChecklistRoute,
   FaqRoute: FaqRoute,
