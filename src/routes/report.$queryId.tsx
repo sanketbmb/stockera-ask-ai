@@ -35,6 +35,7 @@ import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/repor
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
+import { PublishToLibraryToggle } from "@/components/library/PublishToLibraryToggle";
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -224,6 +225,13 @@ function TierShapedReportContent({
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
 
+      {/* L2 — owner-only consent toggle. Component self-guards by user_id. */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-8">
+        <div className="mx-auto max-w-5xl">
+          <PublishToLibraryToggle queryId={queryId} />
+        </div>
+      </section>
+
       {/* Bottom premium-human-analysis surface — calmer repeat after the full
           AI report stack so users always see a monetization surface at
           end-of-report. Stock-report path only. */}
@@ -350,6 +358,11 @@ function LegacyReportContent({
           assignedAnalystId={(data as { assigned_analyst_id?: string | null }).assigned_analyst_id ?? null}
           queryCreatedAt={data.created_at as string}
         />
+
+        {/* L2 — owner-only consent toggle (legacy path). Component self-guards. */}
+        <div className="mx-auto max-w-4xl mt-6">
+          <PublishToLibraryToggle queryId={data.id} />
+        </div>
 
         {/* Bottom premium-human-analysis surface — calmer end-of-report repeat. */}
         {shouldMountLegacyCta && (
