@@ -138,7 +138,8 @@ function LiveDemoWidget() {
   const query = useTypewriter(queryText, phase === "typing-query" || phase === "analyzing" || phase === "report", 30);
 
   return (
-    <div className="relative">
+    <Link to="/post-query" className="block text-foreground">
+      <div className="relative">
       <div aria-hidden className="absolute -inset-4 -z-10 rounded-3xl bg-accent/10 blur-2xl" />
       <div className="rounded-2xl border border-border bg-card p-5 shadow-card-lg sm:p-6">
         <div className="flex items-center justify-between border-b border-border pb-3">
@@ -211,13 +212,14 @@ function LiveDemoWidget() {
                   </div>
                 ))}
               </div>
-              <Link to="/signup" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
                 See full report <TrendingUp className="h-3 w-3" aria-hidden />
-              </Link>
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-    </div>
+      </div>
+    </Link>
   );
 }

@@ -60,7 +60,7 @@ export function HowItWorks() {
         <Reveal className="mt-12 text-center">
           <p className="text-sm text-muted-foreground">
             And if you're still unsure —{" "}
-            <a href="/experts" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+            <a href="/#analyst-cta" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
               book a 1:1 live session with a SEBI-registered analyst <ArrowRight className="h-3.5 w-3.5" />
             </a>
           </p>
