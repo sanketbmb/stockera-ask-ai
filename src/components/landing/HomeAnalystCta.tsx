@@ -35,6 +35,7 @@ export function HomeAnalystCta() {
     <>
       <motion.section
         aria-label="Premium human analyst services"
+        id="analyst-cta"
         initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-60px" }}
