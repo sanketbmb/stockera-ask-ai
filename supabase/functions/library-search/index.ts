@@ -1,7 +1,12 @@
 // @ts-nocheck
-// Stockera library-search — L2 backend.
+// Stockera library-search — L3a backend.
 // POST /library-search { q, limit?, kinds?, symbol? }
-// Returns grouped results { stocks, reports, videos, community, analysts, total_found }
+// Delegates content ranking to public.fn_library_search(text,int) RPC.
+// Returns grouped results { stocks, reports, videos, community, analysts, total_found }.
+//
+// NOTE: Response shape mirrors src/types/library-search.ts (SearchResponse).
+// Types are intentionally duplicated here rather than cross-imported from src/
+// to keep the Deno edge runtime independent of the Vite app bundle.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -22,15 +27,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Service-role client used for the heavy ranked SQL via rpc-style raw call.
-// We use the admin client because the ranked query joins computed scores;
-// RLS already permits anon SELECT on is_public=true rows, but the admin
-// client lets us bypass per-row policy evaluation cost for read-only search.
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// Anon client for the search-log insert (RLS allows anon insert).
 const anon = createClient(SUPABASE_URL, ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
@@ -68,9 +68,9 @@ Deno.serve(async (req) => {
     const { data: normRow } = await admin.rpc("fn_normalize_symbol", { raw: q });
     const normalized: string | null = (normRow as string | null) ?? null;
 
-    // Q-STOCKS (only if q looks tickerish) and Q-CONTENT in parallel.
+    // Q-STOCKS (only if q looks tickerish).
     // TODO(L4): symbol_aliases.exchange column — currently hardcoded 'NSE'.
-    const stocksPromise: Promise<Array<{ symbol: string; exchange: string }>> =
+    const stocksPromise: Promise<Array<{ symbol: string; exchange: "NSE" | "BSE" | null }>> =
       TICKERISH.test(q)
         ? (async () => {
             const aliasP = admin
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
               .limit(3);
             const [aliasR, libR] = await Promise.all([aliasP, libP]);
             const seen = new Set<string>();
-            const out: Array<{ symbol: string; exchange: string }> = [];
+            const out: Array<{ symbol: string; exchange: "NSE" | "BSE" | null }> = [];
             (aliasR.data ?? []).forEach((r: { canonical_symbol: string }) => {
               if (r.canonical_symbol && !seen.has(r.canonical_symbol)) {
                 seen.add(r.canonical_symbol);
@@ -97,66 +97,27 @@ Deno.serve(async (req) => {
             (libR.data ?? []).forEach((r: { symbol: string; symbol_exchange: string | null }) => {
               if (r.symbol && !seen.has(r.symbol)) {
                 seen.add(r.symbol);
-                out.push({ symbol: r.symbol, exchange: r.symbol_exchange ?? "NSE" });
+                out.push({
+                  symbol: r.symbol,
+                  exchange: (r.symbol_exchange as "NSE" | "BSE" | null) ?? "NSE",
+                });
               }
             });
             return out.slice(0, 3);
           })()
         : Promise.resolve([]);
 
-    // Q-CONTENT — ranked search via inline SQL (admin client → fetch wrapper).
-    // We use rpc to a temporary CTE through `from().select()` isn't expressive
-    // enough; instead we run the SQL via supabase-js .rpc not available, so use
-    // the underlying REST: emulate via a Postgres function call would require
-    // an L1 helper. Workaround: do two simpler ORs and rank client-side.
+    // Q-CONTENT — delegate ranking to the RPC.
     const contentPromise = (async () => {
-      const tsP = admin
-        .from("library_items")
-        .select(
-          "id, kind, source_id, source_table, symbol, symbol_exchange, title, verdict, analyst_id, body_excerpt, published_at, view_count, is_public, is_tombstoned",
-        )
-        .eq("is_public", true)
-        .eq("is_tombstoned", false)
-        .textSearch("search_tsv", q, { config: "simple", type: "plain" })
-        .limit(40);
-      const trgmP = admin
-        .from("library_items")
-        .select(
-          "id, kind, source_id, source_table, symbol, symbol_exchange, title, verdict, analyst_id, body_excerpt, published_at, view_count, is_public, is_tombstoned",
-        )
-        .eq("is_public", true)
-        .eq("is_tombstoned", false)
-        .ilike("trgm_blob", `%${qLower}%`)
-        .limit(40);
-      const [tsR, trgmR] = await Promise.all([tsP, trgmP]);
-      const merged = new Map<string, any>();
-      (tsR.data ?? []).forEach((r: any) => merged.set(r.id, r));
-      (trgmR.data ?? []).forEach((r: any) => merged.has(r.id) || merged.set(r.id, r));
-      // Ranking formula (kept in sync with spec):
-      //   ts_rank_cd(...) * 1.0 + similarity(...) * 0.8
-      //   + kind_boost + recency_boost + view_boost
-      const now = Date.now();
-      const KIND_BOOST: Record<string, number> = {
-        analyst: 0.4, report: 0.3, video: 0.25,
-      };
-      const ranked = Array.from(merged.values()).map((r) => {
-        const kindBoost = KIND_BOOST[r.kind] ?? 0.15;
-        const recency = r.published_at
-          ? Math.exp(-(now - new Date(r.published_at).getTime()) / (86400_000 * 180)) * 0.5
-          : 0;
-        const titleHit = (r.title ?? "").toLowerCase().includes(qLower) ? 1.0 : 0;
-        const exHit = (r.body_excerpt ?? "").toLowerCase().includes(qLower) ? 0.4 : 0;
-        const symHit = (r.symbol ?? "").toLowerCase() === qLower ? 1.2 : 0;
-        const viewBoost = Math.log(1 + (r.view_count ?? 0)) * 0.1;
-        const score = titleHit + exHit + symHit + kindBoost + recency + viewBoost;
-        return { row: r, score };
-      });
-      ranked.sort((a, b) => b.score - a.score);
-      return { rows: ranked.slice(0, 30).map((x) => x.row), total: ranked.length };
+      const { data, error } = await admin.rpc("fn_library_search", { q, limit_n: 30 });
+      if (error) throw error;
+      return (data ?? []) as Array<any>;
     })();
 
-    const [stocks, contentRes] = await Promise.all([stocksPromise, contentPromise]);
-    const { rows: contentRows, total } = contentRes;
+    const [stocks, contentRows] = await Promise.all([stocksPromise, contentPromise]);
+
+    // total_found reflects full RPC row count BEFORE per-group truncation.
+    const total = contentRows.length;
 
     const group = (kind: string) =>
       contentRows.filter((r: any) => r.kind === kind).slice(0, 3);
