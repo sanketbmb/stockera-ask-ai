@@ -700,6 +700,182 @@ export type Database = {
         }
         Relationships: []
       }
+      library_consent_events: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: number
+          query_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: number
+          query_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: number
+          query_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_consent_events_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "queries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_item_views: {
+        Row: {
+          created_at: string
+          id: number
+          item_id: string
+          viewer_user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          item_id: string
+          viewer_user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          item_id?: string
+          viewer_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_item_views_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "library_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_items: {
+        Row: {
+          analyst_id: string | null
+          body_excerpt: string | null
+          created_at: string
+          id: string
+          is_public: boolean
+          is_tombstoned: boolean
+          kind: string
+          published_at: string | null
+          search_tsv: unknown
+          sector: string | null
+          source_id: string
+          source_table: string
+          symbol: string | null
+          symbol_exchange: string | null
+          title: string
+          trgm_blob: string | null
+          updated_at: string
+          verdict: string | null
+          view_count: number
+        }
+        Insert: {
+          analyst_id?: string | null
+          body_excerpt?: string | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          is_tombstoned?: boolean
+          kind: string
+          published_at?: string | null
+          search_tsv?: unknown
+          sector?: string | null
+          source_id: string
+          source_table: string
+          symbol?: string | null
+          symbol_exchange?: string | null
+          title: string
+          trgm_blob?: string | null
+          updated_at?: string
+          verdict?: string | null
+          view_count?: number
+        }
+        Update: {
+          analyst_id?: string | null
+          body_excerpt?: string | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          is_tombstoned?: boolean
+          kind?: string
+          published_at?: string | null
+          search_tsv?: unknown
+          sector?: string | null
+          source_id?: string
+          source_table?: string
+          symbol?: string | null
+          symbol_exchange?: string | null
+          title?: string
+          trgm_blob?: string | null
+          updated_at?: string
+          verdict?: string | null
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_items_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analyst_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_search_logs: {
+        Row: {
+          clicked_item_id: string | null
+          created_at: string
+          id: number
+          normalized_query: string | null
+          query_text: string
+          result_count: number | null
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          clicked_item_id?: string | null
+          created_at?: string
+          id?: number
+          normalized_query?: string | null
+          query_text: string
+          result_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          clicked_item_id?: string | null
+          created_at?: string
+          id?: number
+          normalized_query?: string | null
+          query_text?: string
+          result_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_search_logs_clicked_item_id_fkey"
+            columns: ["clicked_item_id"]
+            isOneToOne: false
+            referencedRelation: "library_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ltp_cache: {
         Row: {
           as_of: string | null
@@ -1076,11 +1252,15 @@ export type Database = {
           horizon: string | null
           id: string
           intent: string | null
+          is_public_library: boolean
+          library_tombstoned_at: string | null
           mixed_query_meta: Json | null
           orchestrator_response_id: string | null
           pnl_state: string | null
           position_state: string | null
           profit_loss_pct: number | null
+          public_consent_anonymized: boolean
+          public_consent_at: string | null
           qty: number | null
           query_text: string
           query_type: string | null
@@ -1116,11 +1296,15 @@ export type Database = {
           horizon?: string | null
           id?: string
           intent?: string | null
+          is_public_library?: boolean
+          library_tombstoned_at?: string | null
           mixed_query_meta?: Json | null
           orchestrator_response_id?: string | null
           pnl_state?: string | null
           position_state?: string | null
           profit_loss_pct?: number | null
+          public_consent_anonymized?: boolean
+          public_consent_at?: string | null
           qty?: number | null
           query_text: string
           query_type?: string | null
@@ -1156,11 +1340,15 @@ export type Database = {
           horizon?: string | null
           id?: string
           intent?: string | null
+          is_public_library?: boolean
+          library_tombstoned_at?: string | null
           mixed_query_meta?: Json | null
           orchestrator_response_id?: string | null
           pnl_state?: string | null
           position_state?: string | null
           profit_loss_pct?: number | null
+          public_consent_anonymized?: boolean
+          public_consent_at?: string | null
           qty?: number | null
           query_text?: string
           query_type?: string | null
@@ -2034,6 +2222,24 @@ export type Database = {
         }
         Relationships: []
       }
+      symbol_aliases: {
+        Row: {
+          alias: string
+          canonical_symbol: string
+          notes: string | null
+        }
+        Insert: {
+          alias: string
+          canonical_symbol: string
+          notes?: string | null
+        }
+        Update: {
+          alias?: string
+          canonical_symbol?: string
+          notes?: string | null
+        }
+        Relationships: []
+      }
       user_portfolio: {
         Row: {
           added_from_query_id: string | null
@@ -2353,6 +2559,7 @@ export type Database = {
         Returns: Json
       }
       expire_welcome_bonus: { Args: { p_user_id: string }; Returns: Json }
+      fn_normalize_symbol: { Args: { raw: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -2372,6 +2579,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       stock_picker_write_audit_row: {
         Args: {
           p_batch_id: string
