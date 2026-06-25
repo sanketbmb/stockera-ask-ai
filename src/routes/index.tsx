@@ -5,12 +5,6 @@ import { MarketTicker } from "@/components/common/MarketTicker";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { LiveStatsBar } from "@/components/landing/LiveStatsBar";
 import { HowItWorks } from "@/components/landing/HowItWorks";
-import { ExpertListing } from "@/components/landing/ExpertListing";
-import { PopularQuestions } from "@/components/landing/PopularQuestions";
-import { AIReportPreview } from "@/components/landing/AIReportPreview";
-import { Testimonials } from "@/components/landing/Testimonials";
-import { ReferralBanner } from "@/components/landing/ReferralBanner";
-import { PromoToast } from "@/components/landing/PromoToast";
 import { LiveDemandBlock } from "@/components/landing/LiveDemandBlock";
 import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 
@@ -37,13 +31,7 @@ function Index() {
         <HomeAnalystCta />
         <LiveDemandBlock />
         <HowItWorks />
-        <ExpertListing />
-        <PopularQuestions />
-        <AIReportPreview />
-        <Testimonials />
-        <ReferralBanner />
       </main>
-      <PromoToast />
       <SiteFooter />
     </div>
   );
