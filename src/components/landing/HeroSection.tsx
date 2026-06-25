@@ -34,7 +34,7 @@ export function HeroSection() {
             <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
               <span className="block">
                 {reduced
-                  ? <span>Don't act on tips.</span>
+                  ? <span>Who are you about to take advice from?</span>
                   : LINE_1_WORDS.map((w, i) => (
                       <motion.span
                         key={`${w}-${i}`}
