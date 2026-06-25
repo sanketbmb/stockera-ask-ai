@@ -13,6 +13,7 @@ import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as TopupRouteImport } from './routes/topup'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as StockPickerRouteImport } from './routes/stock-picker'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
@@ -70,6 +71,11 @@ const TermsRoute = TermsRouteImport.update({
 const StockPickerRoute = StockPickerRouteImport.update({
   id: '/stock-picker',
   path: '/stock-picker',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignupRoute = SignupRouteImport.update({
@@ -285,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
@@ -329,6 +336,7 @@ export interface FileRoutesByTo {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
@@ -374,6 +382,7 @@ export interface FileRoutesById {
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stock-picker': typeof StockPickerRoute
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
@@ -420,6 +429,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/sitemap.xml'
     | '/stock-picker'
     | '/terms'
     | '/topup'
@@ -464,6 +474,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/sitemap.xml'
     | '/stock-picker'
     | '/terms'
     | '/topup'
@@ -508,6 +519,7 @@ export interface FileRouteTypes {
     | '/sebi-compliance'
     | '/settings'
     | '/signup'
+    | '/sitemap.xml'
     | '/stock-picker'
     | '/terms'
     | '/topup'
@@ -553,6 +565,7 @@ export interface RootRouteChildren {
   SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StockPickerRoute: typeof StockPickerRoute
   TermsRoute: typeof TermsRoute
   TopupRoute: typeof TopupRoute
@@ -606,6 +619,13 @@ declare module '@tanstack/react-router' {
       path: '/stock-picker'
       fullPath: '/stock-picker'
       preLoaderRoute: typeof StockPickerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/signup': {
@@ -897,6 +917,7 @@ const rootRouteChildren: RootRouteChildren = {
   SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   StockPickerRoute: StockPickerRoute,
   TermsRoute: TermsRoute,
   TopupRoute: TopupRoute,
