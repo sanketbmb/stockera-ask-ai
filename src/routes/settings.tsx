@@ -3,6 +3,6 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import Settings from "@/pages/Settings";
 
 export const Route = createFileRoute("/settings")({
-  head: () => ({ meta: [{ title: "Settings — Stockera" }] }),
+  head: () => ({ meta: [{ title: "Settings — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: () => <RequireAuth><Settings /></RequireAuth>,
 });
