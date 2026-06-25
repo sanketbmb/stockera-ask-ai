@@ -15,6 +15,6 @@ function AnalystRouteComponent() {
 }
 
 export const Route = createFileRoute("/analyst/$analystId")({
-  head: () => ({ meta: [{ title: "SEBI Analyst — Stockera" }] }),
+  head: () => ({ meta: [{ title: "SEBI Analyst — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: AnalystRouteComponent,
 });
