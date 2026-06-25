@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { MessageSquare, Zap, Video, ArrowRight } from "lucide-react";
 import { Reveal } from "./motion-helpers";
 
