@@ -42,8 +42,8 @@ export function HowItWorks() {
 
         <div className="relative mt-14 grid gap-8 md:grid-cols-3 md:gap-6">
           <div className="absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-border to-transparent md:block" />
-          {steps.map((s, i) => (
-            <Reveal key={s.n} delay={i * 0.1}>
+          {steps.map((s, i) => {
+            const card = (
               <div className="relative flex flex-col items-center text-center md:items-start md:text-left">
                 <div className={`relative z-10 flex h-24 w-24 items-center justify-center rounded-2xl ${s.bg} shadow-card`}>
                   <s.icon className={`h-9 w-9 ${s.color}`} />
@@ -54,8 +54,23 @@ export function HowItWorks() {
                 <h3 className="mt-5 font-display text-xl text-foreground">{s.title}</h3>
                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.body}</p>
               </div>
-            </Reveal>
-          ))}
+            );
+            return (
+              <Reveal key={s.n} delay={i * 0.1}>
+                {s.n === 1 ? (
+                  <Link
+                    to="/post-query"
+                    className="block group cursor-pointer transition-transform duration-300 ease-out hover:-translate-y-1"
+                    aria-label="Post your query"
+                  >
+                    {card}
+                  </Link>
+                ) : (
+                  card
+                )}
+              </Reveal>
+            );
+          })}
         </div>
 
         <Reveal className="mt-12 text-center">
