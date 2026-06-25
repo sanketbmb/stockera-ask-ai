@@ -14,6 +14,7 @@ export const Route = createFileRoute("/stock-picker")({
         content:
           "AI-picked stocks from Stockera's SP-1 verified universe. Pick horizon, risk and filters to see today's survivors.",
       },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: () => (
