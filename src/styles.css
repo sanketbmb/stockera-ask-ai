@@ -213,3 +213,9 @@
 @media (max-width: 767px) {
   body.has-mobile-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
+
+.hac-label-ink {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
