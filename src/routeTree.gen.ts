@@ -37,6 +37,7 @@ import { Route as PrintSymbolRouteImport } from './routes/print.$symbol'
 import { Route as PrintStockQueryIdRouteImport } from './routes/print-stock.$queryId'
 import { Route as PrintSectorQueryIdRouteImport } from './routes/print-sector.$queryId'
 import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educational.$queryId'
+import { Route as LibrarySymbolRouteImport } from './routes/library.$symbol'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
@@ -190,6 +191,11 @@ const PrintEducationalQueryIdRoute = PrintEducationalQueryIdRouteImport.update({
   path: '/print-educational/$queryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibrarySymbolRoute = LibrarySymbolRouteImport.update({
+  id: '/library/$symbol',
+  path: '/library/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -285,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print-stock/$queryId': typeof PrintStockQueryIdRoute
@@ -327,6 +334,7 @@ export interface FileRoutesByTo {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print-stock/$queryId': typeof PrintStockQueryIdRoute
@@ -370,6 +378,7 @@ export interface FileRoutesById {
   '/admin/super': typeof AdminSuperRoute
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
   '/print-stock/$queryId': typeof PrintStockQueryIdRoute
@@ -414,6 +423,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print-stock/$queryId'
@@ -456,6 +466,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print-stock/$queryId'
@@ -498,6 +509,7 @@ export interface FileRouteTypes {
     | '/admin/super'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
     | '/print-stock/$queryId'
@@ -541,6 +553,7 @@ export interface RootRouteChildren {
   AdminSuperRoute: typeof AdminSuperRoute
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  LibrarySymbolRoute: typeof LibrarySymbolRoute
   PrintEducationalQueryIdRoute: typeof PrintEducationalQueryIdRoute
   PrintSectorQueryIdRoute: typeof PrintSectorQueryIdRoute
   PrintStockQueryIdRoute: typeof PrintStockQueryIdRoute
@@ -750,6 +763,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrintEducationalQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library/$symbol': {
+      id: '/library/$symbol'
+      path: '/library/$symbol'
+      fullPath: '/library/$symbol'
+      preLoaderRoute: typeof LibrarySymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -869,6 +889,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminSuperRoute: AdminSuperRoute,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  LibrarySymbolRoute: LibrarySymbolRoute,
   PrintEducationalQueryIdRoute: PrintEducationalQueryIdRoute,
   PrintSectorQueryIdRoute: PrintSectorQueryIdRoute,
   PrintStockQueryIdRoute: PrintStockQueryIdRoute,

@@ -127,8 +127,8 @@ export function MasterSearch({
   }, [rows]);
 
   const seedStock = (sym: string) => {
-    setQ(sym);
-    inputRef.current?.focus();
+    onClose?.();
+    navigate({ to: "/library/$symbol", params: { symbol: sym } });
   };
 
   const openItem = (it: LibraryItem) => {
