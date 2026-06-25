@@ -10,6 +10,9 @@ import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
 import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTeaser";
 import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
+import { TrustCompliance } from "@/components/landing/TrustCompliance";
+import { FAQ } from "@/components/landing/FAQ";
+import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -37,6 +40,9 @@ function Index() {
         <HomeAnalystCta />
         <LiveDemandBlock />
         <HowItWorks />
+        <TrustCompliance />
+        <FAQ />
+        <FinalCtaStrip />
       </main>
       <SiteFooter />
     </div>
