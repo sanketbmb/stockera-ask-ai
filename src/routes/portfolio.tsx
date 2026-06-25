@@ -158,6 +158,7 @@ export const Route = createFileRoute("/portfolio")({
     meta: [
       { title: "My Portfolio — Stockera" },
       { name: "description", content: "Track your stock holdings with live P&L and AI-powered target / stop-loss alerts." },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: () => <RequireAuth><PortfolioContent /></RequireAuth>,
