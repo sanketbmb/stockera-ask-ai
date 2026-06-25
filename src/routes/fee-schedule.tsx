@@ -21,6 +21,19 @@ export const Route = createFileRoute("/fee-schedule")({
       { name: "twitter:description", content: DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: `${SITE_ORIGIN}/fee-schedule` }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_ORIGIN}/` },
+            { "@type": "ListItem", position: 2, name: "Fee Schedule", item: `${SITE_ORIGIN}/fee-schedule` },
+          ],
+        }),
+      },
+    ],
   }),
   component: FeeSchedulePage,
 });
