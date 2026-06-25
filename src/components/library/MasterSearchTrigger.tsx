@@ -40,7 +40,7 @@ export function MasterSearchTrigger() {
         <Search className="h-4 w-4" />
         <span className="hidden md:inline">Search</span>
         <kbd className="hidden rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground md:inline">
-          ⌘K
+          {isMac ? "⌘K" : "Ctrl+K"}
         </kbd>
       </Button>
 
