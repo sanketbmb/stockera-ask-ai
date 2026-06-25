@@ -158,7 +158,7 @@ export function PublishToLibraryToggle({ queryId, compact = false }: Props) {
                 <AlertDialogTitle>Revert to private?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Your report will be removed from the public library. The URL will remain
-                  but the content will be hidden. This is reversible only within 30 days.
+                  but the content will be hidden. You can revert this anytime.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
