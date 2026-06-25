@@ -212,13 +212,14 @@ function LiveDemoWidget() {
                   </div>
                 ))}
               </div>
-              <Link to="/signup" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
                 See full report <TrendingUp className="h-3 w-3" aria-hidden />
-              </Link>
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-    </div>
+      </div>
+    </Link>
   );
 }
