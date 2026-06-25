@@ -35,6 +35,8 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-brand-ink: hsl(var(--brand-ink));
+  --color-surface-warm: hsl(var(--surface-warm));
 }
 
 :root {
@@ -78,6 +80,8 @@
   --shadow-card-lg: 0 24px 48px -12px rgba(31,60,115,0.18);
   --shadow-glow-teal: 0 8px 28px -6px rgba(43,168,160,0.45);
   --shadow-glow-gold: 0 8px 28px -6px rgba(245,183,49,0.45);
+  --brand-ink: 168 51% 12%;
+  --surface-warm: 36 33% 97%;
 }
 
 @layer base {
@@ -208,4 +212,10 @@
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 @media (max-width: 767px) {
   body.has-mobile-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+
+.hac-label-ink {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  letter-spacing: 0.18em;
 }
