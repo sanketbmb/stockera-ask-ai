@@ -35,6 +35,8 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-brand-ink: hsl(var(--brand-ink));
+  --color-surface-warm: hsl(var(--surface-warm));
 }
 
 :root {
