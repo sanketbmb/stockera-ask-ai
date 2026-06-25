@@ -105,7 +105,7 @@ function Index() {
         <StockRecommenderTeaser />
         <MasterSearchHero />
         <QueryTypesOverview />
-        <div id="experts" aria-hidden="true" />
+        <AnalystShowcase />
         <HomeAnalystCta />
         <LiveDemandBlock />
         <HowItWorks />
