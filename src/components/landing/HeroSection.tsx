@@ -13,7 +13,7 @@ const TRUST_BADGES = [
   { icon: Wallet, text: "First 2 queries free" },
 ];
 
-const LINE_1_WORDS = ["Don't", "act", "on", "tips."];
+const LINE_1_WORDS = ["Who", "are", "you", "about", "to", "take", "advice", "from?"];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
@@ -34,7 +34,7 @@ export function HeroSection() {
             <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
               <span className="block">
                 {reduced
-                  ? <span>Don't act on tips.</span>
+                  ? <span>Who are you about to take advice from?</span>
                   : LINE_1_WORDS.map((w, i) => (
                       <motion.span
                         key={`${w}-${i}`}
@@ -51,7 +51,7 @@ export function HeroSection() {
             </h1>
 
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
-              Whether you trade or invest — post any stock question. Get an AI-grounded report in 30 seconds, and if you want, a personalized video answer from a SEBI-registered Research Analyst within 24 hours. Calm. Educational. On the record.
+              A WhatsApp forward isn't research. Get a written verdict from a registered analyst — not an algorithm, not a tipster.
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
