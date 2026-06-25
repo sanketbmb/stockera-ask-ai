@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NotificationBell } from "@/components/common/NotificationBell";
+import { MasterSearchTrigger } from "@/components/library/MasterSearchTrigger";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +49,7 @@ export function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
+          <MasterSearchTrigger />
           <Button asChild className="rounded-full bg-gradient-brand text-white shadow-glow-teal hover:opacity-95">
             <Link to="/post-query">Post a Query</Link>
           </Button>
