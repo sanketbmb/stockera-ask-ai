@@ -1,6 +1,6 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-const sections = [
+export const FAQ_SECTIONS = [
   {
     title: "Getting Started",
     items: [
