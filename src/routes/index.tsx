@@ -7,6 +7,9 @@ import { LiveStatsBar } from "@/components/landing/LiveStatsBar";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { LiveDemandBlock } from "@/components/landing/LiveDemandBlock";
 import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
+import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
+import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTeaser";
+import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -28,6 +31,9 @@ function Index() {
       <main className="flex-1">
         <HeroSection />
         <LiveStatsBar />
+        <ProblemsWeSolve />
+        <StockRecommenderTeaser />
+        <QueryTypesOverview />
         <HomeAnalystCta />
         <LiveDemandBlock />
         <HowItWorks />
