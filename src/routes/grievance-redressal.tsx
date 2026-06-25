@@ -5,19 +5,24 @@ import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 import { Mail, Phone, MapPin, Clock, ExternalLink } from "lucide-react";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const TITLE = "Grievance Redressal — SEBI SCORES & SmartODR | Stockera";
+const DESCRIPTION = "Grievance redressal process, SEBI SCORES escalation, and SmartODR resolution path for Stockera Research Analyst clients.";
+
 export const Route = createFileRoute("/grievance-redressal")({
   head: () => ({
     meta: [
-      { title: "Grievance Redressal — Stockera" },
-      {
-        name: "description",
-        content:
-          "File a complaint with Stockera. SEBI-compliant grievance redressal with 30-day SLA, escalation to SCORES and SMART ODR.",
-      },
-      { property: "og:title", content: "Grievance Redressal — Stockera" },
-      { property: "og:description", content: "30-day resolution SLA. Escalate to SEBI SCORES or SMART ODR." },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
+      { property: "og:url", content: `${SITE_ORIGIN}/grievance-redressal` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: DESCRIPTION },
     ],
-    links: [{ rel: "canonical", href: "/grievance-redressal" }],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/grievance-redressal` }],
   }),
   component: GrievanceRedressalPage,
 });

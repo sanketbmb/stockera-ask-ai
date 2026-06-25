@@ -3,19 +3,24 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { AlertTriangle } from "lucide-react";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const TITLE = "Risk Disclosure — Stockera Research Analyst";
+const DESCRIPTION = "Risk disclosure for SEBI-registered Research Analyst services. Investments in securities are subject to market risks.";
+
 export const Route = createFileRoute("/risk-disclosure")({
   head: () => ({
     meta: [
-      { title: "Risk Disclosure Document — Stockera" },
-      {
-        name: "description",
-        content:
-          "Risk Disclosure Document for research and advisory services offered by Stockera Technology Private Limited (SEBI RA INH000019071).",
-      },
-      { property: "og:title", content: "Risk Disclosure Document — Stockera" },
-      { property: "og:description", content: "Risks of investing in Indian securities markets." },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
+      { property: "og:url", content: `${SITE_ORIGIN}/risk-disclosure` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: DESCRIPTION },
     ],
-    links: [{ rel: "canonical", href: "/risk-disclosure" }],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/risk-disclosure` }],
   }),
   component: RiskDisclosurePage,
 });

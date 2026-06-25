@@ -17,6 +17,8 @@ import { FAQ } from "@/components/landing/FAQ";
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
 import { FIRM } from "@/lib/firm-details";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -28,11 +30,13 @@ export const Route = createFileRoute("/")({
       { property: "og:type", content: "website" },
       { property: "og:title", content: "Ask The Expert by Stockera — SEBI-Registered Stock Research, On Demand" },
       { property: "og:description", content: "AI-grounded reports + ₹100 SEBI-registered analyst video answers in 24 hours. Calm. Educational. On the record." },
+      { property: "og:url", content: `${SITE_ORIGIN}/` },
       { property: "og:site_name", content: "Ask The Expert by Stockera" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "Ask The Expert by Stockera — SEBI-Registered Stock Research" },
       { name: "twitter:description", content: "AI-grounded reports + ₹100 SEBI-registered analyst video answers in 24 hours." },
     ],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/` }],
   }),
   component: Index,
 });

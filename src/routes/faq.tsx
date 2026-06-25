@@ -2,16 +2,24 @@ import { createFileRoute } from "@tanstack/react-router";
 import FAQ from "@/pages/FAQ";
 import { PublicShell } from "@/components/layout/PublicShell";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const TITLE = "Frequently Asked Questions — Ask The Expert by Stockera";
+const DESCRIPTION = "Answers about SEBI registration, pricing, video turnaround time, refund policy, and how Stockera's AI + analyst workflow protects retail investors.";
+
 export const Route = createFileRoute("/faq")({
   head: () => ({
     meta: [
-      { title: "FAQ — Ask The Expert by Stockera" },
-      { name: "description", content: "Answers to common questions about queries, experts, pricing, wallet, and SEBI compliance." },
-      { property: "og:title", content: "FAQ — Ask The Expert by Stockera" },
-      { property: "og:description", content: "Everything you need to know before posting your first query." },
-      { property: "og:url", content: "/faq" },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
+      { property: "og:url", content: `${SITE_ORIGIN}/faq` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: DESCRIPTION },
     ],
-    links: [{ rel: "canonical", href: "/faq" }],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/faq` }],
   }),
   component: () => (
     <PublicShell

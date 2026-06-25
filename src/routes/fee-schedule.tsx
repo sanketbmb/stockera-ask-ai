@@ -3,19 +3,24 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 
+const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const TITLE = "Fee Schedule — Transparent Pricing | Stockera";
+const DESCRIPTION = "Complete fee schedule for personalized video answers, live consultations, and stock research. SEBI-disclosed pricing under RA Regulations 2014.";
+
 export const Route = createFileRoute("/fee-schedule")({
   head: () => ({
     meta: [
-      { title: "Fee Schedule — Stockera" },
-      {
-        name: "description",
-        content:
-          "Public fee schedule for research and advisory services offered by Stockera Technology Private Limited, SEBI-registered Research Analyst.",
-      },
-      { property: "og:title", content: "Fee Schedule — Stockera" },
-      { property: "og:description", content: "Transparent, SEBI-compliant fees for stock research services." },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
+      { property: "og:url", content: `${SITE_ORIGIN}/fee-schedule` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: DESCRIPTION },
     ],
-    links: [{ rel: "canonical", href: "/fee-schedule" }],
+    links: [{ rel: "canonical", href: `${SITE_ORIGIN}/fee-schedule` }],
   }),
   component: FeeSchedulePage,
 });
