@@ -80,6 +80,8 @@
   --shadow-card-lg: 0 24px 48px -12px rgba(31,60,115,0.18);
   --shadow-glow-teal: 0 8px 28px -6px rgba(43,168,160,0.45);
   --shadow-glow-gold: 0 8px 28px -6px rgba(245,183,49,0.45);
+  --brand-ink: 168 51% 12%;
+  --surface-warm: 36 33% 97%;
 }
 
 @layer base {
