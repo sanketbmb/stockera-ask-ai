@@ -51,7 +51,7 @@ export function HeroSection() {
             </h1>
 
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
-              Whether you trade or invest — post any stock question. Get an AI-grounded report in 30 seconds, and if you want, a personalized video answer from a SEBI-registered Research Analyst within 24 hours. Calm. Educational. On the record.
+              A WhatsApp forward isn't research. Get a written verdict from a registered analyst — not an algorithm, not a tipster.
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
