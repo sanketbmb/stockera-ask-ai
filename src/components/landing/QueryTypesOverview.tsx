@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Reveal } from "@/components/landing/motion-helpers";
+import { Reveal, Stagger, StaggerItem, HoverLift } from "@/lib/motion";
 import { visibleIntents } from "@/lib/feature-flags";
 
 type Slot = {
@@ -46,29 +46,39 @@ export function QueryTypesOverview() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <Reveal className="text-center">
           <h2 className="font-display text-3xl text-foreground sm:text-4xl">
-            Five ways to ask.
+            <span className="text-foreground">Five ways to</span>{" "}
+            <span className="text-primary">ask.</span>
           </h2>
           <p className="mt-3 text-muted-foreground">
             Every report follows the same structure — verdict, key levels, reasoning, risks.
           </p>
         </Reveal>
 
-        <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
-          {cards.map((s, i) => {
+        <Stagger
+          staggerChildren={0.07}
+          delayChildren={0.05}
+          className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5"
+        >
+          {cards.map((s) => {
             const Icon = s.icon;
             return (
-              <Reveal key={s.intent} delay={i * 0.05}>
-                <Link to={s.href} className="block h-full">
-                  <Card className="flex h-full flex-col gap-2 p-4 transition-transform duration-300 ease-out hover:-translate-y-0.5">
-                    <Icon className="h-5 w-5 text-accent" aria-hidden />
-                    <h3 className="font-display text-base text-foreground">{s.label}</h3>
-                    <p className="text-xs leading-relaxed text-muted-foreground">{s.blurb}</p>
-                  </Card>
-                </Link>
-              </Reveal>
+              <StaggerItem key={s.intent}>
+                <HoverLift liftPx={3}>
+                  <Link to={s.href} className="group block h-full">
+                    <Card className="flex h-full flex-col gap-2 p-4 transition-colors duration-200 hover:border-primary/40">
+                      <Icon
+                        className="h-5 w-5 text-accent transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3 motion-reduce:scale-100 motion-reduce:rotate-0"
+                        aria-hidden
+                      />
+                      <h3 className="font-display text-base text-foreground">{s.label}</h3>
+                      <p className="text-xs leading-relaxed text-muted-foreground">{s.blurb}</p>
+                    </Card>
+                  </Link>
+                </HoverLift>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       </div>
     </section>
   );
