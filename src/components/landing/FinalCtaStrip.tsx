@@ -46,6 +46,15 @@ export function FinalCtaStrip() {
             </Button>
           </div>
 
+          <div className="mt-5">
+            <Link
+              to="/faq"
+              className="text-sm text-white/60 underline-offset-4 hover:text-white hover:underline"
+            >
+              Common questions →
+            </Link>
+          </div>
+
           <p className="mx-auto mt-6 max-w-xl text-[11px] text-white/40">
             {`${FIRM.legalName} · SEBI Research Analyst ${FIRM.sebiRegNumber} · Educational analysis only.`}
           </p>
