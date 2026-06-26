@@ -15,7 +15,7 @@ import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
 import { MasterSearchHero } from "@/components/library/MasterSearchHero";
 import { AnalystShowcase } from "@/components/landing/AnalystShowcase";
 import { TrustCompliance } from "@/components/landing/TrustCompliance";
-import { FAQ } from "@/components/landing/FAQ";
+
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { MobileStickyCta } from "@/components/layout/MobileStickyCta";
@@ -109,7 +109,6 @@ function Index() {
         <HowItWorks />
         <PublicAnswersMarquee />
         <TrustCompliance />
-        <FAQ />
         <ReferralBanner />
         <FinalCtaStrip />
       </main>
