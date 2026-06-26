@@ -20,6 +20,40 @@ export const Route = createFileRoute("/pricing")({
       { name: "twitter:description", content: DESCRIPTION },
     ],
     links: [{ rel: "canonical", href: `${SITE_ORIGIN}/pricing` }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_ORIGIN}/` },
+            { "@type": "ListItem", position: 2, name: "Pricing", item: `${SITE_ORIGIN}/pricing` },
+          ],
+        }),
+      },
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Service",
+          name: "Ask The Expert by Stockera",
+          provider: { "@id": "https://asktheexpert.lovable.app/#organization" },
+          areaServed: "IN",
+          url: `${SITE_ORIGIN}/pricing`,
+          hasOfferCatalog: {
+            "@type": "OfferCatalog",
+            name: "Ask The Expert pricing",
+            itemListElement: [
+              { "@type": "Offer", name: "Personalized analyst video answer", price: "100", priceCurrency: "INR" },
+              { "@type": "Offer", name: "15-minute live consultation", price: "499", priceCurrency: "INR" },
+              { "@type": "Offer", name: "30-minute live consultation", price: "999", priceCurrency: "INR" },
+              { "@type": "Offer", name: "60-minute live consultation", price: "1799", priceCurrency: "INR" },
+            ],
+          },
+        }),
+      },
+    ],
   }),
   component: () => <PublicShell><Pricing /></PublicShell>,
 });
