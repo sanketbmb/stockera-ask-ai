@@ -8,6 +8,7 @@ const cols = [
     links: [
       { label: "How it Works", href: "/#how-it-works" },
       { label: "Experts", href: "/#experts" },
+      { label: "Public Library", href: "/library" },
       { label: "Pricing", href: "/pricing" },
       { label: "FAQ", href: "/faq" },
     ],
