@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { MessageSquare, Zap, Video, ArrowRight } from "lucide-react";
-import { Reveal } from "./motion-helpers";
+import { motion, useReducedMotion } from "framer-motion";
+import { Reveal } from "@/lib/motion";
 
 const steps = [
   {
@@ -8,6 +9,8 @@ const steps = [
     icon: MessageSquare,
     color: "text-accent",
     bg: "bg-accent/10",
+    barFrom: "from-accent/0",
+    barTo: "to-accent",
     title: "Post Your Query",
     body: "Tell us your stock, your buy price, and what you're confused about. Takes 60 seconds.",
   },
@@ -16,6 +19,8 @@ const steps = [
     icon: Zap,
     color: "text-gold",
     bg: "bg-gold/10",
+    barFrom: "from-gold/0",
+    barTo: "to-gold",
     title: "Get AI Report Instantly",
     body: "Our Gemini-powered AI analyzes your stock using real NSE/BSE data and gives you a detailed verdict in 30 seconds.",
   },
@@ -24,10 +29,30 @@ const steps = [
     icon: Video,
     color: "text-primary",
     bg: "bg-primary/10",
+    barFrom: "from-primary/0",
+    barTo: "to-primary",
     title: "Expert Video Answer",
     body: "A SEBI-registered RA or RIA records a personalized video answer — in Hindi or English — within 24 hours.",
   },
 ];
+
+function StepBar({ delay }: { delay: number }) {
+  const reduce = useReducedMotion();
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none mt-5 h-[3px] w-full overflow-hidden rounded-full bg-border/60"
+    >
+      <motion.div
+        className="h-full w-full origin-left rounded-full bg-gradient-to-r from-primary via-accent to-gold"
+        initial={{ scaleX: reduce ? 1 : 0 }}
+        whileInView={{ scaleX: 1 }}
+        viewport={{ once: true, amount: 0.6 }}
+        transition={{ duration: reduce ? 0 : 0.9, delay: reduce ? 0 : delay, ease: [0.22, 1, 0.36, 1] }}
+      />
+    </div>
+  );
+}
 
 export function HowItWorks() {
   return (
@@ -53,6 +78,25 @@ export function HowItWorks() {
                 </div>
                 <h3 className="mt-5 font-display text-xl text-foreground">{s.title}</h3>
                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+                {s.n === 2 && (
+                  <figure className="mt-5 w-full">
+                    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-card">
+                      <img
+                        src="/images/hero-report-preview.webp"
+                        alt="Sample AI-generated stock report layout with values redacted"
+                        width={1262}
+                        height={832}
+                        loading="lazy"
+                        decoding="async"
+                        className="block h-auto w-full"
+                      />
+                    </div>
+                    <figcaption className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                      Sample report layout — values redacted. Actual reports use live NSE/BSE data for your stock.
+                    </figcaption>
+                  </figure>
+                )}
+                <StepBar delay={i * 0.12} />
               </div>
             );
             return (
