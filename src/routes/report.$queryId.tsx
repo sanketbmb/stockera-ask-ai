@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
@@ -36,6 +36,36 @@ import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { PublishToLibraryToggle } from "@/components/library/PublishToLibraryToggle";
+
+// FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Detect Supabase "no rows" errors (PGRST116) plus the equivalent
+// freeze-server-fn message, so both data paths can degrade gracefully.
+function isReportNotFoundError(err: unknown): boolean {
+  if (!err) return false;
+  const code = (err as { code?: string }).code;
+  if (code === "PGRST116") return true;
+  const msg = (err as { message?: string }).message ?? "";
+  return /multiple \(or no\) rows|Results contain 0 rows|Query not found/i.test(msg);
+}
+
+function NotFoundCard() {
+  return (
+    <div className="min-h-screen bg-mesh flex items-center justify-center p-6">
+      <div className="text-center max-w-md">
+        <Logo size="md" linkTo="/" />
+        <h1 className="font-display text-3xl mt-6">Report not found</h1>
+        <p className="text-muted-foreground mt-3 text-sm">
+          We couldn't find a report at this link. It may have been removed, or the URL might be incorrect.
+        </p>
+        <Button asChild className="mt-6 bg-primary text-primary-foreground">
+          <Link to="/post-query">Post a new query</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
