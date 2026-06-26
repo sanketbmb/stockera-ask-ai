@@ -201,6 +201,27 @@ export function HomeAnalystCta() {
             0% { background-position: 0% 50%; }
             100% { background-position: 300% 50%; }
           }
+          @keyframes ctacard-aurora-text-shift {
+            0%   { background-position: 0% 50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
+          .ctacard-aurora-text {
+            background-image: linear-gradient(
+              90deg,
+              hsl(258 90% 60%) 0%,
+              hsl(217 91% 60%) 35%,
+              hsl(160 84% 39%) 70%,
+              hsl(258 90% 60%) 100%
+            );
+            background-size: 220% 100%;
+            background-position: 0% 50%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+            animation: ctacard-aurora-text-shift 6s ease-in-out infinite;
+          }
           .hac-ping { animation: hac-ping 1.6s ease-in-out infinite; }
           @keyframes hac-ping {
             0%, 100% { transform: scale(1); opacity: 1; }
@@ -209,7 +230,7 @@ export function HomeAnalystCta() {
           .hac-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.46); transition: box-shadow 250ms ease-out; }
           .hac-glow:hover { box-shadow: 0 14px 36px -14px hsl(var(--primary) / 0.6); }
           @media (prefers-reduced-motion: reduce) {
-            .hac-aurora-text, .hac-ping, .hac-glow { animation: none !important; }
+            .hac-aurora-text, .ctacard-aurora-text, .hac-ping, .hac-glow { animation: none !important; }
           }
         `}</style>
       </motion.section>
