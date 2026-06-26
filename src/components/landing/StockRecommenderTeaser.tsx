@@ -1,32 +1,9 @@
-import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, ShieldCheck, LineChart, Eye } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/landing/motion-helpers";
 
-type Row = { label: string; scale: number };
-
-const ROWS: Row[] = [
-  { label: "Composite score", scale: 0.78 },
-  { label: "Technical", scale: 0.82 },
-  { label: "Fundamental", scale: 0.71 },
-  { label: "Sector momentum", scale: 0.64 },
-];
-
 export function StockRecommenderTeaser() {
-  const barRefs = useRef<Array<HTMLDivElement | null>>([]);
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      ROWS.forEach((row, i) => {
-        const node = barRefs.current[i];
-        if (node) node.style.transform = `scaleX(${row.scale})`;
-      });
-    });
-    return () => cancelAnimationFrame(id);
-  }, []);
-
   return (
     <section
       className="py-20"
@@ -74,44 +51,24 @@ export function StockRecommenderTeaser() {
         </Reveal>
 
         <Reveal delay={0.08}>
-          <Card className="p-6">
-            <div className="space-y-4">
-              {ROWS.map((row, i) => (
-                <div key={row.label}>
-                  <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-foreground">{row.label}</span>
-                    <span className="font-mono text-muted-foreground">
-                      {Math.round(row.scale * 100)}
-                    </span>
-                  </div>
-                  <div className="bg-muted h-2 rounded-full overflow-hidden">
-                    <div
-                      ref={(el) => {
-                        barRefs.current[i] = el;
-                      }}
-                      className="srt-bar bg-accent h-full origin-left"
-                      style={{ transform: "scaleX(0)" }}
-                    />
-                  </div>
-                </div>
-              ))}
+          <div>
+            <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+              <img
+                src="/images/hero-report-preview.webp"
+                width={1262}
+                height={832}
+                alt="Sample stock report showing our structured analysis layout — company name, composite score, fundamentals, and data freshness checks."
+                loading="lazy"
+                decoding="async"
+                className="block w-full h-auto"
+              />
             </div>
-            <p className="mt-5 text-[10px] text-muted-foreground">
-              Illustration. Real picks shown after you set your risk on the Stock Picker.
+            <p className="mt-2 text-xs text-muted-foreground">
+              Sample report — your personalized report shows your stock, your buy price, your question.
             </p>
-          </Card>
+          </div>
         </Reveal>
       </div>
-
-      <style>{`
-        .srt-bar {
-          transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
-          will-change: transform;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .srt-bar { transition: none !important; }
-        }
-      `}</style>
     </section>
   );
 }
