@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
@@ -36,6 +36,36 @@ import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { PublishToLibraryToggle } from "@/components/library/PublishToLibraryToggle";
+
+// FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Detect Supabase "no rows" errors (PGRST116) plus the equivalent
+// freeze-server-fn message, so both data paths can degrade gracefully.
+function isReportNotFoundError(err: unknown): boolean {
+  if (!err) return false;
+  const code = (err as { code?: string }).code;
+  if (code === "PGRST116") return true;
+  const msg = (err as { message?: string }).message ?? "";
+  return /multiple \(or no\) rows|Results contain 0 rows|Query not found/i.test(msg);
+}
+
+function NotFoundCard() {
+  return (
+    <div className="min-h-screen bg-mesh flex items-center justify-center p-6">
+      <div className="text-center max-w-md">
+        <Logo size="md" linkTo="/" />
+        <h1 className="font-display text-3xl mt-6">Report not found</h1>
+        <p className="text-muted-foreground mt-3 text-sm">
+          We couldn't find a report at this link. It may have been removed, or the URL might be incorrect.
+        </p>
+        <Button asChild className="mt-6 bg-primary text-primary-foreground">
+          <Link to="/post-query">Post a new query</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 const LOADING_STEPS = [
   "Connecting to live market data…",
@@ -91,6 +121,7 @@ function TierShapedReportContent({
   });
 
   if (isLoading) return <LoadingScreen />;
+  if (error && isReportNotFoundError(error)) return <NotFoundCard />;
   if (error || !data) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
@@ -387,6 +418,9 @@ function LegacyReportContent({
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
 
+  // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
+  const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
+
   // Bug 3 fix — reports were auto-scrolling to the bottom on first mount.
   // Force scroll-to-top per queryId so every variant (tier-shaped, general,
   // sector, educational, legacy) opens at the report header.
@@ -396,6 +430,7 @@ function ReportContent() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId],
+    enabled: isValidUuid,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
@@ -426,7 +461,11 @@ function ReportContent() {
     },
   });
 
-  if (isLoading || !data) return <LoadingScreen />;
+  if (!isValidUuid) return <NotFoundCard />;
+
+  // Show not-found surface for PGRST116 (row missing) before any other branch
+  // so it can't fall through to "Couldn't load this report" or a stuck loader.
+  if (error && isReportNotFoundError(error)) return <NotFoundCard />;
 
   if (error) {
     return (
@@ -439,6 +478,8 @@ function ReportContent() {
       </div>
     );
   }
+
+  if (isLoading || !data) return <LoadingScreen />;
 
   // Phase 3A/3B/3C — routed question types. Sector View and Educational have
   // their own report variants; "other" stays on the routed-pending panel.
@@ -503,4 +544,5 @@ function ReportContent() {
 export const Route = createFileRoute("/report/$queryId")({
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: () => <RequireAuth><ReportContent /></RequireAuth>,
+  notFoundComponent: () => <NotFoundCard />,
 });
