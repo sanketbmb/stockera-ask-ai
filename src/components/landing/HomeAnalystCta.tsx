@@ -46,7 +46,7 @@ export function HomeAnalystCta() {
           <div className="relative rounded-[calc(1.5rem-1px)] bg-card/80 backdrop-blur-sm">
             {/* Top strip */}
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
-              <span className="hac-label-ink font-mono text-[10px] uppercase tracking-[0.18em]">
+              <span className="ctacard-aurora-text font-mono text-[10px] uppercase tracking-[0.18em]">
                 Premium · Human Analyst
               </span>
               <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
