@@ -17,6 +17,7 @@ import { AnalystShowcase } from "@/components/landing/AnalystShowcase";
 import { TrustCompliance } from "@/components/landing/TrustCompliance";
 import { FAQ } from "@/components/landing/FAQ";
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
+import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { MobileStickyCta } from "@/components/layout/MobileStickyCta";
 import { FIRM } from "@/lib/firm-details";
 
@@ -109,6 +110,7 @@ function Index() {
         <PublicAnswersMarquee />
         <TrustCompliance />
         <FAQ />
+        <ReferralBanner />
         <FinalCtaStrip />
       </main>
       <SiteFooter />
