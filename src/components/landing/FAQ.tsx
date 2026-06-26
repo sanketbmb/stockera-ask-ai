@@ -51,7 +51,7 @@ export function FAQ() {
           <Accordion type="single" collapsible className="mt-10">
             {ITEMS.map((item, i) => (
               <AccordionItem key={i} value={`faq-${i}`}>
-                <AccordionTrigger className="text-left font-display text-base text-foreground">
+                <AccordionTrigger className="rounded-md px-2 text-left font-display text-base text-foreground transition-colors duration-200 hover:bg-muted/40 focus-visible:bg-muted/40">
                   {item.q}
                 </AccordionTrigger>
                 <AccordionContent className="text-sm leading-relaxed text-muted-foreground">

@@ -31,7 +31,7 @@ export function FinalCtaStrip() {
 
         <Reveal delay={0.08}>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
+            <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground transition-shadow duration-200 hover:bg-accent/90 hover:shadow-lg hover:shadow-primary/20">
               <Link to="/post-query">
                 Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
               </Link>
