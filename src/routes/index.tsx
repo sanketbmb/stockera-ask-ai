@@ -6,7 +6,7 @@ import { MarketTicker } from "@/components/common/MarketTicker";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { LiveStatsBar } from "@/components/landing/LiveStatsBar";
 import { HowItWorks } from "@/components/landing/HowItWorks";
-import { LiveDemandBlock } from "@/components/landing/LiveDemandBlock";
+
 import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
 import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTeaser";
@@ -103,7 +103,7 @@ function Index() {
         <QueryTypesOverview />
         <AnalystShowcase />
         <HomeAnalystCta />
-        <LiveDemandBlock />
+        
         <HowItWorks />
         <TrustCompliance />
         <FAQ />
