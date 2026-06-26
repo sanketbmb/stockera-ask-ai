@@ -45,12 +45,19 @@ export const freezeOrReadEducationalReport = createServerFn({ method: "POST" })
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
       .select(
-        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta, secondary_asks, secondary_answers, mixed_query_meta",
+        "id, user_id, query_type, engine_version, ai_report, frozen_at, query_text, custom_question, concept_canonical, educational_difficulty, router_meta, secondary_asks, secondary_answers, mixed_query_meta, is_public_library, library_tombstoned_at",
       )
       .eq("id", data.queryId)
       .single();
     if (readErr || !row) throw new Error(`Query not found: ${readErr?.message ?? data.queryId}`);
-    if (row.user_id !== userId) throw new Error("Not authorized to read this report");
+    const isOwner = row.user_id === userId;
+    const isPublicLibraryRow =
+      row.is_public_library === true &&
+      row.library_tombstoned_at === null &&
+      row.ai_report !== null;
+    if (!isOwner && !isPublicLibraryRow) {
+      throw new Error("Not authorized to read this report");
+    }
     if (row.query_type !== "educational") {
       throw new Error("freezeOrReadEducationalReport only handles educational records");
     }
