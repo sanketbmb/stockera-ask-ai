@@ -169,7 +169,7 @@ export function AnalystCtaCard({
                 </div>
                 <Button
                   onClick={() => setVideoOpen(true)}
-                  className="ctacard-glow gap-1.5 rounded-full px-5 transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                  className="ctacard-glow shrink-0 whitespace-nowrap gap-1.5 rounded-full px-5 transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <Video className="h-4 w-4" aria-hidden />
                   Request Analyst Video — ₹{VIDEO_PRICE_PAISE / 100}
