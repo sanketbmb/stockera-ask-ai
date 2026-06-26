@@ -1,7 +1,9 @@
-// Phase 2F — Background LTP sync (Dhan), with NSE→BSE fallback + telemetry.
-// Reads universe_override_symbols from runtime_config, looks up dhan_security_id
-// per (symbol, exchange) from stock_master, fetches LTP via dhan-fetch, upserts
-// public.ltp_cache, then writes operational telemetry into runtime_config.
+// Phase 2F — Background LTP sync (Dhan), single-leg NSE-first/BSE-fallback.
+// Reads universe_override_symbols from runtime_config, looks up canonical
+// dhan_security_id per (symbol, segment) from stock_master (paginated to
+// defeat PostgREST's silent 1000-row cap), fetches LTP via dhan-fetch with
+// classified failures + Retry-After handling, upserts public.ltp_cache on
+// the composite PK (symbol, exchange), and emits explicit telemetry counters.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -12,6 +14,12 @@ const cors = {
 };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// ---- Chunking / throttle knobs (writer-only; no DB / no UI impact) ----
+const MASTER_CHUNK = 200;            // canonical stock_master pagination
+const FULL_RUN_CHUNK = 50;           // symbols per Dhan batch
+const INTER_CHUNK_PAUSE_MS = 800;    // pause between batches
+const INTRA_CHUNK_PAUSE_MS = 0;      // no extra pause inside a batch
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,8 +43,15 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
     .filter((e): e is { symbol: string; exchange: string } => e !== null);
 }
 
+// Discriminated result for upstream failure classification.
+type DhanFetchResult =
+  | { kind: "ok"; ltp: number }
+  | { kind: "dhan_null" }
+  | { kind: "auth_error" }
+  | { kind: "rate_limited"; retryAfterMs: number }
+  | { kind: "fetch_error"; message: string };
 
-async function fetchDhanLtp(securityId: string, segment: string): Promise<number | null> {
+async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFetchResult> {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
       method: "POST",
@@ -49,17 +64,42 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<number
     });
     const text = await res.text();
     let body: Record<string, unknown> = {};
-    try { body = text ? JSON.parse(text) : {}; } catch { /* */ }
-    if (!res.ok || body.success !== true) return null;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      return { kind: "fetch_error", message: "non_json_response" };
+    }
+
+    if (res.status === 401 || res.status === 403) return { kind: "auth_error" };
+    if (res.status === 429) {
+      const raHeader = res.headers.get("Retry-After");
+      const raBody = (body as { retry_after?: unknown }).retry_after;
+      const ra = Number(raHeader ?? raBody ?? 1);
+      const retryAfterMs = Math.min(Math.max(500, (Number.isFinite(ra) ? ra : 1) * 1000), 5000);
+      return { kind: "rate_limited", retryAfterMs };
+    }
+    if (res.status >= 500) return { kind: "fetch_error", message: `http_${res.status}` };
+    if (!res.ok) return { kind: "fetch_error", message: `http_${res.status}` };
+
+    if (body.success !== true) return { kind: "dhan_null" };
     const data = body.data as Record<string, unknown> | undefined;
     const inner = data?.data as Record<string, unknown> | undefined;
     const seg = inner?.[segment] as Record<string, unknown> | undefined;
     const node = seg?.[securityId] as Record<string, unknown> | undefined;
     const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
-    return typeof ltp === "number" && ltp > 0 ? ltp : null;
-  } catch {
-    return null;
+    return typeof ltp === "number" && ltp > 0 ? { kind: "ok", ltp } : { kind: "dhan_null" };
+  } catch (e) {
+    return { kind: "fetch_error", message: String(e) };
   }
+}
+
+async function fetchLtpWithRetry(id: string, seg: "NSE_EQ" | "BSE_EQ"): Promise<DhanFetchResult> {
+  const r1 = await fetchDhanLtp(id, seg);
+  if (r1.kind === "rate_limited") {
+    await new Promise((r) => setTimeout(r, r1.retryAfterMs));
+    return fetchDhanLtp(id, seg);
+  }
+  return r1;
 }
 
 Deno.serve(async (req) => {
@@ -130,82 +170,120 @@ Deno.serve(async (req) => {
       return json({ ok: true, symbols_updated: 0, attempts: [], errors: ["no override symbols"], filter_applied: filterSymbols != null });
     }
 
-    // Load all NSE+BSE rows; dedupe by (symbol, exchange) preferring segment NSE_EQ/BSE_EQ.
-    const { data: masters, error: mErr } = await supabase
-      .from("stock_master")
-      .select("symbol, exchange, segment, dhan_security_id")
-      .in("symbol", symbols)
-      .in("exchange", ["NSE", "BSE"]);
-    if (mErr) return json({ ok: false, error: mErr.message }, 500);
-
-    // Map: symbol -> { NSE?: id, BSE?: id }
+    // -------- Canonical + paginated stock_master read --------
+    // Strict canonical segments only (NSE_EQ / BSE_EQ); chunked so each page
+    // returns <= ~400 rows and never hits the PostgREST 1000-row cap.
     const idMap = new Map<string, { NSE?: string; BSE?: string }>();
-    for (const m of masters ?? []) {
-      const sym = m.symbol as string;
-      const ex = m.exchange as string;
-      const seg = (m.segment as string) ?? "";
-      const id = String(m.dhan_security_id);
-      const cur = idMap.get(sym) ?? {};
-      // Prefer canonical *_EQ segment; otherwise keep first seen.
-      if (ex === "NSE" && (seg === "NSE_EQ" || cur.NSE == null)) cur.NSE = id;
-      if (ex === "BSE" && (seg === "BSE_EQ" || cur.BSE == null)) cur.BSE = id;
-      idMap.set(sym, cur);
+    for (let i = 0; i < symbols.length; i += MASTER_CHUNK) {
+      const slice = symbols.slice(i, i + MASTER_CHUNK);
+      const { data: masters, error: mErr } = await supabase
+        .from("stock_master")
+        .select("symbol, exchange, segment, dhan_security_id")
+        .in("symbol", slice)
+        .in("segment", ["NSE_EQ", "BSE_EQ"])
+        .not("dhan_security_id", "is", null);
+      if (mErr) return json({ ok: false, error: mErr.message }, 500);
+      for (const m of masters ?? []) {
+        const sym = m.symbol as string;
+        const seg = m.segment as string;
+        const id = String(m.dhan_security_id);
+        const cur = idMap.get(sym) ?? {};
+        if (seg === "NSE_EQ") cur.NSE = id;
+        else if (seg === "BSE_EQ") cur.BSE = id;
+        idMap.set(sym, cur);
+      }
     }
 
     const errors: Array<{ symbol: string; reason: string }> = [];
     const attempts: Array<Record<string, unknown>> = [];
     let updated = 0;
-    const nowIso = new Date().toISOString();
+    const counters = {
+      symbols_seen: 0,
+      attempted_count: 0,
+      updated_count: 0,
+      auth_error_count: 0,
+      rate_limited_count: 0,
+      dhan_null_count: 0,
+      fetch_error_count: 0,
+      missing_id_count: 0,
+      nse_selected_count: 0,
+      bse_selected_count: 0,
+      chunk_count: 0,
+    };
 
-    for (const sym of symbols) {
-      const ids = idMap.get(sym);
-      if (!ids || (!ids.NSE && !ids.BSE)) {
-        errors.push({ symbol: sym, reason: "no_dhan_security_id_in_stock_master" });
-        attempts.push({ symbol: sym, exchange: null, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
-        continue;
-      }
+    // -------- Chunked one-call-per-symbol loop --------
+    // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
+    const chunkSize = filterSymbols ? symbols.length : FULL_RUN_CHUNK;
+    let abortedAuth = false;
 
-      // Try NSE first, fall back to BSE.
-      let ltp: number | null = null;
-      let exUsed: "NSE" | "BSE" | null = null;
-      let idUsed: string | null = null;
-      if (ids.NSE) {
-        idUsed = ids.NSE; exUsed = "NSE";
-        ltp = await fetchDhanLtp(ids.NSE, "NSE_EQ");
-      }
-      if (ltp == null && ids.BSE) {
-        idUsed = ids.BSE; exUsed = "BSE";
-        ltp = await fetchDhanLtp(ids.BSE, "BSE_EQ");
-      }
+    outer: for (let i = 0; i < symbols.length; i += chunkSize) {
+      counters.chunk_count++;
+      const chunk = symbols.slice(i, i + chunkSize);
+      for (const sym of chunk) {
+        counters.symbols_seen++;
+        const ids = idMap.get(sym);
+        let exUsed: "NSE" | "BSE" | null = null;
+        let idUsed: string | null = null;
+        let seg: "NSE_EQ" | "BSE_EQ" | null = null;
 
-      attempts.push({
-        symbol: sym,
-        exchange: exUsed,
-        dhan_security_id_used: idUsed,
-        ltp_or_null: ltp,
-        source: "dhan",
-      });
+        if (ids?.NSE) {
+          exUsed = "NSE"; idUsed = ids.NSE; seg = "NSE_EQ"; counters.nse_selected_count++;
+        } else if (ids?.BSE) {
+          exUsed = "BSE"; idUsed = ids.BSE; seg = "BSE_EQ"; counters.bse_selected_count++;
+        }
 
-      if (ltp == null) {
-        errors.push({
+        if (!exUsed || !idUsed || !seg) {
+          counters.missing_id_count++;
+          errors.push({ symbol: sym, reason: "no_canonical_dhan_security_id" });
+          attempts.push({ symbol: sym, exchange: null, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
+          continue;
+        }
+
+        counters.attempted_count++;
+        const r = await fetchLtpWithRetry(idUsed, seg);
+        attempts.push({
           symbol: sym,
-          reason: `dhan_returned_null (tried NSE id=${ids.NSE ?? "n/a"}${ids.BSE ? `, BSE id=${ids.BSE}` : ""})`,
+          exchange: exUsed,
+          dhan_security_id_used: idUsed,
+          ltp_or_null: r.kind === "ok" ? r.ltp : null,
+          source: "dhan",
+          kind: r.kind,
         });
-        continue;
-      }
 
-      const { error: upErr } = await supabase
-        .from("ltp_cache")
-        .upsert(
-          { symbol: sym, exchange: exUsed!, ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
-          { onConflict: "symbol" },
-        );
-      if (upErr) {
-        errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
-        continue;
+        if (r.kind !== "ok") {
+          if (r.kind === "auth_error")   counters.auth_error_count++;
+          if (r.kind === "rate_limited") counters.rate_limited_count++;
+          if (r.kind === "dhan_null")    counters.dhan_null_count++;
+          if (r.kind === "fetch_error")  counters.fetch_error_count++;
+          errors.push({ symbol: sym, reason: `${r.kind} (${seg} id=${idUsed})` });
+          if (counters.auth_error_count >= 3) { abortedAuth = true; break outer; }
+          if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
+          continue;
+        }
+
+        const nowIso = new Date().toISOString();
+        const { error: upErr } = await supabase
+          .from("ltp_cache")
+          .upsert(
+            { symbol: sym, exchange: exUsed, ltp: r.ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
+            { onConflict: "symbol,exchange" },
+          );
+        if (upErr) {
+          errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
+          continue;
+        }
+        updated++;
+        counters.updated_count++;
+        if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
       }
-      updated++;
+      if (i + chunkSize < symbols.length) {
+        await new Promise((r) => setTimeout(r, INTER_CHUNK_PAUSE_MS));
+      }
     }
+
+    const runStatus = abortedAuth
+      ? "error"
+      : (errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"));
 
     // Telemetry — only for full-universe runs; partial inline refreshes
     // (filter_applied) must not overwrite the daily summary.
@@ -214,7 +292,14 @@ Deno.serve(async (req) => {
         {
           config_key: "last_sync_ltp_dhan",
           kind: "operational",
-          config_value: { ok: true, symbols_updated: updated, errors_count: errors.length, ran_at: ranAt },
+          config_value: {
+            ok: !abortedAuth,
+            symbols_updated: updated,
+            errors_count: errors.length,
+            ran_at: ranAt,
+            counters,
+            aborted_systemic_auth: abortedAuth,
+          },
           description: "Last sync-ltp-dhan run summary",
           updated_at: ranAt,
         },
@@ -223,12 +308,25 @@ Deno.serve(async (req) => {
     }
 
     await logTelemetry({
-      status: errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"),
+      status: runStatus,
       processed: updated,
       errors_count: errors.length,
-      details: { filter_applied: filterSymbols != null, errors_sample: errors.slice(0, 10) },
+      details: {
+        filter_applied: filterSymbols != null,
+        counters,
+        aborted_systemic_auth: abortedAuth,
+        errors_sample: errors.slice(0, 10),
+      },
     });
-    return json({ ok: true, symbols_updated: updated, attempts, errors, filter_applied: filterSymbols != null });
+    return json({
+      ok: !abortedAuth,
+      symbols_updated: updated,
+      attempts,
+      errors,
+      counters,
+      aborted_systemic_auth: abortedAuth,
+      filter_applied: filterSymbols != null,
+    });
   } catch (e) {
     await logTelemetry({ status: "error", processed: 0, errors_count: 1, error_message: String(e) });
     return json({ ok: false, error: String(e) }, 500);
