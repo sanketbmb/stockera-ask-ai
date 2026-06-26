@@ -78,24 +78,6 @@ export function HowItWorks() {
                 </div>
                 <h3 className="mt-5 font-display text-xl text-foreground">{s.title}</h3>
                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.body}</p>
-                {s.n === 2 && (
-                  <figure className="mt-5 w-full">
-                    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-card">
-                      <img
-                        src="/images/hero-report-preview.webp"
-                        alt="Sample AI-generated stock report layout with values redacted"
-                        width={1262}
-                        height={832}
-                        loading="lazy"
-                        decoding="async"
-                        className="block h-auto w-full"
-                      />
-                    </div>
-                    <figcaption className="mt-2 text-[11px] leading-snug text-muted-foreground">
-                      Sample report layout — values redacted. Actual reports use live NSE/BSE data for your stock.
-                    </figcaption>
-                  </figure>
-                )}
                 <StepBar delay={i * 0.12} />
               </div>
             );
