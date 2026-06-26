@@ -418,6 +418,9 @@ function LegacyReportContent({
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
 
+  // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
+  const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
+
   // Bug 3 fix — reports were auto-scrolling to the bottom on first mount.
   // Force scroll-to-top per queryId so every variant (tier-shaped, general,
   // sector, educational, legacy) opens at the report header.
@@ -427,6 +430,7 @@ function ReportContent() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId],
+    enabled: isValidUuid,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
@@ -457,7 +461,11 @@ function ReportContent() {
     },
   });
 
-  if (isLoading || !data) return <LoadingScreen />;
+  if (!isValidUuid) return <NotFoundCard />;
+
+  // Show not-found surface for PGRST116 (row missing) before any other branch
+  // so it can't fall through to "Couldn't load this report" or a stuck loader.
+  if (error && isReportNotFoundError(error)) return <NotFoundCard />;
 
   if (error) {
     return (
@@ -470,6 +478,8 @@ function ReportContent() {
       </div>
     );
   }
+
+  if (isLoading || !data) return <LoadingScreen />;
 
   // Phase 3A/3B/3C — routed question types. Sector View and Educational have
   // their own report variants; "other" stays on the routed-pending panel.
