@@ -20,32 +20,36 @@ export function FinalCtaStrip() {
       />
 
       <div className="relative mx-auto max-w-3xl px-4 text-center sm:px-6">
-        <h2 className="font-display text-3xl text-white sm:text-4xl">
-          One question can change how you invest.
-        </h2>
-        <p className="mt-3 text-white/70">
-          Two free reports. No card. SEBI-registered analyst on standby.
-        </p>
+        <Reveal>
+          <h2 className="font-display text-3xl text-white sm:text-4xl">
+            One question can change how you invest.
+          </h2>
+          <p className="mt-3 text-white/70">
+            Two free reports. No card. SEBI-registered analyst on standby.
+          </p>
+        </Reveal>
 
-        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
-            <Link to="/post-query">
-              Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
-            </Link>
-          </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10"
-          >
-            <Link to="/stock-picker">Or see stock picks</Link>
-          </Button>
-        </div>
+        <Reveal delay={0.08}>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+            <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
+              <Link to="/post-query">
+                Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10"
+            >
+              <Link to="/stock-picker">Or see stock picks</Link>
+            </Button>
+          </div>
 
-        <p className="mx-auto mt-6 max-w-xl text-[11px] text-white/40">
-          {`${FIRM.legalName} · SEBI Research Analyst ${FIRM.sebiRegNumber} · Educational analysis only.`}
-        </p>
+          <p className="mx-auto mt-6 max-w-xl text-[11px] text-white/40">
+            {`${FIRM.legalName} · SEBI Research Analyst ${FIRM.sebiRegNumber} · Educational analysis only.`}
+          </p>
+        </Reveal>
       </div>
 
       <style>{`
