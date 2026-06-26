@@ -46,12 +46,18 @@ export function FinalCtaStrip() {
             </Button>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-4">
             <Link
               to="/faq"
               className="text-sm text-white/60 underline-offset-4 hover:text-white hover:underline"
             >
               Common questions →
+            </Link>
+            <Link
+              to="/library"
+              className="text-sm text-white/60 underline-offset-4 hover:text-white hover:underline"
+            >
+              Browse public library →
             </Link>
           </div>
 
