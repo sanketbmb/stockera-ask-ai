@@ -45,17 +45,6 @@ const PROBLEMS: Problem[] = [
   },
 ];
 
-const VERDICT_TONE: Record<string, string> = {
-  BUY: "border-primary/40 text-primary",
-  WATCHLIST: "border-primary/40 text-primary",
-  HOLD: "border-border text-muted-foreground",
-  WAIT: "border-border text-muted-foreground",
-  AVERAGE: "border-warning/40 text-warning",
-  "PARTIAL EXIT": "border-warning/40 text-warning",
-  REDUCE: "border-warning/40 text-warning",
-  EXIT: "border-destructive/40 text-destructive",
-  AVOID: "border-destructive/40 text-destructive",
-};
 
 // Quieter, informational concept highlights (not verdicts).
 const CONCEPT_TONES: Record<string, string> = {
