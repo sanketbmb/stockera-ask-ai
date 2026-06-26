@@ -416,8 +416,25 @@ function LegacyReportContent({
 
 // ──────────────── Route dispatcher ────────────────
 
+function AnonReportCta() {
+  return (
+    <section className="px-4 sm:px-6 lg:px-8 pb-16">
+      <div className="mx-auto max-w-5xl rounded-2xl border border-border/60 bg-card/40 backdrop-blur p-6 text-center">
+        <h3 className="font-display text-xl">Want your own stock question answered?</h3>
+        <p className="text-sm text-muted-foreground mt-2">
+          Sign in to post your own query and get an AI-backed, SEBI-safe report.
+        </p>
+        <Button asChild className="mt-4 bg-primary text-primary-foreground">
+          <Link to="/login">Sign in to post your query</Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
+  const { user, isLoading: authLoading } = useAuth();
 
   // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
   const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
@@ -435,7 +452,7 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
         .eq("id", queryId)
         .single();
       if (error) throw error;
@@ -463,6 +480,7 @@ function ReportContent() {
   });
 
   if (!isValidUuid) return <NotFoundCard />;
+
 
   // Show not-found surface for PGRST116 (row missing) before any other branch
   // so it can't fall through to "Couldn't load this report" or a stuck loader.
