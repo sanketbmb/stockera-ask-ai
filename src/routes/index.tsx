@@ -110,6 +110,7 @@ function Index() {
         <FinalCtaStrip />
       </main>
       <SiteFooter />
+      <MobileStickyCta />
     </div>
   );
 }
