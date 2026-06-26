@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, TrendingDown, TrendingUp, HelpCircle, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/landing/motion-helpers";
+import { VERDICT_TONE_OUTLINE } from "@/lib/verdictTone";
 import { FIRM } from "@/lib/firm-details";
 
 type Problem = {
