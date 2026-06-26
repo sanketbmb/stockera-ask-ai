@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 import { Reveal } from "./motion-helpers";
 
 type MarqueeRow = {
