@@ -6,6 +6,7 @@ import { MarketTicker } from "@/components/common/MarketTicker";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { LiveStatsBar } from "@/components/landing/LiveStatsBar";
 import { HowItWorks } from "@/components/landing/HowItWorks";
+import { PublicAnswersMarquee } from "@/components/landing/PublicAnswersMarquee";
 
 import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
@@ -105,6 +106,7 @@ function Index() {
         <HomeAnalystCta />
         
         <HowItWorks />
+        <PublicAnswersMarquee />
         <TrustCompliance />
         <FAQ />
         <FinalCtaStrip />
