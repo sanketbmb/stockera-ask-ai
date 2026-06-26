@@ -544,4 +544,5 @@ function ReportContent() {
 export const Route = createFileRoute("/report/$queryId")({
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: () => <RequireAuth><ReportContent /></RequireAuth>,
+  notFoundComponent: () => <NotFoundCard />,
 });
