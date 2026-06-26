@@ -60,7 +60,7 @@ const TOKEN_RE =
 function renderBody(text: string) {
   const parts = text.split(TOKEN_RE);
   return parts.map((part, i) => {
-    const verdictTone = VERDICT_TONE[part];
+    const verdictTone = VERDICT_TONE_OUTLINE[part];
     if (verdictTone) {
       return (
         <span
