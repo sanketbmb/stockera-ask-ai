@@ -55,7 +55,9 @@ export function AnalystShowcase() {
         <div className="mt-10 space-y-5">
           {ANALYSTS.map((entry, idx) => (
             <Reveal key={entry.id} delay={0.1 + idx * 0.08}>
-              <AnalystShowcaseRow entry={entry} />
+              <div className="transition-colors duration-200 [&>article]:hover:border-primary/40">
+                <AnalystShowcaseRow entry={entry} />
+              </div>
             </Reveal>
           ))}
         </div>
