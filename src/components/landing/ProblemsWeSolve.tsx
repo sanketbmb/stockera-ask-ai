@@ -1,18 +1,6 @@
-import type { MouseEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TrendingDown, TrendingUp, HelpCircle, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Reveal } from "@/components/landing/motion-helpers";
 import { FIRM } from "@/lib/firm-details";
 
@@ -57,10 +45,10 @@ const PROBLEMS: Problem[] = [
 ];
 
 const VERDICT_TONE: Record<string, string> = {
-  BUY: "border-success/40 text-success",
-  WATCHLIST: "border-success/40 text-success",
-  HOLD: "border-border text-foreground",
-  WAIT: "border-border text-foreground",
+  BUY: "border-primary/40 text-primary",
+  WATCHLIST: "border-primary/40 text-primary",
+  HOLD: "border-border text-muted-foreground",
+  WAIT: "border-border text-muted-foreground",
   AVERAGE: "border-warning/40 text-warning",
   "PARTIAL EXIT": "border-warning/40 text-warning",
   REDUCE: "border-warning/40 text-warning",
@@ -90,19 +78,6 @@ function renderBody(text: string) {
   });
 }
 
-function CtaLink({ label, className = "" }: { label: string; className?: string }) {
-  const stop = (e: MouseEvent) => e.stopPropagation();
-  return (
-    <Link
-      to="/post-query"
-      onClick={stop}
-      className={`inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline ${className}`}
-    >
-      {label} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-    </Link>
-  );
-}
-
 function ProblemHeader({ p }: { p: Problem }) {
   const Icon = p.icon;
   return (
@@ -130,56 +105,23 @@ export function ProblemsWeSolve() {
           <p className="mt-3 text-muted-foreground">And what we'd actually do in each one.</p>
         </Reveal>
 
-        {/* Desktop: 3-column Collapsible grid */}
-        <div className="mt-12 hidden gap-6 lg:grid lg:grid-cols-3">
+        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {PROBLEMS.map((p, i) => (
-            <Reveal key={p.id} delay={i * 0.06}>
-              <Collapsible defaultOpen={i === 0} asChild>
-                <Card className="flex h-full flex-col gap-4 p-6">
-                  <CollapsibleTrigger className="group/trg flex flex-col gap-2 text-left">
-                    <ProblemHeader p={p} />
-                    <span className="text-xs text-muted-foreground/80 group-hover/trg:text-muted-foreground">
-                      {p.cta} →
-                    </span>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="flex flex-col gap-4 overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {renderBody(p.body)}
-                    </p>
-                    <CtaLink label={p.cta} className="mt-auto" />
-                  </CollapsibleContent>
-                </Card>
-              </Collapsible>
+            <Reveal key={p.id} delay={i * 0.05}>
+              <Card className="flex h-full flex-col gap-4 p-6">
+                <ProblemHeader p={p} />
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {renderBody(p.body)}
+                </p>
+                <Link
+                  to="/post-query"
+                  className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
+                >
+                  {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </Card>
             </Reveal>
           ))}
-        </div>
-
-        {/* Mobile/Tablet: stacked Accordion */}
-        <div className="mt-12 lg:hidden">
-          <Accordion type="single" collapsible defaultValue="item-1" className="space-y-4">
-            {PROBLEMS.map((p) => (
-              <AccordionItem
-                key={p.id}
-                value={p.id}
-                className="rounded-lg border border-border bg-card px-4"
-              >
-                <div className="flex flex-col">
-                  <AccordionTrigger className="py-4 hover:no-underline">
-                    <ProblemHeader p={p} />
-                  </AccordionTrigger>
-                  <div className="-mt-2 pb-3">
-                    <span className="text-xs text-muted-foreground/80">{p.cta} →</span>
-                  </div>
-                </div>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {renderBody(p.body)}
-                  </p>
-                  <CtaLink label={p.cta} />
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
         </div>
 
         <p className="mt-10 text-center text-[11px] text-muted-foreground">
