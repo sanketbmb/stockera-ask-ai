@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Reveal } from "@/lib/motion";
 import { FIRM } from "@/lib/firm-details";
 
 export function FinalCtaStrip() {
