@@ -98,6 +98,18 @@ export const Route = createFileRoute("/library/$symbol")({
     if (faqLd) {
       scripts.push({ type: "application/ld+json", children: JSON.stringify(faqLd) });
     }
+    scripts.push({
+      type: "application/ld+json",
+      children: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FinancialProduct",
+        name: `${symbol} stock research`,
+        category: "Equity research",
+        provider: { "@id": "https://asktheexpert.lovable.app/#organization" },
+        url: `${ORIGIN}/library/${symbol}`,
+        description: `Analyst-verified research, video answers, and community questions for ${symbol} on the Stockera Research Library.`,
+      }),
+    });
 
     return {
       meta: [
