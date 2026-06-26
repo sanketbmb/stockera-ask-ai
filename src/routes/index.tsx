@@ -57,6 +57,7 @@ function Index() {
             "@graph": [
               {
                 "@type": "Organization",
+                "@id": "https://asktheexpert.lovable.app/#organization",
                 "name": FIRM.legalName,
                 "alternateName": FIRM.brand,
                 "url": "https://asktheexpert.lovable.app/",
@@ -73,17 +74,10 @@ function Index() {
               },
               {
                 "@type": "FinancialService",
+                "@id": "https://asktheexpert.lovable.app/#service",
                 "name": FIRM.product,
                 "description": "SEBI-registered Research Analyst. AI-grounded stock research reports and personalized video answers from SEBI-registered analysts. Educational research; not investment advice.",
-                "provider": {
-                  "@type": "Organization",
-                  "name": FIRM.legalName,
-                  "identifier": {
-                    "@type": "PropertyValue",
-                    "propertyID": "SEBI Research Analyst Registration",
-                    "value": FIRM.sebiRegNumber,
-                  },
-                },
+                "provider": { "@id": "https://asktheexpert.lovable.app/#organization" },
                 "areaServed": "IN",
                 "termsOfService": "https://asktheexpert.lovable.app/terms",
                 "offers": [
