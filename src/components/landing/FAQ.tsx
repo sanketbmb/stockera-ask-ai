@@ -42,21 +42,26 @@ export function FAQ() {
     <section className="bg-background py-20">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
         <h2 className="text-center font-display text-3xl text-foreground sm:text-4xl">
-          Calm answers to the questions everyone asks.
-        </h2>
+        <Reveal>
+          <h2 className="text-center font-display text-3xl text-foreground sm:text-4xl">
+            Calm answers to the questions everyone asks.
+          </h2>
+        </Reveal>
 
-        <Accordion type="single" collapsible className="mt-10">
-          {ITEMS.map((item, i) => (
-            <AccordionItem key={i} value={`faq-${i}`}>
-              <AccordionTrigger className="text-left font-display text-base text-foreground">
-                {item.q}
-              </AccordionTrigger>
-              <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
-                {item.a}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+        <Reveal delay={0.08}>
+          <Accordion type="single" collapsible className="mt-10">
+            {ITEMS.map((item, i) => (
+              <AccordionItem key={i} value={`faq-${i}`}>
+                <AccordionTrigger className="text-left font-display text-base text-foreground">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </Reveal>
       </div>
     </section>
   );
