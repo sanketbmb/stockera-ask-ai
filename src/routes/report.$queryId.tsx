@@ -121,6 +121,7 @@ function TierShapedReportContent({
   });
 
   if (isLoading) return <LoadingScreen />;
+  if (error && isReportNotFoundError(error)) return <NotFoundCard />;
   if (error || !data) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
