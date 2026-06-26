@@ -4,6 +4,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Reveal } from "@/lib/motion";
 
 const ITEMS: Array<{ q: string; a: string }> = [
   {
