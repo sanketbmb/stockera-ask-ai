@@ -500,6 +500,25 @@ function ReportContent() {
 
   if (isLoading || !data) return <LoadingScreen />;
 
+  // OPEN-LIBRARY-2 — anonymous access gate.
+  // Public-library rows are fully readable without sign-in. Private rows
+  // still require auth — fall through to RequireAuth which redirects to /login.
+  const isPublicLibraryRow =
+    data?.is_public_library === true &&
+    data?.library_tombstoned_at === null &&
+    data?.ai_report != null;
+
+  if (authLoading) return <LoadingScreen />;
+  if (!user && !isPublicLibraryRow) {
+    return <RequireAuth>{null}</RequireAuth>;
+  }
+
+  // SEO: set robots meta dynamically based on public-library status.
+  // (Loader-less route — head() runs once at route enter; this useEffect keeps
+  // the meta tag in sync with row-resolved public/private state.)
+  // Anonymous CTA visibility = no user.
+  const isAnon = !user;
+
   // Phase 3A/3B/3C — routed question types. Sector View and Educational have
   // their own report variants; "other" stays on the routed-pending panel.
   const qt = (data.query_type ?? "") as string;
@@ -508,18 +527,23 @@ function ReportContent() {
     const routerMeta = (data as { router_meta?: unknown }).router_meta as
       | import("@/lib/intent-router-schema").RouterOutput
       | null;
-    if (qt === "sector_view") {
-      return <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    if (qt === "educational") {
-      return <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    // Phase 3D — every "other" query now flows through GeneralReport, which
-    // freezes a Gemini-generated analyst-style answer on first read. Idempotent.
-    if (qt === "other") {
-      return <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
+    const inner =
+      qt === "sector_view" ? (
+        <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : qt === "educational" ? (
+        <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : qt === "other" ? (
+        <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : (
+        <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      );
+    return (
+      <>
+        <RobotsMeta isPublic={isPublicLibraryRow} />
+        {inner}
+        {isAnon && <AnonReportCta />}
+      </>
+    );
   }
 
   // v1 tier-shaped: branch into the analysis renderer.
@@ -542,26 +566,59 @@ function ReportContent() {
       );
     }
     return (
-      <TierShapedReportContent
-        queryId={data.id as string}
-        symbol={symbol}
-        horizon={horizon}
-        rawQuestion={rawQuestion}
-        queryType={(data.query_type ?? "fresh_entry") as string}
-        entryPrice={(data.entry_price as number | null) ?? null}
-        qty={(data.qty as number | null) ?? null}
-        customQuestion={(data.custom_question as string | null) ?? null}
-      />
+      <>
+        <RobotsMeta isPublic={isPublicLibraryRow} />
+        <TierShapedReportContent
+          queryId={data.id as string}
+          symbol={symbol}
+          horizon={horizon}
+          rawQuestion={rawQuestion}
+          queryType={(data.query_type ?? "fresh_entry") as string}
+          entryPrice={(data.entry_price as number | null) ?? null}
+          qty={(data.qty as number | null) ?? null}
+          customQuestion={(data.custom_question as string | null) ?? null}
+        />
+        {isAnon && <AnonReportCta />}
+      </>
     );
   }
 
   // Legacy path: poll for ai_report and then render.
   if (!data.ai_report) return <LoadingScreen />;
-  return <LegacyReportContent data={data as Parameters<typeof LegacyReportContent>[0]["data"]} />;
+  return (
+    <>
+      <RobotsMeta isPublic={isPublicLibraryRow} />
+      <LegacyReportContent data={data as Parameters<typeof LegacyReportContent>[0]["data"]} />
+      {isAnon && <AnonReportCta />}
+    </>
+  );
+}
+
+// Imperative robots-meta swapper. The route ships a default `noindex,nofollow`
+// from head() so crawlers that don't execute JS get the safe default; once the
+// row resolves we upgrade to `index,follow,noarchive` for public-library rows.
+function RobotsMeta({ isPublic }: { isPublic: boolean }) {
+  useEffect(() => {
+    const content = isPublic ? "index,follow,noarchive" : "noindex,nofollow";
+    let tag = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (!tag) {
+      tag = document.createElement("meta");
+      tag.setAttribute("name", "robots");
+      document.head.appendChild(tag);
+    }
+    const prev = tag.getAttribute("content");
+    tag.setAttribute("content", content);
+    return () => {
+      // Restore safe default on unmount so the next route doesn't inherit.
+      if (prev) tag!.setAttribute("content", prev);
+    };
+  }, [isPublic]);
+  return null;
 }
 
 export const Route = createFileRoute("/report/$queryId")({
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
-  component: () => <RequireAuth><ReportContent /></RequireAuth>,
+  component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
 });
+
