@@ -82,6 +82,9 @@ export function SiteFooter() {
         <div className="mt-12 border-t border-white/10 pt-6 text-center text-xs text-white/50">
           © {new Date().getFullYear()} {FIRM.legalName}. All rights reserved. • Ask The Expert is a product of Stockera.
         </div>
+        <p className="text-xs text-muted-foreground/70 mt-2 text-center">
+          Made for India <span aria-label="Indian flag">🇮🇳</span>
+        </p>
       </div>
     </footer>
   );
