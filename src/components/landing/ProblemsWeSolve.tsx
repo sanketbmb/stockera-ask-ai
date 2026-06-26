@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, TrendingDown, TrendingUp, HelpCircle, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/landing/motion-helpers";
+import { VERDICT_TONE_OUTLINE } from "@/lib/verdictTone";
 import { FIRM } from "@/lib/firm-details";
 
 type Problem = {
@@ -44,17 +45,6 @@ const PROBLEMS: Problem[] = [
   },
 ];
 
-const VERDICT_TONE: Record<string, string> = {
-  BUY: "border-primary/40 text-primary",
-  WATCHLIST: "border-primary/40 text-primary",
-  HOLD: "border-border text-muted-foreground",
-  WAIT: "border-border text-muted-foreground",
-  AVERAGE: "border-warning/40 text-warning",
-  "PARTIAL EXIT": "border-warning/40 text-warning",
-  REDUCE: "border-warning/40 text-warning",
-  EXIT: "border-destructive/40 text-destructive",
-  AVOID: "border-destructive/40 text-destructive",
-};
 
 // Quieter, informational concept highlights (not verdicts).
 const CONCEPT_TONES: Record<string, string> = {
@@ -70,7 +60,7 @@ const TOKEN_RE =
 function renderBody(text: string) {
   const parts = text.split(TOKEN_RE);
   return parts.map((part, i) => {
-    const verdictTone = VERDICT_TONE[part];
+    const verdictTone = VERDICT_TONE_OUTLINE[part];
     if (verdictTone) {
       return (
         <span

@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 import { Reveal } from "./motion-helpers";
 
 type MarqueeRow = {
@@ -23,20 +24,8 @@ type DisplayCard = {
   href: string | null; // null => disabled span
 };
 
-const VERDICT_TONE: Record<string, string> = {
-  BUY: "bg-success/15 text-success",
-  WATCHLIST: "bg-primary/10 text-primary",
-  HOLD: "bg-gold/15 text-[hsl(var(--gold-foreground))]",
-  WAIT: "bg-muted text-muted-foreground",
-  AVERAGE: "bg-accent/15 text-accent",
-  "PARTIAL EXIT": "bg-warning/15 text-[hsl(var(--gold-foreground))]",
-  REDUCE: "bg-warning/15 text-[hsl(var(--gold-foreground))]",
-  EXIT: "bg-destructive/15 text-destructive",
-  AVOID: "bg-destructive/15 text-destructive",
-};
-
 function verdictClass(v: string) {
-  return VERDICT_TONE[v.toUpperCase()] ?? "bg-muted text-muted-foreground";
+  return VERDICT_TONE_FILLED[v.toUpperCase()] ?? "bg-muted text-muted-foreground";
 }
 
 const FALLBACK: DisplayCard[] = [
