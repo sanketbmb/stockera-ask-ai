@@ -106,6 +106,7 @@ function Index() {
         <HomeAnalystCta />
         
         <HowItWorks />
+        <PublicAnswersMarquee />
         <TrustCompliance />
         <FAQ />
         <FinalCtaStrip />
