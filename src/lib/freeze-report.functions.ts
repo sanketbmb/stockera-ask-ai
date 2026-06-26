@@ -237,11 +237,18 @@ export const freezeOrReadReport = createServerFn({ method: "POST" })
 
     const { data: row, error: readErr } = await supabaseAdmin
       .from("queries")
-      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question, query_text, secondary_asks, secondary_answers, mixed_query_meta")
+      .select("id, user_id, stock_symbol, stock_name, horizon, engine_version, engine_source, ai_report, frozen_at, report_artifact_status, orchestrator_response_id, query_type, custom_question, query_text, secondary_asks, secondary_answers, mixed_query_meta, is_public_library, library_tombstoned_at")
       .eq("id", data.queryId)
       .single();
     if (readErr || !row) throw new Error(`Query not found: ${readErr?.message ?? data.queryId}`);
-    if (row.user_id !== userId) throw new Error("Not authorized to read this report");
+    const isOwner = row.user_id === userId;
+    const isPublicLibraryRow =
+      row.is_public_library === true &&
+      row.library_tombstoned_at === null &&
+      row.ai_report !== null;
+    if (!isOwner && !isPublicLibraryRow) {
+      throw new Error("Not authorized to read this report");
+    }
     if (row.engine_version !== "v1_tier_shaped") {
       throw new Error("freezeOrReadReport only handles v1_tier_shaped records");
     }
