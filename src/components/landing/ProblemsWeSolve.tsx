@@ -56,19 +56,37 @@ const VERDICT_TONE: Record<string, string> = {
   AVOID: "border-destructive/40 text-destructive",
 };
 
-// Longer phrases first so "PARTIAL EXIT" beats "EXIT".
-const VERDICT_RE =
-  /(PARTIAL EXIT|WATCHLIST|AVERAGE|REDUCE|AVOID|HOLD|EXIT|WAIT|BUY)/g;
+// Quieter, informational concept highlights (not verdicts).
+const CONCEPT_TONES: Record<string, string> = {
+  "partial-exit": "border-primary/20 bg-primary/5 text-primary",
+  "trailing-stop logic": "border-primary/20 bg-primary/5 text-primary",
+};
+
+// Longer phrases first so "PARTIAL EXIT" beats "EXIT" and
+// "trailing-stop logic" beats other tokens.
+const TOKEN_RE =
+  /(trailing-stop logic|partial-exit|PARTIAL EXIT|WATCHLIST|AVERAGE|REDUCE|AVOID|HOLD|EXIT|WAIT|BUY)/g;
 
 function renderBody(text: string) {
-  const parts = text.split(VERDICT_RE);
+  const parts = text.split(TOKEN_RE);
   return parts.map((part, i) => {
-    const tone = VERDICT_TONE[part];
-    if (tone) {
+    const verdictTone = VERDICT_TONE[part];
+    if (verdictTone) {
       return (
         <span
           key={i}
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${tone}`}
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${verdictTone}`}
+        >
+          {part}
+        </span>
+      );
+    }
+    const conceptTone = CONCEPT_TONES[part];
+    if (conceptTone) {
+      return (
+        <span
+          key={i}
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${conceptTone}`}
         >
           {part}
         </span>
