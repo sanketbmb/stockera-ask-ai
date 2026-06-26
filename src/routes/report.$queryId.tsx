@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
 import { Progress } from "@/components/ui/progress";
