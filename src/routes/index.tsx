@@ -16,6 +16,7 @@ import { AnalystShowcase } from "@/components/landing/AnalystShowcase";
 import { TrustCompliance } from "@/components/landing/TrustCompliance";
 import { FAQ } from "@/components/landing/FAQ";
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
+import { MobileStickyCta } from "@/components/layout/MobileStickyCta";
 import { FIRM } from "@/lib/firm-details";
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
