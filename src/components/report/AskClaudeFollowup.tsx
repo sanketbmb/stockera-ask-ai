@@ -321,8 +321,13 @@ export function AskClaudeFollowup({
   const explainTitle = "Stays inside this report's data. SEBI-safe — no new buy/sell calls.";
   const openTitle = "Wider answers using market knowledge + live tools. Still SEBI-safe.";
 
+  // OPEN-LIBRARY-2 — hide entire follow-up surface for anonymous visitors on
+  // public-library reports. Auth-required action; signed-in users see it as before.
+  if (!userId) return null;
+
   return (
     <section className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur p-5 md:p-6 space-y-4">
+
       <header className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
         <h2 className="font-display text-lg">Ask about this report</h2>
