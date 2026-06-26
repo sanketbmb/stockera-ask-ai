@@ -606,24 +606,61 @@ Deno.serve(async (req) => {
       if (Number.isFinite(n) && n > 0) ltpFreshMaxMin = n;
     }
 
+    // Exchange-aware read: ltp_cache PK is (symbol, exchange). Collect both
+    // legs per symbol, then deterministically pick ONE row for the single
+    // displayed card (writer is NSE-first one-call-per-symbol).
     const { data: ltpRows } = await supabase
       .from("ltp_cache")
-      .select("symbol, ltp, fetched_at, as_of, source")
-      .in("symbol", filteredSymbols);
-    const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null }>();
-    const ltpFreshSet = new Set<string>();
+      .select("symbol, exchange, ltp, fetched_at, as_of, source")
+      .in("symbol", filteredSymbols)
+      .in("exchange", ["NSE", "BSE"]);
+
+    type LtpCand = { ltp: number; ts: string; tsMs: number; source: string | null; exchange: "NSE" | "BSE" };
+    const ltpCands = new Map<string, LtpCand[]>();
     for (const r of ltpRows ?? []) {
       const v = Number(r.ltp);
       if (!Number.isFinite(v) || v <= 0) continue;
       const ts = (r.as_of as string | null) ?? (r.fetched_at as string | null);
       if (!ts) continue;
+      const tsMs = new Date(ts).getTime();
+      if (!Number.isFinite(tsMs)) continue;
+      const ex = r.exchange as string;
+      if (ex !== "NSE" && ex !== "BSE") continue;
       const sym = r.symbol as string;
+      const arr = ltpCands.get(sym) ?? [];
+      arr.push({ ltp: v, ts, tsMs, source: (r.source as string | null) ?? null, exchange: ex });
+      ltpCands.set(sym, arr);
+    }
+
+    // Selection rule for the one-card-per-stock UI:
+    // - single candidate → use it (covers BSE-only names).
+    // - both NSE and BSE present → prefer NSE unless BSE is materially fresher
+    //   (>3 days) than NSE, in which case BSE wins. This eliminates the
+    //   reported "frozen 5–10 days" symptom once even one successful sync runs.
+    const STALE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const pickLtpRow = (cands: LtpCand[]): LtpCand | null => {
+      if (cands.length === 0) return null;
+      if (cands.length === 1) return cands[0];
+      const nse = cands.find((c) => c.exchange === "NSE");
+      const bse = cands.find((c) => c.exchange === "BSE");
+      if (nse && !bse) return nse;
+      if (bse && !nse) return bse;
+      if (bse!.tsMs - nse!.tsMs > STALE_DAYS_MS) return bse!;
+      return nse!;
+    };
+
+    const ltpBySymbol = new Map<string, { ltp: number; fetched_at: string; source: string | null; exchange: "NSE" | "BSE" }>();
+    const ltpFreshSet = new Set<string>();
+    for (const [sym, arr] of ltpCands) {
+      const picked = pickLtpRow(arr);
+      if (!picked) continue;
       ltpBySymbol.set(sym, {
-        ltp: v,
-        fetched_at: ts,
-        source: (r.source as string | null) ?? null,
+        ltp: picked.ltp,
+        fetched_at: picked.ts,
+        source: picked.source,
+        exchange: picked.exchange,
       });
-      const ageSec = (nowMs - new Date(ts).getTime()) / 1000;
+      const ageSec = (nowMs - picked.tsMs) / 1000;
       if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= ltpTtlSec) {
         ltpFreshSet.add(sym);
       }
