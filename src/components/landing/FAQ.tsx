@@ -41,7 +41,6 @@ export function FAQ() {
   return (
     <section className="bg-background py-20">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <h2 className="text-center font-display text-3xl text-foreground sm:text-4xl">
         <Reveal>
           <h2 className="text-center font-display text-3xl text-foreground sm:text-4xl">
             Calm answers to the questions everyone asks.
