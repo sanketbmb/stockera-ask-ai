@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Logo } from "@/components/common/Logo";
 import { Progress } from "@/components/ui/progress";
@@ -415,8 +416,25 @@ function LegacyReportContent({
 
 // ──────────────── Route dispatcher ────────────────
 
+function AnonReportCta() {
+  return (
+    <section className="px-4 sm:px-6 lg:px-8 pb-16">
+      <div className="mx-auto max-w-5xl rounded-2xl border border-border/60 bg-card/40 backdrop-blur p-6 text-center">
+        <h3 className="font-display text-xl">Want your own stock question answered?</h3>
+        <p className="text-sm text-muted-foreground mt-2">
+          Sign in to post your own query and get an AI-backed, SEBI-safe report.
+        </p>
+        <Button asChild className="mt-4 bg-primary text-primary-foreground">
+          <Link to="/login">Sign in to post your query</Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
+  const { user, isLoading: authLoading } = useAuth();
 
   // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
   const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
@@ -434,7 +452,7 @@ function ReportContent() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta")
+        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
         .eq("id", queryId)
         .single();
       if (error) throw error;
@@ -463,6 +481,7 @@ function ReportContent() {
 
   if (!isValidUuid) return <NotFoundCard />;
 
+
   // Show not-found surface for PGRST116 (row missing) before any other branch
   // so it can't fall through to "Couldn't load this report" or a stuck loader.
   if (error && isReportNotFoundError(error)) return <NotFoundCard />;
@@ -481,6 +500,25 @@ function ReportContent() {
 
   if (isLoading || !data) return <LoadingScreen />;
 
+  // OPEN-LIBRARY-2 — anonymous access gate.
+  // Public-library rows are fully readable without sign-in. Private rows
+  // still require auth — fall through to RequireAuth which redirects to /login.
+  const isPublicLibraryRow =
+    data?.is_public_library === true &&
+    data?.library_tombstoned_at === null &&
+    data?.ai_report != null;
+
+  if (authLoading) return <LoadingScreen />;
+  if (!user && !isPublicLibraryRow) {
+    return <RequireAuth>{null}</RequireAuth>;
+  }
+
+  // SEO: set robots meta dynamically based on public-library status.
+  // (Loader-less route — head() runs once at route enter; this useEffect keeps
+  // the meta tag in sync with row-resolved public/private state.)
+  // Anonymous CTA visibility = no user.
+  const isAnon = !user;
+
   // Phase 3A/3B/3C — routed question types. Sector View and Educational have
   // their own report variants; "other" stays on the routed-pending panel.
   const qt = (data.query_type ?? "") as string;
@@ -489,18 +527,23 @@ function ReportContent() {
     const routerMeta = (data as { router_meta?: unknown }).router_meta as
       | import("@/lib/intent-router-schema").RouterOutput
       | null;
-    if (qt === "sector_view") {
-      return <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    if (qt === "educational") {
-      return <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    // Phase 3D — every "other" query now flows through GeneralReport, which
-    // freezes a Gemini-generated analyst-style answer on first read. Idempotent.
-    if (qt === "other") {
-      return <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
-    }
-    return <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />;
+    const inner =
+      qt === "sector_view" ? (
+        <SectorViewReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : qt === "educational" ? (
+        <EducationalReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : qt === "other" ? (
+        <GeneralReport queryId={data.id as string} rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      ) : (
+        <RoutedPendingPanel rawQuestion={rawQuestion} routerMeta={routerMeta ?? null} />
+      );
+    return (
+      <>
+        <RobotsMeta isPublic={isPublicLibraryRow} />
+        {inner}
+        {isAnon && <AnonReportCta />}
+      </>
+    );
   }
 
   // v1 tier-shaped: branch into the analysis renderer.
@@ -523,26 +566,59 @@ function ReportContent() {
       );
     }
     return (
-      <TierShapedReportContent
-        queryId={data.id as string}
-        symbol={symbol}
-        horizon={horizon}
-        rawQuestion={rawQuestion}
-        queryType={(data.query_type ?? "fresh_entry") as string}
-        entryPrice={(data.entry_price as number | null) ?? null}
-        qty={(data.qty as number | null) ?? null}
-        customQuestion={(data.custom_question as string | null) ?? null}
-      />
+      <>
+        <RobotsMeta isPublic={isPublicLibraryRow} />
+        <TierShapedReportContent
+          queryId={data.id as string}
+          symbol={symbol}
+          horizon={horizon}
+          rawQuestion={rawQuestion}
+          queryType={(data.query_type ?? "fresh_entry") as string}
+          entryPrice={(data.entry_price as number | null) ?? null}
+          qty={(data.qty as number | null) ?? null}
+          customQuestion={(data.custom_question as string | null) ?? null}
+        />
+        {isAnon && <AnonReportCta />}
+      </>
     );
   }
 
   // Legacy path: poll for ai_report and then render.
   if (!data.ai_report) return <LoadingScreen />;
-  return <LegacyReportContent data={data as Parameters<typeof LegacyReportContent>[0]["data"]} />;
+  return (
+    <>
+      <RobotsMeta isPublic={isPublicLibraryRow} />
+      <LegacyReportContent data={data as Parameters<typeof LegacyReportContent>[0]["data"]} />
+      {isAnon && <AnonReportCta />}
+    </>
+  );
+}
+
+// Imperative robots-meta swapper. The route ships a default `noindex,nofollow`
+// from head() so crawlers that don't execute JS get the safe default; once the
+// row resolves we upgrade to `index,follow,noarchive` for public-library rows.
+function RobotsMeta({ isPublic }: { isPublic: boolean }) {
+  useEffect(() => {
+    const content = isPublic ? "index,follow,noarchive" : "noindex,nofollow";
+    let tag = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (!tag) {
+      tag = document.createElement("meta");
+      tag.setAttribute("name", "robots");
+      document.head.appendChild(tag);
+    }
+    const prev = tag.getAttribute("content");
+    tag.setAttribute("content", content);
+    return () => {
+      // Restore safe default on unmount so the next route doesn't inherit.
+      if (prev) tag!.setAttribute("content", prev);
+    };
+  }, [isPublic]);
+  return null;
 }
 
 export const Route = createFileRoute("/report/$queryId")({
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
-  component: () => <RequireAuth><ReportContent /></RequireAuth>,
+  component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
 });
+
