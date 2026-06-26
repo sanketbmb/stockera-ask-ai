@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { ArrowRight, Play, ShieldCheck, Lock, Zap, Video, Wallet, TrendingUp } from "lucide-react";
+import { ArrowRight, Play, ShieldCheck, Lock, Zap, Video, Wallet, TrendingUp, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "./motion-helpers";
+import { GradientText } from "@/lib/motion";
 
 const TRUST_BADGES = [
   { icon: ShieldCheck, text: "SEBI-Registered RA" },
@@ -15,23 +16,45 @@ const TRUST_BADGES = [
 
 const LINE_1_WORDS = ["Every", "stock", "decision", "deserves", "a", "second", "opinion."];
 
+const BULLETS = [
+  "Stuck on a losing trade?",
+  "Sitting on profit and don't know whether to book?",
+  "Heard about a stock and don't know if it's worth it?",
+];
+
 export function HeroSection() {
   const reduced = useReducedMotion();
 
   return (
-    <section
-      className="relative overflow-hidden"
-      style={{ backgroundColor: "hsl(var(--brand-ink))", color: "white" }}
-    >
-      <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
+    <section className="relative overflow-hidden bg-background text-foreground">
+      {/* Decorative background: subtle blue wash + faint diagonal grid, fades down */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage: `radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.06), transparent 60%)`,
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage: `repeating-linear-gradient(45deg, hsl(var(--border) / 0.45) 0 1px, transparent 1px 56px), repeating-linear-gradient(-45deg, hsl(var(--border) / 0.35) 0 1px, transparent 1px 56px)`,
+          maskImage: "linear-gradient(to bottom, black, transparent)",
+          WebkitMaskImage: "linear-gradient(to bottom, black, transparent)",
+          animation: reduced ? undefined : "grid-drift 60s ease-in-out infinite",
+        }}
+      />
+
+      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
         <Reveal>
           <div>
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] uppercase tracking-wider text-white">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1.5 text-[11px] uppercase tracking-wider text-foreground backdrop-blur">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
               SEBI-Registered Research Analyst · INH000019071
             </div>
 
-            <h1 className="mt-5 font-display text-4xl leading-[1.05] text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mt-5 font-display text-4xl leading-[1.05] text-foreground sm:text-5xl lg:text-6xl">
               <span className="block">
                 {reduced
                   ? <span>Every stock decision deserves a second opinion.</span>
@@ -47,12 +70,23 @@ export function HeroSection() {
                       </motion.span>
                     ))}
               </span>
-              <span className="text-shimmer-on-ink block">Not a tip. A SEBI-registered one.</span>
+              <span className="block">
+                <GradientText>Not a tip. A SEBI-registered one.</GradientText>
+              </span>
             </h1>
 
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/70">
-              Stuck on a losing trade? Sitting on profit and don't know whether to book? Heard about a stock and don't know if it's worth it? Post the question. Our AI grounds the answer in real NSE/BSE data. A SEBI-registered analyst records your personalized video answer within 24 hours.
-            </p>
+            <div className="mt-5 max-w-xl space-y-3 text-lg leading-relaxed text-muted-foreground">
+              <p>Three situations. One structured way to answer them.</p>
+              <ul className="space-y-2">
+                {BULLETS.map((b) => (
+                  <li key={b} className="flex items-start gap-2">
+                    <Check className="mt-1.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+              <p>Post the question. Our AI grounds the answer in real NSE/BSE data. A SEBI-registered analyst records your personalized video answer within 24 hours.</p>
+            </div>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
@@ -64,7 +98,7 @@ export function HeroSection() {
                 asChild
                 size="lg"
                 variant="outline"
-                className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10"
+                className="rounded-full"
               >
                 <a href="#how-it-works">
                   <Play className="mr-1 h-4 w-4" aria-hidden /> See how it works
@@ -72,7 +106,7 @@ export function HeroSection() {
               </Button>
             </div>
 
-            <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-xs text-white/60">
+            <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
               {TRUST_BADGES.map((b) => (
                 <li key={b.text} className="flex items-center gap-1.5">
                   <b.icon className="h-3.5 w-3.5 text-accent" aria-hidden /> {b.text}
@@ -80,7 +114,7 @@ export function HeroSection() {
               ))}
             </ul>
 
-            <p className="mt-6 max-w-md text-[11px] text-white/40">
+            <p className="mt-6 max-w-md text-[11px] text-muted-foreground/70">
               Educational analysis only. Not investment advice. Investments in securities are subject to market risks.
             </p>
           </div>
