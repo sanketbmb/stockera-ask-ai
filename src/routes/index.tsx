@@ -110,6 +110,7 @@ function Index() {
         <PublicAnswersMarquee />
         <TrustCompliance />
         <FAQ />
+        <ReferralBanner />
         <FinalCtaStrip />
       </main>
       <SiteFooter />
