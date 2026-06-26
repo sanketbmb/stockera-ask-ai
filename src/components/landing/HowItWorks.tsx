@@ -69,9 +69,9 @@ export function HowItWorks() {
           <div className="absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-border to-transparent md:block" />
           {steps.map((s, i) => {
             const card = (
-              <div className="relative flex flex-col items-center text-center md:items-start md:text-left">
+              <div className="relative group flex flex-col items-center text-center md:items-start md:text-left">
                 <div className={`relative z-10 flex h-24 w-24 items-center justify-center rounded-2xl ${s.bg} shadow-card`}>
-                  <s.icon className={`h-9 w-9 ${s.color}`} />
+                  <s.icon className={`h-9 w-9 ${s.color} transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3 motion-reduce:scale-100 motion-reduce:rotate-0`} />
                   <span className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-foreground font-mono text-xs font-bold text-background">
                     {s.n}
                   </span>
