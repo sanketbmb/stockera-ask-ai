@@ -426,4 +426,54 @@ This section records intentional deviations from the original locked spec that w
 - **Locked by:** Human approval after super-agent flagged scope creep.
 - **Date:** 2026-06-27.
 
+### DEV-002 — PII-REGEX-2A lock-set correction (13 tokens, not 10)
+
+- **Location:** `public.fn_has_pii_hint(text)` SQL function in the Postgres DB, codified via the 2A migration on 2026-06-27.
+
+- **Change:** Super-agent's initial 2A draft locked a "10-token set" (4 structured + 6 phrase). The actual locked spec per DOCS-1c amendment (line 337 of master-library-spec.md as of v3.1) listed 13 tokens (4 structured + 9 phrase), including `my profit`, `my loss`, and `my capital`. The first 2A migration attempt HALTED on the DO-block self-test because the positive fixture row `3ca1571b-0255-48f2-9639-3f1ca02f4c47` anchors on `my profit`, which was missing from the draft regex. Lock-set was corrected back to 13 tokens to match DOCS-1c spec intent.
+
+- **Authority:** Human override (Option A) after Lovable HALTED on drift gate violation. Not a widening — restoration to canonical spec lock-set.
+
+- **Risk:** LOW. The three restored phrases (`my profit`, `my loss`, `my capital`) were always part of the spec intent; the draft summary inadvertently dropped them. Self-test now passes on both positive fixture (TRUE) and all 29 L4C-5 promoted negatives (FALSE).
+
+- **Locked by:** PII-REGEX-2A migration applied successfully with all 5 verification gates GREEN.
+
+- **Date:** 2026-06-27.
+
+### Canonical PII lock-set (post-DEV-002)
+
+The authoritative lock-set for `fn_has_pii_hint(text)` is **13 tokens** (4 structured + 9 phrase):
+
+**Structured (4):**
+
+1. Email addresses (RFC-light)
+
+2. Phone numbers (10-13 digits, optional `+`, spaces, dashes)
+
+3. Aadhaar-style 12-digit groups (optional spaces)
+
+4. PAN cards (`[A-Z]{5}[0-9]{4}[A-Z]`)
+
+**Phrase patterns (9):**
+
+5. `my profit`
+
+6. `my loss`
+
+7. `my capital`
+
+8. `purchased at`
+
+9. `holding from`
+
+10. `entered at`
+
+11. `bought at`
+
+12. `average price`
+
+13. `avg price`
+
+Any future reference to "the PII lock-set" or "the 2A lock-set" means these 13 tokens, anchored with `~*` case-insensitive matching and `\y` word boundaries on the phrase group.
+
 ---
