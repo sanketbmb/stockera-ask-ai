@@ -14,7 +14,7 @@ import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTea
 import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
 import { MasterSearchHero } from "@/components/library/MasterSearchHero";
 import { AnalystShowcase } from "@/components/landing/AnalystShowcase";
-import { TrustCompliance } from "@/components/landing/TrustCompliance";
+
 
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
@@ -108,7 +108,6 @@ function Index() {
         
         <HowItWorks />
         <PublicAnswersMarquee />
-        <TrustCompliance />
         <ReferralBanner />
         <FinalCtaStrip />
       </main>
