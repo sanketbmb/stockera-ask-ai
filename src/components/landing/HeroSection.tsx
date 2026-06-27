@@ -97,6 +97,9 @@ export function HeroSection() {
     const id = setInterval(() => setCaretOn((v) => !v), 500);
     return () => clearInterval(id);
   }, [reduced, typingDone]);
+  const displayedPlaceholder = typingDone
+    ? typedText
+    : typedText + (caretOn ? "|" : "");
 
   const openQuery = (prefill?: string) => {
     if (prefill) {
