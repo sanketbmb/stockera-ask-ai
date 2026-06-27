@@ -303,8 +303,6 @@ export function HeroSection() {
         </motion.div>
       </div>
 
-      {/* Reserved — keep Link import alive for future use */}
-      <Link to="/" className="hidden" aria-hidden tabIndex={-1} />
     </section>
   );
 }
