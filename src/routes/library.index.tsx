@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { MasterLibraryPagination } from "@/components/library/MasterLibraryPagination";
+
+const PAGE_SIZE = 24;
 import { useQuery } from "@tanstack/react-query";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { supabase } from "@/integrations/supabase/client";
