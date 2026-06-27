@@ -156,7 +156,7 @@ function LibraryIndexPage() {
     if (isLoading) return;
     if (urlPage !== safePage) {
       navigate({
-        search: (prev) => ({ ...prev, page: safePage === 1 ? undefined : safePage }),
+        search: { page: safePage === 1 ? undefined : safePage } as { page?: number },
         replace: true,
       });
     }
@@ -166,7 +166,7 @@ function LibraryIndexPage() {
   useEffect(() => {
     if (urlPage !== 1) {
       navigate({
-        search: (prev) => ({ ...prev, page: undefined }),
+        search: { page: undefined } as { page?: number },
         replace: true,
       });
     }
@@ -175,7 +175,7 @@ function LibraryIndexPage() {
 
   const handlePageChange = (n: number) => {
     navigate({
-      search: (prev) => ({ ...prev, page: n === 1 ? undefined : n }),
+      search: { page: n === 1 ? undefined : n } as { page?: number },
       replace: false,
     });
     if (typeof document !== "undefined") {
