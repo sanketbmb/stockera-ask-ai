@@ -26,7 +26,7 @@ export function CountUp({
 }: CountUpProps) {
   const reduced = useReducedMotion();
   const ref = useRef<HTMLSpanElement | null>(null);
-  const inView = useInView(ref, { once: false, amount: 0.25, margin: "-40px" });
+  const inView = useInView(ref, { once: false, amount: 0.25 });
   const [value, setValue] = useState(reduced ? to : 0);
   const rafRef = useRef<number | null>(null);
 
