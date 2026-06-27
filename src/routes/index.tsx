@@ -108,7 +108,6 @@ function Index() {
         
         <HowItWorks />
         <PublicAnswersMarquee />
-        <TrustCompliance />
         <ReferralBanner />
         <FinalCtaStrip />
       </main>
