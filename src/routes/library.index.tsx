@@ -251,11 +251,21 @@ function LibraryIndexPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {filteredRows.map((row) => (
-                <MasterLibraryCard key={row.id} item={row} />
-              ))}
-            </div>
+            <>
+              <div id="library-grid-top" />
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                {pagedRows.map((row) => (
+                  <MasterLibraryCard key={row.id} item={row} />
+                ))}
+              </div>
+              {filteredRows.length > PAGE_SIZE && (
+                <MasterLibraryPagination
+                  currentPage={safePage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
+              )}
+            </>
           )}
         </div>
       </section>
