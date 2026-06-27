@@ -64,7 +64,7 @@ export function QueryTypesOverview() {
         </Reveal>
 
         <Stagger
-          staggerChildren={0.07}
+          staggerChildren={0.1}
           delayChildren={0.05}
           className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5"
         >
@@ -74,7 +74,7 @@ export function QueryTypesOverview() {
               <StaggerItem key={s.intent}>
                 <HoverLift liftPx={3}>
                   <Link to={s.href} className="group block h-full">
-                    <Card className="flex h-full flex-col gap-2 p-4 transition-colors duration-200 hover:border-primary/40">
+                    <Card className="flex h-full flex-col gap-2 p-4 transition-all duration-200 hover:border-primary/40 hover:-translate-y-1 hover:shadow-card-hover">
                       <Icon
                         className="h-5 w-5 text-accent transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3 motion-reduce:scale-100 motion-reduce:rotate-0"
                         aria-hidden
@@ -88,6 +88,7 @@ export function QueryTypesOverview() {
             );
           })}
         </Stagger>
+
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Reveal } from "./motion-helpers";
+import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
 import { AnalystShowcaseRow, type AnalystShowcaseEntry } from "./AnalystShowcaseRow";
 import { ShieldCheck } from "lucide-react";
 
@@ -43,8 +43,21 @@ export function AnalystShowcase() {
               id="experts-heading"
               className="mt-4 font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl"
             >
-              Meet the analysts behind every verdict.
+              Meet the{" "}
+              <span
+                className="text-gradient animate-gradient-text"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+                }}
+              >
+                analysts
+              </span>{" "}
+              behind every verdict.
             </h2>
+            <p className="text-base text-muted-foreground mt-2">
+              SEBI-registered analysts. Independent research. No tips.
+            </p>
             <p className="mt-3 text-base text-muted-foreground sm:text-lg">
               Every report on Stockera is reviewed or recorded by a SEBI-registered Research
               Analyst. Real names. Real registrations. Verifiable on the SEBI portal.
@@ -52,15 +65,16 @@ export function AnalystShowcase() {
           </div>
         </Reveal>
 
-        <div className="mt-10 space-y-5">
-          {ANALYSTS.map((entry, idx) => (
-            <Reveal key={entry.id} delay={0.1 + idx * 0.08}>
-              <div className="transition-colors duration-200 [&>article]:hover:border-primary/40">
+        <Stagger staggerChildren={0.08} className="mt-10 space-y-5">
+          {ANALYSTS.map((entry) => (
+            <StaggerItem key={entry.id}>
+              <div className="group transition-all duration-200 hover:scale-[1.02] [&>article]:hover:border-primary/40 [&>article]:hover:shadow-card-hover">
                 <AnalystShowcaseRow entry={entry} />
               </div>
-            </Reveal>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
+
 
         <Reveal delay={0.25}>
           <div className="mt-6 rounded-xl border border-dashed border-border bg-muted/30 px-5 py-4 text-center text-sm text-muted-foreground">
