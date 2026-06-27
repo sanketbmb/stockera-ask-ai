@@ -2560,6 +2560,7 @@ export type Database = {
       }
       expire_welcome_bonus: { Args: { p_user_id: string }; Returns: Json }
       fn_aggregate_library_views: { Args: never; Returns: undefined }
+      fn_has_pii_hint: { Args: { p_text: string }; Returns: boolean }
       fn_library_search: {
         Args: { limit_n?: number; q: string }
         Returns: {
