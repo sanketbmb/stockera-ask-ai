@@ -68,7 +68,7 @@ async function fetchLibraryGrid(): Promise<MasterLibraryRow[]> {
     .eq("is_public", true)
     .eq("is_tombstoned", false)
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(60);
+    .limit(200);
   if (error) throw error;
   return (data ?? []) as MasterLibraryRow[];
 }
