@@ -297,3 +297,116 @@ L4C-1 ships with NONE of these. Homepage stays untouched in L4C-1.
 - 2026-06-26 DOCS-1 created.
 
 - 2026-06-26 DOCS-1-AMEND complete spec written.
+
+## L4C-5 Bulk Backfill — 2026-06-27
+
+### Outcome
+
+- 29 query rows promoted from private to public library.
+
+- Total public library cards: 8 (original seed) + 29 (L4C-5) = 37.
+
+- 1 candidate row excluded for PII hint and remains private.
+
+### Excluded Row (PII)
+
+- query_id: `3ca1571b-0255-48f2-9639-3f1ca02f4c47`
+
+- symbol: RVNL
+
+- reason: Raw question contained "my profit" phrasing matching the PII regex.
+
+- status: Remains `is_public_library = false`. Do not re-promote without manual 
+
+  re-review.
+
+### Selection Policy (locked, applied)
+
+- Source: `public.queries` where `status = 'ai_answered'`, `ai_report IS NOT NULL`, 
+
+  `is_public_library = false`.
+
+- Order: `created_at DESC`.
+
+- Cap: up to 30 rows per backfill batch ("up to 30" — 29 acceptable, do not 
+
+  backfill to reach 30).
+
+- PII gate: HALT and request human approval if any candidate matches the locked 
+
+  regex (`my profit`, `my loss`, `my capital`, account/phone/email patterns, etc.).
+
+### Canonical Verdict Normalization (new — locked from L4C-5)
+
+The `ai_report->'final_verdict'->>'action'` field returns raw AI actions which 
+
+must be normalized to satisfy the `library_items.verdict` CHECK constraint:
+
+| Raw AI action | Stored verdict |
+
+|---------------|----------------|
+
+| BUY           | BUY            |
+
+| HOLD          | HOLD           |
+
+| AVERAGE       | AVERAGE        |
+
+| EXIT          | EXIT           |
+
+| PARTIAL_EXIT  | PARTIAL_EXIT   |
+
+| WAIT          | WAIT           |
+
+| WATCHLIST     | WAIT           |
+
+| SELL          | EXIT           |
+
+| AVOID         | EXIT           |
+
+| anything else | NULL           |
+
+This mapping is canonical and must be reused by any future projection trigger 
+
+or backfill that touches `library_items.verdict`.
+
+### Locked JSONB Paths (discovered in L4C-5 pre-flight)
+
+- Verdict: `ai_report->'final_verdict'->>'action'`
+
+- Summary/excerpt: `COALESCE(ai_report->'final_verdict'->>'summary_reason', 
+
+  ai_report->>'summary')`
+
+- Sector: `NULLIF(q.sector_canonical, '')`
+
+### body_excerpt Formatting (locked)
+
+- Source: summary path above.
+
+- Strip markdown characters: `# * _ \` >`
+
+- Truncate to ≤ 280 characters.
+
+### Files Produced by L4C-5
+
+- Forward migration: `supabase/migrations/20260627063841_b38c9c26-739f-4c18-938a-8ea5d82ca8a9.sql`
+
+- Rollback (manual, review-only): `review_sql/20260627070000_l4c5_bulk_backfill_30_rollback.sql`
+
+### Open Items After L4C-5
+
+- `PII-REGEX-2`: tighten the PII regex to also flag past-purchase-price phrasing 
+
+  (`bought at`, `purchased at`, `holding from`, `entered at`, `avg price`) before 
+
+  the next backfill batch.
+
+- `LIBRARY-VIEW-COUNTER-1`: wire up `view_count` so the "Most viewed" toolbar 
+
+  sort becomes functional.
+
+- `L4C-PAGINATION-1`: numbered pagination (1 2 3 … N) at 24 cards/page once 
+
+  library size grows past ~80 rows.
+
