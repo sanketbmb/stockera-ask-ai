@@ -144,6 +144,48 @@ function LibraryIndexPage() {
     setSort("latest");
   };
 
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, urlPage || 1), totalPages);
+  const pagedRows = useMemo(
+    () => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filteredRows, safePage],
+  );
+
+  // Silently coerce invalid ?page to a valid page (or strip when page 1).
+  useEffect(() => {
+    if (isLoading) return;
+    if (urlPage !== safePage) {
+      navigate({
+        search: (prev) => ({ ...prev, page: safePage === 1 ? undefined : safePage }),
+        replace: true,
+      });
+    }
+  }, [isLoading, urlPage, safePage, navigate]);
+
+  // Reset to page 1 whenever filters/sort change.
+  useEffect(() => {
+    if (urlPage !== 1) {
+      navigate({
+        search: (prev) => ({ ...prev, page: undefined }),
+        replace: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, verdict, sector, sort]);
+
+  const handlePageChange = (n: number) => {
+    navigate({
+      search: (prev) => ({ ...prev, page: n === 1 ? undefined : n }),
+      replace: false,
+    });
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("library-grid-top")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+
   return (
     <PublicShell
       eyebrow="Public library"
