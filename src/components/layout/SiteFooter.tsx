@@ -36,6 +36,22 @@ export function SiteFooter() {
   return (
     <footer className="bg-primary text-primary-foreground">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+        <div className="mb-12 rounded-2xl border border-white/10 bg-white/5 p-6 sm:p-8">
+          <h4 className="font-display text-lg">What we are not.</h4>
+          <ul className="mt-4 grid gap-2.5 text-sm text-white/70 sm:grid-cols-2">
+            {[
+              "Not a tip channel.",
+              "Not a Telegram group.",
+              "Not a guaranteed-return product.",
+              "Not personalized advice unless you book a 1:1 session.",
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-2">
+                <span aria-hidden className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/80" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <Logo variant="white" size="md" />
