@@ -426,23 +426,44 @@ This section records intentional deviations from the original locked spec that w
 - **Locked by:** Human approval after super-agent flagged scope creep.
 - **Date:** 2026-06-27.
 
-### DEV-002 — PII-REGEX-2A lock-set correction (13 tokens, not 10)
+---
 
-- **Location:** `public.fn_has_pii_hint(text)` SQL function in the Postgres DB, codified via the 2A migration on 2026-06-27.
+### DEV-002 — PII-REGEX-2A — Lock-set correction (2026-06-27)
 
-- **Change:** Super-agent's initial 2A draft locked a "10-token set" (4 structured + 6 phrase). The actual locked spec per DOCS-1c amendment (line 337 of master-library-spec.md as of v3.1) listed 13 tokens (4 structured + 9 phrase), including `my profit`, `my loss`, and `my capital`. The first 2A migration attempt HALTED on the DO-block self-test because the positive fixture row `3ca1571b-0255-48f2-9639-3f1ca02f4c47` anchors on `my profit`, which was missing from the draft regex. Lock-set was corrected back to 13 tokens to match DOCS-1c spec intent.
+Status:    ACCEPTED
 
-- **Authority:** Human override (Option A) after Lovable HALTED on drift gate violation. Not a widening — restoration to canonical spec lock-set.
+Context:   Prior PII-REGEX-2A draft summary misstated the lock-set 
+           as 10 tokens (4 structured + 6 phrase), omitting 3 phrase 
+           tokens from the canonical Locked Hazard Patterns 
+           (specifically: my profit, my loss, my capital). The 
+           positive-fixture self-test anchors on "my profit" (RVNL 
+           buy-price question, query id 
+           3ca1571b-0255-48f2-9639-3f1ca02f4c47), so a 10-token 
+           codification silently fails the self-test on the 
+           positive fixture.
 
-- **Risk:** LOW. The three restored phrases (`my profit`, `my loss`, `my capital`) were always part of the spec intent; the draft summary inadvertently dropped them. Self-test now passes on both positive fixture (TRUE) and all 29 L4C-5 promoted negatives (FALSE).
+Decision:  Restore to the spec-exact 13-token set (4 structured + 
+           9 phrase). Codifying, NOT widening — the 3 missing 
+           phrases were always part of the spec intent per DOCS-1c 
+           line 337.
 
-- **Locked by:** PII-REGEX-2A migration applied successfully with all 5 verification gates GREEN.
+Risk:      LOW — interior-codification correction, no data mutation, 
+           no new hazard surfaces, no callers yet, function inert 
+           until referenced.
 
-- **Date:** 2026-06-27.
+Authority: Human override (Option A); DOCS-1c line 337 is the 
+           canonical source.
 
-### Canonical PII lock-set (post-DEV-002)
+Locked-by: PII-REGEX-2A migration applied successfully with all 5 
+           verification gates GREEN (positive fixture TRUE, all 29 
+           L4C-5 negatives FALSE, exactly 2 files touched, function 
+           exists in DB, no scope deviations declared).
 
-The authoritative lock-set for `fn_has_pii_hint(text)` is **13 tokens** (4 structured + 9 phrase):
+### Canonical PII lock-set (post-DEV-002, immutable through 
+PII-REGEX-2B and L4C-5-BATCH-2)
+
+The authoritative lock-set for `public.fn_has_pii_hint(text)` is 
+**13 tokens** (4 structured + 9 phrase):
 
 **Structured (4):**
 
@@ -474,6 +495,29 @@ The authoritative lock-set for `fn_has_pii_hint(text)` is **13 tokens** (4 struc
 
 13. `avg price`
 
-Any future reference to "the PII lock-set" or "the 2A lock-set" means these 13 tokens, anchored with `~*` case-insensitive matching and `\y` word boundaries on the phrase group.
+Any future reference to "the PII lock-set" or "the 2A lock-set" 
+means these 13 tokens, anchored with `~*` case-insensitive matching 
+and `\y` word boundaries on the phrase group.
+
+### DEV-NNN — PII-REGEX-2B — Lock-set widening pattern (placeholder)
+
+Status:    PENDING (to be filled when 2B ships)
+
+Context:   2A codifies the spec lock-set exactly. 2B will widen 
+           with bounded patterns (e.g. `bought.{1,40}at\s+\d+`) to 
+           catch real-world purchase-price phrasing that the 2A 
+           `\ybought at\y` adjacency boundary cannot detect. 2B 
+           must also grandfather the 6 already-live library_items 
+           rows containing purchase-price phrasing (per Option 1 
+           decision on 2026-06-27).
+
+Decision:  TBD when 2B is drafted.
+
+Risk:      MEDIUM (widening, retroactive scan, grandfather allowlist).
+
+Authority: Human override Option 1 (grandfather + widen forward) 
+           locked 2026-06-27.
+
+Locked-by: PII-REGEX-2B migration apply (pending).
 
 ---
