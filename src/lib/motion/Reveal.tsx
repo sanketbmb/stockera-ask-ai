@@ -18,12 +18,12 @@ export function Reveal({
   duration = DURATION.base,
   className,
 }: RevealProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, { once: false, amount: 0.15 });
   const reduced = useReducedMotion();
   if (reduced) {
     return <div className={className}>{children}</div>;
   }
-  const ref = useRef<HTMLDivElement | null>(null);
-  const inView = useInView(ref, { once: false, amount: 0.15 });
   return (
     <motion.div
       ref={ref}
