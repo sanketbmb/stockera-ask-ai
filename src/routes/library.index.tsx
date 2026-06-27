@@ -79,6 +79,9 @@ function canonVerdict(v: string | null | undefined): string {
 }
 
 function LibraryIndexPage() {
+  const { page: urlPage } = Route.useSearch();
+  const navigate = Route.useNavigate();
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid"],
     queryFn: fetchLibraryGrid,
