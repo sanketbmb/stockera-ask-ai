@@ -265,14 +265,14 @@ export function HeroSection() {
             </div>
 
             {/* Search input */}
-            <button
-              type="button"
+            <input
+              type="text"
+              readOnly
               onClick={() => openQuery()}
               aria-label="Post your query"
-              className="w-full text-left rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-muted-foreground hover:border-accent/50 hover:bg-card transition mb-4"
-            >
-              Eg: I bought Dixon at 18000, now 16200. Should I hold or exit?
-            </button>
+              placeholder={displayedPlaceholder}
+              className="w-full text-left rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-muted-foreground hover:border-accent/50 hover:bg-card transition mb-4 cursor-pointer"
+            />
 
             {/* Sample queries */}
             <div className="space-y-2 mb-5">
