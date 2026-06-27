@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Reveal } from "./motion-helpers";
+import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
 import { AnalystShowcaseRow, type AnalystShowcaseEntry } from "./AnalystShowcaseRow";
 import { ShieldCheck } from "lucide-react";
 
