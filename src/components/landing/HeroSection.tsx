@@ -1,259 +1,308 @@
-import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { ArrowRight, Play, ShieldCheck, Lock, Zap, Video, Wallet, TrendingUp, Check } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { motion, useReducedMotion } from "framer-motion";
+import {
+  Search,
+  ShieldCheck,
+  TrendingUp,
+  Target,
+  BarChart3,
+  Gift,
+  Sparkles,
+  BadgeCheck,
+  GraduationCap,
+  Award,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Reveal } from "./motion-helpers";
-import { GradientText } from "@/lib/motion";
 
-const TRUST_BADGES = [
-  { icon: ShieldCheck, text: "SEBI-Registered RA" },
-  { icon: Lock, text: "Private & Secure" },
-  { icon: Zap, text: "AI Report in 30 sec" },
-  { icon: Video, text: "Video Answer in 24 hrs" },
-  { icon: Wallet, text: "First 2 queries free" },
+const DISCOVERY_TEMPLATE =
+  "I have ₹_____ to invest in _____ sector. Which stock should I buy?";
+
+const H1_LINES = [
+  { text: "Stuck in a Stock?", delay: 0.1, gradient: false },
+  { text: "Ask an Expert:", delay: 0.22, gradient: true },
+  { text: "Buy, Hold or Exit.", delay: 0.34, gradient: false },
 ];
 
-const LINE_1_WORDS = ["Every", "stock", "decision", "deserves", "a", "second", "opinion."];
+const FEATURE_PILLS = [
+  {
+    icon: Target,
+    label: "Target Price",
+    style: {
+      background: "rgba(43,168,160,0.10)",
+      borderColor: "rgba(43,168,160,0.30)",
+      color: "#1F7A75",
+    },
+  },
+  {
+    icon: BarChart3,
+    label: "Stop Loss",
+    style: {
+      background: "rgba(220,38,38,0.10)",
+      borderColor: "rgba(220,38,38,0.30)",
+      color: "#B91C1C",
+    },
+  },
+  {
+    icon: TrendingUp,
+    label: "Support & Resistance",
+    style: {
+      background: "rgba(22,163,74,0.10)",
+      borderColor: "rgba(22,163,74,0.30)",
+      color: "#15803D",
+    },
+  },
+];
 
-const BULLETS = [
-  "Stuck on a losing trade?",
-  "Sitting on profit and don't know whether to book?",
-  "Heard about a stock and don't know if it's worth it?",
+const TRUST_CHIPS = [
+  { icon: ShieldCheck, text: "SEBI Registered Advisors" },
+  { icon: Award, text: "No Guaranteed Returns" },
+  { icon: GraduationCap, text: "Educational & Compliant Advice" },
+  { icon: BadgeCheck, text: "12,400+ Queries Resolved" },
+];
+
+const SAMPLE_QUERIES = [
+  { stock: "RELIANCE", query: "Bought at ₹2,850. Should I hold or exit?", badge: "Technical" },
+  { stock: "TCS", query: "Is this a good entry point for long term?", badge: "Fundamental" },
+  { stock: "HDFC", query: "Stop loss level after recent correction?", badge: "F&O" },
 ];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
+  const navigate = useNavigate();
+
+  const openQuery = (prefill?: string) => {
+    if (prefill) {
+      navigate({ to: "/post-query", search: { prefill_query: prefill } as never });
+    } else {
+      navigate({ to: "/post-query" });
+    }
+  };
 
   return (
-    <section className="relative overflow-hidden bg-background text-foreground">
-      {/* Decorative background: subtle blue wash + faint diagonal grid, fades down */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0"
-        style={{
-          backgroundImage: `radial-gradient(circle at 50% 0%, hsl(var(--primary) / 0.06), transparent 60%)`,
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0"
-        style={{
-          backgroundImage: `repeating-linear-gradient(45deg, hsl(var(--border) / 0.45) 0 1px, transparent 1px 56px), repeating-linear-gradient(-45deg, hsl(var(--border) / 0.35) 0 1px, transparent 1px 56px)`,
-          maskImage: "linear-gradient(to bottom, black, transparent)",
-          WebkitMaskImage: "linear-gradient(to bottom, black, transparent)",
-          animation: reduced ? undefined : "grid-drift 60s ease-in-out infinite",
-        }}
-      />
+    <section className="relative overflow-hidden bg-background text-foreground bg-mesh">
+      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 md:grid-cols-2 md:gap-10 lg:py-24">
+        {/* LEFT COLUMN */}
+        <div className="text-center md:text-left">
+          {/* Eyebrow */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+            SEBI Registered Analysts • 12,400+ queries answered
+          </div>
 
-      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:py-24">
-        <Reveal>
-          <div>
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1.5 text-[11px] uppercase tracking-wider text-foreground backdrop-blur">
-              <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
-              SEBI-Registered Research Analyst · INH000019071
-            </div>
+          {/* Tiny brand line */}
+          <div className="mt-3 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground md:flex">
+            <Sparkles className="h-3 w-3 text-gold" aria-hidden />
+            Powered by Stockera
+          </div>
 
-            <h1 className="mt-5 font-display text-4xl leading-[1.05] text-foreground sm:text-5xl lg:text-6xl">
-              <span className="block">
-                {reduced
-                  ? <span>Every stock decision deserves a second opinion.</span>
-                  : LINE_1_WORDS.map((w, i) => (
-                      <motion.span
-                        key={`${w}-${i}`}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                        className="inline-block"
-                      >
-                        {w}{i < LINE_1_WORDS.length - 1 ? "\u00A0" : ""}
-                      </motion.span>
-                    ))}
-              </span>
-              <span className="block">
-                <GradientText>Not a tip. A SEBI-registered one.</GradientText>
-              </span>
-            </h1>
+          {/* H1 — hardcoded English, 3 lines */}
+          <h1 className="mt-3 font-display text-4xl leading-[1.05] text-foreground sm:text-5xl lg:text-6xl">
+            {H1_LINES.map((line, i) =>
+              reduced ? (
+                <span key={i} className="block">
+                  {line.gradient ? (
+                    <span
+                      className="text-gradient"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+                      }}
+                    >
+                      {line.text}
+                    </span>
+                  ) : (
+                    line.text
+                  )}
+                </span>
+              ) : (
+                <motion.span
+                  key={i}
+                  className="block"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: line.delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  {line.gradient ? (
+                    <span
+                      className="text-gradient animate-gradient-text"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+                      }}
+                    >
+                      {line.text}
+                    </span>
+                  ) : (
+                    line.text
+                  )}
+                </motion.span>
+              )
+            )}
+          </h1>
 
-            <div className="mt-5 max-w-xl space-y-3 text-lg leading-relaxed text-muted-foreground">
-              <p>Three situations. One structured way to answer them.</p>
-              <ul className="space-y-2">
-                {BULLETS.map((b) => (
-                  <li key={b} className="flex items-start gap-2">
-                    <Check className="mt-1.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                    <span>{b}</span>
-                  </li>
-                ))}
-              </ul>
-              <p>Post the question. Our AI grounds the answer in real NSE/BSE data. A SEBI-registered analyst records your personalized video answer within 24 hours.</p>
-            </div>
+          {/* Sub-text */}
+          <p className="text-base md:text-lg text-muted-foreground max-w-lg mb-6 leading-relaxed mx-auto md:mx-0 mt-5">
+            Helix AI report instantly. Expert text reply in 60 mins. Video analysis in 24 hours.
+          </p>
 
-            <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90">
-                <Link to="/post-query">
-                  Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
-                </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="rounded-full"
+          {/* Feature pills */}
+          <div className="flex flex-wrap justify-center md:justify-start gap-2 mb-5">
+            {FEATURE_PILLS.map((p) => (
+              <span
+                key={p.label}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
+                style={p.style}
               >
-                <a href="#how-it-works">
-                  <Play className="mr-1 h-4 w-4" aria-hidden /> See how it works
-                </a>
-              </Button>
-            </div>
-
-            <ul className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              {TRUST_BADGES.map((b) => (
-                <li key={b.text} className="flex items-center gap-1.5">
-                  <b.icon className="h-3.5 w-3.5 text-accent" aria-hidden /> {b.text}
-                </li>
-              ))}
-            </ul>
-
-            <p className="mt-6 max-w-md text-[11px] text-muted-foreground/70">
-              Educational analysis only. Not investment advice. Investments in securities are subject to market risks.
-            </p>
+                <p.icon className="h-3.5 w-3.5" aria-hidden />
+                {p.label}
+              </span>
+            ))}
           </div>
-        </Reveal>
 
-        <Reveal delay={0.15}>
-          <LiveDemoWidget />
-        </Reveal>
-      </div>
-    </section>
-  );
-}
+          {/* Referral pill */}
+          <a
+            href="#referral"
+            className="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-4 py-2 text-xs font-medium text-foreground transition-shadow hover:shadow-glow-gold mb-6"
+          >
+            <Gift className="h-4 w-4 text-gold" aria-hidden />
+            Invite & Earn ₹50 per friend
+            <span className="rounded-full bg-gradient-gold px-2 py-0.5 text-[10px] font-bold text-white">
+              FREE ₹
+            </span>
+          </a>
 
-const stockName = "Suzlon Energy";
-const queryText = "Bought at ₹68, now at ₹57. Should I average, hold or sell?";
-
-type Phase = "typing-stock" | "typing-query" | "analyzing" | "report";
-
-function useTypewriter(text: string, active: boolean, speed = 40) {
-  const [out, setOut] = useState("");
-  useEffect(() => {
-    if (!active) { setOut(""); return; }
-    let i = 0;
-    const t = setInterval(() => {
-      i++;
-      setOut(text.slice(0, i));
-      if (i >= text.length) clearInterval(t);
-    }, speed);
-    return () => clearInterval(t);
-  }, [text, active, speed]);
-  return out;
-}
-
-function LiveDemoWidget() {
-  const [phase, setPhase] = useState<Phase>("typing-stock");
-
-  useEffect(() => {
-    const seq: Array<[Phase, number]> = [
-      ["typing-stock", 1400],
-      ["typing-query", 2400],
-      ["analyzing", 2000],
-      ["report", 2400],
-    ];
-    let i = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    const next = () => {
-      setPhase(seq[i][0]);
-      timer = setTimeout(() => { i = (i + 1) % seq.length; next(); }, seq[i][1]);
-    };
-    next();
-    return () => clearTimeout(timer);
-  }, []);
-
-  const stock = useTypewriter(stockName, phase === "typing-stock", 50);
-  const query = useTypewriter(queryText, phase === "typing-query" || phase === "analyzing" || phase === "report", 30);
-
-  return (
-    <Link to="/post-query" className="block text-foreground">
-      <div className="relative">
-      <div aria-hidden className="absolute -inset-4 -z-10 rounded-3xl bg-accent/10 blur-2xl" />
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-card-lg sm:p-6">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-success" />
-            <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Live Query Demo (Illustration)</span>
+          {/* CTA row */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center md:justify-start gap-3 mt-2">
+            <Button
+              size="lg"
+              className="rounded-2xl px-8 bg-gradient-brand text-white shadow-glow-teal hover:shadow-card-lg"
+              onClick={() => openQuery()}
+            >
+              Post My Query →
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="rounded-2xl px-8"
+              onClick={() => navigate({ to: "/experts" as never })}
+            >
+              Compare Experts
+            </Button>
+            <Button
+              size="lg"
+              variant="ghost"
+              className="rounded-2xl px-8 text-gold border border-gold/30 hover:bg-gold/10"
+              onClick={() => openQuery(DISCOVERY_TEMPLATE)}
+            >
+              Find Me a Stock →
+            </Button>
           </div>
-          <span className="rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent">NSE · BSE</span>
+
+          {/* Trust strip */}
+          <ul className="mt-8 flex flex-wrap justify-center md:justify-start gap-2">
+            {TRUST_CHIPS.map((c) => (
+              <li
+                key={c.text}
+                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-3 py-1.5 text-xs text-muted-foreground"
+              >
+                <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                {c.text}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Stock</label>
-            <div className="mt-1 flex h-10 items-center rounded-lg border border-border bg-secondary/60 px-3 font-mono text-sm">
-              {stock}<span className="ml-0.5 inline-block h-4 w-px animate-pulse bg-accent" />
-            </div>
-          </div>
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Your Question</label>
-            <div className="mt-1 min-h-[60px] rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm leading-relaxed">
-              {query}{(phase === "typing-query") && <span className="ml-0.5 inline-block h-4 w-px animate-pulse bg-accent align-middle" />}
-            </div>
-          </div>
-        </div>
-
-        <AnimatePresence mode="wait">
-          {phase === "analyzing" && (
-            <motion.div
-              key="analyzing"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-accent/40 bg-accent/5 py-4"
-            >
-              <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-accent" />
-              <span className="ml-2 text-sm font-medium text-accent">Analyzing…</span>
-            </motion.div>
-          )}
-
-          {phase === "report" && (
-            <motion.div
-              key="report"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mt-4 rounded-xl border border-border bg-gradient-to-br from-secondary/40 to-card p-4"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI Verdict</span>
-                <div className="relative">
-                  <span className="rounded-full bg-muted px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground blur-sm select-none">
-                    HOLD
-                  </span>
-                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-card/60 px-2 text-[10px] font-medium tracking-tight text-foreground backdrop-blur-[0.5px] whitespace-nowrap">
-                    Sign up to view
-                  </span>
+        {/* RIGHT COLUMN — glass query card (md+) */}
+        <motion.div
+          className="hidden md:block relative"
+          initial={{ opacity: 0, x: 30, scale: 0.97 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          transition={{ delay: 0.4, duration: 0.7, type: "spring", stiffness: 80 }}
+        >
+          <div className="glass relative rounded-3xl p-6 shadow-card-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-brand">
+                  <Search className="h-5 w-5 text-white" aria-hidden />
+                </div>
+                <div>
+                  <div className="font-display font-bold text-sm text-foreground">Post Your Query</div>
+                  <div className="text-xs text-muted-foreground">Get expert answer in 60 min</div>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                {[
-                  { l: "Risk", v: "Medium" },
-                  { l: "Confidence", v: "Educational" },
-                  { l: "Trend", v: "Neutral" },
-                ].map((m) => (
-                  <div key={m.l} className="rounded-lg bg-card px-2 py-2">
-                    <div className="text-[10px] uppercase text-muted-foreground">{m.l}</div>
-                    <div className="mt-0.5 font-mono text-sm font-semibold text-foreground">{m.v}</div>
-                  </div>
-                ))}
-              </div>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
-                See full report <TrendingUp className="h-3 w-3" aria-hidden />
+              <span className="rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-success">
+                FREE Today
               </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+
+            {/* Search input */}
+            <button
+              type="button"
+              onClick={() => openQuery()}
+              aria-label="Post your query"
+              className="w-full text-left rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-muted-foreground hover:border-accent/50 hover:bg-card transition mb-4"
+            >
+              Eg: I bought Dixon at 18000, now 16200. Should I hold or exit?
+            </button>
+
+            {/* Sample queries */}
+            <div className="space-y-2 mb-5">
+              {SAMPLE_QUERIES.map((s) => (
+                <button
+                  key={s.stock}
+                  type="button"
+                  onClick={() => openQuery(s.query)}
+                  className="w-full text-left rounded-lg border border-border/60 bg-card/60 px-3 py-2.5 hover:border-accent/40 hover:bg-card transition group"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-mono text-[11px] font-bold text-primary">{s.stock}</div>
+                      <div className="text-xs text-foreground/80 truncate">{s.query}</div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] text-accent">
+                      {s.badge}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Bottom stat strip */}
+            <div className="grid grid-cols-3 divide-x divide-border rounded-xl bg-secondary/50 py-2.5 text-center">
+              <div>
+                <div className="font-mono text-sm font-bold text-foreground">12K+</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Queries</div>
+              </div>
+              <div>
+                <div className="font-mono text-sm font-bold text-foreground">4.9★</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Rating</div>
+              </div>
+              <div>
+                <div className="font-mono text-sm font-bold text-foreground">60min</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Reply</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Floating top-right badge */}
+          <div
+            className={`absolute -top-3 -right-3 rounded-full bg-gradient-gold px-4 py-2 text-xs font-bold text-white shadow-glow-gold ${reduced ? "" : "animate-float"}`}
+          >
+            ₹299 → FREE
+          </div>
+
+          {/* Floating bottom-left pill */}
+          <div
+            className={`absolute -bottom-3 -left-3 inline-flex items-center gap-1.5 rounded-full glass-subtle border border-border px-3 py-1.5 text-xs font-medium text-foreground ${reduced ? "" : "animate-float"}`}
+            style={reduced ? undefined : { animationDelay: "1s" }}
+          >
+            <BadgeCheck className="h-3.5 w-3.5 text-accent" aria-hidden />
+            SEBI Verified
+          </div>
+        </motion.div>
       </div>
-      </div>
-    </Link>
+
+    </section>
   );
 }
