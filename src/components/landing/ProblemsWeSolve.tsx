@@ -125,18 +125,17 @@ export function ProblemsWeSolve() {
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {PROBLEMS.map((p, i) => (
             <Reveal key={p.id} delay={i * 0.05}>
-              <Card className="flex h-full flex-col gap-4 p-6">
-                <ProblemHeader p={p} />
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {renderBody(p.body)}
-                </p>
-                <Link
-                  to="/post-query"
-                  className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
-                >
-                  {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
-              </Card>
+              <Link to="/post-query" className="block h-full cursor-pointer">
+                <Card className="group flex h-full flex-col gap-4 p-6 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-accent hover:shadow-card-hover">
+                  <ProblemHeader p={p} />
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {renderBody(p.body)}
+                  </p>
+                  <span className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent group-hover:underline">
+                    {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                </Card>
+              </Link>
             </Reveal>
           ))}
         </div>
