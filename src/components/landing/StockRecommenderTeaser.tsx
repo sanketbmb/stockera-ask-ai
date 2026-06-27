@@ -72,11 +72,12 @@ export function StockRecommenderTeaser() {
           <div>
             <div className="relative rounded-xl border border-border/60 overflow-hidden bg-card shadow-md transition-shadow duration-200 hover:shadow-card-hover">
               <span
-                className="absolute -top-2 -right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
+                className="absolute top-2 right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
                 style={{ background: "var(--gradient-brand)" }}
               >
                 LIVE
               </span>
+
               <img
                 src="/images/hero-report-preview.webp"
                 width={1262}
