@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { MasterLibraryPagination } from "@/components/library/MasterLibraryPagination";
+
+const PAGE_SIZE = 24;
 import { useQuery } from "@tanstack/react-query";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +33,12 @@ const breadcrumbLd = {
 };
 
 export const Route = createFileRoute("/library/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page:
+      typeof search.page === "string" || typeof search.page === "number"
+        ? Math.max(1, Math.floor(Number(search.page)) || 1)
+        : 1,
+  }),
   head: () => ({
     meta: [
       { title: TITLE },
@@ -59,7 +68,7 @@ async function fetchLibraryGrid(): Promise<MasterLibraryRow[]> {
     .eq("is_public", true)
     .eq("is_tombstoned", false)
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(60);
+    .limit(200);
   if (error) throw error;
   return (data ?? []) as MasterLibraryRow[];
 }
@@ -70,6 +79,9 @@ function canonVerdict(v: string | null | undefined): string {
 }
 
 function LibraryIndexPage() {
+  const { page: urlPage } = Route.useSearch();
+  const navigate = Route.useNavigate();
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid"],
     queryFn: fetchLibraryGrid,
@@ -131,6 +143,48 @@ function LibraryIndexPage() {
     setSector("");
     setSort("latest");
   };
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, urlPage || 1), totalPages);
+  const pagedRows = useMemo(
+    () => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filteredRows, safePage],
+  );
+
+  // Silently coerce invalid ?page to a valid page (or strip when page 1).
+  useEffect(() => {
+    if (isLoading) return;
+    if (urlPage !== safePage) {
+      navigate({
+        search: { page: safePage === 1 ? undefined : safePage } as { page?: number },
+        replace: true,
+      });
+    }
+  }, [isLoading, urlPage, safePage, navigate]);
+
+  // Reset to page 1 whenever filters/sort change.
+  useEffect(() => {
+    if (urlPage !== 1) {
+      navigate({
+        search: { page: undefined } as { page?: number },
+        replace: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, verdict, sector, sort]);
+
+  const handlePageChange = (n: number) => {
+    navigate({
+      search: { page: n === 1 ? undefined : n } as { page?: number },
+      replace: false,
+    });
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("library-grid-top")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
 
   return (
     <PublicShell
@@ -197,11 +251,21 @@ function LibraryIndexPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {filteredRows.map((row) => (
-                <MasterLibraryCard key={row.id} item={row} />
-              ))}
-            </div>
+            <>
+              <div id="library-grid-top" />
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                {pagedRows.map((row) => (
+                  <MasterLibraryCard key={row.id} item={row} />
+                ))}
+              </div>
+              {filteredRows.length > PAGE_SIZE && (
+                <MasterLibraryPagination
+                  currentPage={safePage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
+              )}
+            </>
           )}
         </div>
       </section>
