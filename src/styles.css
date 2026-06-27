@@ -82,6 +82,9 @@
   --shadow-glow-gold: 0 8px 28px -6px rgba(245,183,49,0.45);
   --brand-ink: 168 51% 12%;
   --surface-warm: 36 33% 97%;
+  --brand-teal: 176 58% 41%;
+  --brand-navy: 220 56% 28%;
+  --brand-gold: 41 90% 58%;
 }
 
 @layer base {
