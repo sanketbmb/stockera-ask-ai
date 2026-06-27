@@ -206,9 +206,13 @@ export function HeroSection() {
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center md:justify-start gap-3 mt-2">
             <Button
               size="lg"
-              className="rounded-2xl px-8 bg-gradient-brand text-white shadow-glow-teal hover:shadow-card-lg"
+              className="relative overflow-hidden group rounded-2xl px-8 bg-gradient-brand text-white shadow-glow-teal hover:shadow-card-lg transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)]"
               onClick={() => openQuery()}
             >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+              />
               Post My Query →
             </Button>
             <Button

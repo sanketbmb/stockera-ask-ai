@@ -47,7 +47,16 @@ export function QueryTypesOverview() {
         <Reveal className="text-center">
           <h2 className="font-display text-3xl text-foreground sm:text-4xl">
             <span className="text-foreground">Five ways to</span>{" "}
-            <span className="text-primary">ask.</span>
+            <span
+              className="text-gradient animate-gradient-text"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+              }}
+            >
+              ask
+            </span>
+            <span className="text-foreground">.</span>
           </h2>
           <p className="mt-3 text-muted-foreground">
             Every report follows the same structure — verdict, key levels, reasoning, risks.

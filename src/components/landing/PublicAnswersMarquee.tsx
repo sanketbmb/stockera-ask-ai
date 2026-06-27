@@ -81,7 +81,16 @@ export function PublicAnswersMarquee() {
             Recently answered
           </p>
           <h2 className="mt-2 font-display text-3xl text-foreground sm:text-4xl">
-            Questions Like Yours — <span className="text-gradient">Answered</span>
+            Questions Like Yours —{" "}
+            <span
+              className="text-gradient animate-gradient-text"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+              }}
+            >
+              Answered
+            </span>
           </h2>
           <p className="mt-3 text-muted-foreground">
             Real queries from real investors. Real verdicts from SEBI-registered experts.

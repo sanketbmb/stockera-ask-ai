@@ -100,7 +100,7 @@
 }
 
 .font-mono { font-family: var(--font-mono); }
-.text-gradient { background: var(--gradient-brand); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.text-gradient { background-image: var(--gradient-brand); background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; color: transparent; }
 .bg-gradient-brand { background: var(--gradient-brand); }
 .bg-gradient-brand-soft { background: var(--gradient-brand-soft); }
 .bg-gradient-gold { background: var(--gradient-gold); }
@@ -313,26 +313,29 @@
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
-@keyframes gradient-text {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+@keyframes gradient-shift {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
 }
 
 @layer utilities {
   .animate-float { animation: float-y 6s ease-in-out infinite; }
   .animate-ring { animation: ring-pulse 2.2s cubic-bezier(0.4,0,0.6,1) infinite; border-radius: inherit; }
   .animate-ticker { animation: ticker-x 40s linear infinite; }
-  .animate-gradient-text {
-    background-size: 200% auto;
-    animation: gradient-text 6s ease-in-out infinite;
-  }
+}
+
+.animate-gradient-text {
+  background-size: 200% auto;
+  animation: gradient-shift 6s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-float,
   .animate-ring,
-  .animate-ticker,
-  .animate-gradient-text {
+  .animate-ticker {
     animation: none !important;
+  }
+  .animate-gradient-text {
+    animation: none;
   }
 }
