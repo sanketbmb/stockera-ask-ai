@@ -29,7 +29,7 @@ export function Stagger({
       variants={container}
       initial="hidden"
       whileInView="show"
-      viewport={{ once: true, margin: "-60px" }}
+      viewport={{ once: false, amount: 0.25, margin: "-60px" }}
     >
       {children}
     </motion.div>
