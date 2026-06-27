@@ -16,7 +16,17 @@ export function StockRecommenderTeaser() {
               DON'T KNOW WHERE TO START?
             </span>
             <h2 className="mt-3 font-display text-3xl text-foreground sm:text-4xl">
-              Tell us your risk appetite. We'll show you stocks worth a closer look.
+              Tell us your risk appetite. We'll show you{" "}
+              <span
+                className="text-gradient animate-gradient-text"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+                }}
+              >
+                stocks worth a closer look
+              </span>
+              .
             </h2>
             <p className="mt-4 max-w-lg text-muted-foreground">
               The Stock Picker runs a multi-factor scan — technical, fundamental, sector — across NSE-listed names. You set risk (conservative, moderate, aggressive, high risk) and the count. We return picks with target zones, stop-loss zones, support/resistance and a scoreboard. Educational. You decide what to do.
