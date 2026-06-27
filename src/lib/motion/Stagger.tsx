@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { motion, useReducedMotion, type Variants } from "framer-motion";
+import { useRef } from "react";
+import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
 import { EASE, DURATION } from "./tokens";
 
 interface StaggerProps {
@@ -15,6 +16,8 @@ export function Stagger({
   delayChildren = 0,
   className,
 }: StaggerProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, { once: false, amount: 0.15 });
   const reduced = useReducedMotion();
   if (reduced) {
     return <div className={className}>{children}</div>;
@@ -25,11 +28,11 @@ export function Stagger({
   };
   return (
     <motion.div
+      ref={ref}
       className={className}
       variants={container}
       initial="hidden"
-      whileInView="show"
-      viewport={{ once: false, amount: "some" }}
+      animate={inView ? "show" : "hidden"}
     >
       {children}
     </motion.div>
