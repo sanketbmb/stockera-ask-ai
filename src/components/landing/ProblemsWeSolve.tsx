@@ -65,7 +65,7 @@ function renderBody(text: string) {
       return (
         <span
           key={i}
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${verdictTone}`}
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 group-hover:scale-105 group-hover:shadow-glow-teal ${verdictTone}`}
         >
           {part}
         </span>
