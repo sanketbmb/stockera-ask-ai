@@ -48,12 +48,12 @@ export function StockRecommenderTeaser() {
             </ul>
 
             <div className="mt-7 flex flex-wrap gap-3">
-              <Button asChild className="rounded-full">
+              <Button asChild className="rounded-full transition-shadow duration-200 hover:shadow-glow-teal">
                 <Link to="/stock-picker">
                   See stock picks <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="rounded-full">
+              <Button asChild variant="outline" className="rounded-full transition-colors duration-200 hover:border-accent">
                 <Link to="/post-query">Ask a custom question</Link>
               </Button>
             </div>
@@ -62,7 +62,13 @@ export function StockRecommenderTeaser() {
 
         <Reveal delay={0.08}>
           <div>
-            <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+            <div className="relative rounded-xl border border-border/60 overflow-hidden bg-card shadow-md transition-shadow duration-200 hover:shadow-card-hover">
+              <span
+                className="absolute -top-2 -right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
+                style={{ background: "var(--gradient-brand)" }}
+              >
+                LIVE
+              </span>
               <img
                 src="/images/hero-report-preview.webp"
                 width={1262}
