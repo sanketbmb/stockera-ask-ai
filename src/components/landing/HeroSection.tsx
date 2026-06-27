@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
+import { useState, useEffect } from "react";
 import {
   Search,
   ShieldCheck,
@@ -60,15 +61,42 @@ const TRUST_CHIPS = [
   { icon: BadgeCheck, text: "12,400+ Queries Resolved" },
 ];
 
+const HERO_PLACEHOLDER_TEXT =
+  "Eg: I bought Dixon at 18000, now 16200. Should I hold or exit?";
+
 const SAMPLE_QUERIES = [
   { stock: "RELIANCE", query: "Bought at ₹2,850. Should I hold or exit?", badge: "Technical" },
   { stock: "TCS", query: "Is this a good entry point for long term?", badge: "Fundamental" },
-  { stock: "HDFC", query: "Stop loss level after recent correction?", badge: "F&O" },
+  { stock: "HDFC", query: "Stop loss level after recent correction?", badge: "Stock Levels" },
 ];
 
 export function HeroSection() {
   const reduced = useReducedMotion();
   const navigate = useNavigate();
+
+  const [typedText, setTypedText] = useState(reduced ? HERO_PLACEHOLDER_TEXT : "");
+  const [caretOn, setCaretOn] = useState(true);
+  const [typingDone, setTypingDone] = useState(reduced);
+
+  useEffect(() => {
+    if (reduced) return;
+    let i = 0;
+    const id = setInterval(() => {
+      i++;
+      setTypedText(HERO_PLACEHOLDER_TEXT.slice(0, i));
+      if (i >= HERO_PLACEHOLDER_TEXT.length) {
+        clearInterval(id);
+        setTypingDone(true);
+      }
+    }, 28);
+    return () => clearInterval(id);
+  }, [reduced]);
+
+  useEffect(() => {
+    if (reduced || typingDone) return;
+    const id = setInterval(() => setCaretOn((v) => !v), 500);
+    return () => clearInterval(id);
+  }, [reduced, typingDone]);
 
   const openQuery = (prefill?: string) => {
     if (prefill) {
@@ -86,7 +114,7 @@ export function HeroSection() {
           {/* Eyebrow */}
           <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            SEBI Registered Analysts • 12,400+ queries answered
+            SEBI Registered Analysts • INH000019071
           </div>
 
           {/* Tiny brand line */}
