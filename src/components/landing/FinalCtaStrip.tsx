@@ -31,8 +31,12 @@ export function FinalCtaStrip() {
 
         <Reveal delay={0.08}>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild size="lg" className="rounded-full bg-accent text-accent-foreground transition-shadow duration-200 hover:bg-accent/90 hover:shadow-lg hover:shadow-primary/20">
+            <Button asChild size="lg" className="relative overflow-hidden group rounded-full bg-accent text-accent-foreground transition-all duration-300 ease-out hover:bg-accent/90 hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)]">
               <Link to="/post-query">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+                />
                 Post my query — free <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
               </Link>
             </Button>
