@@ -48,8 +48,15 @@ export function StockRecommenderTeaser() {
             </ul>
 
             <div className="mt-7 flex flex-wrap gap-3">
-              <Button asChild className="rounded-full transition-shadow duration-200 hover:shadow-glow-teal">
+              <Button
+                asChild
+                className="relative overflow-hidden group rounded-full transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)]"
+              >
                 <Link to="/stock-picker">
+                  <span
+                    className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+                    aria-hidden="true"
+                  />
                   See stock picks <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
                 </Link>
               </Button>
@@ -57,6 +64,7 @@ export function StockRecommenderTeaser() {
                 <Link to="/post-query">Ask a custom question</Link>
               </Button>
             </div>
+
           </div>
         </Reveal>
 
