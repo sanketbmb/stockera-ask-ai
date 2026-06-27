@@ -410,3 +410,20 @@ or backfill that touches `library_items.verdict`.
 
   library size grows past ~80 rows.
 
+
+---
+
+## Deliberate Deviations from Spec (running log)
+
+This section records intentional deviations from the original locked spec that were accepted with audit-trail approval. Every deviation here has a known author, date, and risk assessment. Future audits (e.g. QA-1) walk this log to verify nothing was changed silently.
+
+### DEV-001 — `/library` fetch limit raised from 60 to 200
+
+- **Location:** `src/routes/library.index.tsx`, function `fetchLibraryGrid`, `.limit(200)` (was `.limit(60)`).
+- **Change:** Increased Supabase query limit on `library_items` fetch.
+- **Authority:** Bundled into L4C-PAGINATION-1 (2026-06-27) for future-batch headroom.
+- **Risk:** MEDIUM — payload ~3.3× larger when library exceeds 60 rows. Acceptable on broadband, measurable on slow 3G. No server-side pagination yet (deferred to future `L4C-PAGINATION-2` when library exceeds ~500 rows).
+- **Locked by:** Human approval after super-agent flagged scope creep.
+- **Date:** 2026-06-27.
+
+---
