@@ -47,7 +47,7 @@ function StepBar({ delay }: { delay: number }) {
         className="h-full w-full origin-left rounded-full bg-gradient-to-r from-primary via-accent to-gold"
         initial={{ scaleX: reduce ? 1 : 0 }}
         whileInView={{ scaleX: 1 }}
-        viewport={{ once: true, amount: 0.6 }}
+        viewport={{ once: false, amount: 0.6 }}
         transition={{ duration: reduce ? 0 : 0.9, delay: reduce ? 0 : delay, ease: [0.22, 1, 0.36, 1] }}
       />
     </div>

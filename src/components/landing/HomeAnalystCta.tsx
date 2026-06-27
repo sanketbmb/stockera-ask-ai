@@ -38,7 +38,7 @@ export function HomeAnalystCta() {
         id="analyst-cta"
         initial={reducedMotion ? false : { opacity: 0, y: 12 }}
         whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-60px" }}
+        viewport={{ once: false, amount: 0.25, margin: "-60px" }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         className="container mx-auto px-4 py-12 md:py-16"
       >
