@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   Search,
@@ -9,7 +9,6 @@ import {
   Gift,
   Sparkles,
   BadgeCheck,
-  Clock,
   GraduationCap,
   Award,
 } from "lucide-react";
