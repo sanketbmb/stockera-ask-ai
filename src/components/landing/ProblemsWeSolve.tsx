@@ -65,7 +65,7 @@ function renderBody(text: string) {
       return (
         <span
           key={i}
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${verdictTone}`}
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 group-hover:scale-105 group-hover:shadow-glow-teal ${verdictTone}`}
         >
           {part}
         </span>
@@ -108,7 +108,16 @@ export function ProblemsWeSolve() {
         <Reveal className="text-center">
           <h2 className="font-display text-3xl text-foreground sm:text-4xl">
             <span className="text-foreground">Three moments every Indian investor</span>{" "}
-            <span className="text-primary">knows.</span>
+            <span
+              className="text-gradient animate-gradient-text"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+              }}
+            >
+              knows
+            </span>
+            <span className="text-foreground">.</span>
           </h2>
           <p className="mt-3 text-muted-foreground">And what we'd actually do in each one.</p>
         </Reveal>
@@ -116,18 +125,17 @@ export function ProblemsWeSolve() {
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {PROBLEMS.map((p, i) => (
             <Reveal key={p.id} delay={i * 0.05}>
-              <Card className="flex h-full flex-col gap-4 p-6">
-                <ProblemHeader p={p} />
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {renderBody(p.body)}
-                </p>
-                <Link
-                  to="/post-query"
-                  className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
-                >
-                  {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
-              </Card>
+              <Link to="/post-query" className="block h-full cursor-pointer">
+                <Card className="group flex h-full flex-col gap-4 p-6 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-accent hover:shadow-card-hover">
+                  <ProblemHeader p={p} />
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {renderBody(p.body)}
+                  </p>
+                  <span className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent group-hover:underline">
+                    {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                </Card>
+              </Link>
             </Reveal>
           ))}
         </div>

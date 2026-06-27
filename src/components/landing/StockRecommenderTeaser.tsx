@@ -16,7 +16,17 @@ export function StockRecommenderTeaser() {
               DON'T KNOW WHERE TO START?
             </span>
             <h2 className="mt-3 font-display text-3xl text-foreground sm:text-4xl">
-              Tell us your risk appetite. We'll show you stocks worth a closer look.
+              Tell us your risk appetite. We'll show you{" "}
+              <span
+                className="text-gradient animate-gradient-text"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(90deg, #2BA8A0, #1F3C73, #F5B731, #2BA8A0)",
+                }}
+              >
+                stocks worth a closer look
+              </span>
+              .
             </h2>
             <p className="mt-4 max-w-lg text-muted-foreground">
               The Stock Picker runs a multi-factor scan — technical, fundamental, sector — across NSE-listed names. You set risk (conservative, moderate, aggressive, high risk) and the count. We return picks with target zones, stop-loss zones, support/resistance and a scoreboard. Educational. You decide what to do.
@@ -38,12 +48,12 @@ export function StockRecommenderTeaser() {
             </ul>
 
             <div className="mt-7 flex flex-wrap gap-3">
-              <Button asChild className="rounded-full">
+              <Button asChild className="rounded-full transition-shadow duration-200 hover:shadow-glow-teal">
                 <Link to="/stock-picker">
                   See stock picks <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="rounded-full">
+              <Button asChild variant="outline" className="rounded-full transition-colors duration-200 hover:border-accent">
                 <Link to="/post-query">Ask a custom question</Link>
               </Button>
             </div>
@@ -52,7 +62,13 @@ export function StockRecommenderTeaser() {
 
         <Reveal delay={0.08}>
           <div>
-            <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+            <div className="relative rounded-xl border border-border/60 overflow-hidden bg-card shadow-md transition-shadow duration-200 hover:shadow-card-hover">
+              <span
+                className="absolute -top-2 -right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
+                style={{ background: "var(--gradient-brand)" }}
+              >
+                LIVE
+              </span>
               <img
                 src="/images/hero-report-preview.webp"
                 width={1262}
