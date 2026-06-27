@@ -33,6 +33,12 @@ const breadcrumbLd = {
 };
 
 export const Route = createFileRoute("/library/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page:
+      typeof search.page === "string" || typeof search.page === "number"
+        ? Math.max(1, Math.floor(Number(search.page)) || 1)
+        : 1,
+  }),
   head: () => ({
     meta: [
       { title: TITLE },
