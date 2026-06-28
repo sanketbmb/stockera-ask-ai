@@ -59,7 +59,7 @@ export function AnalystShowcase() {
               SEBI-registered analysts. Independent research. No tips.
             </p>
             <p className="mt-3 text-base text-muted-foreground sm:text-lg">
-              Every report on Stockera is reviewed or recorded by a SEBI-registered Research
+              Every report on Ask the Expert is reviewed or recorded by a SEBI-registered Research
               Analyst. Real names. Real registrations. Verifiable on the SEBI portal.
             </p>
           </div>
