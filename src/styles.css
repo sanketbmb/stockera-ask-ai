@@ -361,3 +361,49 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse-sebi { animation: none; }
 }
+
+@keyframes shimmer-warm {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-shimmer-warm {
+  background-size: 300% 300%;
+  animation: shimmer-warm 12s ease-in-out infinite;
+}
+
+@keyframes glow-aurora {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(245,183,49,0.25),
+      0 10px 40px -10px rgba(245,183,49,0.45),
+      0 0 60px -10px rgba(43,168,160,0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(43,168,160,0.30),
+      0 14px 50px -10px rgba(43,168,160,0.50),
+      0 0 80px -8px rgba(245,183,49,0.40);
+  }
+}
+.animate-glow-aurora {
+  animation: glow-aurora 4s ease-in-out infinite;
+}
+
+@keyframes orb-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(8px, -10px) scale(1.08); }
+}
+.animate-orb-drift {
+  animation: orb-drift 7s ease-in-out infinite;
+}
+.animate-orb-drift-rev {
+  animation: orb-drift 9s ease-in-out infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer-warm,
+  .animate-glow-aurora,
+  .animate-orb-drift,
+  .animate-orb-drift-rev { animation: none; }
+}

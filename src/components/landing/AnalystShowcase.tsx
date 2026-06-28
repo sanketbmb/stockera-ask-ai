@@ -77,32 +77,59 @@ export function AnalystShowcase() {
 
 
         <Reveal delay={0.25}>
-          <div className="mt-6 rounded-xl border border-dashed border-border bg-muted/30 px-5 py-4 text-center text-sm text-muted-foreground">
-            More SEBI-registered analysts are joining the platform.{" "}
-            <Link to="/post-query" className="font-medium text-accent hover:underline">
-              Post your query
-            </Link>{" "}
-            and we will route it to the right desk.
+          <div
+            className="relative mt-6 overflow-hidden rounded-2xl p-[1.5px] animate-glow-aurora motion-reduce:animate-none"
+            style={{
+              backgroundImage:
+                "linear-gradient(135deg, #F5B731 0%, #FFA94D 35%, #2BA8A0 70%, #1F3C73 100%)",
+            }}
+          >
+            <div
+              className="relative overflow-hidden rounded-[14px] px-5 py-6 text-center text-sm animate-shimmer-warm motion-reduce:animate-none"
+              style={{
+                backgroundImage:
+                  "linear-gradient(120deg, #FFF7E0 0%, #FDE68A 25%, #FEF3C7 50%, #E0F7F5 75%, #FFF7E0 100%)",
+              }}
+            >
+              {/* Floating orbs for depth */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-10 -left-8 h-32 w-32 rounded-full blur-3xl opacity-60 animate-orb-drift motion-reduce:animate-none"
+                style={{ background: "radial-gradient(circle, rgba(245,183,49,0.55), transparent 70%)" }}
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -bottom-12 -right-10 h-36 w-36 rounded-full blur-3xl opacity-55 animate-orb-drift-rev motion-reduce:animate-none"
+                style={{ background: "radial-gradient(circle, rgba(43,168,160,0.55), transparent 70%)" }}
+              />
 
-            <div className="mt-4 flex justify-center">
-              <Link
-                to="/admin/apply"
-                className="relative overflow-hidden group inline-flex items-center gap-2 rounded-md bg-accent px-6 py-3 text-white font-medium transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)] animate-pulse-glow motion-reduce:animate-none"
-              >
-                <span className="relative z-10">Register as a SEBI Analyst →</span>
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
-                />
-              </Link>
+              <p className="relative z-10 text-foreground/80">
+                More SEBI-registered analysts are joining the platform.{" "}
+                <Link to="/post-query" className="font-semibold text-accent underline-offset-4 hover:underline">
+                  Post your query
+                </Link>{" "}
+                and we will route it to the right desk.
+              </p>
+
+              <div className="relative z-10 mt-4 flex justify-center">
+                <Link
+                  to="/admin/apply"
+                  className="relative overflow-hidden group inline-flex items-center gap-2 rounded-md px-6 py-3 text-white font-semibold transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_12px_36px_rgba(245,183,49,0.55)] animate-pulse-glow motion-reduce:animate-none"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(135deg, #F5B731 0%, #FFA94D 50%, #2BA8A0 100%)",
+                  }}
+                >
+                  <span className="relative z-10">Register as a SEBI Analyst →</span>
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+                  />
+                </Link>
+              </div>
             </div>
           </div>
         </Reveal>
-
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          SEBI registration does not guarantee performance. Educational research only — not
-          investment advice.
-        </p>
       </div>
     </section>
   );
