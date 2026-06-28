@@ -83,6 +83,19 @@ export function AnalystShowcase() {
               Post your query
             </Link>{" "}
             and we will route it to the right desk.
+
+            <div className="mt-4 flex justify-center">
+              <Link
+                to="/admin/apply"
+                className="relative overflow-hidden group inline-flex items-center gap-2 rounded-md bg-accent px-6 py-3 text-white font-medium transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)] animate-pulse-glow motion-reduce:animate-none"
+              >
+                <span className="relative z-10">Register as a SEBI Analyst →</span>
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+                />
+              </Link>
+            </div>
           </div>
         </Reveal>
 
