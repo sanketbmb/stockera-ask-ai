@@ -34,8 +34,8 @@ export function AnalystShowcase() {
     <section id="experts" aria-labelledby="experts-heading" className="py-16 sm:py-24">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <Reveal>
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+          <div className="group mx-auto max-w-2xl text-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success transition-shadow duration-300 group-hover:shadow-[0_0_12px_rgba(43,168,160,0.4)]">
               <ShieldCheck className="h-3.5 w-3.5" />
               Verified · SEBI Research Analyst
             </span>
@@ -59,7 +59,7 @@ export function AnalystShowcase() {
               SEBI-registered analysts. Independent research. No tips.
             </p>
             <p className="mt-3 text-base text-muted-foreground sm:text-lg">
-              Every report on Stockera is reviewed or recorded by a SEBI-registered Research
+              Every report on Ask the Expert is reviewed or recorded by a SEBI-registered Research
               Analyst. Real names. Real registrations. Verifiable on the SEBI portal.
             </p>
           </div>
@@ -83,6 +83,19 @@ export function AnalystShowcase() {
               Post your query
             </Link>{" "}
             and we will route it to the right desk.
+
+            <div className="mt-4 flex justify-center">
+              <Link
+                to="/admin/apply"
+                className="relative overflow-hidden group inline-flex items-center gap-2 rounded-md bg-accent px-6 py-3 text-white font-medium transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(43,168,160,0.4)] animate-pulse-glow motion-reduce:animate-none"
+              >
+                <span className="relative z-10">Register as a SEBI Analyst →</span>
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full motion-reduce:hidden"
+                />
+              </Link>
+            </div>
           </div>
         </Reveal>
 
