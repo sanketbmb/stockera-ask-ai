@@ -130,12 +130,6 @@ export function AnalystShowcase() {
             </div>
           </div>
         </Reveal>
-
-
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          SEBI registration does not guarantee performance. Educational research only — not
-          investment advice.
-        </p>
       </div>
     </section>
   );
