@@ -35,7 +35,7 @@ export function AnalystShowcase() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success transition-shadow duration-300 group-hover:shadow-[0_0_12px_rgba(43,168,160,0.4)]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success animate-pulse-sebi motion-reduce:animate-none">
               <ShieldCheck className="h-3.5 w-3.5" />
               Verified · SEBI Research Analyst
             </span>
