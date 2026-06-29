@@ -36,7 +36,7 @@ import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/repor
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
-import { PublishToLibraryToggle } from "@/components/library/PublishToLibraryToggle";
+
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
