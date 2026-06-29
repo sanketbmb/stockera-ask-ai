@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { QueryHistoryCard, type QueryHistoryItem } from "@/components/query/QueryHistoryCard";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
+import { QueriesSearchBar } from "@/components/queries/QueriesSearchBar";
 
 
 const FILTERS = [
