@@ -47,28 +47,11 @@ const VIDEO_HEADLINE: Record<AnalystCtaContext, string> = {
   general: "Need a SEBI-registered analyst to go deeper?",
 };
 
-function useCountUp(target: number, durationMs = 900, enabled = true) {
-  const [value, setValue] = useState(enabled ? 0 : target);
-  const raf = useRef<number | null>(null);
-  useEffect(() => {
-    if (!enabled) {
-      setValue(target);
-      return;
-    }
-    const start = performance.now();
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / durationMs);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setValue(Math.round(target * eased));
-      if (p < 1) raf.current = requestAnimationFrame(tick);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => {
-      if (raf.current) cancelAnimationFrame(raf.current);
-    };
-  }, [target, durationMs, enabled]);
-  return value;
-}
+// Gradient-border wrapper for both sub-cards (matches HomeAnalystCta).
+const CARD_WRAP =
+  "group/card relative rounded-2xl p-[1.5px] bg-[linear-gradient(135deg,#2BA8A0_0%,#1F3C73_55%,#F5B731_100%)] shadow-[0_4px_20px_rgba(31,60,115,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_44px_rgba(43,168,160,0.22)] motion-reduce:hover:translate-y-0";
+const CARD_INNER =
+  "relative h-full rounded-[14px] bg-card px-4 py-5 sm:px-5 sm:py-6 md:px-6 md:py-8";
 
 export function AnalystCtaCard({
   queryId,
