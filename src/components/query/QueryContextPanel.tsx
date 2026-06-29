@@ -114,7 +114,7 @@ export function QueryContextPanel() {
           <ol className="space-y-3">
             {[
               { Icon: FileText, t: "You submit query", d: "Stock, prices, context" },
-              { Icon: Bot, t: "Gemini AI analyzes", d: "Verdict + price levels" },
+              { Icon: Bot, t: "Helix AI analyzes", d: "Verdict + price levels" },
               { Icon: Database, t: "NSE/BSE context", d: "Fundamentals & technicals" },
               { Icon: Brain, t: "Structured report", d: "Risk, reward, behavioral" },
               { Icon: UserCheck, t: "SEBI analyst review", d: "Video answer within 24h" },

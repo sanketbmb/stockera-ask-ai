@@ -19,7 +19,7 @@ export function AIReportPreview() {
         <Reveal>
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
-              <Sparkles className="h-3.5 w-3.5" /> Powered by Google Gemini + Real Market Data
+              <Sparkles className="h-3.5 w-3.5" /> Powered by Helix + Real Market Data
             </div>
             <h2 className="mt-4 font-display text-3xl text-foreground sm:text-4xl">
               Your Personal Research Report — <span className="text-gradient">In 30 Seconds</span>

@@ -22,7 +22,7 @@ const steps = [
     barFrom: "from-gold/0",
     barTo: "to-gold",
     title: "Get AI Report Instantly",
-    body: "Our Gemini-powered AI analyzes your stock using real NSE/BSE data and gives you a detailed verdict in 30 seconds.",
+    body: "Powered by Helix, our AI analyzes your stock using real NSE/BSE data and gives you a detailed verdict in 30 seconds.",
   },
   {
     n: 3,

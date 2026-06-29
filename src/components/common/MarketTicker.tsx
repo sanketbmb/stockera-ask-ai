@@ -112,7 +112,7 @@ export function MarketTicker() {
       </span>
 
       <span className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-        Data via Gemini AI — 30 min delay
+        Data via Helix AI — 30 min delay
       </span>
     </div>
   );
