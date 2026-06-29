@@ -99,8 +99,8 @@ function Index() {
       <main className="flex-1">
         <HeroSection />
         <HowItWorks />
-        <LiveStatsBar />
         <ProblemsWeSolve />
+        <LiveStatsBar />
         <StockRecommenderTeaser />
         <MasterSearchHero />
         <QueryTypesOverview />
