@@ -14,7 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { QueryHistoryCard, type QueryHistoryItem } from "@/components/query/QueryHistoryCard";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
-import { PublishToLibraryToggle } from "@/components/library/PublishToLibraryToggle";
+
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -113,11 +113,9 @@ export default function MyQueriesPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((q) => (
-            <div key={q.id} className="space-y-1.5">
-              <QueryHistoryCard item={q} />
-              <div className="pl-1"><PublishToLibraryToggle queryId={q.id} compact /></div>
-            </div>
+            <QueryHistoryCard key={q.id} item={q} />
           ))}
+
         </div>
       )}
 
