@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
-import { Play, ChevronRight, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
+import { Play, ChevronRight, ChevronDown, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { AnalystReportPill } from "@/components/report/AnalystReportPill";
+import { useFollowUpsByQuery, type FollowUpRow } from "@/hooks/useFollowUpsByQuery";
 
 interface AnswerRow {
   id: string;
