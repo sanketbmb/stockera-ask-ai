@@ -98,6 +98,7 @@ function Index() {
       <Navbar />
       <main className="flex-1">
         <HeroSection />
+        <HowItWorks />
         <LiveStatsBar />
         <ProblemsWeSolve />
         <StockRecommenderTeaser />
@@ -105,8 +106,6 @@ function Index() {
         <QueryTypesOverview />
         <AnalystShowcase />
         <HomeAnalystCta />
-        
-        <HowItWorks />
         <PublicAnswersMarquee />
         <ReferralBanner />
         <FinalCtaStrip />
