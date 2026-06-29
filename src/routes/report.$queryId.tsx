@@ -257,10 +257,12 @@ function TierShapedReportContent({
         <ExpertAnswerSection queryId={queryId} assignedAnalystId={null} queryCreatedAt={frozenAt ?? new Date().toISOString()} />
       </main>
 
-      {/* L2 — owner-only consent toggle. Component self-guards by user_id. */}
+      {/* Auto-public default — disclosure only; per-report toggle lives in My Queries. */}
       <section className="px-4 sm:px-6 lg:px-8 pb-8">
         <div className="mx-auto max-w-5xl">
-          <PublishToLibraryToggle queryId={queryId} />
+          <p className="text-xs text-muted-foreground">
+            Your report is added to the public Library. You can make it private anytime from My Queries.
+          </p>
         </div>
       </section>
 
@@ -391,9 +393,11 @@ function LegacyReportContent({
           queryCreatedAt={data.created_at as string}
         />
 
-        {/* L2 — owner-only consent toggle (legacy path). Component self-guards. */}
+        {/* Auto-public default — disclosure only; per-report toggle lives in My Queries. */}
         <div className="mx-auto max-w-4xl mt-6">
-          <PublishToLibraryToggle queryId={data.id} />
+          <p className="text-xs text-muted-foreground">
+            Your report is added to the public Library. You can make it private anytime from My Queries.
+          </p>
         </div>
 
         {/* Bottom premium-human-analysis surface — calmer end-of-report repeat. */}
