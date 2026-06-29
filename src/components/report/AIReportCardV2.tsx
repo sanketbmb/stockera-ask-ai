@@ -343,20 +343,7 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
           </div>
         </Card>
 
-        {/* ===== ACTIONS ===== */}
-        <div className="grid sm:grid-cols-2 gap-3 print:hidden">
-          <AddToPortfolioButton
-            queryId={meta.id}
-            stockName={meta.stockName}
-            stockSymbol={meta.stockSymbol}
-            buyPrice={meta.buyPrice}
-            currentPrice={ltp}
-            target1=""
-            stopLoss=""
-          />
-          <Button variant="outline" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> Download PDF</Button>
-          <Button variant="outline" onClick={handleShare}><Share2 className="h-4 w-4 mr-2" /> Share Report</Button>
-        </div>
+        {/* Actions consolidated into ReportCtaStrip above the analyst countdown. */}
 
         {/* ===== COMPLIANCE FOOTER (sticky on mobile) ===== */}
         <footer className="rounded-xl border border-border bg-muted/30 p-4 text-[11px] text-muted-foreground space-y-1.5 md:static fixed bottom-0 left-0 right-0 md:relative z-30 backdrop-blur md:backdrop-blur-none">
