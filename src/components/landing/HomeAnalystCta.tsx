@@ -25,7 +25,9 @@ export function AnimatedVideoIcon({ reduced, size = "md" }: { reduced: boolean |
   return (
     <motion.div
       aria-hidden
+      inherit={false}
       className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
+      initial={{ scale: 1, boxShadow: "0 0 0px 0px rgba(43,168,160,0)" }}
       animate={{
         scale: [1, 1.06, 1],
         boxShadow: [
@@ -39,7 +41,9 @@ export function AnimatedVideoIcon({ reduced, size = "md" }: { reduced: boolean |
       <Video className={`${iconSize} text-primary relative z-10`} />
       {/* Lens glint sparkle */}
       <motion.span
+        inherit={false}
         className="pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white"
+        initial={{ opacity: 0, scale: 0.6 }}
         animate={{ opacity: [0, 0.95, 0], scale: [0.6, 1.1, 0.6] }}
         transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }}
       />
