@@ -196,7 +196,7 @@ export default function WalletPage() {
           icon={<Sparkles className="h-4 w-4" />}
           title="AI Report"
           cost={actionCosts?.ai_report}
-          desc="Structured Gemini analysis"
+          desc="Structured Helix analysis"
         />
         <ActionTile
           icon={<Video className="h-4 w-4" />}
