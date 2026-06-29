@@ -9,6 +9,7 @@ import {
   Info, MessageCircle, Newspaper, Share2, TrendingUp, Video,
 } from "lucide-react";
 import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
+import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { BookAnalystVideoButton } from "@/components/payment/BookAnalystVideoButton";
 import { useAuth } from "@/contexts/AuthContext";
 
