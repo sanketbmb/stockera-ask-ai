@@ -1,0 +1,1 @@
+ALTER TABLE public.queries ALTER COLUMN is_public_library SET DEFAULT true;
