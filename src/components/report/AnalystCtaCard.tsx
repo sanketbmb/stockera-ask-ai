@@ -61,7 +61,7 @@ export function AnalystCtaCard({
   const reducedMotion = useReducedMotion();
   const [videoOpen, setVideoOpen] = useState(false);
   const consultationHref = `/analyst/${APPROVED_DEMO_ANALYST_ID}`;
-  const priceRupees = useCountUp(VIDEO_PRICE_PAISE / 100, 800, !reducedMotion);
+  const priceRupees = VIDEO_PRICE_PAISE / 100;
   const recommendedTier = useMemo(
     () => SESSION_TIERS.find((t) => t.highlight) ?? SESSION_TIERS[0],
     []
