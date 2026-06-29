@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { QueryHistoryCard, type QueryHistoryItem } from "@/components/query/QueryHistoryCard";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
+import { QueriesSearchBar } from "@/components/queries/QueriesSearchBar";
 
 
 const FILTERS = [
@@ -40,6 +41,7 @@ function formatDuration(seconds: number | null | undefined): string | null {
 export default function MyQueriesPage() {
   const { user } = useAuth();
   const [filter, setFilter] = useState("all");
+  const [searchValue, setSearchValue] = useState("");
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string; createdAt: string } | null>(null);
 
   const { data = [], isLoading } = useQuery({
@@ -70,10 +72,23 @@ export default function MyQueriesPage() {
   });
 
   // Derive per-query video state in memory — no N+1.
+  const matchesSearch = useMemo(() => {
+    const needle = searchValue.trim().toLowerCase();
+    return (q: ExtendedQueryItem) => {
+      if (!needle) return true;
+      return (
+        q.stock_symbol?.toLowerCase().includes(needle) ||
+        q.stock_name?.toLowerCase().includes(needle) ||
+        q.query_text?.toLowerCase().includes(needle)
+      );
+    };
+  }, [searchValue]);
+
   const { readyVideos, pendingVideos } = useMemo(() => {
     const ready: Array<{ q: ExtendedQueryItem; video: VideoAnswer }> = [];
     const pending: ExtendedQueryItem[] = [];
     for (const q of data) {
+      if (!matchesSearch(q)) continue;
       const v = q.answers?.find((a) => a.answer_type === "video" && a.video_url && a.is_published !== false);
       if (v) ready.push({ q, video: v });
       else if (q.video_requested) pending.push(q);
@@ -81,18 +96,28 @@ export default function MyQueriesPage() {
     ready.sort((a, b) => +new Date(b.video.created_at) - +new Date(a.video.created_at));
     pending.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
     return { readyVideos: ready, pendingVideos: pending };
-  }, [data]);
+  }, [data, matchesSearch]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return data;
-    if (filter === "video") return data; // handled by dedicated renderer below
-    return data.filter((q) => q.status === filter);
-  }, [data, filter]);
+    const base = filter === "all" || filter === "video"
+      ? data
+      : data.filter((q) => q.status === filter);
+    return base.filter(matchesSearch);
+  }, [data, filter, matchesSearch]);
 
   const bottomQueryId = data[0]?.id ?? "general";
+  const hasSearch = searchValue.trim().length > 0;
 
   return (
     <AppShell title="My Queries">
+      <div className="mb-4">
+        <QueriesSearchBar
+          queries={data}
+          value={searchValue}
+          onChange={setSearchValue}
+          onSelectSuggestion={(sym) => setSearchValue(sym)}
+        />
+      </div>
       <Tabs value={filter} onValueChange={setFilter} className="mb-6">
         <TabsList>
           {FILTERS.map((f) => <TabsTrigger key={f.id} value={f.id}>{f.label}</TabsTrigger>)}
@@ -102,14 +127,18 @@ export default function MyQueriesPage() {
       {isLoading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div>
       ) : filter === "video" ? (
-        <VideoAnswerTab
-          readyVideos={readyVideos}
-          pendingVideos={pendingVideos}
-          onPlay={(v, q) => setActiveVideo({ url: v.video_url!, title: q.stock_name, createdAt: v.created_at })}
-          bottomQueryId={bottomQueryId}
-        />
+        readyVideos.length === 0 && pendingVideos.length === 0 && hasSearch ? (
+          <NoSearchResults value={searchValue} />
+        ) : (
+          <VideoAnswerTab
+            readyVideos={readyVideos}
+            pendingVideos={pendingVideos}
+            onPlay={(v, q) => setActiveVideo({ url: v.video_url!, title: q.stock_name, createdAt: v.created_at })}
+            bottomQueryId={bottomQueryId}
+          />
+        )
       ) : filtered.length === 0 ? (
-        <EmptyQueries />
+        hasSearch ? <NoSearchResults value={searchValue} /> : <EmptyQueries />
       ) : (
         <div className="space-y-3">
           {filtered.map((q) => (
@@ -148,6 +177,14 @@ export default function MyQueriesPage() {
         </Dialog>
       )}
     </AppShell>
+  );
+}
+
+function NoSearchResults({ value }: { value: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+      <p className="text-sm text-muted-foreground">No queries match &ldquo;{value}&rdquo;.</p>
+    </div>
   );
 }
 
