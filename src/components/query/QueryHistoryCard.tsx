@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
-import { Play, ChevronRight, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
+import { Play, ChevronRight, ChevronDown, Star, MapPin, Hourglass, AlertTriangle } from "lucide-react";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { AnalystReportPill } from "@/components/report/AnalystReportPill";
+import { useFollowUpsByQuery, type FollowUpRow } from "@/hooks/useFollowUpsByQuery";
 
 interface AnswerRow {
   id: string;
@@ -161,6 +163,10 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
         )}
       </div>
 
+      <FollowUpsDisclosure queryId={item.id} />
+
+
+
       {videoAnswer && (
         <VideoAnswerModal
           open={videoOpen}
@@ -173,6 +179,85 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
     </Card>
   );
 }
+
+function FollowUpsDisclosure({ queryId }: { queryId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const reduced = useReducedMotion();
+  const { data, count, isLoading } = useFollowUpsByQuery(queryId, { enabled: true });
+
+  const label = isLoading
+    ? "Loading follow-ups…"
+    : count === 0
+      ? "No follow-ups yet"
+      : `${count} follow-up question${count === 1 ? "" : "s"}`;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/40">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className={`w-full flex items-center gap-1.5 text-left text-xs font-medium hover:text-foreground transition-colors ${count === 0 ? "text-muted-foreground" : "text-foreground/80"}`}
+      >
+        <ChevronDown
+          className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+        />
+        <span>{label}</span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="body"
+            initial={reduced ? false : { height: 0, opacity: 0 }}
+            animate={reduced ? { height: "auto", opacity: 1 } : { height: "auto", opacity: 1 }}
+            exit={reduced ? { height: 0, opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.25, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 rounded-md bg-muted/30 p-3">
+              {count === 0 ? (
+                <p className="text-xs italic text-muted-foreground text-center py-4">
+                  No follow-up questions yet. Open the report to ask one.
+                </p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {data.map((f: FollowUpRow) => {
+                    const isUser = f.role === "user";
+                    const nested = f.parent_followup_id != null;
+                    return (
+                      <li
+                        key={f.id}
+                        className={`text-xs ${nested ? "pl-4 border-l border-border/40" : ""}`}
+                      >
+                        <div className="flex items-start gap-1.5">
+                          <span className="font-mono text-[10px] uppercase text-muted-foreground mt-0.5 shrink-0">
+                            {isUser ? "Q:" : "A:"}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className={`whitespace-pre-wrap leading-relaxed ${isUser ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                            >
+                              {f.content ?? ""}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                              {formatDistanceToNow(new Date(f.created_at), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 
 function VideoAnswerModal({ open, onOpenChange, videoUrl, createdAt, stockName }: { open: boolean; onOpenChange: (v: boolean) => void; videoUrl: string; createdAt: string; stockName: string }) {
   const [rating, setRating] = useState(0);
