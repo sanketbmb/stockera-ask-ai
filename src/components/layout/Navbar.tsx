@@ -75,7 +75,7 @@ export function Navbar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild><Link to="/dashboard"><LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard</Link></DropdownMenuItem>
                 <DropdownMenuItem asChild><Link to="/my-queries"><MessageSquare className="mr-2 h-4 w-4" /> My Queries</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild><Link to="/portfolio"><Briefcase className="mr-2 h-4 w-4" /> Portfolio</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link to="/watchlist"><Briefcase className="mr-2 h-4 w-4" /> Watchlist</Link></DropdownMenuItem>
                 <DropdownMenuItem asChild><Link to="/wallet"><Wallet className="mr-2 h-4 w-4" /> Wallet</Link></DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => signOut()}><LogOut className="mr-2 h-4 w-4" /> Sign out</DropdownMenuItem>
