@@ -160,7 +160,7 @@ export function HomeAnalystCta() {
                   <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
                     <div className="transition-transform duration-200 hover:scale-[1.03]">
                       <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                        Ask the Expert · Verified
+                        Stockera · Verified
                       </div>
                       <div
                         className="mt-1 font-display text-3xl font-bold tabular-nums"
