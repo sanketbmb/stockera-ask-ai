@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as TopupRouteImport } from './routes/topup'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -54,6 +55,11 @@ import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.archite
 import { Route as DocsAccuracyRoadmapPrintRouteImport } from './routes/docs.accuracy-roadmap.print'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
 
+const WatchlistRoute = WatchlistRouteImport.update({
+  id: '/watchlist',
+  path: '/watchlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WalletRoute = WalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
@@ -302,6 +308,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
+  '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -348,6 +355,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
+  '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -395,6 +403,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/topup': typeof TopupRoute
   '/wallet': typeof WalletRoute
+  '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -443,6 +452,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/topup'
     | '/wallet'
+    | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/dashboard'
@@ -489,6 +499,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/topup'
     | '/wallet'
+    | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/dashboard'
@@ -535,6 +546,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/topup'
     | '/wallet'
+    | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/dashboard'
@@ -582,6 +594,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TopupRoute: typeof TopupRoute
   WalletRoute: typeof WalletRoute
+  WatchlistRoute: typeof WatchlistRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminBacktestRoute: typeof AdminBacktestRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
@@ -606,6 +619,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/watchlist': {
+      id: '/watchlist'
+      path: '/watchlist'
+      fullPath: '/watchlist'
+      preLoaderRoute: typeof WatchlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/wallet': {
       id: '/wallet'
       path: '/wallet'
@@ -942,6 +962,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TopupRoute: TopupRoute,
   WalletRoute: WalletRoute,
+  WatchlistRoute: WatchlistRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminBacktestRoute: AdminBacktestRoute,
   AdminDashboardRoute: AdminDashboardRoute,
