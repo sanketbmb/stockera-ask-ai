@@ -213,6 +213,15 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
           )}
         </section>
 
+        {/* ===== REPORT CTA STRIP (Watchlist · PDF · Share) ===== */}
+        <ReportCtaStrip
+          queryId={meta.id}
+          stockName={meta.stockName}
+          stockSymbol={meta.stockSymbol}
+          buyPrice={meta.buyPrice}
+          currentPrice={ltp}
+        />
+
         {/* ===== ANALYST VIDEO COUNTDOWN ===== */}
         <section className="rounded-2xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent p-6 md:p-7">
           <div className="flex items-start gap-4">
