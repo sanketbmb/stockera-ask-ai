@@ -8,9 +8,9 @@
 // Consultation routing is locked to a single approved demo analyst profile
 // (G1a). No dynamic analyst discovery in v1.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import {
   ShieldCheck,
   Video,
@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button";
 import { VideoAnswerPaymentModal } from "@/components/payment/VideoAnswerPaymentModal";
 import { SESSION_TIERS, formatINR } from "@/lib/session-tiers";
 import { FIRM } from "@/lib/firm-details";
-import { Logo } from "@/components/common/Logo";
+import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
+import { AnimatedVideoIcon, AnimatedPhoneIcon } from "@/components/landing/HomeAnalystCta";
 
 // Canonical video price (₹100). Mirrors VIDEO_PRICE_PAISE in payments.functions.ts.
 const VIDEO_PRICE_PAISE = 10000;
