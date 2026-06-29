@@ -68,6 +68,7 @@ export function AnimatedPhoneIcon({ reduced, size = "md" }: { reduced: boolean |
         <motion.span
           key={i}
           aria-hidden
+          inherit={false}
           className="absolute inset-0 rounded-2xl border-2 border-primary/45"
           initial={{ scale: 1, opacity: 0.75 }}
           animate={{ scale: [1, 1.8], opacity: [0.75, 0] }}
@@ -76,8 +77,10 @@ export function AnimatedPhoneIcon({ reduced, size = "md" }: { reduced: boolean |
       ))}
       <motion.div
         aria-hidden
+        inherit={false}
         className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
         style={{ transformOrigin: "50% 85%" }}
+        initial={{ rotate: -8 }}
         animate={{ rotate: [-8, 8, -8] }}
         transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
       >
