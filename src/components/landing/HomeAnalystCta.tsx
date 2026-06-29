@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import { ShieldCheck, Video, Phone, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VideoAnswerPaymentModal } from "@/components/payment/VideoAnswerPaymentModal";
@@ -23,27 +23,16 @@ export function AnimatedVideoIcon({ reduced, size = "md" }: { reduced: boolean |
     );
   }
   return (
-    <motion.div
+    <div
       aria-hidden
-      className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
-      animate={{
-        scale: [1, 1.06, 1],
-        boxShadow: [
-          "0 0 0px 0px rgba(43,168,160,0)",
-          "0 0 18px 2px rgba(43,168,160,0.45)",
-          "0 0 0px 0px rgba(43,168,160,0)",
-        ],
-      }}
-      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+      className={`hac-video-pulse relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20 motion-reduce:animate-none`}
     >
       <Video className={`${iconSize} text-primary relative z-10`} />
       {/* Lens glint sparkle */}
-      <motion.span
-        className="pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white"
-        animate={{ opacity: [0, 0.95, 0], scale: [0.6, 1.1, 0.6] }}
-        transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }}
+      <span
+        className="hac-video-glint pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white motion-reduce:animate-none"
       />
-    </motion.div>
+    </div>
   );
 }
 
@@ -61,24 +50,19 @@ export function AnimatedPhoneIcon({ reduced, size = "md" }: { reduced: boolean |
     <div className={`relative inline-flex ${dim} items-center justify-center`}>
       {/* Ring waves */}
       {[0, 0.55, 1.1].map((delay, i) => (
-        <motion.span
+        <span
           key={i}
           aria-hidden
-          className="absolute inset-0 rounded-2xl border-2 border-primary/45"
-          initial={{ scale: 1, opacity: 0.75 }}
-          animate={{ scale: [1, 1.8], opacity: [0.75, 0] }}
-          transition={{ duration: 2, repeat: Infinity, delay, ease: "easeOut" }}
+          className="hac-phone-ring absolute inset-0 rounded-2xl border-2 border-primary/45 motion-reduce:animate-none"
+          style={{ animationDelay: `${delay}s` }}
         />
       ))}
-      <motion.div
+      <div
         aria-hidden
-        className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
-        style={{ transformOrigin: "50% 85%" }}
-        animate={{ rotate: [-8, 8, -8] }}
-        transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+        className={`hac-phone-tilt relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20 motion-reduce:animate-none`}
       >
         <Phone className={`${iconSize} text-primary`} />
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -312,8 +296,43 @@ export function HomeAnalystCta() {
               50% { opacity: 1; box-shadow: 0 0 10px 1px rgba(245,183,49,0.35); }
             }
 
+            /* Icon animations (CSS only — avoids framer-motion variant tree interference) */
+            .hac-video-pulse {
+              animation: hac-video-pulse 2.5s ease-in-out infinite;
+              will-change: transform, box-shadow;
+            }
+            @keyframes hac-video-pulse {
+              0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(43,168,160,0); }
+              50% { transform: scale(1.06); box-shadow: 0 0 18px 2px rgba(43,168,160,0.45); }
+            }
+            .hac-video-glint { animation: hac-video-glint 4s ease-in-out infinite; opacity: 0; }
+            @keyframes hac-video-glint {
+              0%, 60%, 100% { opacity: 0; transform: scale(0.6); }
+              70% { opacity: 0.95; transform: scale(1.1); }
+              80% { opacity: 0; transform: scale(0.6); }
+            }
+            .hac-phone-tilt {
+              transform-origin: 50% 85%;
+              animation: hac-phone-tilt 1.2s ease-in-out infinite;
+              will-change: transform;
+            }
+            @keyframes hac-phone-tilt {
+              0%, 100% { transform: rotate(-8deg); }
+              50% { transform: rotate(8deg); }
+            }
+            .hac-phone-ring {
+              animation: hac-phone-ring 2s ease-out infinite;
+              opacity: 0;
+              will-change: transform, opacity;
+            }
+            @keyframes hac-phone-ring {
+              0% { transform: scale(1); opacity: 0.75; }
+              100% { transform: scale(1.8); opacity: 0; }
+            }
+
             @media (prefers-reduced-motion: reduce) {
-              .hac-ping, .hac-glow, .hac-eyebrow-pulse, .hac-pill-pulse { animation: none !important; }
+              .hac-ping, .hac-glow, .hac-eyebrow-pulse, .hac-pill-pulse,
+              .hac-video-pulse, .hac-video-glint, .hac-phone-tilt, .hac-phone-ring { animation: none !important; }
             }
           `}</style>
         </section>
