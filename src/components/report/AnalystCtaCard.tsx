@@ -277,18 +277,6 @@ export function AnalystCtaCard({
   );
 }
 
-function Orb({ icon }: { icon: "video" | "phone" }) {
-  const Icon = icon === "video" ? Video : Phone;
-  return (
-    <div className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20">
-      <div
-        aria-hidden
-        className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/30 to-transparent opacity-0 blur-xl ctacard-shield-pulse"
-      />
-      <Icon className="relative h-5 w-5 text-primary" aria-hidden />
-    </div>
-  );
-}
 
 function ScopedStyles() {
   return (
