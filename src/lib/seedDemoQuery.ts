@@ -36,6 +36,7 @@ export async function seedDemoQueryIfEmpty(userId: string): Promise<boolean> {
     ai_report: DEMO_REPORT as never,
     buy_price: 1250,
     current_price: 1280,
+    is_public_library: true,
   });
   if (error) {
     console.warn("seedDemoQuery failed:", error.message);

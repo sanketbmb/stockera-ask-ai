@@ -640,6 +640,9 @@ export function QueryForm() {
         user_id: freshUser.id,
         query_text: trimmedQueryText,
         assigned_analyst_id: analystId || null,
+        // I-LITE-FIX-1: all reports are public by system policy. Set explicitly
+        // (do not rely on column default alone) so intent is captured in code.
+        is_public_library: true,
         ...(routerMetaForInsert ? { router_meta: routerMetaForInsert } : {}),
       };
 
