@@ -407,3 +407,63 @@
   .animate-orb-drift,
   .animate-orb-drift-rev { animation: none; }
 }
+
+/* === HomeAnalystCta (hac-*) — migrated from inline <style> for cross-page reuse === */
+.hac-ping { animation: hac-ping 1.6s ease-in-out infinite; }
+@keyframes hac-ping {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.55; }
+}
+.hac-glow { box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.46); transition: box-shadow 250ms ease-out, transform 250ms ease-out; }
+.hac-glow:hover { box-shadow: 0 14px 36px -14px hsl(var(--primary) / 0.6); }
+
+.hac-eyebrow-pulse { animation: hac-eyebrow-pulse 3s ease-in-out infinite, gradient-shift 6s linear infinite; }
+@keyframes hac-eyebrow-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+.hac-pill-pulse { animation: hac-pill-pulse 2.5s ease-in-out infinite; }
+@keyframes hac-pill-pulse {
+  0%, 100% { opacity: 0.85; box-shadow: 0 0 0 0 rgba(245,183,49,0); }
+  50% { opacity: 1; box-shadow: 0 0 10px 1px rgba(245,183,49,0.35); }
+}
+
+/* Icon animations (CSS only — avoids framer-motion variant tree interference) */
+.hac-video-pulse {
+  animation: hac-video-pulse 2.5s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+@keyframes hac-video-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(43,168,160,0); }
+  50% { transform: scale(1.06); box-shadow: 0 0 18px 2px rgba(43,168,160,0.45); }
+}
+.hac-video-glint { animation: hac-video-glint 4s ease-in-out infinite; opacity: 0; }
+@keyframes hac-video-glint {
+  0%, 60%, 100% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 0.95; transform: scale(1.1); }
+  80% { opacity: 0; transform: scale(0.6); }
+}
+.hac-phone-tilt {
+  transform-origin: 50% 85%;
+  animation: hac-phone-tilt 1.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes hac-phone-tilt {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+}
+.hac-phone-ring {
+  animation: hac-phone-ring 2s ease-out infinite;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+@keyframes hac-phone-ring {
+  0% { transform: scale(1); opacity: 0.75; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hac-ping, .hac-glow, .hac-eyebrow-pulse, .hac-pill-pulse,
+  .hac-video-pulse, .hac-video-glint, .hac-phone-tilt, .hac-phone-ring { animation: none !important; }
+}
