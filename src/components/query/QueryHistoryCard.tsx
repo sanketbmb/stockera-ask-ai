@@ -218,7 +218,15 @@ function FollowUpsDisclosure({ queryId }: { queryId: string }) {
             <div className="mt-2 rounded-md bg-muted/30 p-3">
               {count === 0 ? (
                 <p className="text-xs italic text-muted-foreground text-center py-4">
-                  No follow-up questions yet. Open the report to ask one.
+                  No follow-up questions yet.{" "}
+                  <Link
+                    to="/report/$queryId"
+                    params={{ queryId }}
+                    search={{ focus: "followup" }}
+                    className="not-italic text-primary hover:underline font-medium"
+                  >
+                    Ask one now
+                  </Link>
                 </p>
               ) : (
                 <ul className="space-y-2.5">
