@@ -23,31 +23,16 @@ export function AnimatedVideoIcon({ reduced, size = "md" }: { reduced: boolean |
     );
   }
   return (
-    <motion.div
+    <div
       aria-hidden
-      inherit={false}
-      className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
-      initial={{ scale: 1, boxShadow: "0 0 0px 0px rgba(43,168,160,0)" }}
-      animate={{
-        scale: [1, 1.06, 1],
-        boxShadow: [
-          "0 0 0px 0px rgba(43,168,160,0)",
-          "0 0 18px 2px rgba(43,168,160,0.45)",
-          "0 0 0px 0px rgba(43,168,160,0)",
-        ],
-      }}
-      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+      className={`hac-video-pulse relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20 motion-reduce:animate-none`}
     >
       <Video className={`${iconSize} text-primary relative z-10`} />
       {/* Lens glint sparkle */}
-      <motion.span
-        inherit={false}
-        className="pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white"
-        initial={{ opacity: 0, scale: 0.6 }}
-        animate={{ opacity: [0, 0.95, 0], scale: [0.6, 1.1, 0.6] }}
-        transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }}
+      <span
+        className="hac-video-glint pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white motion-reduce:animate-none"
       />
-    </motion.div>
+    </div>
   );
 }
 
@@ -65,27 +50,19 @@ export function AnimatedPhoneIcon({ reduced, size = "md" }: { reduced: boolean |
     <div className={`relative inline-flex ${dim} items-center justify-center`}>
       {/* Ring waves */}
       {[0, 0.55, 1.1].map((delay, i) => (
-        <motion.span
+        <span
           key={i}
           aria-hidden
-          inherit={false}
-          className="absolute inset-0 rounded-2xl border-2 border-primary/45"
-          initial={{ scale: 1, opacity: 0.75 }}
-          animate={{ scale: [1, 1.8], opacity: [0.75, 0] }}
-          transition={{ duration: 2, repeat: Infinity, delay, ease: "easeOut" }}
+          className="hac-phone-ring absolute inset-0 rounded-2xl border-2 border-primary/45 motion-reduce:animate-none"
+          style={{ animationDelay: `${delay}s` }}
         />
       ))}
-      <motion.div
+      <div
         aria-hidden
-        inherit={false}
-        className={`relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20`}
-        style={{ transformOrigin: "50% 85%" }}
-        initial={{ rotate: -8 }}
-        animate={{ rotate: [-8, 8, -8] }}
-        transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+        className={`hac-phone-tilt relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20 motion-reduce:animate-none`}
       >
         <Phone className={`${iconSize} text-primary`} />
-      </motion.div>
+      </div>
     </div>
   );
 }
