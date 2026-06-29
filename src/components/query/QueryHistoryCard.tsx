@@ -163,6 +163,10 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
         )}
       </div>
 
+      <FollowUpsDisclosure queryId={item.id} />
+
+
+
       {videoAnswer && (
         <VideoAnswerModal
           open={videoOpen}
