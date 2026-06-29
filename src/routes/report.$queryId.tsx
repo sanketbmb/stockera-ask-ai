@@ -249,7 +249,7 @@ function TierShapedReportContent({
         answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
       />
       {data.success && (data.audit_meta as { report_artifact_status?: string }).report_artifact_status === "frozen" && (
-        <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pb-2">
+        <div id="followup-input" className="mx-auto w-full max-w-5xl px-4 md:px-6 pb-2">
           <AskClaudeFollowup queryId={queryId} aiReport={data} />
         </div>
       )}
