@@ -1,7 +1,107 @@
+import { useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, ShieldCheck, LineChart, Eye } from "lucide-react";
+import {
+  ArrowRight,
+  Target,
+  ShieldAlert,
+  Activity,
+  Gauge,
+  BarChart3,
+} from "lucide-react";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/landing/motion-helpers";
+
+const POINTERS = [
+  {
+    icon: Target,
+    title: "Entry & Exit Levels",
+    body: "clear buy zones and target prices",
+  },
+  {
+    icon: ShieldAlert,
+    title: "Stop-Loss Zones",
+    body: "defined risk per pick, no guessing",
+  },
+  {
+    icon: Activity,
+    title: "Support & Resistance",
+    body: "key levels mapped on the chart",
+  },
+  {
+    icon: Gauge,
+    title: "Technical Ratios",
+    body: "RSI, MACD, momentum, volume signals",
+  },
+  {
+    icon: BarChart3,
+    title: "Fundamental Metrics",
+    body: "P/E, P/B, ROE, sector strength",
+  },
+] as const;
+
+function PointerList() {
+  const ref = useRef<HTMLUListElement | null>(null);
+  const inView = useInView(ref, { once: false, margin: "0px 0px -10% 0px" });
+  const reduced = useReducedMotion();
+
+  if (reduced) {
+    return (
+      <ul ref={ref} className="mt-6 space-y-3">
+        {POINTERS.map((p) => (
+          <li key={p.title} className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+              <p.icon className="h-4 w-4 text-accent" aria-hidden />
+            </span>
+            <span className="text-sm text-foreground">
+              <span className="font-semibold">{p.title}</span>
+              <span className="text-muted-foreground"> — {p.body}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <ul ref={ref} className="mt-6 space-y-3">
+      {POINTERS.map((p, i) => (
+        <motion.li
+          key={p.title}
+          className="flex items-start gap-3"
+          initial={{ opacity: 0, x: -20, scale: 0.96 }}
+          animate={
+            inView
+              ? { opacity: 1, x: 0, scale: 1 }
+              : { opacity: 0, x: -20, scale: 0.96 }
+          }
+          transition={{
+            duration: 0.4,
+            ease: [0.22, 1, 0.36, 1],
+            delay: inView ? i * 0.1 : (POINTERS.length - 1 - i) * 0.06,
+          }}
+        >
+          <motion.span
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10"
+            initial={{ scale: 0.8 }}
+            animate={inView ? { scale: [0.8, 1.05, 1] } : { scale: 0.8 }}
+            transition={{
+              duration: 0.4,
+              delay: inView ? i * 0.1 + 0.05 : 0,
+              ease: "easeOut",
+            }}
+          >
+            <p.icon className="h-4 w-4 text-accent" aria-hidden />
+          </motion.span>
+          <span className="text-sm text-foreground">
+            <span className="font-semibold">{p.title}</span>
+            <span className="text-muted-foreground"> — {p.body}</span>
+          </span>
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
 
 export function StockRecommenderTeaser() {
   return (
@@ -29,23 +129,10 @@ export function StockRecommenderTeaser() {
               .
             </h2>
             <p className="mt-4 max-w-lg text-muted-foreground">
-              The Stock Picker runs a multi-factor scan — technical, fundamental, sector — across NSE-listed names. You set risk (conservative, moderate, aggressive, high risk) and the count. We return picks with target zones, stop-loss zones, support/resistance and a scoreboard. Educational. You decide what to do.
+              Set your risk. Get a structured report on every pick — backed by SEBI-aligned reasoning.
             </p>
 
-            <ul className="mt-6 space-y-2 text-sm text-foreground">
-              <li className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-accent" aria-hidden />
-                SEBI-registered Research Analyst framework
-              </li>
-              <li className="flex items-center gap-2">
-                <LineChart className="h-4 w-4 text-accent" aria-hidden />
-                Multi-factor: technical + fundamental + sector
-              </li>
-              <li className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-accent" aria-hidden />
-                Transparent reasoning per pick
-              </li>
-            </ul>
+            <PointerList />
 
             <div className="mt-7 flex flex-wrap gap-3">
               <Button
@@ -64,7 +151,6 @@ export function StockRecommenderTeaser() {
                 <Link to="/post-query">Ask a custom question</Link>
               </Button>
             </div>
-
           </div>
         </Reveal>
 
