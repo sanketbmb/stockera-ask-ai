@@ -249,7 +249,7 @@ function TierShapedReportContent({
         answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
       />
       {data.success && (data.audit_meta as { report_artifact_status?: string }).report_artifact_status === "frozen" && (
-        <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pb-2">
+        <div id="followup-input" className="mx-auto w-full max-w-5xl px-4 md:px-6 pb-2">
           <AskClaudeFollowup queryId={queryId} aiReport={data} />
         </div>
       )}
@@ -449,6 +449,31 @@ function ReportContent() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [queryId]);
+
+  // K-POLISH-1 — deep-link from My Queries empty follow-up state.
+  // When URL has ?focus=followup, scroll the Ask-about-this-report section
+  // into view and focus its textarea. Fires once per navigation after content
+  // has had a chance to render.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("focus") !== "followup") return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.getElementById("followup-input");
+      if (el) {
+        el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+        const ta = el.querySelector("textarea") as HTMLTextAreaElement | null;
+        ta?.focus();
+        return;
+      }
+      if (attempts++ < 20) setTimeout(tryScroll, 150);
+    };
+    const t = setTimeout(tryScroll, 200);
+    return () => clearTimeout(t);
+  }, [queryId]);
+
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId],
