@@ -48,7 +48,7 @@ export function AddToPortfolioButton({
         },
       });
       setAdded(true);
-      toast.success(`${stockName} added to your portfolio`);
+      toast.success(`${stockName} added to your Watchlist`);
     } catch (e) {
       toast.error((e as Error).message || "Failed to add");
     } finally {
@@ -59,14 +59,14 @@ export function AddToPortfolioButton({
   if (added) {
     return (
       <Button variant="outline" disabled className="w-full">
-        <Check className="h-4 w-4 mr-2" /> Added to Portfolio
+        <Check className="h-4 w-4 mr-2" /> Added to Watchlist
       </Button>
     );
   }
   return (
     <Button onClick={handleAdd} disabled={loading} variant="outline" className="w-full">
       {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Briefcase className="h-4 w-4 mr-2" />}
-      Add to my Portfolio
+      Add to my Watchlist
     </Button>
   );
 }
