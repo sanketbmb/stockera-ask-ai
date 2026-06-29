@@ -41,6 +41,7 @@ function formatDuration(seconds: number | null | undefined): string | null {
 export default function MyQueriesPage() {
   const { user } = useAuth();
   const [filter, setFilter] = useState("all");
+  const [searchValue, setSearchValue] = useState("");
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string; createdAt: string } | null>(null);
 
   const { data = [], isLoading } = useQuery({
