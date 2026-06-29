@@ -5,10 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  AlertTriangle, BadgeCheck, Brain, Clock, Download, HelpCircle,
-  Info, MessageCircle, Newspaper, Share2, TrendingUp, Video,
+  AlertTriangle, BadgeCheck, Brain, Clock, HelpCircle,
+  Info, MessageCircle, Newspaper, TrendingUp, Video,
 } from "lucide-react";
-import { AddToPortfolioButton } from "@/components/portfolio/AddToPortfolioButton";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { BookAnalystVideoButton } from "@/components/payment/BookAnalystVideoButton";
 import { useAuth } from "@/contexts/AuthContext";
