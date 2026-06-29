@@ -180,6 +180,14 @@ export default function MyQueriesPage() {
   );
 }
 
+function NoSearchResults({ value }: { value: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+      <p className="text-sm text-muted-foreground">No queries match &ldquo;{value}&rdquo;.</p>
+    </div>
+  );
+}
+
 function EmptyQueries() {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
