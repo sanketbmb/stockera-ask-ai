@@ -99,6 +99,21 @@ export const removeFromPortfolio = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getPortfolioEntryByQuery = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ queryId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }): Promise<{ id: string | null }> => {
+    const { supabase } = context;
+    const { data: row, error } = await supabase
+      .from("user_portfolio")
+      .select("id")
+      .eq("added_from_query_id", data.queryId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return { id: row?.id ?? null };
+  });
+
+
 export const getPortfolio = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ rows: PortfolioRow[] }> => {
