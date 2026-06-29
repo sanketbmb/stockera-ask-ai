@@ -36,6 +36,7 @@ import { DownloadPdfButton as SharedDownloadPdfButton } from "@/components/repor
 import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
+import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
@@ -245,6 +246,15 @@ function TierShapedReportContent({
         suppressFreshTab={isPhase2}
         defaultActionTab={defaultActionTab}
       />
+      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-2 pb-2">
+        <ReportCtaStrip
+          queryId={queryId}
+          stockName={data.stock.company_name}
+          stockSymbol={data.stock.symbol}
+          buyPrice={entryPrice}
+          currentPrice={data.price_context.current_price ?? null}
+        />
+      </div>
       <YouAlsoAskedSection
         answers={(data as unknown as { secondary_answers?: SecondaryAnswer[] }).secondary_answers ?? null}
       />
