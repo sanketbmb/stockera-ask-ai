@@ -139,12 +139,8 @@ export function AIReportCardV2({ report, meta }: { report: AIReportV2; meta: Rep
     needs_analyst_review: { text: "Confidence: Needs analyst review", color: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30" },
   }[confLabelKey];
 
-  const handleShare = async () => {
-    const url = window.location.href;
-    const txt = `${meta.stockName} — AI context report from Stockera`;
-    if (navigator.share) { try { await navigator.share({ title: txt, url }); return; } catch {} }
-    window.open(`https://wa.me/?text=${encodeURIComponent(txt + " " + url)}`, "_blank");
-  };
+
+
 
   return (
     <TooltipProvider>
