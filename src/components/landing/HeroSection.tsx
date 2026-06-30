@@ -14,6 +14,7 @@ import {
   Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TrendingQueriesStrip } from "./TrendingQueriesStrip";
 
 const DISCOVERY_TEMPLATE =
   "I have ₹_____ to invest in _____ sector. Which stock should I buy?";
@@ -338,6 +339,12 @@ export function HeroSection() {
         </motion.div>
       </div>
 
+      {/* Trending Queries strip integrated at hero bottom */}
+      <div className="relative z-10 border-t border-border/40 bg-background/60 backdrop-blur-sm">
+        <div className="mx-auto max-w-7xl px-2 sm:px-4">
+          <TrendingQueriesStrip />
+        </div>
+      </div>
     </section>
   );
 }
