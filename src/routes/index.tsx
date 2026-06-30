@@ -2,20 +2,15 @@ import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
-import { MarketTicker } from "@/components/common/MarketTicker";
 import { HeroSection } from "@/components/landing/HeroSection";
-import { LiveStatsBar } from "@/components/landing/LiveStatsBar";
-import { HowItWorks } from "@/components/landing/HowItWorks";
-import { PublicAnswersMarquee } from "@/components/landing/PublicAnswersMarquee";
-
+import { StepStory } from "@/components/landing/StepStory";
+import { RecentVideoAnalyses } from "@/components/landing/RecentVideoAnalyses";
 import { HomeAnalystCta } from "@/components/landing/HomeAnalystCta";
 import { ProblemsWeSolve } from "@/components/landing/ProblemsWeSolve";
 import { StockRecommenderTeaser } from "@/components/landing/StockRecommenderTeaser";
 import { QueryTypesOverview } from "@/components/landing/QueryTypesOverview";
 import { MasterSearchHero } from "@/components/library/MasterSearchHero";
 import { AnalystShowcase } from "@/components/landing/AnalystShowcase";
-
-
 import { FinalCtaStrip } from "@/components/landing/FinalCtaStrip";
 import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { MobileStickyCta } from "@/components/layout/MobileStickyCta";
@@ -94,19 +89,17 @@ function Index() {
           }),
         }}
       />
-      <MarketTicker />
       <Navbar />
       <main className="flex-1">
         <HeroSection />
-        <HowItWorks />
+        <StepStory />
+        <RecentVideoAnalyses />
         <ProblemsWeSolve />
-        <LiveStatsBar />
         <StockRecommenderTeaser />
         <MasterSearchHero />
         <QueryTypesOverview />
         <AnalystShowcase />
         <HomeAnalystCta />
-        <PublicAnswersMarquee />
         <ReferralBanner />
         <FinalCtaStrip />
       </main>
