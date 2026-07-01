@@ -665,7 +665,7 @@ function ReportContent() {
 
   if (authLoading) return <LoadingScreen />;
   if (!user && !isPublicLibraryRow) {
-    return <RequireAuth>{null}</RequireAuth>;
+    return <Navigate to="/login" search={{ redirect: `/report/${queryId}` } as never} />;
   }
 
   // SEO: set robots meta dynamically based on public-library status.
