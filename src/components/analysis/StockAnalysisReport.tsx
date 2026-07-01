@@ -952,7 +952,7 @@ export function StockAnalysisReport({
         </motion.header>
 
         {/* ═══ 2. VERDICT HERO ═══ */}
-        <motion.section variants={sectionFadeUp} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
+        <motion.section id="quick-verdict" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <div className="flex items-center gap-2">
@@ -1071,7 +1071,7 @@ export function StockAnalysisReport({
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
         {!isInsufficient && report_modules.show_score_ring && (
-          <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+          <motion.section id="risk-reward" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
             <div className="mb-4 flex items-start justify-between gap-3">
               <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
               <MethodologyChip tier={tier} weights={weights} />
@@ -1132,7 +1132,7 @@ export function StockAnalysisReport({
 
         {!isInsufficient && (<>
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="action-strategy" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <SectionTitle eyebrow="Action zone" title="What to do now" icon={Compass} />
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
             <TabsList className={`grid w-full ${suppressFreshTab ? "grid-cols-2" : "grid-cols-3"}`}>
@@ -1159,7 +1159,7 @@ export function StockAnalysisReport({
         </motion.section>
 
         {/* ═══ 8. TRADE LEVELS ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="trade-levels" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
             <div className="flex flex-wrap items-center gap-2">
@@ -1262,6 +1262,8 @@ export function StockAnalysisReport({
         {/* ═══ 15. BEHAVIORAL FINANCE ALERT ═══ */}
         {nudge && (
           <motion.section
+            id="what-can-go-wrong"
+            style={{ scrollMarginTop: 96 }}
             variants={nudgeReveal}
             initial="hidden"
             whileInView="visible"
@@ -1292,7 +1294,7 @@ export function StockAnalysisReport({
         )}
 
         {/* ═══ 17. SUMMARY RECOMMENDATION ═══ */}
-        <motion.section variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
+        <motion.section id="expert-insight" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">In summary</p>
           <h2 className="mt-1 font-display text-2xl">Analyst-style recap</h2>
           <ol className="mt-4 max-w-3xl space-y-2 text-[15px] leading-relaxed text-white/95">

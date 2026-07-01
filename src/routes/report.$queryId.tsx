@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
@@ -98,11 +98,67 @@ function LoadingScreen() {
   );
 }
 
-// ──────────────── Tier-shaped (v1) renderer ────────────────
+// ──────────────── View-mode top block (text | video) ────────────────
+// Renders a compact contextual block above the AI report when the URL has
+// ?view=text or ?view=video. Reuses existing AnalystCtaCard as the premium
+// human-analysis / paywall surface for video mode. Text mode shows a small
+// "human RA text answer being prepared" status card; the full existing
+// ExpertAnswerSection at the bottom of the report renders the real answer
+// (or the pending state) once it lands, so there is no duplicate rendering.
+function ViewModeTopBlock({
+  mode,
+  queryId,
+  ctaContext,
+}: {
+  mode: "text" | "video";
+  queryId: string;
+  ctaContext: "position" | "fresh" | "general";
+}) {
+  if (mode === "video") {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6 space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+            Premium Human Video Analysis
+          </span>
+          <div className="h-px flex-1 bg-primary/20" />
+        </div>
+        <AnalystCtaCard queryId={queryId} context={ctaContext} />
+        <p className="text-[11px] text-muted-foreground italic">
+          Full AI-grounded report below — the human analyst video builds on it.
+        </p>
+      </div>
+    );
+  }
+  // text mode
+  return (
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
+      <div className="rounded-2xl border border-accent/25 bg-accent/5 px-5 py-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            ✓ Free AI report ready
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+            Human RA text answer within 60 min
+          </span>
+        </div>
+        <p className="text-sm text-foreground font-medium mt-1">
+          Your SEBI-registered analyst text answer is lined up.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+          Read the full AI report below now — the human analyst text response will appear in the
+          Expert Analysis section at the bottom of this page as soon as it's published.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
-  queryType, entryPrice, qty, customQuestion,
+  queryType, entryPrice, qty, customQuestion, viewMode,
 }: {
   queryId: string;
   symbol: string;
@@ -112,6 +168,7 @@ function TierShapedReportContent({
   entryPrice: number | null;
   qty: number | null;
   customQuestion: string | null;
+  viewMode?: "text" | "video";
 }) {
   const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
@@ -229,6 +286,7 @@ function TierShapedReportContent({
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
       <Navbar />
+      {viewMode && <ViewModeTopBlock mode={viewMode} queryId={queryId} ctaContext={ctaContext} />}
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Tier-shaped report · {horizon.replace("-", " ")}
@@ -448,17 +506,42 @@ function AnonReportCta() {
 
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
+  const { view: viewMode } = useSearch({ from: "/report/$queryId" });
   const { user, isLoading: authLoading } = useAuth();
 
   // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
   const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
 
   // Bug 3 fix — reports were auto-scrolling to the bottom on first mount.
-  // Force scroll-to-top per queryId so every variant (tier-shaped, general,
-  // sector, educational, legacy) opens at the report header.
+  // Force scroll-to-top per queryId, unless a hash anchor is present (Step 3
+  // deep-links rely on it) — that case is handled by the hash-scroll effect.
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) return;
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [queryId]);
+
+  // Step 3 deep-link — smooth-scroll to hash anchor once the report renders.
+  // Section IDs live on real motion.section blocks inside StockAnalysisReport
+  // (quick-verdict, risk-reward, action-strategy, trade-levels,
+  // what-can-go-wrong, expert-insight) plus ExpertAnswerSection (#expert-analysis).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash?.slice(1);
+    if (!hash) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.getElementById(hash);
+      if (el) {
+        el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+        return;
+      }
+      if (attempts++ < 30) setTimeout(tryScroll, 200);
+    };
+    const t = setTimeout(tryScroll, 300);
+    return () => clearTimeout(t);
+  }, [queryId, viewMode]);
+
 
   // K-POLISH-1 — deep-link from My Queries empty follow-up state.
   // When URL has ?focus=followup, scroll the Ask-about-this-report section
@@ -616,6 +699,7 @@ function ReportContent() {
           entryPrice={(data.entry_price as number | null) ?? null}
           qty={(data.qty as number | null) ?? null}
           customQuestion={(data.custom_question as string | null) ?? null}
+          viewMode={viewMode}
         />
         {isAnon && <AnonReportCta />}
       </>
@@ -656,8 +740,17 @@ function RobotsMeta({ isPublic }: { isPublic: boolean }) {
 }
 
 export const Route = createFileRoute("/report/$queryId")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const v = search.view;
+    const f = search.focus;
+    return {
+      view: v === "text" || v === "video" ? (v as "text" | "video") : undefined,
+      focus: f === "followup" ? ("followup" as const) : undefined,
+    };
+  },
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
 });
+
 
