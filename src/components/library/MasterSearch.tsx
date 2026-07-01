@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MasterSearchRecentTab } from "./MasterSearchRecentTab";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import type {
   LibraryItem,
@@ -52,6 +53,7 @@ export function MasterSearch({
   initialQuery = "",
 }: Props) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [q, setQ] = useState(initialQuery);
   const debouncedQ = useDebounced(q.trim(), 200);
   const [data, setData] = useState<SearchResponse | null>(null);
@@ -138,6 +140,13 @@ export function MasterSearch({
     // fire-and-forget view log
     supabase.functions.invoke("library-views", { body: { item_id: it.id } }).catch(() => {});
     onClose?.();
+    if (!user) {
+      navigate({
+        to: "/login",
+        search: { redirect: `/report/${it.related_query_id}` } as never,
+      });
+      return;
+    }
     navigate({ to: "/report/$queryId", params: { queryId: it.related_query_id } });
   };
 

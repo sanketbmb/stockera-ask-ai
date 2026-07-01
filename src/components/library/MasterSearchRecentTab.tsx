@@ -3,8 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
+
 
 type RecentRow = {
   id: string;
@@ -78,6 +80,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const reduced = useReducedMotion();
+  const { user } = useAuth();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
@@ -155,6 +158,13 @@ export function MasterSearchRecentTab({ onClose }: Props) {
               type="button"
               onClick={() => {
                 onClose?.();
+                if (!user) {
+                  navigate({
+                    to: "/login",
+                    search: { redirect: `/report/${r.id}` } as never,
+                  });
+                  return;
+                }
                 navigate({
                   to: "/report/$queryId",
                   params: { queryId: r.id },

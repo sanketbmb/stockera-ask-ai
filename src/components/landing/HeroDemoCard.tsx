@@ -82,7 +82,7 @@ export function HeroDemoCard() {
 
   return (
     <motion.div
-      className="hidden md:block relative"
+      className="relative w-full max-w-[calc(100vw-2rem)] mx-auto md:max-w-none md:mx-0"
       initial={{ opacity: 0, x: 30, scale: 0.97 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       transition={{ delay: 0.4, duration: 0.7, type: "spring", stiffness: 80 }}
