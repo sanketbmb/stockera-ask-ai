@@ -16,6 +16,7 @@ import {
   type SortKey,
   type VerdictFilter,
 } from "@/components/library/MasterLibraryToolbar";
+import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
 const TITLE =
@@ -253,17 +254,25 @@ function LibraryIndexPage() {
           ) : (
             <>
               <div id="library-grid-top" />
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              <Stagger
+                key={`page-${safePage}-${search}-${verdict ?? ""}-${sector}-${sort}`}
+                staggerChildren={0.04}
+                className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+              >
                 {pagedRows.map((row) => (
-                  <MasterLibraryCard key={row.id} item={row} />
+                  <StaggerItem key={row.id} y={10}>
+                    <MasterLibraryCard item={row} />
+                  </StaggerItem>
                 ))}
-              </div>
+              </Stagger>
               {filteredRows.length > PAGE_SIZE && (
-                <MasterLibraryPagination
-                  currentPage={safePage}
-                  totalPages={totalPages}
-                  onPageChange={handlePageChange}
-                />
+                <Reveal className="mt-6">
+                  <MasterLibraryPagination
+                    currentPage={safePage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                  />
+                </Reveal>
               )}
             </>
           )}
