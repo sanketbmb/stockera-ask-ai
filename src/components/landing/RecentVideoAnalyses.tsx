@@ -104,17 +104,19 @@ export function RecentVideoAnalyses() {
                   </div>
                 </div>
                 <div className="p-4 flex flex-col gap-2 flex-1">
-                  <p className="text-[11px] text-muted-foreground">
-                    Asked by <span className="font-medium text-foreground">{investor}</span>
-                  </p>
+                  {relDate && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Answered <span className="font-medium text-foreground">{relDate}</span>
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{v.title}</p>
                   <p className="font-display font-semibold text-foreground text-sm">{v.symbol}</p>
                   <div className="flex items-center gap-2">
                     <span className={cn("text-xs font-bold px-2.5 py-1 rounded-full uppercase", verdictClass)}>
                       {verdict}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">by {expert}</span>
                   </div>
+
                   <Button variant="outline" size="sm" className="mt-auto gap-1.5">
                     <Lock className="w-3 h-3" />
                     <span>Unlock Answer</span>
