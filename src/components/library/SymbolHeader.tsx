@@ -12,15 +12,15 @@ interface Props {
 export function SymbolHeader({ symbol }: Props) {
   const sym = symbol.toUpperCase();
   return (
-    <header className="mx-auto w-full max-w-5xl px-4 pt-8 pb-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500">
-      <h1 className="font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+    <header className="mx-auto w-full max-w-5xl px-4 pt-8 pb-6">
+      <h1 className="sym-fade-1 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
         {sym}
       </h1>
-      <p className="mt-2 text-sm text-muted-foreground sm:text-base">
+      <p className="sym-fade-2 mt-2 text-sm text-muted-foreground sm:text-base">
         Analyst research library for {sym}
       </p>
-      <div className="mt-6">
-        <Button asChild size="lg">
+      <div className="sym-fade-3 mt-6">
+        <Button asChild size="lg" className="sym-cta-pulse">
           <Link to="/post-query" search={{ prefill_symbol: sym } as never}>
             Ask your own question about {sym} →
           </Link>
