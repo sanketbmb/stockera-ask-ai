@@ -829,6 +829,7 @@ export function StockAnalysisReport({
   addendum,
   suppressFreshTab = false,
   defaultActionTab,
+  skipRevealId,
 }: {
   data: StockAnalysisPayload;
   printMode?: boolean;
@@ -842,7 +843,12 @@ export function StockAnalysisReport({
   // and force the holding default. PDF-safe; nothing else changes.
   suppressFreshTab?: boolean;
   defaultActionTab?: "holding" | "fresh" | "exploring";
+  // Delta motion pass (M3/M5 + HASH-SCROLL EXCEPTION): the section id whose
+  // scroll-reveal should be skipped so a deep-linked #hash lands without
+  // flicker. Other sections keep their scroll reveal (once:false).
+  skipRevealId?: string;
 }) {
+
   const {
     stock, query_context, final_verdict, score_breakdown, price_context,
     levels, returns_snapshot, technical_snapshot, fundamental_snapshot,
@@ -889,6 +895,34 @@ export function StockAnalysisReport({
   const displayVerdict = isInsufficient
     ? "Insufficient Data"
     : (printMode ? verdictRawLabel(final_verdict.action) : verdictUILabel(final_verdict.action));
+
+  // ── Delta motion pass (M3/M5) ──
+  // Per-section scroll reveal. `once:false` so sections re-animate when
+  // scrolled back up. Mobile ≤375px raises the threshold to 0.2 so cards
+  // reveal earlier and the page never feels stuck. Reduced-motion + print
+  // + the hash-scroll target section snap to visible with no animation.
+  const reduceMotion = useReducedMotion();
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 375px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const revealAmount = isNarrow ? 0.2 : 0.12;
+  const sectionReveal = (id: string) => {
+    if (reduceMotion || printMode || (skipRevealId && id === skipRevealId)) {
+      return { initial: "visible" as const, animate: "visible" as const };
+    }
+    return {
+      initial: "hidden" as const,
+      whileInView: "visible" as const,
+      viewport: { once: false, amount: revealAmount },
+    };
+  };
+
 
 
   // Print mode: disable all motion deterministically. MotionConfig forces
@@ -952,7 +986,7 @@ export function StockAnalysisReport({
         </motion.header>
 
         {/* ═══ 2. VERDICT HERO ═══ */}
-        <motion.section id="quick-verdict" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
+        <motion.section id="quick-verdict" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("quick-verdict")} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <div className="flex items-center gap-2">
@@ -1071,7 +1105,7 @@ export function StockAnalysisReport({
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
         {!isInsufficient && report_modules.show_score_ring && (
-          <motion.section id="risk-reward" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+          <motion.section id="risk-reward" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("risk-reward")} className="rounded-2xl border border-border bg-card px-6 py-7">
             <div className="mb-4 flex items-start justify-between gap-3">
               <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
               <MethodologyChip tier={tier} weights={weights} />
@@ -1132,7 +1166,7 @@ export function StockAnalysisReport({
 
         {!isInsufficient && (<>
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
-        <motion.section id="action-strategy" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="action-strategy" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("action-strategy")} className="rounded-2xl border border-border bg-card px-6 py-7">
           <SectionTitle eyebrow="Action zone" title="What to do now" icon={Compass} />
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
             <TabsList className={`grid w-full ${suppressFreshTab ? "grid-cols-2" : "grid-cols-3"}`}>
@@ -1159,7 +1193,7 @@ export function StockAnalysisReport({
         </motion.section>
 
         {/* ═══ 8. TRADE LEVELS ═══ */}
-        <motion.section id="trade-levels" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="trade-levels" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("trade-levels")} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
             <div className="flex flex-wrap items-center gap-2">
@@ -1265,11 +1299,10 @@ export function StockAnalysisReport({
             id="what-can-go-wrong"
             style={{ scrollMarginTop: 96 }}
             variants={nudgeReveal}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
+            {...sectionReveal("what-can-go-wrong")}
             className="rounded-2xl border border-gold/40 bg-gradient-to-br from-gold/10 to-gold/5 px-6 py-5"
           >
+
             <div className="flex items-start gap-3">
               <Brain className="mt-0.5 h-5 w-5 text-[hsl(var(--gold-foreground))]" />
               <div>
@@ -1294,7 +1327,7 @@ export function StockAnalysisReport({
         )}
 
         {/* ═══ 17. SUMMARY RECOMMENDATION ═══ */}
-        <motion.section id="expert-insight" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
+        <motion.section id="expert-insight" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("expert-insight")} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">In summary</p>
           <h2 className="mt-1 font-display text-2xl">Analyst-style recap</h2>
           <ol className="mt-4 max-w-3xl space-y-2 text-[15px] leading-relaxed text-white/95">
