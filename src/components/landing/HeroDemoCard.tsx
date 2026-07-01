@@ -129,32 +129,38 @@ export function HeroDemoCard() {
           <span className="font-mono text-[13px] leading-relaxed">{displayInput}</span>
         </button>
 
-        {/* Analyzing / Report zone (fixed min-height to prevent jump) */}
-        <div className="relative min-h-[228px] mb-4">
-          <AnimatePresence mode="wait">
+        {/* Analyzing / Report zone — animated height, no reserved blank space during typing */}
+        <motion.div
+          layout
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="relative overflow-hidden"
+        >
+          <AnimatePresence initial={false} mode="wait">
             {phase === "analyzing" && (
               <motion.div
                 key="analyzing"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.25 }}
-                className="absolute inset-0 flex items-center justify-center rounded-xl border border-accent/20 bg-gradient-to-br from-accent/5 to-transparent"
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                className="mb-4"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2].map((i) => (
-                      <motion.span
-                        key={i}
-                        className="h-2 w-2 rounded-full bg-accent shadow-glow-teal"
-                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.15, 0.8] }}
-                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
-                      />
-                    ))}
+                <div className="flex items-center justify-center rounded-xl border border-accent/20 bg-gradient-to-br from-accent/5 to-transparent py-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1.5">
+                      {[0, 1, 2].map((i) => (
+                        <motion.span
+                          key={i}
+                          className="h-2 w-2 rounded-full bg-accent shadow-glow-teal"
+                          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.15, 0.8] }}
+                          transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs font-medium text-accent tracking-wide">
+                      Analyzing<span className="text-accent/60">...</span>
+                    </span>
                   </div>
-                  <span className="text-xs font-medium text-accent tracking-wide">
-                    Analyzing<span className="text-accent/60">...</span>
-                  </span>
                 </div>
               </motion.div>
             )}
@@ -162,79 +168,58 @@ export function HeroDemoCard() {
             {phase === "report" && (
               <motion.div
                 key="report"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 rounded-xl border border-border bg-card/90 p-3.5"
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                className="mb-4"
               >
-                {/* Snapshot header */}
-                <div className="flex items-center justify-between mb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-md bg-gradient-brand px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                      <Sparkles className="h-2.5 w-2.5" /> AI Helix Snapshot
+                <div className="rounded-xl border border-border bg-card/90 p-3.5">
+                  {/* Snapshot header — normalized baselines + balanced padding */}
+                  <div className="mb-2.5 flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-gradient-brand px-2 py-1 text-[9px] font-bold uppercase tracking-wider leading-none text-white">
+                        <Sparkles className="h-2.5 w-2.5 shrink-0" />
+                        <span>AI Helix Snapshot</span>
+                      </span>
+                      <span className="font-mono text-[11px] font-bold leading-none text-primary">
+                        SBIN
+                      </span>
+                    </div>
+                    <span className="inline-flex items-center whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-semibold uppercase leading-none tracking-wider text-amber-700 dark:text-amber-400">
+                      Hold · Averaging Risky
                     </span>
-                    <span className="font-mono text-[11px] font-bold text-primary">SBIN</span>
                   </div>
-                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                    Hold · Averaging Risky
-                  </span>
-                </div>
 
-                {/* Levels grid */}
-                <div className="grid grid-cols-3 gap-2 mb-2.5">
-                  <LevelChip
-                    tone="info"
-                    icon={<MapPin className="h-3 w-3" />}
-                    label="Entry"
-                    value="₹1,020–1,045"
-                  />
-                  <LevelChip
-                    tone="success"
-                    icon={<Target className="h-3 w-3" />}
-                    label="Target"
-                    value="₹1,180"
-                  />
-                  <LevelChip
-                    tone="danger"
-                    icon={<ShieldAlert className="h-3 w-3" />}
-                    label="Stop Loss"
-                    value="₹985"
-                  />
-                </div>
+                  {/* Levels grid */}
+                  <div className="grid grid-cols-3 gap-2 mb-2.5">
+                    <LevelChip tone="info" icon={<MapPin className="h-3 w-3" />} label="Entry" value="₹1,020–1,045" />
+                    <LevelChip tone="success" icon={<Target className="h-3 w-3" />} label="Target" value="₹1,180" />
+                    <LevelChip tone="danger" icon={<ShieldAlert className="h-3 w-3" />} label="Stop Loss" value="₹985" />
+                  </div>
 
-                {/* Context row */}
-                <div className="grid grid-cols-3 gap-2 mb-2.5">
-                  <ContextChip
-                    icon={<AlertTriangle className="h-3 w-3 text-amber-600" />}
-                    label="Risk"
-                    value="Moderate"
-                  />
-                  <ContextChip
-                    icon={<TrendingUp className="h-3 w-3 text-emerald-600" />}
-                    label="Trend"
-                    value="Base building"
-                  />
-                  <ContextChip
-                    icon={<Landmark className="h-3 w-3 text-primary" />}
-                    label="Fundamentals"
-                    value="Stable"
-                  />
-                </div>
+                  {/* Context row */}
+                  <div className="grid grid-cols-3 gap-2 mb-2.5">
+                    <ContextChip icon={<AlertTriangle className="h-3 w-3 text-amber-600" />} label="Risk" value="Moderate" />
+                    <ContextChip icon={<TrendingUp className="h-3 w-3 text-emerald-600" />} label="Trend" value="Base building" />
+                    <ContextChip icon={<Landmark className="h-3 w-3 text-primary" />} label="Fundamentals" value="Stable" />
+                  </div>
 
-                {/* CTA */}
-                <button
-                  type="button"
-                  onClick={() => openQuery(SBI_QUESTION)}
-                  className="group inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-brand px-3 py-2 text-[11px] font-semibold text-white shadow-glow-teal transition hover:shadow-card-lg"
-                >
-                  View full AI report
-                  <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openQuery(SBI_QUESTION)}
+                    className="group inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-brand px-3 py-2 text-[11px] font-semibold text-white shadow-glow-teal transition hover:shadow-card-lg"
+                  >
+                    View full AI report
+                    <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
+
+
 
         {/* Sample queries */}
         <div className="relative space-y-1.5 mb-4">

@@ -16,18 +16,25 @@ type Row = {
   published_at: string | null;
 };
 
-const FALLBACK: Row[] = [
-  { id: "f1", symbol: "ZOMATO", verdict: "AVERAGE", title: "Already holding from ₹200. Can I average at ₹142?", source_id: null, published_at: null },
-  { id: "f2", symbol: "IRFC", verdict: "HOLD", title: "Stock stuck for months. Should I exit?", source_id: null, published_at: null },
-  { id: "f3", symbol: "SUZLON", verdict: "EXIT", title: "Multibagger or trap at current levels?", source_id: null, published_at: null },
-  { id: "f4", symbol: "RELIANCE", verdict: "BUY", title: "Good entry for long term at current dip?", source_id: null, published_at: null },
-  { id: "f5", symbol: "DIXON", verdict: "EXIT", title: "Bought at ATH, down 12%. Hold or exit?", source_id: null, published_at: null },
-  { id: "f6", symbol: "TATAELXSI", verdict: "HOLD", title: "Sector dip – should I average down?", source_id: null, published_at: null },
-];
-
-const INVESTORS = ["Amit Patel", "Kavita Sharma", "Deepak Verma", "Sunita Reddy", "Rohit Gupta", "Neha Agarwal"];
-const EXPERTS = ["RA Arjun", "RA Sneha", "RA Karan", "RA Mayank", "RA Priya", "RA Vivek"];
 const DURATIONS = ["5:48", "3:20", "7:10", "5:05", "4:32", "6:15"];
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const diff = Date.now() - then;
+  const min = Math.round(diff / 60000);
+  if (min < 60) return `${Math.max(1, min)}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.round(mo / 12)}y ago`;
+}
+
+
 
 async function fetchVideos(): Promise<Row[]> {
   const { data, error } = await supabase
@@ -52,7 +59,10 @@ export function RecentVideoAnalyses() {
   });
 
   const live = (data ?? []).filter((r) => r.source_id && r.symbol && r.verdict);
-  const rows: Row[] = isError || live.length < 4 ? FALLBACK : live;
+  const rows: Row[] = live;
+
+  if (isError || rows.length === 0) return null;
+
 
   return (
     <section className="py-14 bg-secondary/40">
@@ -78,9 +88,9 @@ export function RecentVideoAnalyses() {
           {rows.map((v, i) => {
             const verdict = (v.verdict ?? "HOLD").toUpperCase();
             const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
-            const investor = INVESTORS[i % INVESTORS.length];
-            const expert = EXPERTS[i % EXPERTS.length];
             const duration = DURATIONS[i % DURATIONS.length];
+            const relDate = relativeDate(v.published_at);
+
 
             const Card = (
               <motion.div
@@ -111,17 +121,19 @@ export function RecentVideoAnalyses() {
                   </div>
                 </div>
                 <div className="p-4 flex flex-col gap-2 flex-1">
-                  <p className="text-[11px] text-muted-foreground">
-                    Asked by <span className="font-medium text-foreground">{investor}</span>
-                  </p>
+                  {relDate && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Answered <span className="font-medium text-foreground">{relDate}</span>
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{v.title}</p>
                   <p className="font-display font-semibold text-foreground text-sm">{v.symbol}</p>
                   <div className="flex items-center gap-2">
                     <span className={cn("text-xs font-bold px-2.5 py-1 rounded-full uppercase", verdictClass)}>
                       {verdict}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">by {expert}</span>
                   </div>
+
                   <Button variant="outline" size="sm" className="mt-auto gap-1.5">
                     <Lock className="w-3 h-3" />
                     <span>Unlock Answer</span>
