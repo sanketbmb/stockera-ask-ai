@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
 import { motion } from "framer-motion";
 import { Play, Lock, Sparkles, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
