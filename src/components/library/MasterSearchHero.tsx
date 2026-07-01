@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { MasterSearch } from "./MasterSearch";
+import { Reveal } from "@/lib/motion";
+
 
 const PLACEHOLDERS = [
   "Search Suzlon Energy…",
