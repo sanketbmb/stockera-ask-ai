@@ -16,18 +16,8 @@ type Row = {
   published_at: string | null;
 };
 
-const FALLBACK: Row[] = [
-  { id: "f1", symbol: "ZOMATO", verdict: "AVERAGE", title: "Already holding from ₹200. Can I average at ₹142?", source_id: null, published_at: null },
-  { id: "f2", symbol: "IRFC", verdict: "HOLD", title: "Stock stuck for months. Should I exit?", source_id: null, published_at: null },
-  { id: "f3", symbol: "SUZLON", verdict: "EXIT", title: "Multibagger or trap at current levels?", source_id: null, published_at: null },
-  { id: "f4", symbol: "RELIANCE", verdict: "BUY", title: "Good entry for long term at current dip?", source_id: null, published_at: null },
-  { id: "f5", symbol: "DIXON", verdict: "EXIT", title: "Bought at ATH, down 12%. Hold or exit?", source_id: null, published_at: null },
-  { id: "f6", symbol: "TATAELXSI", verdict: "HOLD", title: "Sector dip – should I average down?", source_id: null, published_at: null },
-];
-
-const INVESTORS = ["Amit Patel", "Kavita Sharma", "Deepak Verma", "Sunita Reddy", "Rohit Gupta", "Neha Agarwal"];
-const EXPERTS = ["RA Arjun", "RA Sneha", "RA Karan", "RA Mayank", "RA Priya", "RA Vivek"];
 const DURATIONS = ["5:48", "3:20", "7:10", "5:05", "4:32", "6:15"];
+
 
 async function fetchVideos(): Promise<Row[]> {
   const { data, error } = await supabase
