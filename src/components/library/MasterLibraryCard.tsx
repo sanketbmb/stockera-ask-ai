@@ -86,7 +86,10 @@ export function MasterLibraryCard({ item }: Props) {
       <div className="mt-auto flex items-center justify-between pt-2 text-[11px]">
         <span className="text-muted-foreground">{relativeDate(item.published_at)}</span>
         {isQueryReport ? (
-          <span className="font-medium text-primary">View full answer →</span>
+          <span className="inline-flex items-center gap-1 font-medium text-primary">
+            View full answer
+            <span aria-hidden className="nudge-right">→</span>
+          </span>
         ) : (
           <span
             className="text-muted-foreground/70"
@@ -100,7 +103,7 @@ export function MasterLibraryCard({ item }: Props) {
   );
 
   const baseClasses =
-    "group block h-full rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
+    "card-lift group block h-full rounded-xl border border-border bg-card p-4 hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
 
   if (isQueryReport) {
     return (
