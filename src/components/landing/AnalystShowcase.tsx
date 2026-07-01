@@ -31,6 +31,23 @@ const STOCKERA_ANALYST: AnalystShowcaseEntry = {
 
 const ANALYSTS: AnalystShowcaseEntry[] = [STOCKERA_ANALYST];
 
+function BlurSharpen({ index, children }: { index: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, { once: false, amount: 0.3 });
+  const reduced = useReducedMotion();
+  if (reduced) return <div ref={ref}>{children}</div>;
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, filter: "blur(1px)" }}
+      animate={inView ? { opacity: 1, filter: "blur(0px)" } : { opacity: 0, filter: "blur(1px)" }}
+      transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1], delay: index * 0.08 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 export function AnalystShowcase() {
   return (
     <section id="experts" aria-labelledby="experts-heading" className="py-16 sm:py-24">
