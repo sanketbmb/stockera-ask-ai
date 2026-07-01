@@ -189,10 +189,11 @@ export function MasterSearch({
           </TabsList>
 
           <TabsContent value="recent" className="mt-0">
-            <div className="max-h-[60vh] overflow-y-auto">
+            <div className="max-h-[19rem] overflow-y-auto overscroll-contain pr-1 scroll-smooth [scrollbar-width:thin] [scrollbar-color:hsl(var(--border))_transparent]">
               <MasterSearchRecentTab onClose={onClose} />
             </div>
           </TabsContent>
+
 
           <TabsContent value="search" className="mt-0">
             <div
