@@ -60,11 +60,46 @@ async function fetchRecent(): Promise<RecentRow[]> {
 
 export function MasterSearchRecentTab({ onClose }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Realtime: mirror the ai_followups postgres_changes pattern.
+  // A new library_items row (or verdict/title update) invalidates the cached
+  // list so useQuery re-fetches; dedup + ordering stay in fetchRecent.
+  useEffect(() => {
+    const channel = supabase
+      .channel("library_items:recent_feed")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "library_items",
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["master-search-recent"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "library_items",
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["master-search-recent"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   if (isLoading) {
     return (
