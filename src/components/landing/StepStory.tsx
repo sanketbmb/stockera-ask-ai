@@ -10,6 +10,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useTypewriter } from "@/lib/motion/useTypewriter";
+import { GradientText } from "@/lib/motion";
+
 
 // Canonical demo report — real SBI averaging report used across the site.
 const DEMO_REPORT_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
