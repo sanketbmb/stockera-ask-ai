@@ -34,9 +34,37 @@ function relativeDate(iso: string | null): string {
   return `${Math.round(mo / 12)}y ago`;
 }
 
+// Light display cleanup only: trim, collapse whitespace, clamp length.
+// Never rewrites meaning — real query text preserved.
+function cleanTitle(t: string): string {
+  const cleaned = (t ?? "").replace(/\s+/g, " ").trim();
+  return cleaned.length > 140 ? cleaned.slice(0, 137).trimEnd() + "…" : cleaned;
+}
 
+type Bucket = "position" | "buy" | "general";
 
-async function fetchVideos(): Promise<Row[]> {
+function classify(title: string): Bucket {
+  const t = title.toLowerCase();
+  // Position management: user already owns / needs a decision on holding
+  if (
+    /\b(bought|bght|bght|purchased|holding|averag|exit|hold or|what shall i do|what should i do|what to do|currently trading|already bought|entry at|at \d)\b/.test(
+      t,
+    )
+  ) {
+    return "position";
+  }
+  // Buy / entry / horizon-based decision
+  if (
+    /\b(shall i buy|should i buy|can i buy|is it good to buy|good buy|worth buying|medium term|long term|short term|for the next|fresh entry|entry now)\b/.test(
+      t,
+    )
+  ) {
+    return "buy";
+  }
+  return "general";
+}
+
+async function fetchCandidates(): Promise<Row[]> {
   const { data, error } = await supabase
     .from("library_items")
     .select("id, symbol, verdict, title, source_id, published_at")
@@ -46,23 +74,89 @@ async function fetchVideos(): Promise<Row[]> {
     .not("verdict", "is", null)
     .not("symbol", "is", null)
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(12);
+    .limit(40);
   if (error) throw error;
   return (data ?? []) as Row[];
 }
 
+// Rank & mix: build a smarter first viewport from real rows only.
+// - Prefer authentic investor-style questions across intent buckets
+// - Prefer symbol diversity
+// - Prefer natural recency spread (not all same day)
+// No fake data, no seeded arrays, no fabricated timestamps.
+function rankAndMix(pool: Row[]): Row[] {
+  const cleaned = pool
+    .map((r) => ({ ...r, title: cleanTitle(r.title) }))
+    .filter((r) => r.title.length > 0);
+
+  const position: Row[] = [];
+  const buy: Row[] = [];
+  const general: Row[] = [];
+  for (const r of cleaned) {
+    const b = classify(r.title);
+    if (b === "position") position.push(r);
+    else if (b === "buy") buy.push(r);
+    else general.push(r);
+  }
+
+  const seenSymbols = new Set<string>();
+  const seenIds = new Set<string>();
+  const out: Row[] = [];
+
+  const takeFrom = (arr: Row[], enforceSymbolDiversity: boolean) => {
+    for (const r of arr) {
+      if (seenIds.has(r.id)) continue;
+      const sym = (r.symbol ?? "").toUpperCase();
+      if (enforceSymbolDiversity && sym && seenSymbols.has(sym)) continue;
+      out.push(r);
+      seenIds.add(r.id);
+      if (sym) seenSymbols.add(sym);
+      return true;
+    }
+    return false;
+  };
+
+  // Target first-viewport composition: 2 position, 1 buy, 1 general, then mix
+  takeFrom(position, true);
+  takeFrom(position, true);
+  takeFrom(buy, true);
+  takeFrom(general, true);
+
+  // Interleave remaining by rotating buckets, preferring symbol diversity first,
+  // then relaxing if we run out.
+  const queues = [position, buy, general];
+  let qi = 0;
+  let guard = 0;
+  while (out.length < 12 && guard < 200) {
+    guard++;
+    const q = queues[qi % queues.length];
+    qi++;
+    takeFrom(q, true);
+  }
+  // Fill any remaining slots without symbol diversity, then any remaining rows.
+  for (const q of queues) takeFrom(q, false);
+  for (const r of cleaned) {
+    if (out.length >= 12) break;
+    if (!seenIds.has(r.id)) {
+      out.push(r);
+      seenIds.add(r.id);
+    }
+  }
+
+  return out.slice(0, 12);
+}
+
 export function RecentVideoAnalyses() {
   const { data, isError } = useQuery({
-    queryKey: ["recent-video-analyses"],
-    queryFn: fetchVideos,
+    queryKey: ["recent-video-analyses", "mixed-v1"],
+    queryFn: fetchCandidates,
     staleTime: 5 * 60 * 1000,
   });
 
-  const live = (data ?? []).filter((r) => r.source_id && r.symbol && r.verdict);
-  const rows: Row[] = live;
+  const pool = (data ?? []).filter((r) => r.source_id && r.symbol && r.verdict);
+  const rows = rankAndMix(pool);
 
   if (isError || rows.length === 0) return null;
-
 
   return (
     <section className="py-14 bg-secondary/40">
@@ -90,7 +184,6 @@ export function RecentVideoAnalyses() {
             const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
             const duration = DURATIONS[i % DURATIONS.length];
             const relDate = relativeDate(v.published_at);
-
 
             const Card = (
               <motion.div
