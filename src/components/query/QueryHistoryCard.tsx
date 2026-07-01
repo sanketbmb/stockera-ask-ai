@@ -153,7 +153,9 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
         ) : null}
         {textAnswer && (
           <Button asChild size="sm" variant="outline">
-            <a href={`/report/${item.id}#expert-analysis`}>Read Answer <ChevronRight className="h-3.5 w-3.5 ml-1" /></a>
+            <Link to="/report/$queryId" params={{ queryId: item.id }} hash="expert-analysis">
+              Read Answer <ChevronRight className="h-3.5 w-3.5 ml-1" />
+            </Link>
           </Button>
         )}
         {videoAnswer && (
