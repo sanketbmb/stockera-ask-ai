@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { useInView, useReducedMotion } from "framer-motion";
 import { Mail, MessageCircle, Twitter, Instagram, Linkedin } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 import { FIRM } from "@/lib/firm-details";
@@ -33,6 +35,9 @@ const cols = [
 ];
 
 export function SiteFooter() {
+  const brandRef = useRef<HTMLSpanElement | null>(null);
+  const brandInView = useInView(brandRef, { once: true, amount: 0.6 });
+  const reduced = useReducedMotion();
   return (
     <footer className="bg-primary text-primary-foreground">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
@@ -97,12 +102,38 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 border-t border-white/10 pt-6 text-center text-xs text-white/50">
-          © {new Date().getFullYear()} {FIRM.legalName}. All rights reserved. • Ask The Expert is a product of Stockera.
+          © {new Date().getFullYear()} {FIRM.legalName}. All rights reserved. • Ask The Expert is a product of{" "}
+          <span
+            ref={brandRef}
+            data-inview={brandInView || reduced ? "true" : "false"}
+            className="stockera-underline relative inline-block"
+          >
+            Stockera
+          </span>
+          .
         </div>
         <p className="text-xs text-muted-foreground/70 mt-2 text-center">
           Made for India <span aria-label="Indian flag">🇮🇳</span>
         </p>
       </div>
+      <style>{`
+        .stockera-underline::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: -2px;
+          height: 1px;
+          background: currentColor;
+          transform: scaleX(0);
+          transform-origin: left center;
+          transition: transform 380ms ease-out;
+        }
+        .stockera-underline[data-inview="true"]::after { transform: scaleX(1); }
+        @media (prefers-reduced-motion: reduce) {
+          .stockera-underline::after { transition: none !important; transform: scaleX(1) !important; }
+        }
+      `}</style>
     </footer>
   );
 }

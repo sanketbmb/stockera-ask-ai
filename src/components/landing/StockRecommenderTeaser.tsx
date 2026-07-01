@@ -8,7 +8,7 @@ import {
   Gauge,
   BarChart3,
 } from "lucide-react";
-import { motion, useInView, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/landing/motion-helpers";
 
@@ -103,6 +103,37 @@ function PointerList() {
   );
 }
 
+function SampleReportKenBurns() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const reduced = useReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start end", "end start"],
+  });
+  // Peak scale 1.03 at viewport center (progress 0.5); flat on outer 25%.
+  const scale = useTransform(scrollYProgress, [0, 0.25, 0.5, 0.75, 1], [1, 1, 1.03, 1, 1]);
+  return (
+    <div ref={ref} className="relative rounded-xl border border-border/60 overflow-hidden bg-card shadow-md transition-shadow duration-200 hover:shadow-card-hover">
+      <span
+        className="absolute top-2 right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
+        style={{ background: "var(--gradient-brand)" }}
+      >
+        LIVE
+      </span>
+      <motion.img
+        src="/images/hero-report-preview.webp"
+        width={1262}
+        height={832}
+        alt="Sample stock report showing our structured analysis layout — company name, composite score, fundamentals, and data freshness checks."
+        loading="lazy"
+        decoding="async"
+        className="block w-full h-auto will-change-transform motion-reduce:!scale-100 max-[375px]:!scale-100"
+        style={reduced ? undefined : { scale }}
+      />
+    </div>
+  );
+}
+
 export function StockRecommenderTeaser() {
   return (
     <section
@@ -156,24 +187,7 @@ export function StockRecommenderTeaser() {
 
         <Reveal delay={0.08}>
           <div>
-            <div className="relative rounded-xl border border-border/60 overflow-hidden bg-card shadow-md transition-shadow duration-200 hover:shadow-card-hover">
-              <span
-                className="absolute top-2 right-2 z-10 px-2 py-1 rounded-full text-[10px] font-bold text-white animate-pulse"
-                style={{ background: "var(--gradient-brand)" }}
-              >
-                LIVE
-              </span>
-
-              <img
-                src="/images/hero-report-preview.webp"
-                width={1262}
-                height={832}
-                alt="Sample stock report showing our structured analysis layout — company name, composite score, fundamentals, and data freshness checks."
-                loading="lazy"
-                decoding="async"
-                className="block w-full h-auto"
-              />
-            </div>
+            <SampleReportKenBurns />
             <p className="mt-2 text-xs text-muted-foreground">
               Sample report — your personalized report shows your stock, your buy price, your question.
             </p>

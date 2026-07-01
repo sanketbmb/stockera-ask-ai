@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { Link } from "@tanstack/react-router";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
 import { AnalystShowcaseRow, type AnalystShowcaseEntry } from "./AnalystShowcaseRow";
 import { ShieldCheck } from "lucide-react";
@@ -28,6 +30,23 @@ const STOCKERA_ANALYST: AnalystShowcaseEntry = {
 };
 
 const ANALYSTS: AnalystShowcaseEntry[] = [STOCKERA_ANALYST];
+
+function BlurSharpen({ index, children }: { index: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, { once: false, amount: 0.3 });
+  const reduced = useReducedMotion();
+  if (reduced) return <div ref={ref}>{children}</div>;
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, filter: "blur(1px)" }}
+      animate={inView ? { opacity: 1, filter: "blur(0px)" } : { opacity: 0, filter: "blur(1px)" }}
+      transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1], delay: index * 0.08 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 export function AnalystShowcase() {
   return (
@@ -66,11 +85,13 @@ export function AnalystShowcase() {
         </Reveal>
 
         <Stagger staggerChildren={0.08} className="mt-10 space-y-5">
-          {ANALYSTS.map((entry) => (
+          {ANALYSTS.map((entry, i) => (
             <StaggerItem key={entry.id}>
-              <div className="group transition-all duration-200 hover:scale-[1.02] [&>article]:hover:border-primary/40 [&>article]:hover:shadow-card-hover">
-                <AnalystShowcaseRow entry={entry} />
-              </div>
+              <BlurSharpen index={i}>
+                <div className="group transition-all duration-200 hover:scale-[1.02] [&>article]:hover:border-primary/40 [&>article]:hover:shadow-card-hover">
+                  <AnalystShowcaseRow entry={entry} />
+                </div>
+              </BlurSharpen>
             </StaggerItem>
           ))}
         </Stagger>
