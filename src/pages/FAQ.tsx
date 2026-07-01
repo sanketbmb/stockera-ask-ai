@@ -1,4 +1,5 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
 
 export const FAQ_SECTIONS = [
   {
