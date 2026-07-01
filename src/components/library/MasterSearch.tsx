@@ -53,6 +53,7 @@ export function MasterSearch({
   initialQuery = "",
 }: Props) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [q, setQ] = useState(initialQuery);
   const debouncedQ = useDebounced(q.trim(), 200);
   const [data, setData] = useState<SearchResponse | null>(null);
