@@ -140,6 +140,13 @@ export function MasterSearch({
     // fire-and-forget view log
     supabase.functions.invoke("library-views", { body: { item_id: it.id } }).catch(() => {});
     onClose?.();
+    if (!user) {
+      navigate({
+        to: "/login",
+        search: { redirect: `/report/${it.related_query_id}` } as never,
+      });
+      return;
+    }
     navigate({ to: "/report/$queryId", params: { queryId: it.related_query_id } });
   };
 
