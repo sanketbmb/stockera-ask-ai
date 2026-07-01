@@ -547,3 +547,44 @@
   }
   .card-lift:hover { box-shadow: none !important; }
 }
+
+/* ── Symbol library delta motion (M1-C, M2-C, M3-C, M5-C) ───────── */
+@keyframes sym-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sym-fade-1 { opacity: 0; animation: sym-fade-up 220ms cubic-bezier(0.22,1,0.36,1) 0ms forwards; }
+.sym-fade-2 { opacity: 0; animation: sym-fade-up 220ms cubic-bezier(0.22,1,0.36,1) 100ms forwards; }
+.sym-fade-3 { opacity: 0; animation: sym-fade-up 220ms cubic-bezier(0.22,1,0.36,1) 200ms forwards; }
+
+@keyframes sym-underline-expand {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.tab-underline[data-state="active"]::after {
+  animation: sym-underline-expand 220ms cubic-bezier(0.22,1,0.36,1);
+}
+
+.sym-row { opacity: 0; animation: sym-fade-up 260ms cubic-bezier(0.22,1,0.36,1) forwards; }
+
+@keyframes sym-halo-flash {
+  0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+  40%  { box-shadow: 0 0 0 6px hsl(var(--primary) / 0.28); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.sym-halo { animation: sym-halo-flash 500ms ease-out 1; border-radius: 0.75rem; }
+
+@keyframes sym-cta-pulse {
+  0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45); }
+  70%  { box-shadow: 0 0 0 10px hsl(var(--primary) / 0); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.sym-cta-pulse { animation: sym-cta-pulse 900ms ease-out 1; border-radius: 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sym-fade-1, .sym-fade-2, .sym-fade-3, .sym-row {
+    opacity: 1 !important; animation: none !important; transform: none !important;
+  }
+  .sym-halo, .sym-cta-pulse { animation: none !important; }
+  .tab-underline[data-state="active"]::after { animation: none !important; }
+}
