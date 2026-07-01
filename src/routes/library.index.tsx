@@ -193,7 +193,7 @@ function LibraryIndexPage() {
       title="Browse analyst-answered stock questions"
       subtitle="Public market questions, verdicts, and report summaries from SEBI-registered experts."
     >
-      <section className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+      <section className="mx-auto w-full max-w-7xl px-4 sm:px-6 animate-fade-in">
         <MasterLibraryToolbar
           search={search}
           onSearchChange={setSearch}
