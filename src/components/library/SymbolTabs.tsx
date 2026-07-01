@@ -18,16 +18,16 @@ export function SymbolTabs({ counts, activeKind, onKindChange }: Props) {
       <div className="mx-auto w-full max-w-5xl">
         <Tabs value={activeKind} onValueChange={(v) => onKindChange(v as Kind)}>
           <TabsList className="flex w-full flex-wrap justify-start gap-1">
-            <TabsTrigger value="all" className="gap-2">
-              All <Badge variant="secondary">{counts.all}</Badge>
+            <TabsTrigger value="all" className="tab-underline gap-2 transition-colors">
+              All <Badge variant="secondary" className="transition-transform group-data-[state=active]:scale-105">{counts.all}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="report" className="gap-2">
+            <TabsTrigger value="report" className="tab-underline gap-2 transition-colors">
               Reports <Badge variant="secondary">{counts.reports}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="video" className="gap-2">
+            <TabsTrigger value="video" className="tab-underline gap-2 transition-colors">
               Videos <Badge variant="secondary">{counts.videos}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="community_query" className="gap-2">
+            <TabsTrigger value="community_query" className="tab-underline gap-2 transition-colors">
               Questions <Badge variant="secondary">{counts.community}</Badge>
             </TabsTrigger>
           </TabsList>
