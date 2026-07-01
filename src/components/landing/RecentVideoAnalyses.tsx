@@ -249,15 +249,13 @@ export function RecentVideoAnalyses() {
             );
 
             return v.source_id ? (
-              <Link
+              <AuthGatedReportLink
                 key={v.id}
-                to="/report/$queryId"
-                params={{ queryId: v.source_id }}
-                preload="intent"
+                queryId={v.source_id}
                 className="focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-xl"
               >
                 {Card}
-              </Link>
+              </AuthGatedReportLink>
             ) : (
               <div key={v.id}>{Card}</div>
             );
