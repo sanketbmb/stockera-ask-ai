@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TrendingQueriesStrip } from "./TrendingQueriesStrip";
+import { HeroDemoCard } from "./HeroDemoCard";
 
 const DISCOVERY_TEMPLATE =
   "I have ₹_____ to invest in _____ sector. Which stock should I buy?";
