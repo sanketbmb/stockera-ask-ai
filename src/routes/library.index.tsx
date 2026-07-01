@@ -16,6 +16,7 @@ import {
   type SortKey,
   type VerdictFilter,
 } from "@/components/library/MasterLibraryToolbar";
+import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
 const TITLE =
