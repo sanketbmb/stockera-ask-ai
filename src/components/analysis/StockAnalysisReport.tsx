@@ -912,16 +912,18 @@ export function StockAnalysisReport({
     return () => mq.removeEventListener?.("change", update);
   }, []);
   const revealAmount = isNarrow ? 0.2 : 0.12;
-  const sectionReveal = (id: string) => {
+  const sectionReveal = (id: string, variants: typeof sectionFadeUp = sectionFadeUp) => {
     if (reduceMotion || printMode || (skipRevealId && id === skipRevealId)) {
-      return { initial: "visible" as const, animate: "visible" as const };
+      return { variants, initial: "visible" as const, animate: "visible" as const };
     }
     return {
+      variants,
       initial: "hidden" as const,
       whileInView: "visible" as const,
       viewport: { once: false, amount: revealAmount },
     };
   };
+
 
 
 
