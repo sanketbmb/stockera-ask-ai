@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 
