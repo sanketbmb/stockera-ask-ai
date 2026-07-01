@@ -62,8 +62,10 @@ export function MasterSearchHero() {
               {c}
             </button>
           ))}
-        </div>
+          </div>
+        </Reveal>
       </div>
+
     </section>
   );
 }
