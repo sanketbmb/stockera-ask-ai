@@ -158,6 +158,13 @@ export function MasterSearchRecentTab({ onClose }: Props) {
               type="button"
               onClick={() => {
                 onClose?.();
+                if (!user) {
+                  navigate({
+                    to: "/login",
+                    search: { redirect: `/report/${r.id}` } as never,
+                  });
+                  return;
+                }
                 navigate({
                   to: "/report/$queryId",
                   params: { queryId: r.id },
