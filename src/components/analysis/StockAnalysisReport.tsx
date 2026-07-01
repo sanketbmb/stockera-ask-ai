@@ -1105,7 +1105,7 @@ export function StockAnalysisReport({
 
         {/* ═══ 4 + 5. SCORE RING + BREAKDOWN ═══ */}
         {!isInsufficient && report_modules.show_score_ring && (
-          <motion.section id="risk-reward" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+          <motion.section id="risk-reward" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("risk-reward")} className="rounded-2xl border border-border bg-card px-6 py-7">
             <div className="mb-4 flex items-start justify-between gap-3">
               <SectionTitle eyebrow="Composite score" title="Stockera Score & Pillars" icon={BarChart3} />
               <MethodologyChip tier={tier} weights={weights} />
