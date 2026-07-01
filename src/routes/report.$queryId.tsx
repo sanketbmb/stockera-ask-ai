@@ -546,15 +546,17 @@ function ReportContent() {
   // Force scroll-to-top per queryId, unless a hash anchor is present (Step 3
   // deep-links rely on it) — that case is handled by the hash-scroll effect.
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window !== "undefined" && window.location.hash) return;
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  }, [queryId]);
+  }, [queryId, isValidUuid]);
 
   // Step 3 deep-link — smooth-scroll to hash anchor once the report renders.
   // Section IDs live on real motion.section blocks inside StockAnalysisReport
   // (quick-verdict, risk-reward, action-strategy, trade-levels,
   // what-can-go-wrong, expert-insight) plus ExpertAnswerSection (#expert-analysis).
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window === "undefined") return;
     const hash = window.location.hash?.slice(1);
     if (!hash) return;
@@ -570,7 +572,7 @@ function ReportContent() {
     };
     const t = setTimeout(tryScroll, 300);
     return () => clearTimeout(t);
-  }, [queryId, viewMode]);
+  }, [queryId, viewMode, isValidUuid]);
 
 
   // K-POLISH-1 — deep-link from My Queries empty follow-up state.
@@ -578,6 +580,7 @@ function ReportContent() {
   // into view and focus its textarea. Fires once per navigation after content
   // has had a chance to render.
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("focus") !== "followup") return;
@@ -595,7 +598,7 @@ function ReportContent() {
     };
     const t = setTimeout(tryScroll, 200);
     return () => clearTimeout(t);
-  }, [queryId]);
+  }, [queryId, isValidUuid]);
 
 
   const { data, isLoading, error } = useQuery({
