@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { Link } from "@tanstack/react-router";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Reveal, Stagger, StaggerItem } from "@/lib/motion";
 import { AnalystShowcaseRow, type AnalystShowcaseEntry } from "./AnalystShowcaseRow";
 import { ShieldCheck } from "lucide-react";
