@@ -8,7 +8,7 @@ import {
   Gauge,
   BarChart3,
 } from "lucide-react";
-import { motion, useInView, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/landing/motion-helpers";
 
