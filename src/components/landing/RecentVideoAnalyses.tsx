@@ -18,6 +18,23 @@ type Row = {
 
 const DURATIONS = ["5:48", "3:20", "7:10", "5:05", "4:32", "6:15"];
 
+function relativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const diff = Date.now() - then;
+  const min = Math.round(diff / 60000);
+  if (min < 60) return `${Math.max(1, min)}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.round(mo / 12)}y ago`;
+}
+
+
 
 async function fetchVideos(): Promise<Row[]> {
   const { data, error } = await supabase
