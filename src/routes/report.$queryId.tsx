@@ -98,7 +98,63 @@ function LoadingScreen() {
   );
 }
 
-// ──────────────── Tier-shaped (v1) renderer ────────────────
+// ──────────────── View-mode top block (text | video) ────────────────
+// Renders a compact contextual block above the AI report when the URL has
+// ?view=text or ?view=video. Reuses existing AnalystCtaCard as the premium
+// human-analysis / paywall surface for video mode. Text mode shows a small
+// "human RA text answer being prepared" status card; the full existing
+// ExpertAnswerSection at the bottom of the report renders the real answer
+// (or the pending state) once it lands, so there is no duplicate rendering.
+function ViewModeTopBlock({
+  mode,
+  queryId,
+  ctaContext,
+}: {
+  mode: "text" | "video";
+  queryId: string;
+  ctaContext: "position" | "fresh" | "general";
+}) {
+  if (mode === "video") {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6 space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+            Premium Human Video Analysis
+          </span>
+          <div className="h-px flex-1 bg-primary/20" />
+        </div>
+        <AnalystCtaCard queryId={queryId} context={ctaContext} />
+        <p className="text-[11px] text-muted-foreground italic">
+          Full AI-grounded report below — the human analyst video builds on it.
+        </p>
+      </div>
+    );
+  }
+  // text mode
+  return (
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
+      <div className="rounded-2xl border border-accent/25 bg-accent/5 px-5 py-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            ✓ Free AI report ready
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+            Human RA text answer within 60 min
+          </span>
+        </div>
+        <p className="text-sm text-foreground font-medium mt-1">
+          Your SEBI-registered analyst text answer is lined up.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+          Read the full AI report below now — the human analyst text response will appear in the
+          Expert Analysis section at the bottom of this page as soon as it's published.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
