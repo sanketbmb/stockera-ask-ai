@@ -1193,7 +1193,7 @@ export function StockAnalysisReport({
         </motion.section>
 
         {/* ═══ 8. TRADE LEVELS ═══ */}
-        <motion.section id="trade-levels" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="trade-levels" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("trade-levels")} className="rounded-2xl border border-border bg-card px-6 py-7">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <SectionTitle eyebrow="Trade levels" title="Key price zones" icon={Target} info={<InfoTip title="How trade levels are derived" body={<><p>Entry / stop / targets / supports / resistances come from the tier-aware trade-plan engine.</p><p className="italic">Validated against ATR, structural levels and a minimum R:R per tier.</p></>} />} />
             <div className="flex flex-wrap items-center gap-2">
