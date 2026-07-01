@@ -60,6 +60,15 @@ export function StepStory() {
   const typed = useTypewriter(SBI_QUESTION, { start: p1InView, speed: 40 });
 
   const goReport = (view?: "text" | "video", hash?: string) => {
+    if (!user) {
+      const params = new URLSearchParams();
+      if (view) params.set("view", view);
+      const qs = params.toString();
+      const hashPart = hash ? `#${hash}` : "";
+      const redirect = `/report/${DEMO_REPORT_ID}${qs ? `?${qs}` : ""}${hashPart}`;
+      navigate({ to: "/login", search: { redirect } as never });
+      return;
+    }
     navigate({
       to: "/report/$queryId",
       params: { queryId: DEMO_REPORT_ID },
