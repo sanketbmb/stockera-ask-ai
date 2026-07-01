@@ -1168,7 +1168,7 @@ export function StockAnalysisReport({
 
         {!isInsufficient && (<>
         {/* ═══ 7. WHAT TO DO NOW ═══ */}
-        <motion.section id="action-strategy" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("action-strategy")} className="rounded-2xl border border-border bg-card px-6 py-7">
+        <motion.section id="action-strategy" style={{ scrollMarginTop: 96 }} {...sectionReveal("action-strategy")} className="rounded-2xl border border-border bg-card px-6 py-7">
           <SectionTitle eyebrow="Action zone" title="What to do now" icon={Compass} />
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
             <TabsList className={`grid w-full ${suppressFreshTab ? "grid-cols-2" : "grid-cols-3"}`}>
