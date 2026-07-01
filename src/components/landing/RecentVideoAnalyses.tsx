@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
 import { motion } from "framer-motion";
 import { Play, Lock, Sparkles, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -249,15 +250,13 @@ export function RecentVideoAnalyses() {
             );
 
             return v.source_id ? (
-              <Link
+              <AuthGatedReportLink
                 key={v.id}
-                to="/report/$queryId"
-                params={{ queryId: v.source_id }}
-                preload="intent"
+                queryId={v.source_id}
                 className="focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-xl"
               >
                 {Card}
-              </Link>
+              </AuthGatedReportLink>
             ) : (
               <div key={v.id}>{Card}</div>
             );

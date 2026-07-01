@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 
@@ -107,15 +107,13 @@ export function MasterLibraryCard({ item }: Props) {
 
   if (isQueryReport) {
     return (
-      <Link
-        to="/report/$queryId"
-        params={{ queryId: item.source_id as string }}
-        preload="intent"
+      <AuthGatedReportLink
+        queryId={item.source_id as string}
         className={baseClasses}
         aria-label={`View full answer: ${item.title}`}
       >
         {body}
-      </Link>
+      </AuthGatedReportLink>
     );
   }
 
