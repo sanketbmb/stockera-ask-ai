@@ -784,6 +784,27 @@ export const Route = createFileRoute("/report/$queryId")({
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
+  // HOTFIX — keep report render failures scoped to the route so the
+  // top-level branded "This page didn't load" screen never intercepts a
+  // valid report on first navigation. NotFoundCard is preserved for real
+  // missing rows; any other error surfaces a scoped retry that invalidates
+  // the report query rather than doing a full page reload.
+  errorComponent: ({ error, reset }: { error: Error; reset: () => void }) => {
+    if (isReportNotFoundError(error)) return <NotFoundCard />;
+    return (
+      <div className="min-h-screen bg-mesh flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
+          <Logo size="md" linkTo="/" />
+          <h1 className="font-display text-2xl mt-6">Loading this report…</h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {error?.message ?? "Please try again."}
+          </p>
+          <Button className="mt-4" onClick={() => reset()}>Retry</Button>
+        </div>
+      </div>
+    );
+  },
 });
+
 
 

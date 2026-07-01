@@ -152,6 +152,7 @@ export function PublicAnswersMarquee() {
                 key={`${c.key}-${i}`}
                 to="/report/$queryId"
                 params={{ queryId: c.href.split("/").pop() as string }}
+                preload="intent"
                 className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-2xl"
                 aria-label={`See full answer for ${c.ticker}: ${c.question}`}
               >

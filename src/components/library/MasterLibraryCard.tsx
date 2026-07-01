@@ -110,6 +110,7 @@ export function MasterLibraryCard({ item }: Props) {
       <Link
         to="/report/$queryId"
         params={{ queryId: item.source_id as string }}
+        preload="intent"
         className={baseClasses}
         aria-label={`View full answer: ${item.title}`}
       >
