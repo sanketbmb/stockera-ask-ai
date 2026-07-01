@@ -829,6 +829,7 @@ export function StockAnalysisReport({
   addendum,
   suppressFreshTab = false,
   defaultActionTab,
+  skipRevealId,
 }: {
   data: StockAnalysisPayload;
   printMode?: boolean;
@@ -842,7 +843,12 @@ export function StockAnalysisReport({
   // and force the holding default. PDF-safe; nothing else changes.
   suppressFreshTab?: boolean;
   defaultActionTab?: "holding" | "fresh" | "exploring";
+  // Delta motion pass (M3/M5 + HASH-SCROLL EXCEPTION): the section id whose
+  // scroll-reveal should be skipped so a deep-linked #hash lands without
+  // flicker. Other sections keep their scroll reveal (once:false).
+  skipRevealId?: string;
 }) {
+
   const {
     stock, query_context, final_verdict, score_breakdown, price_context,
     levels, returns_snapshot, technical_snapshot, fundamental_snapshot,
