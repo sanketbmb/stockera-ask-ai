@@ -42,7 +42,10 @@ export function RecentVideoAnalyses() {
   });
 
   const live = (data ?? []).filter((r) => r.source_id && r.symbol && r.verdict);
-  const rows: Row[] = isError || live.length < 4 ? FALLBACK : live;
+  const rows: Row[] = live;
+
+  if (isError || rows.length === 0) return null;
+
 
   return (
     <section className="py-14 bg-secondary/40">
