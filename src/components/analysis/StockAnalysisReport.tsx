@@ -1328,7 +1328,7 @@ export function StockAnalysisReport({
         )}
 
         {/* ═══ 17. SUMMARY RECOMMENDATION ═══ */}
-        <motion.section id="expert-insight" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
+        <motion.section id="expert-insight" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("expert-insight")} className="rounded-2xl border border-border bg-gradient-brand-soft px-6 py-7 text-white">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/70">In summary</p>
           <h2 className="mt-1 font-display text-2xl">Analyst-style recap</h2>
           <ol className="mt-4 max-w-3xl space-y-2 text-[15px] leading-relaxed text-white/95">
