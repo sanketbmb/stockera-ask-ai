@@ -253,6 +253,7 @@ export function RecentVideoAnalyses() {
                 key={v.id}
                 to="/report/$queryId"
                 params={{ queryId: v.source_id }}
+                preload="intent"
                 className="focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-xl"
               >
                 {Card}
