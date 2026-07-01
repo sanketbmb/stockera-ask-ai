@@ -293,7 +293,6 @@ function TierShapedReportContent({
   // M1 — Verdict banner slide-down 8px + fade on mount only. Reduced-motion
   // gated: snaps to visible without animation when the user prefers less
   // motion. Never re-fires on view-mode change (mount-only via no key deps).
-  const reduceMotion = useReducedMotion();
   const m1 = reduceMotion
     ? { initial: false as const }
     : {
