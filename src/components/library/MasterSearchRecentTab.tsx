@@ -10,8 +10,6 @@ type RecentRow = {
   symbol: string | null;
   verdict: string | null;
   title: string;
-  source_id: string | null;
-  source_table: string | null;
   published_at: string | null;
 };
 
@@ -42,20 +40,37 @@ function relativeDate(iso: string | null): string {
   return `${yr}y ago`;
 }
 
+// Source of truth = public.queries. library_items is a downstream projection
+// that lags realtime; the homepage explore list must surface new AI reports
+// the moment the parent queries row is inserted/updated with is_public_library
+// = true and ai_report ready. All filters, ordering and limit are server-side.
 async function fetchRecent(): Promise<RecentRow[]> {
   const { data, error } = await supabase
-    .from("library_items")
-    .select("id, symbol, verdict, title, source_id, source_table, published_at")
-    .eq("is_public", true)
-    .eq("is_tombstoned", false)
-    .eq("source_table", "queries")
-    .not("verdict", "is", null)
-    .not("symbol", "is", null)
-    .not("source_id", "is", null)
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(12);
+    .from("queries")
+    .select("id, stock_symbol, stock_name, query_text, ai_report, frozen_at, created_at")
+    .eq("is_public_library", true)
+    .is("library_tombstoned_at", null)
+    .not("ai_report", "is", null)
+    .order("frozen_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(5);
   if (error) throw error;
-  return (data ?? []) as RecentRow[];
+  const rows = (data ?? []).map((r): RecentRow => {
+    const symbol = (r.stock_symbol ?? r.stock_name ?? null) as string | null;
+    const report = (r.ai_report ?? null) as { final_verdict?: { action?: string } } | null;
+    const verdict = report?.final_verdict?.action ?? null;
+    const title = (r.query_text ?? r.stock_name ?? "").trim();
+    return {
+      id: r.id as string,
+      symbol,
+      verdict,
+      title,
+      published_at: (r.frozen_at ?? r.created_at) as string | null,
+    };
+  });
+  // eslint-disable-next-line no-console
+  console.debug("[recent-feed] count=", rows.length, "first=", rows[0]);
+  return rows;
 }
 
 export function MasterSearchRecentTab({ onClose }: Props) {
@@ -64,36 +79,25 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
 
-  // Realtime: mirror the ai_followups postgres_changes pattern.
-  // A new library_items row (or verdict/title update) invalidates the cached
-  // list so useQuery re-fetches; dedup + ordering stay in fetchRecent.
+  // Realtime: subscribe to public.queries (NOT library_items). INSERT covers
+  // brand-new questions; UPDATE covers the publish flip (is_public_library
+  // false→true, or ai_report becoming populated). Mirrors the canonical
+  // AskClaudeFollowup postgres_changes pattern.
   useEffect(() => {
     const channel = supabase
-      .channel("library_items:recent_feed")
+      .channel("queries:homepage_recent_feed")
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "library_items",
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["master-search-recent"] });
-        },
+        { event: "INSERT", schema: "public", table: "queries" },
+        () => queryClient.invalidateQueries({ queryKey: ["master-search-recent"] }),
       )
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "library_items",
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["master-search-recent"] });
-        },
+        { event: "UPDATE", schema: "public", table: "queries" },
+        () => queryClient.invalidateQueries({ queryKey: ["master-search-recent"] }),
       )
       .subscribe();
     return () => {
@@ -111,9 +115,8 @@ export function MasterSearchRecentTab({ onClose }: Props) {
     );
   }
 
-  const rows = (data ?? []).filter(
-    (r) => r.source_id && r.symbol && r.verdict && r.title,
-  );
+  // Only drop rows that truly have no symbol or no title; preserve server order.
+  const rows = (data ?? []).filter((r) => r.symbol && r.title);
 
   if (isError || rows.length === 0) {
     return (
@@ -138,7 +141,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   return (
     <ul className="space-y-1">
       {rows.map((r) => {
-        const verdict = (r.verdict as string).toUpperCase();
+        const verdict = r.verdict ? r.verdict.toUpperCase() : null;
         return (
           <li key={r.id}>
             <button
@@ -147,7 +150,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
                 onClose?.();
                 navigate({
                   to: "/report/$queryId",
-                  params: { queryId: r.source_id as string },
+                  params: { queryId: r.id },
                 });
               }}
               className="flex w-full items-start justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
@@ -157,16 +160,18 @@ export function MasterSearchRecentTab({ onClose }: Props) {
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary">
                     {r.symbol}
                   </span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                      verdictClass(verdict),
-                    )}
-                  >
-                    {verdict}
-                  </span>
+                  {verdict && (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                        verdictClass(verdict),
+                      )}
+                    >
+                      {verdict}
+                    </span>
+                  )}
                 </div>
-                <div className="mt-1 truncate text-sm text-foreground">{r.title}</div>
+                <div className="mt-1 line-clamp-2 text-sm text-foreground">{r.title}</div>
               </div>
               <div className="shrink-0 pt-1 text-[11px] text-muted-foreground">
                 {relativeDate(r.published_at)}
