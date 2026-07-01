@@ -252,17 +252,56 @@ export function HeroSection() {
           </div>
 
           {/* Trust strip */}
-          <ul className="mt-8 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-start md:gap-3">
-            {TRUST_CHIPS.map((c) => (
-              <li
-                key={c.text}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground md:px-3 md:py-1.5 md:text-xs"
-              >
-                <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                {c.text}
-              </li>
-            ))}
-          </ul>
+          <motion.ul
+            className="mt-8 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-start md:gap-3"
+            initial={reduced ? false : "hidden"}
+            animate="visible"
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  delayChildren: DELAY.trustRow,
+                  staggerChildren: 0.06,
+                },
+              },
+            }}
+          >
+            {TRUST_CHIPS.map((c) => {
+              const isSebi = c.icon === ShieldCheck;
+              return (
+                <motion.li
+                  key={c.text}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground md:px-3 md:py-1.5 md:text-xs"
+                  variants={{
+                    hidden: { opacity: 0, y: 8 },
+                    visible: {
+                      opacity: 1,
+                      y: 0,
+                      transition: { duration: DUR.trustFade, ease: EASE_OUT_SOFT },
+                    },
+                  }}
+                >
+                  {isSebi && !reduced ? (
+                    <motion.span
+                      className="inline-flex"
+                      animate={{ opacity: [0.75, 1, 0.75] }}
+                      transition={{
+                        duration: DUR.sebiPulse,
+                        repeat: Infinity,
+                        ease: EASE_IN_OUT,
+                        delay: 1.4,
+                      }}
+                    >
+                      <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                    </motion.span>
+                  ) : (
+                    <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                  )}
+                  {c.text}
+                </motion.li>
+              );
+            })}
+          </motion.ul>
         </div>
 
         {/* RIGHT COLUMN — instant AI demo card */}
