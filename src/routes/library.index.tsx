@@ -193,7 +193,7 @@ function LibraryIndexPage() {
       title="Browse analyst-answered stock questions"
       subtitle="Public market questions, verdicts, and report summaries from SEBI-registered experts."
     >
-      <section className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+      <section className="mx-auto w-full max-w-7xl px-4 sm:px-6 animate-fade-in">
         <MasterLibraryToolbar
           search={search}
           onSearchChange={setSearch}
@@ -259,11 +259,17 @@ function LibraryIndexPage() {
                 staggerChildren={0.04}
                 className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
               >
-                {pagedRows.map((row) => (
-                  <StaggerItem key={row.id} y={10}>
-                    <MasterLibraryCard item={row} />
-                  </StaggerItem>
-                ))}
+                {pagedRows.map((row, i) =>
+                  i < 12 ? (
+                    <StaggerItem key={row.id} y={10}>
+                      <MasterLibraryCard item={row} />
+                    </StaggerItem>
+                  ) : (
+                    <div key={row.id}>
+                      <MasterLibraryCard item={row} />
+                    </div>
+                  ),
+                )}
               </Stagger>
               {filteredRows.length > PAGE_SIZE && (
                 <Reveal className="mt-6">
