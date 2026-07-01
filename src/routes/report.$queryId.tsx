@@ -656,8 +656,17 @@ function RobotsMeta({ isPublic }: { isPublic: boolean }) {
 }
 
 export const Route = createFileRoute("/report/$queryId")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const v = search.view;
+    const f = search.focus;
+    return {
+      view: v === "text" || v === "video" ? (v as "text" | "video") : undefined,
+      focus: f === "followup" ? ("followup" as const) : undefined,
+    };
+  },
   head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
   component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
 });
+
 
