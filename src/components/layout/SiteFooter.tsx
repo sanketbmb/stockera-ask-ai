@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { useInView, useReducedMotion } from "framer-motion";
 import { Mail, MessageCircle, Twitter, Instagram, Linkedin } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 import { FIRM } from "@/lib/firm-details";
