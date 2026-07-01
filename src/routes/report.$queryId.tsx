@@ -158,7 +158,7 @@ function ViewModeTopBlock({
 
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
-  queryType, entryPrice, qty, customQuestion,
+  queryType, entryPrice, qty, customQuestion, viewMode,
 }: {
   queryId: string;
   symbol: string;
@@ -168,6 +168,7 @@ function TierShapedReportContent({
   entryPrice: number | null;
   qty: number | null;
   customQuestion: string | null;
+  viewMode?: "text" | "video";
 }) {
   const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
