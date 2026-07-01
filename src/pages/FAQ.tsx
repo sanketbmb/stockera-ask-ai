@@ -100,21 +100,25 @@ export default function FAQ() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
       {FAQ_SECTIONS.map((s) => (
-        <div key={s.title} className="mb-10">
+        <Reveal key={s.title} className="mb-10">
           <h2 className="font-display text-2xl text-foreground">{s.title}</h2>
-          <Accordion type="single" collapsible className="mt-4">
-            {s.items.map((it, i) => (
-              <AccordionItem key={i} value={`${s.title}-${i}`} className="border-border">
-                <AccordionTrigger className="text-left text-base font-medium text-foreground">
-                  {it.q}
-                </AccordionTrigger>
-                <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
-                  {it.a}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
+          <Stagger staggerChildren={0.04} className="mt-4">
+            <Accordion type="single" collapsible>
+              {s.items.map((it, i) => (
+                <StaggerItem key={i} y={6}>
+                  <AccordionItem value={`${s.title}-${i}`} className="border-border">
+                    <AccordionTrigger className="text-left text-base font-medium text-foreground transition-colors hover:text-primary">
+                      {it.q}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
+                      {it.a}
+                    </AccordionContent>
+                  </AccordionItem>
+                </StaggerItem>
+              ))}
+            </Accordion>
+          </Stagger>
+        </Reveal>
       ))}
     </section>
   );
