@@ -53,6 +53,7 @@ const fadeUp = {
 export function StepStory() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"textual" | "video">("textual");
+  const { user } = useAuth();
 
   const p1Ref = useRef(null);
   const p1InView = useInView(p1Ref, { once: true, amount: 0.5 });
