@@ -896,6 +896,34 @@ export function StockAnalysisReport({
     ? "Insufficient Data"
     : (printMode ? verdictRawLabel(final_verdict.action) : verdictUILabel(final_verdict.action));
 
+  // ── Delta motion pass (M3/M5) ──
+  // Per-section scroll reveal. `once:false` so sections re-animate when
+  // scrolled back up. Mobile ≤375px raises the threshold to 0.2 so cards
+  // reveal earlier and the page never feels stuck. Reduced-motion + print
+  // + the hash-scroll target section snap to visible with no animation.
+  const reduceMotion = useReducedMotion();
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 375px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const revealAmount = isNarrow ? 0.2 : 0.12;
+  const sectionReveal = (id: string) => {
+    if (reduceMotion || printMode || (skipRevealId && id === skipRevealId)) {
+      return { initial: "visible" as const, animate: "visible" as const };
+    }
+    return {
+      initial: "hidden" as const,
+      whileInView: "visible" as const,
+      viewport: { once: false, amount: revealAmount },
+    };
+  };
+
+
 
   // Print mode: disable all motion deterministically. MotionConfig forces
   // useReducedMotion()=true throughout the tree, snapping initial states
