@@ -149,14 +149,14 @@ export function QueryHistoryCard({ item }: { item: QueryHistoryItem }) {
       <div className="mt-4 flex flex-wrap gap-2">
         {item.ai_report ? (
           <Button asChild size="sm" variant="outline">
-            <Link to="/report/$queryId" params={{ queryId: item.id }}>View AI Report <ChevronRight className="h-3.5 w-3.5 ml-1" /></Link>
+            <AuthGatedReportLink queryId={item.id}>View AI Report <ChevronRight className="h-3.5 w-3.5 ml-1" /></AuthGatedReportLink>
           </Button>
         ) : null}
         {textAnswer && (
           <Button asChild size="sm" variant="outline">
-            <Link to="/report/$queryId" params={{ queryId: item.id }} hash="expert-analysis">
+            <AuthGatedReportLink queryId={item.id} hash="expert-analysis">
               Read Answer <ChevronRight className="h-3.5 w-3.5 ml-1" />
-            </Link>
+            </AuthGatedReportLink>
           </Button>
         )}
         {videoAnswer && (
