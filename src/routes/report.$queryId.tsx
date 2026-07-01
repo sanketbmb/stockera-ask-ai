@@ -283,15 +283,36 @@ function TierShapedReportContent({
     </div>
   );
 
+  // M1 — Verdict banner slide-down 8px + fade on mount only. Reduced-motion
+  // gated: snaps to visible without animation when the user prefers less
+  // motion. Never re-fires on view-mode change (mount-only via no key deps).
+  const reduceMotion = useReducedMotion();
+  const m1 = reduceMotion
+    ? { initial: false as const }
+    : {
+        initial: { opacity: 0, y: -8 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.28, ease: "easeOut" as const },
+      };
   const topBannerNode = (
-    <div className="mx-auto w-full max-w-5xl px-4 pt-6 md:px-6 space-y-4">
+    <motion.div {...m1} className="mx-auto w-full max-w-5xl px-4 pt-6 md:px-6 space-y-4">
       <ReflectiveBanner
         interpretation={interpretation}
         extras={{ entry_price: entryPrice, qty, custom_question: customQuestion }}
       />
       {mfRejected && <MfPortfolioRejectionPanel />}
-    </div>
+    </motion.div>
   );
+
+  // HASH-SCROLL EXCEPTION — when the URL carries #<section>, skip the M3/M5
+  // reveal for that section so the deep-link lands without a flicker. Other
+  // sections keep their scroll reveals. Read once at mount; hash changes
+  // don't re-mount the report so this is a stable read.
+  const skipRevealId = useMemo(() => {
+    if (typeof window === "undefined") return undefined;
+    const h = window.location.hash?.slice(1);
+    return h || undefined;
+  }, [queryId]);
 
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
@@ -313,7 +334,9 @@ function TierShapedReportContent({
         addendum={phase2Addendum}
         suppressFreshTab={isPhase2}
         defaultActionTab={defaultActionTab}
+        skipRevealId={skipRevealId}
       />
+
       <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-2 pb-2">
         <ReportCtaStrip
           queryId={queryId}
