@@ -13,6 +13,7 @@ import {
   Landmark,
   ArrowUpRight,
 } from "lucide-react";
+import { DELAY, DUR, EASE_OUT_FIRM } from "@/lib/motion/tokens";
 
 const SBI_QUESTION =
   "I bought SBI Bank at 1227 now at 1029. Should I average, hold, or sell?";
