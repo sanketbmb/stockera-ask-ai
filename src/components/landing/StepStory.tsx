@@ -10,6 +10,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useTypewriter } from "@/lib/motion/useTypewriter";
+import { GradientText } from "@/lib/motion";
+
 
 // Canonical demo report — real SBI averaging report used across the site.
 const DEMO_REPORT_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
@@ -73,7 +75,7 @@ export function StepStory() {
           <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.35, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 1</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
-              You Ask a <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Question</span>
+              You Ask a <GradientText>Question</GradientText>
             </motion.h2>
             <motion.div
               variants={fadeUp}
@@ -108,7 +110,7 @@ export function StepStory() {
           <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 2</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
-              Expert <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Responds</span>
+              Expert <GradientText>Responds</GradientText>
             </motion.h2>
 
             {/* Compact chip row — AI speed chip + slots chip live side-by-side */}
@@ -201,7 +203,7 @@ export function StepStory() {
           <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 3</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-3">
-              What You'll <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Get</span>
+              What You'll <GradientText>Get</GradientText>
             </motion.h2>
             <motion.p variants={fadeUp} className="text-sm text-center text-muted-foreground mb-6">
               Deep insights covered in your textual answer & video analysis
