@@ -187,6 +187,14 @@ function TierShapedReportContent({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const reduceMotion = useReducedMotion();
+  // HASH-SCROLL EXCEPTION — when the URL carries #<section>, skip the M3/M5
+  // reveal for that section so the deep-link lands without a flicker.
+  const skipRevealId = useMemo(() => {
+    if (typeof window === "undefined") return undefined;
+    const h = window.location.hash?.slice(1);
+    return h || undefined;
+  }, [queryId]);
 
   if (isLoading) return <LoadingScreen />;
   if (error && isReportNotFoundError(error)) return <NotFoundCard />;
