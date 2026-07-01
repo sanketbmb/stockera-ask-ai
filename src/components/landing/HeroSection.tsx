@@ -123,10 +123,15 @@ export function HeroSection() {
         {/* LEFT COLUMN */}
         <div className="text-center md:text-left">
           {/* Eyebrow */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent">
+          <motion.div
+            className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent"
+            initial={reduced ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.18, delay: DELAY.sebiBar, ease: EASE_OUT_SOFT }}
+          >
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             SEBI Registered Analysts • INH000019071
-          </div>
+          </motion.div>
 
           {/* Tiny brand line */}
           <div className="mt-3 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground md:flex">
