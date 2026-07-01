@@ -116,9 +116,16 @@ function ViewModeTopBlock({
   queryId: string;
   ctaContext: "position" | "fresh" | "general";
 }) {
+  // M2 — fade-in after M1 completes (delay ~220ms). Short opacity ramp;
+  // safe to run without reduced-motion gating per journal spec.
+  const m2 = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    transition: { duration: 0.28, delay: 0.22, ease: "easeOut" as const },
+  };
   if (mode === "video") {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6 space-y-3">
+      <motion.div {...m2} className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6 space-y-3">
         <div className="flex items-center gap-3">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
             Premium Human Video Analysis
@@ -129,12 +136,12 @@ function ViewModeTopBlock({
         <p className="text-[11px] text-muted-foreground italic">
           Full AI-grounded report below — the human analyst video builds on it.
         </p>
-      </div>
+      </motion.div>
     );
   }
   // text mode
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
+    <motion.div {...m2} className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
       <div className="rounded-2xl border border-accent/25 bg-accent/5 px-5 py-4">
         <div className="flex items-center gap-2 mb-1">
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
@@ -152,9 +159,10 @@ function ViewModeTopBlock({
           Expert Analysis section at the bottom of this page as soon as it's published.
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 }
+
 
 
 
