@@ -506,17 +506,42 @@ function AnonReportCta() {
 
 function ReportContent() {
   const { queryId } = useParams({ from: "/report/$queryId" });
+  const { view: viewMode } = useSearch({ from: "/report/$queryId" });
   const { user, isLoading: authLoading } = useAuth();
 
   // FIX-REPORT-404 — refuse malformed UUIDs before touching the network.
   const isValidUuid = useMemo(() => UUID_RE.test(queryId), [queryId]);
 
   // Bug 3 fix — reports were auto-scrolling to the bottom on first mount.
-  // Force scroll-to-top per queryId so every variant (tier-shaped, general,
-  // sector, educational, legacy) opens at the report header.
+  // Force scroll-to-top per queryId, unless a hash anchor is present (Step 3
+  // deep-links rely on it) — that case is handled by the hash-scroll effect.
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) return;
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [queryId]);
+
+  // Step 3 deep-link — smooth-scroll to hash anchor once the report renders.
+  // Section IDs live on real motion.section blocks inside StockAnalysisReport
+  // (quick-verdict, risk-reward, action-strategy, trade-levels,
+  // what-can-go-wrong, expert-insight) plus ExpertAnswerSection (#expert-analysis).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash?.slice(1);
+    if (!hash) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.getElementById(hash);
+      if (el) {
+        el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+        return;
+      }
+      if (attempts++ < 30) setTimeout(tryScroll, 200);
+    };
+    const t = setTimeout(tryScroll, 300);
+    return () => clearTimeout(t);
+  }, [queryId, viewMode]);
+
 
   // K-POLISH-1 — deep-link from My Queries empty follow-up state.
   // When URL has ?focus=followup, scroll the Ask-about-this-report section
