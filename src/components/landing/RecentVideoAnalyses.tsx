@@ -71,9 +71,9 @@ export function RecentVideoAnalyses() {
           {rows.map((v, i) => {
             const verdict = (v.verdict ?? "HOLD").toUpperCase();
             const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
-            const investor = INVESTORS[i % INVESTORS.length];
-            const expert = EXPERTS[i % EXPERTS.length];
             const duration = DURATIONS[i % DURATIONS.length];
+            const relDate = relativeDate(v.published_at);
+
 
             const Card = (
               <motion.div
