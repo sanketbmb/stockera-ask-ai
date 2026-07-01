@@ -142,10 +142,15 @@ export function MasterSearchRecentTab({ onClose }: Props) {
 
   return (
     <ul className="space-y-1">
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const verdict = r.verdict ? r.verdict.toUpperCase() : null;
         return (
-          <li key={r.id}>
+          <motion.li
+            key={r.id}
+            initial={reduced ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, delay: Math.min(i, 6) * 0.04, ease: [0.22, 1, 0.36, 1] }}
+          >
             <button
               type="button"
               onClick={() => {
@@ -155,11 +160,11 @@ export function MasterSearchRecentTab({ onClose }: Props) {
                   params: { queryId: r.id },
                 });
               }}
-              className="flex w-full items-start justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              className="group flex w-full items-start justify-between gap-3 rounded-md px-2 py-2 text-left text-sm transition-all duration-200 hover:bg-accent/60 hover:translate-x-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary transition-colors group-hover:bg-primary/20">
                     {r.symbol}
                   </span>
                   {verdict && (
@@ -179,11 +184,12 @@ export function MasterSearchRecentTab({ onClose }: Props) {
                 {relativeDate(r.published_at)}
               </div>
             </button>
-          </li>
+          </motion.li>
         );
       })}
     </ul>
   );
 }
+
 
 export default MasterSearchRecentTab;
