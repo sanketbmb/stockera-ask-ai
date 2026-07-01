@@ -114,8 +114,9 @@ export function MasterLibraryToolbar({
                 type="button"
                 onClick={() => onVerdictChange(active ? null : v)}
                 aria-pressed={active}
+                data-state={active ? "active" : "inactive"}
                 className={cn(
-                  "rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors",
+                  "tab-underline chip-press rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors",
                   active
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
