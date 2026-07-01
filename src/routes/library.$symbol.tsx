@@ -195,8 +195,14 @@ function SymbolLibraryPage() {
 
           {!isError && !isLoading && items.length > 0 && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {items.map((it) => (
-                <LibraryItemCard key={it.id} item={it} />
+              {items.map((it, i) => (
+                <div
+                  key={it.id}
+                  className={`sym-row${i === 0 ? " sym-halo" : ""}`}
+                  style={{ animationDelay: `${i * 40}ms` }}
+                >
+                  <LibraryItemCard item={it} />
+                </div>
               ))}
             </div>
           )}
