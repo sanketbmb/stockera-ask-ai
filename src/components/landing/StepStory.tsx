@@ -70,7 +70,7 @@ export function StepStory() {
       {/* Panel 1 — You Ask */}
       <div ref={p1Ref} className="min-h-fit py-12 md:py-16 flex items-center justify-center bg-background relative">
         <div className="container mx-auto px-4 max-w-2xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.4 }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.35, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 1</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
               You Ask a <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Question</span>
@@ -105,7 +105,7 @@ export function StepStory() {
       {/* Panel 2 — Expert Responds */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-secondary/30 relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 2</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
               Expert <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Responds</span>
@@ -126,7 +126,7 @@ export function StepStory() {
               <motion.div
                 initial={{ opacity: 0, x: -50 }}
                 whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
+                viewport={{ once: false, amount: 0.3 }}
                 transition={{ type: "spring", stiffness: 80, delay: 0.2 }}
                 onClick={() => goReport("text")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all"
@@ -166,7 +166,7 @@ export function StepStory() {
               <motion.div
                 initial={{ opacity: 0, x: 50 }}
                 whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
+                viewport={{ once: false, amount: 0.3 }}
                 transition={{ type: "spring", stiffness: 80, delay: 0.3 }}
                 onClick={() => goReport("video")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all flex flex-col"
@@ -198,7 +198,7 @@ export function StepStory() {
       {/* Panel 3 — What You'll Get */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-background relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 3</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-3">
               What You'll <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Get</span>
@@ -229,7 +229,7 @@ export function StepStory() {
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
+                    viewport={{ once: false, amount: 0.3 }}
                     transition={{ duration: 0.4, delay: i * 0.06 }}
                     onClick={() => goReport("text", item.anchor)}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-accent/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
@@ -249,7 +249,7 @@ export function StepStory() {
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
+                    viewport={{ once: false, amount: 0.3 }}
                     transition={{ duration: 0.4, delay: i * 0.06 }}
                     onClick={() => goReport("video", "expert-analysis")}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-primary/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
