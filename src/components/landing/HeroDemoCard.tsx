@@ -86,8 +86,10 @@ export function HeroDemoCard() {
       initial={{ opacity: 0, x: 30, scale: 0.97 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       transition={{ delay: 0.4, duration: 0.7, type: "spring", stiffness: 80 }}
+      whileHover={reduced ? undefined : { y: -3 }}
     >
-      <div className="glass relative rounded-3xl p-6 shadow-card-lg overflow-hidden">
+      <div className="glass relative rounded-3xl p-6 shadow-card-lg overflow-hidden transition-shadow duration-300 hover:shadow-glow-teal">
+
         {/* Ambient glow */}
         {!reduced && (
           <div

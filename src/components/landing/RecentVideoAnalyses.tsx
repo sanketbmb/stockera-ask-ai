@@ -162,38 +162,46 @@ export function RecentVideoAnalyses() {
   return (
     <section className="py-14 bg-secondary/40">
       <div className="container mx-auto px-4 max-w-7xl">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
-          <div>
-            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
-              Recent Video Analyses
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              Real queries. Real expert answers. See what others asked.
-            </p>
+        <Reveal>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+            <div>
+              <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
+                Recent Video Analyses
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Real queries. Real expert answers. See what others asked.
+              </p>
+            </div>
+            <Link
+              to="/library"
+              className="hidden sm:inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
+            >
+              Watch more analyses <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
-          <Link
-            to="/library"
-            className="hidden sm:inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
-          >
-            Watch more analyses <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
+        </Reveal>
 
-        <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 snap-x snap-mandatory [scrollbar-width:thin]">
-          {rows.map((v, i) => {
-            const verdict = (v.verdict ?? "HOLD").toUpperCase();
-            const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
-            const duration = DURATIONS[i % DURATIONS.length];
-            const relDate = relativeDate(v.published_at);
+        <div className="relative">
+          {/* Edge fade masks for scrollable rail */}
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-secondary/60 to-transparent" />
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-secondary/60 to-transparent" />
+          <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 snap-x snap-mandatory scroll-smooth [scrollbar-width:thin]">
+            {rows.map((v, i) => {
+              const verdict = (v.verdict ?? "HOLD").toUpperCase();
+              const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
+              const duration = DURATIONS[i % DURATIONS.length];
+              const relDate = relativeDate(v.published_at);
 
-            const Card = (
-              <motion.div
-                initial={{ opacity: 0, x: 30 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: Math.min(i, 5) * 0.06 }}
-                className="min-w-[280px] snap-start bg-card/90 backdrop-blur-sm rounded-xl border border-border shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-300 flex flex-col cursor-pointer group"
-              >
+              const Card = (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: false, amount: 0.2 }}
+                  transition={{ delay: Math.min(i, 5) * 0.06, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                  whileHover={{ y: -4 }}
+                  className="min-w-[280px] snap-start bg-card/90 backdrop-blur-sm rounded-xl border border-border shadow-card hover:shadow-card-hover hover:border-accent/40 transition-[box-shadow,border-color] duration-300 flex flex-col cursor-pointer group"
+                >
+
                 <div className="relative h-36 bg-muted rounded-t-xl flex items-center justify-center overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-accent/10" />
                   <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center z-10 group-hover:scale-110 transition-transform">
@@ -252,8 +260,10 @@ export function RecentVideoAnalyses() {
             ) : (
               <div key={v.id}>{Card}</div>
             );
-          })}
+            })}
+          </div>
         </div>
+
 
         <div className="text-center mt-6">
           <Link to="/library" className="inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
