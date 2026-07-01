@@ -16,6 +16,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { TrendingQueriesStrip } from "./TrendingQueriesStrip";
 import { HeroDemoCard } from "./HeroDemoCard";
+import {
+  DELAY,
+  DUR,
+  EASE_IN_OUT,
+  EASE_OUT_SOFT,
+} from "@/lib/motion/tokens";
 
 const DISCOVERY_TEMPLATE =
   "I have ₹_____ to invest in _____ sector. Which stock should I buy?";
