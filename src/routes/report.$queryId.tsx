@@ -310,15 +310,6 @@ function TierShapedReportContent({
     </motion.div>
   );
 
-  // HASH-SCROLL EXCEPTION — when the URL carries #<section>, skip the M3/M5
-  // reveal for that section so the deep-link lands without a flicker. Other
-  // sections keep their scroll reveals. Read once at mount; hash changes
-  // don't re-mount the report so this is a stable read.
-  const skipRevealId = useMemo(() => {
-    if (typeof window === "undefined") return undefined;
-    const h = window.location.hash?.slice(1);
-    return h || undefined;
-  }, [queryId]);
 
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
