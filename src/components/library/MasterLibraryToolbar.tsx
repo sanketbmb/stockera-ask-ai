@@ -1,5 +1,12 @@
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export type SortKey = "latest" | "most_viewed";
 
@@ -66,31 +73,41 @@ export function MasterLibraryToolbar({
             />
           </div>
 
-          <select
-            value={sector}
-            onChange={(e) => onSectorChange(e.target.value)}
-            aria-label="Filter by sector"
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/40 sm:w-48"
+          <Select
+            value={sector === "" ? "__all__" : sector}
+            onValueChange={(v) => onSectorChange(v === "__all__" ? "" : v)}
           >
-            <option value="">All sectors</option>
-            {sectorOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="Filter by sector"
+              className="h-10 rounded-lg border-border bg-card text-sm text-foreground sm:w-48"
+            >
+              <SelectValue placeholder="All sectors" />
+            </SelectTrigger>
+            <SelectContent className="text-sm">
+              <SelectItem value="__all__">All sectors</SelectItem>
+              {sectorOptions.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <select
-            value={sort}
-            onChange={(e) => onSortChange(e.target.value as SortKey)}
-            aria-label="Sort order"
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/40 sm:w-40"
-          >
-            <option value="latest">Latest</option>
-            <option value="most_viewed" disabled={mostViewedDisabled}>
-              Most viewed{mostViewedDisabled ? " (soon)" : ""}
-            </option>
-          </select>
+          <Select value={sort} onValueChange={(v) => onSortChange(v as SortKey)}>
+            <SelectTrigger
+              aria-label="Sort order"
+              className="h-10 rounded-lg border-border bg-card text-sm text-foreground sm:w-40"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="text-sm">
+              <SelectItem value="latest">Latest</SelectItem>
+              <SelectItem value="most_viewed" disabled={mostViewedDisabled}>
+                Most viewed{mostViewedDisabled ? " (soon)" : ""}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
 
           {hasActiveFilters && (
             <button
