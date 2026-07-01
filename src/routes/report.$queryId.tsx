@@ -1,9 +1,8 @@
-import { createFileRoute, Link, useParams, useSearch } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { RequireAuth } from "@/components/auth/RequireAuth";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
@@ -188,6 +187,14 @@ function TierShapedReportContent({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const reduceMotion = useReducedMotion();
+  // HASH-SCROLL EXCEPTION — when the URL carries #<section>, skip the M3/M5
+  // reveal for that section so the deep-link lands without a flicker.
+  const skipRevealId = useMemo(() => {
+    if (typeof window === "undefined") return undefined;
+    const h = window.location.hash?.slice(1);
+    return h || undefined;
+  }, [queryId]);
 
   if (isLoading) return <LoadingScreen />;
   if (error && isReportNotFoundError(error)) return <NotFoundCard />;
@@ -286,7 +293,6 @@ function TierShapedReportContent({
   // M1 — Verdict banner slide-down 8px + fade on mount only. Reduced-motion
   // gated: snaps to visible without animation when the user prefers less
   // motion. Never re-fires on view-mode change (mount-only via no key deps).
-  const reduceMotion = useReducedMotion();
   const m1 = reduceMotion
     ? { initial: false as const }
     : {
@@ -304,15 +310,6 @@ function TierShapedReportContent({
     </motion.div>
   );
 
-  // HASH-SCROLL EXCEPTION — when the URL carries #<section>, skip the M3/M5
-  // reveal for that section so the deep-link lands without a flicker. Other
-  // sections keep their scroll reveals. Read once at mount; hash changes
-  // don't re-mount the report so this is a stable read.
-  const skipRevealId = useMemo(() => {
-    if (typeof window === "undefined") return undefined;
-    const h = window.location.hash?.slice(1);
-    return h || undefined;
-  }, [queryId]);
 
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
@@ -549,15 +546,17 @@ function ReportContent() {
   // Force scroll-to-top per queryId, unless a hash anchor is present (Step 3
   // deep-links rely on it) — that case is handled by the hash-scroll effect.
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window !== "undefined" && window.location.hash) return;
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  }, [queryId]);
+  }, [queryId, isValidUuid]);
 
   // Step 3 deep-link — smooth-scroll to hash anchor once the report renders.
   // Section IDs live on real motion.section blocks inside StockAnalysisReport
   // (quick-verdict, risk-reward, action-strategy, trade-levels,
   // what-can-go-wrong, expert-insight) plus ExpertAnswerSection (#expert-analysis).
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window === "undefined") return;
     const hash = window.location.hash?.slice(1);
     if (!hash) return;
@@ -573,7 +572,7 @@ function ReportContent() {
     };
     const t = setTimeout(tryScroll, 300);
     return () => clearTimeout(t);
-  }, [queryId, viewMode]);
+  }, [queryId, viewMode, isValidUuid]);
 
 
   // K-POLISH-1 — deep-link from My Queries empty follow-up state.
@@ -581,6 +580,7 @@ function ReportContent() {
   // into view and focus its textarea. Fires once per navigation after content
   // has had a chance to render.
   useEffect(() => {
+    if (!isValidUuid) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("focus") !== "followup") return;
@@ -598,7 +598,7 @@ function ReportContent() {
     };
     const t = setTimeout(tryScroll, 200);
     return () => clearTimeout(t);
-  }, [queryId]);
+  }, [queryId, isValidUuid]);
 
 
   const { data, isLoading, error } = useQuery({
@@ -665,7 +665,7 @@ function ReportContent() {
 
   if (authLoading) return <LoadingScreen />;
   if (!user && !isPublicLibraryRow) {
-    return <RequireAuth>{null}</RequireAuth>;
+    return <Navigate to="/login" search={{ redirect: `/report/${queryId}` } as never} />;
   }
 
   // SEO: set robots meta dynamically based on public-library status.
