@@ -31,11 +31,11 @@ export function MasterLibraryPagination({ currentPage, totalPages, onPageChange 
   const nextDisabled = currentPage >= totalPages;
 
   const baseBtn =
-    "inline-flex h-9 items-center justify-center rounded-full border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-40";
+    "chip-press inline-flex h-9 items-center justify-center rounded-full border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-accent/30 hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-40";
   const activeBtn =
-    "inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-primary bg-primary px-3 text-sm font-medium text-primary-foreground";
+    "inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-primary bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm";
   const numberBtn =
-    "inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent/30";
+    "chip-press inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-accent/30 hover:border-primary/40";
 
   return (
     <nav aria-label="Pagination" className="mt-8 flex items-center justify-center gap-1.5">
