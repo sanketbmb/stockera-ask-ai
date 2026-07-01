@@ -988,7 +988,7 @@ export function StockAnalysisReport({
         </motion.header>
 
         {/* ═══ 2. VERDICT HERO ═══ */}
-        <motion.section id="quick-verdict" style={{ scrollMarginTop: 96 }} variants={sectionFadeUp} {...sectionReveal("quick-verdict")} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
+        <motion.section id="quick-verdict" style={{ scrollMarginTop: 96 }} {...sectionReveal("quick-verdict")} className={`rounded-2xl border border-border bg-gradient-to-br ${verdictStyle.ring} px-6 py-8 md:px-10 md:py-10`}>
           <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <div className="flex items-center gap-2">
