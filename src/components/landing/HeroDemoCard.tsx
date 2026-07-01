@@ -84,9 +84,9 @@ export function HeroDemoCard() {
   return (
     <motion.div
       className="relative w-full max-w-[calc(100vw-2rem)] mx-auto md:max-w-none md:mx-0"
-      initial={{ opacity: 0, x: 30, scale: 0.97 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      transition={{ delay: 0.4, duration: 0.7, type: "spring", stiffness: 80 }}
+      initial={reduced ? false : { opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: DELAY.card, duration: DUR.heroCard, ease: EASE_OUT_FIRM }}
       whileHover={reduced ? undefined : { y: -3 }}
     >
       <div className="glass relative rounded-3xl p-6 shadow-card-lg overflow-hidden transition-shadow duration-300 hover:shadow-glow-teal">
