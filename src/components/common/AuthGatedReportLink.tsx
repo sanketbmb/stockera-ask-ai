@@ -2,9 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode, MouseEvent } from "react";
 
-const PUBLIC_DEMO_REPORT_IDS = new Set<string>([
-  "4f71e760-ded3-42c5-a1b4-6dbe005345b1",
-]);
+const PUBLIC_DEMO_REPORT_IDS = new Set<string>([]);
 
 interface Props {
   queryId: string;
