@@ -68,11 +68,13 @@ export function AnalystShowcase() {
         </Reveal>
 
         <Stagger staggerChildren={0.08} className="mt-10 space-y-5">
-          {ANALYSTS.map((entry) => (
+          {ANALYSTS.map((entry, i) => (
             <StaggerItem key={entry.id}>
-              <div className="group transition-all duration-200 hover:scale-[1.02] [&>article]:hover:border-primary/40 [&>article]:hover:shadow-card-hover">
-                <AnalystShowcaseRow entry={entry} />
-              </div>
+              <BlurSharpen index={i}>
+                <div className="group transition-all duration-200 hover:scale-[1.02] [&>article]:hover:border-primary/40 [&>article]:hover:shadow-card-hover">
+                  <AnalystShowcaseRow entry={entry} />
+                </div>
+              </BlurSharpen>
             </StaggerItem>
           ))}
         </Stagger>
