@@ -185,9 +185,14 @@ export function HeroSection() {
           </h1>
 
           {/* Sub-text */}
-          <p className="text-base md:text-lg text-muted-foreground max-w-lg mb-6 leading-relaxed mx-auto md:mx-0 mt-5">
+          <motion.p
+            className="text-base md:text-lg text-muted-foreground max-w-lg mb-6 leading-relaxed mx-auto md:mx-0 mt-5"
+            initial={reduced ? false : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: DUR.heroSub, delay: DELAY.sub, ease: EASE_OUT_SOFT }}
+          >
             Helix AI report instantly. Expert text reply in 60 mins. Video analysis in 24 hours.
-          </p>
+          </motion.p>
 
           {/* Feature pills */}
           <div className="flex flex-wrap justify-center md:justify-start gap-2 mb-5">
