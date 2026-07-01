@@ -186,7 +186,15 @@ export function RecentVideoAnalyses() {
           {/* Edge fade masks for scrollable rail */}
           <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-secondary/60 to-transparent" />
           <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-secondary/60 to-transparent" />
-          <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 snap-x snap-mandatory scroll-smooth [scrollbar-width:thin]">
+          <div
+            className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 snap-x snap-mandatory scroll-smooth [scrollbar-width:thin]"
+            style={{
+              maskImage:
+                "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+              WebkitMaskImage:
+                "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+            }}
+          >
             {rows.map((v, i) => {
               const verdict = (v.verdict ?? "HOLD").toUpperCase();
               const verdictClass = VERDICT_TONE_FILLED[verdict] ?? "bg-muted text-muted-foreground";
