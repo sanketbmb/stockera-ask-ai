@@ -260,8 +260,10 @@ export function RecentVideoAnalyses() {
             ) : (
               <div key={v.id}>{Card}</div>
             );
-          })}
+            })}
+          </div>
         </div>
+
 
         <div className="text-center mt-6">
           <Link to="/library" className="inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
