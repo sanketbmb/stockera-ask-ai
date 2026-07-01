@@ -16,6 +16,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { TrendingQueriesStrip } from "./TrendingQueriesStrip";
 import { HeroDemoCard } from "./HeroDemoCard";
+import {
+  DELAY,
+  DUR,
+  EASE_IN_OUT,
+  EASE_OUT_SOFT,
+} from "@/lib/motion/tokens";
 
 const DISCOVERY_TEMPLATE =
   "I have ₹_____ to invest in _____ sector. Which stock should I buy?";
@@ -117,10 +123,15 @@ export function HeroSection() {
         {/* LEFT COLUMN */}
         <div className="text-center md:text-left">
           {/* Eyebrow */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent">
+          <motion.div
+            className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/5 px-3 py-1.5 text-[11px] uppercase tracking-wider text-accent"
+            initial={reduced ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.18, delay: DELAY.sebiBar, ease: EASE_OUT_SOFT }}
+          >
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             SEBI Registered Analysts • INH000019071
-          </div>
+          </motion.div>
 
           {/* Tiny brand line */}
           <div className="mt-3 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground md:flex">
@@ -174,9 +185,14 @@ export function HeroSection() {
           </h1>
 
           {/* Sub-text */}
-          <p className="text-base md:text-lg text-muted-foreground max-w-lg mb-6 leading-relaxed mx-auto md:mx-0 mt-5">
+          <motion.p
+            className="text-base md:text-lg text-muted-foreground max-w-lg mb-6 leading-relaxed mx-auto md:mx-0 mt-5"
+            initial={reduced ? false : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: DUR.heroSub, delay: DELAY.sub, ease: EASE_OUT_SOFT }}
+          >
             Helix AI report instantly. Expert text reply in 60 mins. Video analysis in 24 hours.
-          </p>
+          </motion.p>
 
           {/* Feature pills */}
           <div className="flex flex-wrap justify-center md:justify-start gap-2 mb-5">
@@ -236,17 +252,56 @@ export function HeroSection() {
           </div>
 
           {/* Trust strip */}
-          <ul className="mt-8 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-start md:gap-3">
-            {TRUST_CHIPS.map((c) => (
-              <li
-                key={c.text}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground md:px-3 md:py-1.5 md:text-xs"
-              >
-                <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                {c.text}
-              </li>
-            ))}
-          </ul>
+          <motion.ul
+            className="mt-8 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-start md:gap-3"
+            initial={reduced ? false : "hidden"}
+            animate="visible"
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  delayChildren: DELAY.trustRow,
+                  staggerChildren: 0.06,
+                },
+              },
+            }}
+          >
+            {TRUST_CHIPS.map((c) => {
+              const isSebi = c.icon === ShieldCheck;
+              return (
+                <motion.li
+                  key={c.text}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground md:px-3 md:py-1.5 md:text-xs"
+                  variants={{
+                    hidden: { opacity: 0, y: 8 },
+                    visible: {
+                      opacity: 1,
+                      y: 0,
+                      transition: { duration: DUR.trustFade, ease: EASE_OUT_SOFT },
+                    },
+                  }}
+                >
+                  {isSebi && !reduced ? (
+                    <motion.span
+                      className="inline-flex"
+                      animate={{ opacity: [0.75, 1, 0.75] }}
+                      transition={{
+                        duration: DUR.sebiPulse,
+                        repeat: Infinity,
+                        ease: EASE_IN_OUT,
+                        delay: 1.4,
+                      }}
+                    >
+                      <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                    </motion.span>
+                  ) : (
+                    <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                  )}
+                  {c.text}
+                </motion.li>
+              );
+            })}
+          </motion.ul>
         </div>
 
         {/* RIGHT COLUMN — instant AI demo card */}

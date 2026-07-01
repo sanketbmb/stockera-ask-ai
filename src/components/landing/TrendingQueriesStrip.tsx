@@ -57,7 +57,13 @@ export function TrendingQueriesStrip() {
 
       <div
         className={reduced ? "flex w-max gap-2.5" : "trending-marquee-track flex w-max gap-2.5"}
-        style={{ animationPlayState: paused && !reduced ? "paused" : "running" }}
+        style={{
+          animationPlayState: paused && !reduced ? "paused" : "running",
+          maskImage:
+            "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+        }}
       >
         {[...questions, ...questions].map((q, i) => (
           <div
