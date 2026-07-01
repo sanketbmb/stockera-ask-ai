@@ -75,7 +75,7 @@ export function StepStory() {
           <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.35, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 1</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
-              You Ask a <span className="text-gradient" style={{ backgroundImage: "linear-gradient(90deg,#2BA8A0,#1F3C73,#F5B731,#2BA8A0)" }}>Question</span>
+              You Ask a <GradientText>Question</GradientText>
             </motion.h2>
             <motion.div
               variants={fadeUp}
