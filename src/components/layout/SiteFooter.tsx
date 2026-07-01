@@ -35,6 +35,9 @@ const cols = [
 ];
 
 export function SiteFooter() {
+  const brandRef = useRef<HTMLSpanElement | null>(null);
+  const brandInView = useInView(brandRef, { once: true, amount: 0.6 });
+  const reduced = useReducedMotion();
   return (
     <footer className="bg-primary text-primary-foreground">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
