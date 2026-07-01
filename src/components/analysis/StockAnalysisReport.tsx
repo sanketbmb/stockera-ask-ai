@@ -1300,8 +1300,8 @@ export function StockAnalysisReport({
           <motion.section
             id="what-can-go-wrong"
             style={{ scrollMarginTop: 96 }}
-            variants={nudgeReveal}
-            {...sectionReveal("what-can-go-wrong")}
+            {...sectionReveal("what-can-go-wrong", nudgeReveal)}
+
             className="rounded-2xl border border-gold/40 bg-gradient-to-br from-gold/10 to-gold/5 px-6 py-5"
           >
 
