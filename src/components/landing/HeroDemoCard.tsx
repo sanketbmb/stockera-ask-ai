@@ -219,8 +219,7 @@ export function HeroDemoCard() {
           </AnimatePresence>
         </motion.div>
 
-          </AnimatePresence>
-        </div>
+
 
         {/* Sample queries */}
         <div className="relative space-y-1.5 mb-4">
