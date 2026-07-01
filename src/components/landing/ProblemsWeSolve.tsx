@@ -104,8 +104,37 @@ function ProblemHeader({ p }: { p: Problem }) {
 }
 
 export function ProblemsWeSolve() {
+  const sectionRef = useRef<HTMLDivElement | null>(null);
+  const reduced = useReducedMotion();
+  const [isLg, setIsLg] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const handler = () => setIsLg(mq.matches);
+    handler();
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "end start"],
+  });
+  // Horizontal parallax on lg+: side cards drift, center card stays.
+  const xLeft = useTransform(scrollYProgress, [0, 0.5, 1], [-24, 0, 24]);
+  const xRight = useTransform(scrollYProgress, [0, 0.5, 1], [24, 0, -24]);
+  const parallaxOn = isLg && !reduced;
+
+  const cardXFor = (i: number) => {
+    if (!parallaxOn) return undefined;
+    if (i === 0) return xLeft;
+    if (i === 2) return xRight;
+    return undefined;
+  };
+
   return (
-    <section className="bg-background py-20">
+    <section ref={sectionRef} className="bg-background py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <Reveal className="text-center">
           <h2 className="font-display text-3xl text-foreground sm:text-4xl">
@@ -127,17 +156,19 @@ export function ProblemsWeSolve() {
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {PROBLEMS.map((p, i) => (
             <Reveal key={p.id} delay={i * 0.05}>
-              <Link to="/post-query" className="block h-full cursor-pointer">
-                <Card className="group flex h-full flex-col gap-4 p-6 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-accent hover:shadow-card-hover">
-                  <ProblemHeader p={p} />
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {renderBody(p.body)}
-                  </p>
-                  <span className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent group-hover:underline">
-                    {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                  </span>
-                </Card>
-              </Link>
+              <motion.div style={{ x: cardXFor(i) }} className="h-full will-change-transform">
+                <Link to="/post-query" className="block h-full cursor-pointer">
+                  <Card className="group flex h-full flex-col gap-4 p-6 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-accent hover:shadow-card-hover">
+                    <ProblemHeader p={p} />
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {renderBody(p.body)}
+                    </p>
+                    <span className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-accent group-hover:underline">
+                      {p.cta} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                    </span>
+                  </Card>
+                </Link>
+              </motion.div>
             </Reveal>
           ))}
         </div>
