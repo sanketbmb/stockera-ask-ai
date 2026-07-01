@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TrendingDown, TrendingUp, HelpCircle, type LucideIcon } from "lucide-react";
+import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/landing/motion-helpers";
 import { VERDICT_TONE_OUTLINE } from "@/lib/verdictTone";
