@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
