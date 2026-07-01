@@ -236,11 +236,11 @@ export function HeroSection() {
           </div>
 
           {/* Trust strip */}
-          <ul className="mt-8 flex flex-wrap justify-center md:justify-start gap-2">
+          <ul className="mt-8 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-start md:gap-3">
             {TRUST_CHIPS.map((c) => (
               <li
                 key={c.text}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-3 py-1.5 text-xs text-muted-foreground"
+                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/70 px-2.5 py-1 text-[11px] text-muted-foreground md:px-3 md:py-1.5 md:text-xs"
               >
                 <c.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                 {c.text}
