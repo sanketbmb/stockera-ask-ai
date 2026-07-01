@@ -77,6 +77,7 @@ async function fetchRecent(): Promise<RecentRow[]> {
 export function MasterSearchRecentTab({ onClose }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const reduced = useReducedMotion();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
