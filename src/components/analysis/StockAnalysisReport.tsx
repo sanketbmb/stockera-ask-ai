@@ -1299,11 +1299,10 @@ export function StockAnalysisReport({
             id="what-can-go-wrong"
             style={{ scrollMarginTop: 96 }}
             variants={nudgeReveal}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
+            {...sectionReveal("what-can-go-wrong")}
             className="rounded-2xl border border-gold/40 bg-gradient-to-br from-gold/10 to-gold/5 px-6 py-5"
           >
+
             <div className="flex items-start gap-3">
               <Brain className="mt-0.5 h-5 w-5 text-[hsl(var(--gold-foreground))]" />
               <div>
