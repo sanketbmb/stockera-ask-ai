@@ -148,16 +148,14 @@ export function PublicAnswersMarquee() {
             );
 
             return c.href ? (
-              <Link
+              <AuthGatedReportLink
                 key={`${c.key}-${i}`}
-                to="/report/$queryId"
-                params={{ queryId: c.href.split("/").pop() as string }}
-                preload="intent"
+                queryId={c.href.split("/").pop() as string}
                 className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-2xl"
                 aria-label={`See full answer for ${c.ticker}: ${c.question}`}
               >
                 {Inner}
-              </Link>
+              </AuthGatedReportLink>
             ) : (
               <div key={`${c.key}-${i}`} aria-hidden={i >= cards.length}>
                 {Inner}
