@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@/contexts/AuthContext";
 import { motion, useInView } from "framer-motion";
 import {
   Search,
