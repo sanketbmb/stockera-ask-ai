@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, useInView } from "framer-motion";
@@ -56,7 +56,16 @@ export function StepStory() {
   const { user } = useAuth();
 
   const p1Ref = useRef(null);
-  const p1InView = useInView(p1Ref, { once: true, amount: 0.5 });
+  const p1InViewRaw = useInView(p1Ref, {
+    once: false,
+    amount: 0.15,
+    margin: "0px 0px -10% 0px",
+  });
+  const [p1Started, setP1Started] = useState(false);
+  useEffect(() => {
+    if (p1InViewRaw && !p1Started) setP1Started(true);
+  }, [p1InViewRaw, p1Started]);
+  const p1InView = p1InViewRaw || p1Started;
   const typed = useTypewriter(SBI_QUESTION, { start: p1InView, speed: 40 });
 
   const goReport = (view?: "text" | "video", hash?: string) => {
@@ -118,7 +127,7 @@ export function StepStory() {
       {/* Panel 2 — Expert Responds */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-secondary/30 relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.15, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 2</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
               Expert <GradientText>Responds</GradientText>
@@ -211,7 +220,7 @@ export function StepStory() {
       {/* Panel 3 — What You'll Get */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-background relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.15, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 3</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-3">
               What You'll <GradientText>Get</GradientText>
