@@ -146,10 +146,14 @@ export function StepStory() {
             <div className="grid md:grid-cols-2 gap-6">
               {/* Textual card → view=text */}
               <motion.div
-                initial={{ opacity: 0, x: -50 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: false, amount: 0.3 }}
-                transition={{ type: "spring", stiffness: 80, delay: 0.2 }}
+                variants={{
+                  hidden: { opacity: 0, x: -50 },
+                  visible: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { type: "spring", stiffness: 80 },
+                  },
+                }}
                 onClick={() => goReport("text")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all"
               >
@@ -186,10 +190,14 @@ export function StepStory() {
 
               {/* Video card → view=video */}
               <motion.div
-                initial={{ opacity: 0, x: 50 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: false, amount: 0.3 }}
-                transition={{ type: "spring", stiffness: 80, delay: 0.3 }}
+                variants={{
+                  hidden: { opacity: 0, x: 50 },
+                  visible: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { type: "spring", stiffness: 80 },
+                  },
+                }}
                 onClick={() => goReport("video")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all flex flex-col"
               >
