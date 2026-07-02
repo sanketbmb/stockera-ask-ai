@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, useInView } from "framer-motion";
@@ -56,7 +56,16 @@ export function StepStory() {
   const { user } = useAuth();
 
   const p1Ref = useRef(null);
-  const p1InView = useInView(p1Ref, { once: true, amount: 0.5 });
+  const p1InViewRaw = useInView(p1Ref, {
+    once: false,
+    amount: 0.15,
+    margin: "0px 0px -10% 0px",
+  });
+  const [p1Started, setP1Started] = useState(false);
+  useEffect(() => {
+    if (p1InViewRaw && !p1Started) setP1Started(true);
+  }, [p1InViewRaw, p1Started]);
+  const p1InView = p1InViewRaw || p1Started;
   const typed = useTypewriter(SBI_QUESTION, { start: p1InView, speed: 40 });
 
   const goReport = (view?: "text" | "video", hash?: string) => {
@@ -118,7 +127,7 @@ export function StepStory() {
       {/* Panel 2 — Expert Responds */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-secondary/30 relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.15, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 2</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-6">
               Expert <GradientText>Responds</GradientText>
@@ -137,10 +146,14 @@ export function StepStory() {
             <div className="grid md:grid-cols-2 gap-6">
               {/* Textual card → view=text */}
               <motion.div
-                initial={{ opacity: 0, x: -50 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: false, amount: 0.3 }}
-                transition={{ type: "spring", stiffness: 80, delay: 0.2 }}
+                variants={{
+                  hidden: { opacity: 0, x: -50 },
+                  visible: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { type: "spring", stiffness: 80 },
+                  },
+                }}
                 onClick={() => goReport("text")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all"
               >
@@ -177,10 +190,14 @@ export function StepStory() {
 
               {/* Video card → view=video */}
               <motion.div
-                initial={{ opacity: 0, x: 50 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: false, amount: 0.3 }}
-                transition={{ type: "spring", stiffness: 80, delay: 0.3 }}
+                variants={{
+                  hidden: { opacity: 0, x: 50 },
+                  visible: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { type: "spring", stiffness: 80 },
+                  },
+                }}
                 onClick={() => goReport("video")}
                 className="bg-card rounded-2xl border border-border p-5 shadow-card relative cursor-pointer group hover:shadow-card-hover hover:-translate-y-0.5 transition-all flex flex-col"
               >
@@ -211,7 +228,7 @@ export function StepStory() {
       {/* Panel 3 — What You'll Get */}
       <div className="min-h-fit py-14 md:py-20 flex items-center justify-center bg-background relative">
         <div className="container mx-auto px-4 max-w-3xl">
-          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.25, margin: "-10% 0px" }}>
+          <motion.div variants={stagger} initial="hidden" whileInView="visible" viewport={{ once: false, amount: 0.15, margin: "-10% 0px" }}>
             <motion.p variants={fadeUp} className="text-xs font-semibold uppercase tracking-widest text-accent mb-3 text-center">STEP 3</motion.p>
             <motion.h2 variants={fadeUp} className="font-display text-2xl md:text-4xl font-bold text-center text-foreground mb-3">
               What You'll <GradientText>Get</GradientText>
@@ -241,9 +258,8 @@ export function StepStory() {
                   <motion.div
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: false, amount: 0.3 }}
-                    transition={{ duration: 0.4, delay: i * 0.06 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     onClick={() => goReport("text", item.anchor)}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-accent/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
                   >
@@ -261,9 +277,8 @@ export function StepStory() {
                   <motion.div
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: false, amount: 0.3 }}
-                    transition={{ duration: 0.4, delay: i * 0.06 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     onClick={() => goReport("video", "expert-analysis")}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-primary/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
                   >
