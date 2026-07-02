@@ -258,9 +258,8 @@ export function StepStory() {
                   <motion.div
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: false, amount: 0.3 }}
-                    transition={{ duration: 0.4, delay: i * 0.06 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     onClick={() => goReport("text", item.anchor)}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-accent/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
                   >
@@ -278,9 +277,8 @@ export function StepStory() {
                   <motion.div
                     key={item.title}
                     initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: false, amount: 0.3 }}
-                    transition={{ duration: 0.4, delay: i * 0.06 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     onClick={() => goReport("video", "expert-analysis")}
                     className="flex items-start gap-3 p-3.5 rounded-xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-primary/50 hover:bg-card hover:-translate-y-0.5 hover:shadow-card transition-all cursor-pointer"
                   >
