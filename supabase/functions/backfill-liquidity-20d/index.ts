@@ -121,19 +121,44 @@ Deno.serve(async (req) => {
     });
 
 
-    // FIX-I-PREWARM: skip pairs already at >=20 fresh liquidity rows.
-    // Coverage probe paginated to avoid PostgREST 1000-row silent cap.
+    // LIQUIDITY.FRESHNESS.GATE — a pair is covered iff
+    //   rows_ok >= 20 AND MAX(record_date) >= today - N days
+    // N = stock_picker_runtime_config.liquidity_coverage_freshness_days (int, default 3).
+    // force_refresh=true bypasses the gate entirely.
+    // Rollback: set knob to 999999 (every pair "fresh" -> count-only behavior).
     const skipCovered = bodyJson.skip_covered !== false;
     let skippedCovered = 0;
+    let coveredByFreshness = 0;
+    let coveredByCountOnlyBefore = 0;
+    let staleNowPending = 0;
+    let freshnessDays = 3;
     let workPairs = pairs;
-    if (skipCovered) {
+
+    if (skipCovered && !forceRefresh) {
+      const { data: fcfg } = await supabase
+        .from("stock_picker_runtime_config")
+        .select("config_value")
+        .eq("config_key", "liquidity_coverage_freshness_days")
+        .maybeSingle();
+      const raw = fcfg?.config_value;
+      const parsed = typeof raw === "number" ? raw
+        : typeof raw === "string" ? Number(raw)
+        : (raw && typeof raw === "object" && "value" in (raw as Record<string, unknown>))
+          ? Number((raw as Record<string, unknown>).value) : NaN;
+      if (Number.isFinite(parsed) && parsed >= 1) freshnessDays = Math.floor(parsed);
+
+      const cutoff = new Date();
+      cutoff.setUTCDate(cutoff.getUTCDate() - freshnessDays);
+      const cutoffIso = cutoff.toISOString().slice(0, 10);
+
       const PAGE = 1000;
       let from = 0;
       const counts = new Map<string, number>();
+      const maxDate = new Map<string, string>();
       while (true) {
         const { data: page, error } = await supabase
           .from("stock_picker_liquidity_20d")
-          .select("symbol,exchange")
+          .select("symbol,exchange,record_date")
           .eq("fetch_status", "ok")
           .order("symbol", { ascending: true })
           .range(from, from + PAGE - 1);
@@ -142,17 +167,42 @@ Deno.serve(async (req) => {
         for (const r of page) {
           const k = `${r.symbol}|${r.exchange}`;
           counts.set(k, (counts.get(k) ?? 0) + 1);
+          const d = r.record_date as string | null;
+          if (d && (!maxDate.has(k) || d > (maxDate.get(k) as string))) maxDate.set(k, d);
         }
         if (page.length < PAGE) break;
         from += PAGE;
       }
+
       const covered = new Set<string>();
-      for (const [k, c] of counts) if (c >= 20) covered.add(k);
+      for (const [k, c] of counts) {
+        if (c >= 20) {
+          coveredByCountOnlyBefore++;
+          const md = maxDate.get(k);
+          if (md && md >= cutoffIso) { covered.add(k); coveredByFreshness++; }
+          else { staleNowPending++; }
+        }
+      }
       workPairs = pairs.filter((p) => {
         if (covered.has(`${p.symbol}|${p.exchange}`)) { skippedCovered++; return false; }
         return true;
       });
     }
+
+    // Deterministic order by composite pair key "SYMBOL|EXCHANGE".
+    const pairKey = (p: { symbol: string; exchange: string }) => `${p.symbol}|${p.exchange}`;
+    workPairs.sort((a, b) => pairKey(a).localeCompare(pairKey(b)));
+
+    // Cursor is the LAST pair key already processed by a prior invocation.
+    // We slice strictly greater than that composite key.
+    const sliceStart = cursorIn
+      ? (() => {
+          const idx = workPairs.findIndex((p) => pairKey(p) > cursorIn);
+          return idx < 0 ? workPairs.length : idx;
+        })()
+      : 0;
+    const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
+    const remainingBefore = workPairs.length - sliceStart;
 
     const maxRuntimeMs = typeof bodyJson.max_runtime_ms === "number"
       ? Math.max(5000, Math.floor(bodyJson.max_runtime_ms))
