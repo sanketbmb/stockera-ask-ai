@@ -391,6 +391,7 @@ Deno.serve(async (req) => {
         counters.updated_count++;
         if (exUsed === "NSE") counters.nse_updated_count++;
         else counters.bse_updated_count++;
+        counters.processed_member_count++;
         if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
       }
       if (i + chunkSize < members.length) {
