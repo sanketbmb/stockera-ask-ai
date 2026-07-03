@@ -279,12 +279,25 @@ async function resolveBackfillCandidates(
   if (pairs.length === 0) return { targets: [], source, pairs };
 
   // Apply inline cleanliness from stock_master.
+  // FIX-K pattern: paginate the .in() read to defeat PostgREST's 1000-row cap.
+  // Without this, ~2.7k rows for the ~788-symbol universe get truncated and
+  // ~428 eligible members silently fall out of the candidate set.
   const symbolList = [...new Set(pairs.map((p) => p.symbol))];
-  const { data: meta, error: metaErr } = await supabase
-    .from('stock_master')
-    .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
-    .in('symbol', symbolList);
-  if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
+  const meta: Array<Record<string, unknown>> = [];
+  const META_PAGE = 1000;
+  for (let offset = 0; ; offset += META_PAGE) {
+    const { data, error: metaErr } = await supabase
+      .from('stock_master')
+      .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
+      .in('symbol', symbolList)
+      .order('symbol', { ascending: true })
+      .order('exchange', { ascending: true })
+      .range(offset, offset + META_PAGE - 1);
+    if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
+    const batch = (data ?? []) as Array<Record<string, unknown>>;
+    meta.push(...batch);
+    if (batch.length < META_PAGE) break;
+  }
 
   type Agg = {
     sym: string; exch: string;
@@ -293,7 +306,7 @@ async function resolveBackfillCandidates(
     company_name: string | null;
   };
   const agg = new Map<string, Agg>();
-  for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
+  for (const r of meta) {
     const sym = String(r.symbol ?? '');
     const exch = String(r.exchange ?? '');
     const key = `${sym}|${exch}`;
