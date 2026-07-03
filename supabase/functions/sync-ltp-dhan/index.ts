@@ -46,10 +46,18 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
 // Discriminated result for upstream failure classification.
 type DhanFetchResult =
   | { kind: "ok"; ltp: number }
-  | { kind: "dhan_null" }
-  | { kind: "auth_error" }
-  | { kind: "rate_limited"; retryAfterMs: number }
-  | { kind: "fetch_error"; message: string };
+  | { kind: "dhan_null"; status: number; message: string | null }
+  | { kind: "auth_error"; status: number; message: string | null }
+  | { kind: "rate_limited"; retryAfterMs: number; status: number }
+  | { kind: "fetch_error"; status: number; message: string };
+
+function extractUpstreamMessage(body: Record<string, unknown>): string | null {
+  const m = (body as { message?: unknown }).message
+    ?? (body as { error?: unknown }).error
+    ?? (body as { errorMessage?: unknown }).errorMessage;
+  if (m == null) return null;
+  return typeof m === "string" ? m : JSON.stringify(m);
+}
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFetchResult> {
   try {
@@ -67,31 +75,35 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFe
     try {
       body = text ? JSON.parse(text) : {};
     } catch {
-      return { kind: "fetch_error", message: "non_json_response" };
+      return { kind: "fetch_error", status: res.status, message: "non_json_response" };
     }
 
-    if (res.status === 401 || res.status === 403) return { kind: "auth_error" };
+    const upstreamMsg = extractUpstreamMessage(body);
+    if (res.status === 401 || res.status === 403) return { kind: "auth_error", status: res.status, message: upstreamMsg };
     if (res.status === 429) {
       const raHeader = res.headers.get("Retry-After");
       const raBody = (body as { retry_after?: unknown }).retry_after;
       const ra = Number(raHeader ?? raBody ?? 1);
       const retryAfterMs = Math.min(Math.max(500, (Number.isFinite(ra) ? ra : 1) * 1000), 5000);
-      return { kind: "rate_limited", retryAfterMs };
+      return { kind: "rate_limited", retryAfterMs, status: res.status };
     }
-    if (res.status >= 500) return { kind: "fetch_error", message: `http_${res.status}` };
-    if (!res.ok) return { kind: "fetch_error", message: `http_${res.status}` };
+    if (res.status >= 500) return { kind: "fetch_error", status: res.status, message: upstreamMsg ?? `http_${res.status}` };
+    if (!res.ok) return { kind: "fetch_error", status: res.status, message: upstreamMsg ?? `http_${res.status}` };
 
-    if (body.success !== true) return { kind: "dhan_null" };
+    if (body.success !== true) return { kind: "dhan_null", status: res.status, message: upstreamMsg };
     const data = body.data as Record<string, unknown> | undefined;
     const inner = data?.data as Record<string, unknown> | undefined;
     const seg = inner?.[segment] as Record<string, unknown> | undefined;
     const node = seg?.[securityId] as Record<string, unknown> | undefined;
     const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
-    return typeof ltp === "number" && ltp > 0 ? { kind: "ok", ltp } : { kind: "dhan_null" };
+    return typeof ltp === "number" && ltp > 0
+      ? { kind: "ok", ltp }
+      : { kind: "dhan_null", status: res.status, message: upstreamMsg };
   } catch (e) {
-    return { kind: "fetch_error", message: String(e) };
+    return { kind: "fetch_error", status: 0, message: String(e) };
   }
 }
+
 
 async function fetchLtpWithRetry(id: string, seg: "NSE_EQ" | "BSE_EQ"): Promise<DhanFetchResult> {
   const r1 = await fetchDhanLtp(id, seg);
