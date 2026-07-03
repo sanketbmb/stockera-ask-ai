@@ -166,9 +166,18 @@ Deno.serve(async (req) => {
         "active_universe_snapshot_id",
         "universe_override_symbols",
         "universe_override_enabled",
+        "sync_ltp_dhan_cursor",
       ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
+
+    // Rolling cursor: last processed composite pair-key `${symbol}|${exchange}`.
+    // Applies only to unfiltered scheduled runs.
+    const cursorRaw = cfg.get("sync_ltp_dhan_cursor");
+    const cursorKey: string | null =
+      cursorRaw && typeof cursorRaw === "object" && typeof (cursorRaw as { last_key?: unknown }).last_key === "string"
+        ? (cursorRaw as { last_key: string }).last_key
+        : null;
 
     if (cfg.get("dhan_api_enabled") !== true) {
       return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
@@ -256,11 +265,43 @@ Deno.serve(async (req) => {
       master_fallback_used_count: 0,
       chunk_count: 0,
       fetch_error_by_status: {} as Record<string, number>,
+      rate_limit_like_count: 0,
+      processed_member_count: 0,
     };
 
-    // -------- Chunked one-call-per-symbol loop --------
-    // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
-    const chunkSize = filterSymbols ? members.length : FULL_RUN_CHUNK;
+    // -------- Rolling-cursor scope (unfiltered) OR filtered inline --------
+    // Filtered inline runs: process all supplied symbols in one shot, cursor NOT advanced.
+    // Unfiltered scheduled runs: deterministic order by `${symbol}|${exchange}`, pick
+    // exactly ONE FULL_RUN_CHUNK-sized window starting after the persisted cursor,
+    // wrapping to the beginning at end-of-universe.
+    const universeMode: "rolling_full_run" | "filtered_inline" =
+      filterSymbols ? "filtered_inline" : "rolling_full_run";
+
+    let wrappedToStart = false;
+    let cursorStartKey: string | null = null;
+    let cursorEndKey: string | null = null;
+
+    if (universeMode === "rolling_full_run") {
+      members.sort((a, b) =>
+        `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
+      );
+      let startIdx = 0;
+      if (cursorKey) {
+        const found = members.findIndex((m) => `${m.symbol}|${m.exchange}` > cursorKey);
+        if (found === -1) {
+          wrappedToStart = true;
+          startIdx = 0;
+        } else {
+          startIdx = found;
+        }
+      }
+      const endIdx = Math.min(startIdx + FULL_RUN_CHUNK, members.length);
+      cursorStartKey = members[startIdx] ? `${members[startIdx].symbol}|${members[startIdx].exchange}` : null;
+      cursorEndKey = members[endIdx - 1] ? `${members[endIdx - 1].symbol}|${members[endIdx - 1].exchange}` : null;
+      members = members.slice(startIdx, endIdx);
+    }
+
+    const chunkSize = universeMode === "filtered_inline" ? members.length : FULL_RUN_CHUNK;
     let abortedAuth = false;
 
     outer: for (let i = 0; i < members.length; i += chunkSize) {
@@ -313,6 +354,10 @@ Deno.serve(async (req) => {
         if (r.kind !== "ok") {
           const statusKey = String((r as { status?: number }).status ?? 0);
           counters.fetch_error_by_status[statusKey] = (counters.fetch_error_by_status[statusKey] ?? 0) + 1;
+          // status 0 = network/timeout; 429 = classic rate-limit. dhan-fetch
+          // surfaces RateLimitError as status=0, treat both as throttle signal.
+          const st = (r as { status?: number }).status ?? 0;
+          if (st === 0 || st === 429) counters.rate_limit_like_count++;
           if (r.kind === "auth_error")   counters.auth_error_count++;
           if (r.kind === "rate_limited") counters.rate_limited_count++;
           if (r.kind === "dhan_null")    counters.dhan_null_count++;
@@ -325,6 +370,7 @@ Deno.serve(async (req) => {
           }
           const upstreamMsg = (r as { message?: string | null }).message ?? null;
           errors.push({ symbol: sym, reason: `${r.kind} status=${statusKey} (${seg} id=${idUsed})${upstreamMsg ? ` msg=${upstreamMsg}` : ""}` });
+          counters.processed_member_count++;
           if (counters.auth_error_count >= 3) { abortedAuth = true; break outer; }
           if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
           continue;
@@ -345,6 +391,7 @@ Deno.serve(async (req) => {
         counters.updated_count++;
         if (exUsed === "NSE") counters.nse_updated_count++;
         else counters.bse_updated_count++;
+        counters.processed_member_count++;
         if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
       }
       if (i + chunkSize < members.length) {
@@ -355,6 +402,24 @@ Deno.serve(async (req) => {
     const runStatus = abortedAuth
       ? "error"
       : (errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"));
+
+    // Persist rolling cursor for the next unfiltered invocation. On wrap or
+    // empty slice, reset to null so the next run starts from the top.
+    if (universeMode === "rolling_full_run") {
+      const nextCursorValue = wrappedToStart || !cursorEndKey
+        ? { last_key: null, wrapped_at: new Date().toISOString() }
+        : { last_key: cursorEndKey, updated_at: new Date().toISOString() };
+      await supabase.from("stock_picker_runtime_config").upsert(
+        {
+          config_key: "sync_ltp_dhan_cursor",
+          kind: "operational",
+          config_value: nextCursorValue,
+          description: "Rolling cursor for sync-ltp-dhan full-universe pacing",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "config_key" },
+      );
+    }
 
     // Telemetry — only for full-universe runs; partial inline refreshes
     // (filter_applied) must not overwrite the daily summary.
@@ -371,6 +436,10 @@ Deno.serve(async (req) => {
             counters,
             http_400_samples,
             universe_source: universeSource,
+            universe_mode: universeMode,
+            cursor_start: cursorStartKey,
+            cursor_end: cursorEndKey,
+            wrapped_to_start: wrappedToStart,
             aborted_systemic_auth: abortedAuth,
           },
           description: "Last sync-ltp-dhan run summary",
@@ -386,6 +455,10 @@ Deno.serve(async (req) => {
       errors_count: errors.length,
       details: {
         filter_applied: filterSymbols != null,
+        universe_mode: universeMode,
+        cursor_start: cursorStartKey,
+        cursor_end: cursorEndKey,
+        wrapped_to_start: wrappedToStart,
         counters,
         http_400_samples,
         universe_source: universeSource,
@@ -401,6 +474,10 @@ Deno.serve(async (req) => {
       counters,
       http_400_samples,
       universe_source: universeSource,
+      universe_mode: universeMode,
+      cursor_start: cursorStartKey,
+      cursor_end: cursorEndKey,
+      wrapped_to_start: wrappedToStart,
       aborted_systemic_auth: abortedAuth,
       filter_applied: filterSymbols != null,
     });
