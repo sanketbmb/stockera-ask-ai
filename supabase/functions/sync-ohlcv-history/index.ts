@@ -494,27 +494,59 @@ Deno.serve(async (req) => {
         seenT.add(k); return true;
       }).sort((a, b) => (a.symbol + '|' + a.exchange).localeCompare(b.symbol + '|' + b.exchange));
 
-      // Compute already-covered (>=20 rows) among targets via HEAD count per pair.
-      // Parallel batches to keep latency bounded. This is the bug-fix vs the
-      // earlier .select()-based probe, which silently hit the PostgREST 1000-row
-      // cap and under-reported cumulative coverage.
+      // Freshness-aware coverage: a symbol counts as covered ONLY when it has
+      // >=20 rows AND its max(record_date) is within `freshnessDays` of today.
+      // Stale symbols re-enter `pending` so chunk mode can refresh them.
+      // `force_refresh: true` in the request body bypasses the coverage set entirely.
+      const forceRefresh = jbool((body as Record<string, unknown>)?.force_refresh);
+      const freshnessDays = Math.max(
+        1,
+        Math.floor(jnum(cfg.get('ohlcv_coverage_freshness_days'), 3)),
+      );
+      const freshCutoff = new Date();
+      freshCutoff.setUTCDate(freshCutoff.getUTCDate() - freshnessDays);
+      const freshCutoffIso = isoDate(freshCutoff);
+
       const coveredSet = new Set<string>();
+      const coveredByCountOnly = new Set<string>(); // old-rule shadow, telemetry only
+      const staleNowPending: Array<{ symbol: string; exchange: string; max_record_date: string | null }> = [];
       const BATCH = 25;
-      for (let i = 0; i < targetsN500.length; i += BATCH) {
-        const sl = targetsN500.slice(i, i + BATCH);
-        const counts = await Promise.all(sl.map(async (t) => {
-          const { count } = await supabase
-            .from('stock_picker_ohlcv_history')
-            .select('*', { count: 'exact', head: true })
-            .eq('symbol', t.symbol).eq('exchange', t.exchange);
-          return { t, count: count ?? 0 };
-        }));
-        for (const { t, count } of counts) {
-          if (count >= 20) coveredSet.add(`${t.symbol}|${t.exchange}`);
+      if (!forceRefresh) {
+        for (let i = 0; i < targetsN500.length; i += BATCH) {
+          const sl = targetsN500.slice(i, i + BATCH);
+          const probes = await Promise.all(sl.map(async (t) => {
+            const [{ count }, { data: maxRow }] = await Promise.all([
+              supabase
+                .from('stock_picker_ohlcv_history')
+                .select('*', { count: 'exact', head: true })
+                .eq('symbol', t.symbol).eq('exchange', t.exchange),
+              supabase
+                .from('stock_picker_ohlcv_history')
+                .select('record_date')
+                .eq('symbol', t.symbol).eq('exchange', t.exchange)
+                .order('record_date', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            ]);
+            const maxDate = (maxRow?.record_date as string | undefined) ?? null;
+            return { t, count: count ?? 0, maxDate };
+          }));
+          for (const { t, count, maxDate } of probes) {
+            const key = `${t.symbol}|${t.exchange}`;
+            if (count >= 20) coveredByCountOnly.add(key);
+            const fresh = maxDate !== null && maxDate >= freshCutoffIso;
+            if (count >= 20 && fresh) {
+              coveredSet.add(key);
+            } else if (count >= 20 && !fresh) {
+              staleNowPending.push({ symbol: t.symbol, exchange: t.exchange, max_record_date: maxDate });
+            }
+          }
         }
       }
       const skippedAlready = coveredSet.size;
-      const pending = targetsN500.filter((t) => !coveredSet.has(`${t.symbol}|${t.exchange}`));
+      const pending = forceRefresh
+        ? targetsN500.slice()
+        : targetsN500.filter((t) => !coveredSet.has(`${t.symbol}|${t.exchange}`));
 
       const cursorCfg = cfg.get('ohlcv_n500_cursor') as { idx?: number } | undefined;
       let startIdx = Math.max(0, Math.floor(jnum(cursorCfg?.idx, 0)));
