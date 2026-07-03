@@ -279,12 +279,25 @@ async function resolveBackfillCandidates(
   if (pairs.length === 0) return { targets: [], source, pairs };
 
   // Apply inline cleanliness from stock_master.
+  // FIX-K pattern: paginate the .in() read to defeat PostgREST's 1000-row cap.
+  // Without this, ~2.7k rows for the ~788-symbol universe get truncated and
+  // ~428 eligible members silently fall out of the candidate set.
   const symbolList = [...new Set(pairs.map((p) => p.symbol))];
-  const { data: meta, error: metaErr } = await supabase
-    .from('stock_master')
-    .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
-    .in('symbol', symbolList);
-  if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
+  const meta: Array<Record<string, unknown>> = [];
+  const META_PAGE = 1000;
+  for (let offset = 0; ; offset += META_PAGE) {
+    const { data, error: metaErr } = await supabase
+      .from('stock_master')
+      .select('symbol,exchange,type,segment,is_suspended,dhan_security_id,company_name')
+      .in('symbol', symbolList)
+      .order('symbol', { ascending: true })
+      .order('exchange', { ascending: true })
+      .range(offset, offset + META_PAGE - 1);
+    if (metaErr) throw new Error(`stock_master read failed: ${metaErr.message}`);
+    const batch = (data ?? []) as Array<Record<string, unknown>>;
+    meta.push(...batch);
+    if (batch.length < META_PAGE) break;
+  }
 
   type Agg = {
     sym: string; exch: string;
@@ -293,7 +306,7 @@ async function resolveBackfillCandidates(
     company_name: string | null;
   };
   const agg = new Map<string, Agg>();
-  for (const r of (meta ?? []) as Array<Record<string, unknown>>) {
+  for (const r of meta) {
     const sym = String(r.symbol ?? '');
     const exch = String(r.exchange ?? '');
     const key = `${sym}|${exch}`;
@@ -481,27 +494,59 @@ Deno.serve(async (req) => {
         seenT.add(k); return true;
       }).sort((a, b) => (a.symbol + '|' + a.exchange).localeCompare(b.symbol + '|' + b.exchange));
 
-      // Compute already-covered (>=20 rows) among targets via HEAD count per pair.
-      // Parallel batches to keep latency bounded. This is the bug-fix vs the
-      // earlier .select()-based probe, which silently hit the PostgREST 1000-row
-      // cap and under-reported cumulative coverage.
+      // Freshness-aware coverage: a symbol counts as covered ONLY when it has
+      // >=20 rows AND its max(record_date) is within `freshnessDays` of today.
+      // Stale symbols re-enter `pending` so chunk mode can refresh them.
+      // `force_refresh: true` in the request body bypasses the coverage set entirely.
+      const forceRefresh = jbool((body as Record<string, unknown>)?.force_refresh);
+      const freshnessDays = Math.max(
+        1,
+        Math.floor(jnum(cfg.get('ohlcv_coverage_freshness_days'), 3)),
+      );
+      const freshCutoff = new Date();
+      freshCutoff.setUTCDate(freshCutoff.getUTCDate() - freshnessDays);
+      const freshCutoffIso = isoDate(freshCutoff);
+
       const coveredSet = new Set<string>();
+      const coveredByCountOnly = new Set<string>(); // old-rule shadow, telemetry only
+      const staleNowPending: Array<{ symbol: string; exchange: string; max_record_date: string | null }> = [];
       const BATCH = 25;
-      for (let i = 0; i < targetsN500.length; i += BATCH) {
-        const sl = targetsN500.slice(i, i + BATCH);
-        const counts = await Promise.all(sl.map(async (t) => {
-          const { count } = await supabase
-            .from('stock_picker_ohlcv_history')
-            .select('*', { count: 'exact', head: true })
-            .eq('symbol', t.symbol).eq('exchange', t.exchange);
-          return { t, count: count ?? 0 };
-        }));
-        for (const { t, count } of counts) {
-          if (count >= 20) coveredSet.add(`${t.symbol}|${t.exchange}`);
+      if (!forceRefresh) {
+        for (let i = 0; i < targetsN500.length; i += BATCH) {
+          const sl = targetsN500.slice(i, i + BATCH);
+          const probes = await Promise.all(sl.map(async (t) => {
+            const [{ count }, { data: maxRow }] = await Promise.all([
+              supabase
+                .from('stock_picker_ohlcv_history')
+                .select('*', { count: 'exact', head: true })
+                .eq('symbol', t.symbol).eq('exchange', t.exchange),
+              supabase
+                .from('stock_picker_ohlcv_history')
+                .select('record_date')
+                .eq('symbol', t.symbol).eq('exchange', t.exchange)
+                .order('record_date', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            ]);
+            const maxDate = (maxRow?.record_date as string | undefined) ?? null;
+            return { t, count: count ?? 0, maxDate };
+          }));
+          for (const { t, count, maxDate } of probes) {
+            const key = `${t.symbol}|${t.exchange}`;
+            if (count >= 20) coveredByCountOnly.add(key);
+            const fresh = maxDate !== null && maxDate >= freshCutoffIso;
+            if (count >= 20 && fresh) {
+              coveredSet.add(key);
+            } else if (count >= 20 && !fresh) {
+              staleNowPending.push({ symbol: t.symbol, exchange: t.exchange, max_record_date: maxDate });
+            }
+          }
         }
       }
       const skippedAlready = coveredSet.size;
-      const pending = targetsN500.filter((t) => !coveredSet.has(`${t.symbol}|${t.exchange}`));
+      const pending = forceRefresh
+        ? targetsN500.slice()
+        : targetsN500.filter((t) => !coveredSet.has(`${t.symbol}|${t.exchange}`));
 
       const cursorCfg = cfg.get('ohlcv_n500_cursor') as { idx?: number } | undefined;
       let startIdx = Math.max(0, Math.floor(jnum(cursorCfg?.idx, 0)));
@@ -553,6 +598,10 @@ Deno.serve(async (req) => {
           cumulative_symbols_20plus: cumulative,
           stop_reached: stopReached,
           stop_reason: stopReason,
+          coverage_rule: 'rows_ge_20_and_fresh_within_days',
+          coverage_freshness_days: freshnessDays,
+          force_refresh: forceRefresh,
+          stale_symbols_now_pending: staleNowPending.length,
         },
         description: 'Phase 2S.3-FIX-OHLCV-EXPANSION Nifty500 backfill cursor',
         updated_at: new Date().toISOString(),
@@ -575,6 +624,12 @@ Deno.serve(async (req) => {
         stop_reached: stopReached,
         stop_reason: stopReason,
         elapsed_ms: Date.now() - t0n,
+        coverage_rule: 'rows_ge_20_and_fresh_within_days',
+        coverage_freshness_days: freshnessDays,
+        force_refresh: forceRefresh,
+        symbols_covered_by_count_only: coveredByCountOnly.size,
+        symbols_stale_now_pending: staleNowPending.length,
+        stale_sample: staleNowPending.slice(0, 20),
         failures: failures.slice(0, 20),
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
