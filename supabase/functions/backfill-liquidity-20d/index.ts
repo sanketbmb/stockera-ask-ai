@@ -44,6 +44,24 @@ Deno.serve(async (req) => {
       bodyJson = (await req.json()) as Record<string, unknown>;
     } catch { /* no body */ }
 
+    // LIQUIDITY.FRESHNESS.GATE — new body knobs
+    const cursorIn = typeof bodyJson.cursor === "string" ? bodyJson.cursor : null;
+    const chunkSize = Math.max(
+      1,
+      Math.min(1000, Math.floor(
+        typeof bodyJson.chunk_size === "number" ? bodyJson.chunk_size : 100,
+      )),
+    );
+    const forceRefresh = bodyJson.force_refresh === true;
+    // History-only mode: no external API => no throttle by default.
+    // sleep_ms is exposed for future modes that hit Dhan directly.
+    const sleepMs = Math.max(
+      0,
+      Math.floor(typeof bodyJson.sleep_ms === "number" ? bodyJson.sleep_ms : 0),
+    );
+    const sleep = (ms: number) =>
+      ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
+
     if (Array.isArray(bodyJson.pairs)) {
       universe = (bodyJson.pairs as Array<{ symbol: string; exchange: string }>);
       sourceLabel = "explicit_pairs";
