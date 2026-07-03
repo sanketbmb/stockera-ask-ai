@@ -980,7 +980,7 @@ serve(async (req: Request) => {
     const today = new Date();
     const toDateIso = today.toISOString().slice(0, 10);
     const fromDate = new Date(today);
-    fromDate.setDate(fromDate.getDate() - 30);
+    fromDate.setDate(fromDate.getDate() - 60);
     const fromDateIso = fromDate.toISOString().slice(0, 10);
 
     if (body.mode === 'bootstrap') {

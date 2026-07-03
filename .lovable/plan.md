@@ -1,29 +1,41 @@
-## Scope
-Edit `src/components/landing/AnalystShowcase.tsx` and `src/styles.css` only. No logic, no copy beyond what is specified.
+# PHASE CRON.WINDOW.FIX — Plan
 
-## Changes
+## Goal
+Stop the WallClockTime kill in `stock-picker-daily-cron` by widening the liquidity cache window from 30 days to 60 days, turning ~376 false cache misses into cache hits.
 
-### 1. Remove disclaimer line
-Delete the trailing `<p>` in `AnalystShowcase.tsx`:
-> "SEBI registration does not guarantee performance. Educational research only — not investment advice."
+## Scope Lock
+- **Only one file changes:** `supabase/functions/stock-picker-daily-cron/index.ts`
+- **Only one line changes:** line 983
+- No DB migration
+- No config change
+- No schedule change
+- No change to `minRecordDateIso`, `MIN_OK_ROWS_FOR_CACHE_HIT`, `FRESH_RECORD_LOOKBACK_DAYS`, or the bootstrap branch internals
 
-(Compliance disclaimer still lives in the global `SiteFooter` and per-report `SymbolCompliance`, so removal here is presentation-only.)
+## Confirmed Current State
+- Git working tree: clean
+- Target line exists at `supabase/functions/stock-picker-daily-cron/index.ts:983`
+- `MIN_OK_ROWS_FOR_CACHE_HIT = 15` at line 1069 — untouched
+- `FRESH_RECORD_LOOKBACK_DAYS = 5` at line 1068 — untouched
+- `minRecordDateIso` derived at lines 1071-1072 — untouched
 
-### 2. Glow-up the "More SEBI-registered analysts are joining" card
-Replace the muted dashed strip with a premium animated card:
+## Diff
 
-- **Background**: animated multi-stop gradient using brand gold + teal + indigo — `linear-gradient(120deg, #FFF7E0 0%, #FDE68A 25%, #FEF3C7 50%, #E0F7F5 75%, #FFF7E0 100%)`, `background-size: 300% 300%`, animated via new `@keyframes shimmer-warm` (12s ease-in-out infinite).
-- **Border**: replace `border-dashed border-border` with a 1px gradient border using a `::before` pseudo-element layered with `mask-composite` trick — gold→teal→indigo stops.
-- **Outer glow**: new `.animate-glow-aurora` utility — `box-shadow` keyframes pulsing between gold (`rgba(245,183,49,0.35)`) and teal (`rgba(43,168,160,0.35)`) at 0/50/100%, 4s ease-in-out infinite. Reduced-motion fallback = static soft gold shadow.
-- **Floating orbs**: two absolutely-positioned blurred radial-gradient blobs (gold top-left, teal bottom-right) drifting via existing `float-y` utility for depth.
-- **Copy contrast**: bump text color to `text-foreground/80`; keep "Post your query" link teal, add subtle underline-on-hover.
-- **CTA button**: keep the existing Register button but swap `bg-accent` for a gold→teal gradient (`linear-gradient(135deg, #F5B731 0%, #FFA94D 50%, #2BA8A0 100%)`) with stronger gold-tinted shadow on hover. Preserve the existing sheen sweep and `animate-pulse-glow`.
+```diff
+--- a/supabase/functions/stock-picker-daily-cron/index.ts
++++ b/supabase/functions/stock-picker-daily-cron/index.ts
+@@ -980,7 +980,7 @@
+     const today = new Date();
+     const toDateIso = today.toISOString().slice(0, 10);
+     const fromDate = new Date(today);
+-    fromDate.setDate(fromDate.getDate() - 30);
++    fromDate.setDate(fromDate.getDate() - 60);
+     const fromDateIso = fromDate.toISOString().slice(0, 10);
+```
 
-All animations gated with `motion-reduce:animate-none`.
+## Why This Is Safe
+- `fromDateIso` is used consistently for the warehouse cache read and for the Dhan live-fetch fallback in the same phase.
+- Widening the date window only increases the chance of finding ≥15 rows; it does not change the cache-hit acceptance criteria (`MIN_OK_ROWS_FOR_CACHE_HIT` stays 15, and freshness still requires the most recent row within 5 days).
+- The line sits before the `mode === 'bootstrap'` branch, so the change also widens the bootstrap fetch window; per your confirmation, this is acceptable.
 
-## Files touched
-- `src/components/landing/AnalystShowcase.tsx` — JSX swap for the dashed strip + delete final disclaimer `<p>`.
-- `src/styles.css` — add `@keyframes shimmer-warm`, `@keyframes glow-aurora`, `.animate-shimmer-warm`, `.animate-glow-aurora` utilities + reduced-motion guards.
-
-## Out of scope
-A1 header pill, A2 SEBI pulse, analyst row card, footer disclaimers, any other section.
+## STOP-Gate
+Awaiting explicit approval before applying the change. No files will be edited and no function will be deployed until you approve.
