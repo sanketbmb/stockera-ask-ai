@@ -214,10 +214,12 @@ Deno.serve(async (req) => {
     let insertedTotal = 0;
     let timedOut = false;
 
+    let lastProcessedKey: string | null = null;
 
-
-    for (const { symbol, exchange } of workPairs) {
+    for (let i = 0; i < chunkPairs.length; i++) {
       if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
+      if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
+      const { symbol, exchange } = chunkPairs[i];
       processed++;
       const { data: rows, error: histErr } = await supabase
         .from("stock_picker_ohlcv_history")
@@ -228,10 +230,12 @@ Deno.serve(async (req) => {
         .limit(20);
       if (histErr) {
         errors.push({ symbol, reason: `history_read: ${histErr.message}` });
+        lastProcessedKey = `${symbol}|${exchange}`;
         continue;
       }
       if (!rows || rows.length === 0) {
         errors.push({ symbol, reason: "no_history_rows" });
+        lastProcessedKey = `${symbol}|${exchange}`;
         continue;
       }
 
@@ -254,7 +258,10 @@ Deno.serve(async (req) => {
             source_response_hash: null,
           };
         });
-      if (payload.length === 0) continue;
+      if (payload.length === 0) {
+        lastProcessedKey = `${symbol}|${exchange}`;
+        continue;
+      }
 
       const { error: upErr, count } = await supabase
         .from("stock_picker_liquidity_20d")
@@ -265,9 +272,11 @@ Deno.serve(async (req) => {
         });
       if (upErr) {
         errors.push({ symbol, reason: `upsert: ${upErr.message}` });
+        lastProcessedKey = `${symbol}|${exchange}`;
         continue;
       }
       insertedTotal += count ?? 0;
+      lastProcessedKey = `${symbol}|${exchange}`;
     }
 
     try {
