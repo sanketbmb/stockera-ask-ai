@@ -46,10 +46,18 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
 // Discriminated result for upstream failure classification.
 type DhanFetchResult =
   | { kind: "ok"; ltp: number }
-  | { kind: "dhan_null" }
-  | { kind: "auth_error" }
-  | { kind: "rate_limited"; retryAfterMs: number }
-  | { kind: "fetch_error"; message: string };
+  | { kind: "dhan_null"; status: number; message: string | null }
+  | { kind: "auth_error"; status: number; message: string | null }
+  | { kind: "rate_limited"; retryAfterMs: number; status: number }
+  | { kind: "fetch_error"; status: number; message: string };
+
+function extractUpstreamMessage(body: Record<string, unknown>): string | null {
+  const m = (body as { message?: unknown }).message
+    ?? (body as { error?: unknown }).error
+    ?? (body as { errorMessage?: unknown }).errorMessage;
+  if (m == null) return null;
+  return typeof m === "string" ? m : JSON.stringify(m);
+}
 
 async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFetchResult> {
   try {
@@ -67,31 +75,35 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFe
     try {
       body = text ? JSON.parse(text) : {};
     } catch {
-      return { kind: "fetch_error", message: "non_json_response" };
+      return { kind: "fetch_error", status: res.status, message: "non_json_response" };
     }
 
-    if (res.status === 401 || res.status === 403) return { kind: "auth_error" };
+    const upstreamMsg = extractUpstreamMessage(body);
+    if (res.status === 401 || res.status === 403) return { kind: "auth_error", status: res.status, message: upstreamMsg };
     if (res.status === 429) {
       const raHeader = res.headers.get("Retry-After");
       const raBody = (body as { retry_after?: unknown }).retry_after;
       const ra = Number(raHeader ?? raBody ?? 1);
       const retryAfterMs = Math.min(Math.max(500, (Number.isFinite(ra) ? ra : 1) * 1000), 5000);
-      return { kind: "rate_limited", retryAfterMs };
+      return { kind: "rate_limited", retryAfterMs, status: res.status };
     }
-    if (res.status >= 500) return { kind: "fetch_error", message: `http_${res.status}` };
-    if (!res.ok) return { kind: "fetch_error", message: `http_${res.status}` };
+    if (res.status >= 500) return { kind: "fetch_error", status: res.status, message: upstreamMsg ?? `http_${res.status}` };
+    if (!res.ok) return { kind: "fetch_error", status: res.status, message: upstreamMsg ?? `http_${res.status}` };
 
-    if (body.success !== true) return { kind: "dhan_null" };
+    if (body.success !== true) return { kind: "dhan_null", status: res.status, message: upstreamMsg };
     const data = body.data as Record<string, unknown> | undefined;
     const inner = data?.data as Record<string, unknown> | undefined;
     const seg = inner?.[segment] as Record<string, unknown> | undefined;
     const node = seg?.[securityId] as Record<string, unknown> | undefined;
     const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
-    return typeof ltp === "number" && ltp > 0 ? { kind: "ok", ltp } : { kind: "dhan_null" };
+    return typeof ltp === "number" && ltp > 0
+      ? { kind: "ok", ltp }
+      : { kind: "dhan_null", status: res.status, message: upstreamMsg };
   } catch (e) {
-    return { kind: "fetch_error", message: String(e) };
+    return { kind: "fetch_error", status: 0, message: String(e) };
   }
 }
+
 
 async function fetchLtpWithRetry(id: string, seg: "NSE_EQ" | "BSE_EQ"): Promise<DhanFetchResult> {
   const r1 = await fetchDhanLtp(id, seg);
@@ -149,53 +161,84 @@ Deno.serve(async (req) => {
     const { data: cfgRows } = await supabase
       .from("stock_picker_runtime_config")
       .select("config_key, config_value")
-      .in("config_key", ["dhan_api_enabled", "universe_override_symbols", "universe_override_enabled"]);
+      .in("config_key", [
+        "dhan_api_enabled",
+        "active_universe_snapshot_id",
+        "universe_override_symbols",
+        "universe_override_enabled",
+      ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
     if (cfg.get("dhan_api_enabled") !== true) {
       return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
     }
-    if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
-    }
-    const parsedOverride = parseOverrideSymbols(cfg.get("universe_override_symbols"));
-    const universe = parsedOverride.map((e) => e.symbol);
-    let symbols = universe;
-    if (filterSymbols && filterSymbols.length > 0) {
-      const u = new Set(universe);
-      symbols = filterSymbols.filter((s) => u.has(s));
-    }
-    if (symbols.length === 0) {
-      return json({ ok: true, symbols_updated: 0, attempts: [], errors: ["no override symbols"], filter_applied: filterSymbols != null });
+
+    // PRIMARY: active universe snapshot members (exact symbol+exchange+security_id).
+    // FALLBACK: legacy override list (symbol-only), retained only if snapshot missing.
+    type Member = { symbol: string; exchange: "NSE" | "BSE"; segment: "NSE_EQ" | "BSE_EQ"; dhan_security_id: string | null };
+    let members: Member[] = [];
+    let universeSource: "active_snapshot" | "override_fallback" = "active_snapshot";
+
+    const snapshotIdRaw = cfg.get("active_universe_snapshot_id");
+    const snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
+
+    if (snapshotId) {
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: rows, error: mErr } = await supabase
+          .from("stock_picker_universe_snapshot_member")
+          .select("symbol, exchange, segment, dhan_security_id")
+          .eq("universe_snapshot_id", snapshotId)
+          .order("symbol", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (mErr) return json({ ok: false, error: `snapshot_read: ${mErr.message}` }, 500);
+        if (!rows || rows.length === 0) break;
+        for (const r of rows) {
+          const ex = r.exchange === "NSE" || r.exchange === "BSE" ? r.exchange : null;
+          const segRaw = String(r.segment ?? "");
+          const seg: "NSE_EQ" | "BSE_EQ" | null =
+            segRaw === "NSE_EQ" || segRaw === "BSE_EQ"
+              ? segRaw
+              : ex === "NSE" ? "NSE_EQ" : ex === "BSE" ? "BSE_EQ" : null;
+          if (!ex || !seg || !r.symbol) continue;
+          members.push({
+            symbol: r.symbol as string,
+            exchange: ex,
+            segment: seg,
+            dhan_security_id: r.dhan_security_id ? String(r.dhan_security_id) : null,
+          });
+        }
+        if (rows.length < PAGE) break;
+      }
     }
 
-    // -------- Canonical + paginated stock_master read --------
-    // Strict canonical segments only (NSE_EQ / BSE_EQ); chunked so each page
-    // returns <= ~400 rows and never hits the PostgREST 1000-row cap.
-    const idMap = new Map<string, { NSE?: string; BSE?: string }>();
-    for (let i = 0; i < symbols.length; i += MASTER_CHUNK) {
-      const slice = symbols.slice(i, i + MASTER_CHUNK);
-      const { data: masters, error: mErr } = await supabase
-        .from("stock_master")
-        .select("symbol, exchange, segment, dhan_security_id")
-        .in("symbol", slice)
-        .in("segment", ["NSE_EQ", "BSE_EQ"])
-        .not("dhan_security_id", "is", null);
-      if (mErr) return json({ ok: false, error: mErr.message }, 500);
-      for (const m of masters ?? []) {
-        const sym = m.symbol as string;
-        const seg = m.segment as string;
-        const id = String(m.dhan_security_id);
-        const cur = idMap.get(sym) ?? {};
-        if (seg === "NSE_EQ") cur.NSE = id;
-        else if (seg === "BSE_EQ") cur.BSE = id;
-        idMap.set(sym, cur);
-      }
+    if (members.length === 0) {
+      universeSource = "override_fallback";
+      const parsedOverride = parseOverrideSymbols(cfg.get("universe_override_symbols"));
+      members = parsedOverride.map((e) => ({
+        symbol: e.symbol,
+        exchange: (e.exchange === "BSE" ? "BSE" : "NSE") as "NSE" | "BSE",
+        segment: (e.exchange === "BSE" ? "BSE_EQ" : "NSE_EQ") as "NSE_EQ" | "BSE_EQ",
+        dhan_security_id: null,
+      }));
+    }
+
+    if (filterSymbols && filterSymbols.length > 0) {
+      const keep = new Set(filterSymbols);
+      members = members.filter((m) => keep.has(m.symbol));
+    }
+
+    if (members.length === 0) {
+      return json({
+        ok: true, symbols_updated: 0, attempts: [], errors: ["no universe members"],
+        filter_applied: filterSymbols != null, universe_source: universeSource,
+      });
     }
 
     const errors: Array<{ symbol: string; reason: string }> = [];
     const attempts: Array<Record<string, unknown>> = [];
+    const http_400_samples: Array<{ symbol: string; exchange: string; security_id: string; status: number; message: string | null }> = [];
     let updated = 0;
     const counters = {
       symbols_seen: 0,
@@ -208,34 +251,51 @@ Deno.serve(async (req) => {
       missing_id_count: 0,
       nse_selected_count: 0,
       bse_selected_count: 0,
+      nse_updated_count: 0,
+      bse_updated_count: 0,
+      master_fallback_used_count: 0,
       chunk_count: 0,
+      fetch_error_by_status: {} as Record<string, number>,
     };
 
     // -------- Chunked one-call-per-symbol loop --------
     // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
-    const chunkSize = filterSymbols ? symbols.length : FULL_RUN_CHUNK;
+    const chunkSize = filterSymbols ? members.length : FULL_RUN_CHUNK;
     let abortedAuth = false;
 
-    outer: for (let i = 0; i < symbols.length; i += chunkSize) {
+    outer: for (let i = 0; i < members.length; i += chunkSize) {
       counters.chunk_count++;
-      const chunk = symbols.slice(i, i + chunkSize);
-      for (const sym of chunk) {
+      const chunk = members.slice(i, i + chunkSize);
+      for (const m of chunk) {
         counters.symbols_seen++;
-        const ids = idMap.get(sym);
-        let exUsed: "NSE" | "BSE" | null = null;
-        let idUsed: string | null = null;
-        let seg: "NSE_EQ" | "BSE_EQ" | null = null;
+        const sym = m.symbol;
+        const exUsed: "NSE" | "BSE" = m.exchange;
+        const seg: "NSE_EQ" | "BSE_EQ" = m.segment;
+        let idUsed: string | null = m.dhan_security_id;
 
-        if (ids?.NSE) {
-          exUsed = "NSE"; idUsed = ids.NSE; seg = "NSE_EQ"; counters.nse_selected_count++;
-        } else if (ids?.BSE) {
-          exUsed = "BSE"; idUsed = ids.BSE; seg = "BSE_EQ"; counters.bse_selected_count++;
+        if (exUsed === "NSE") counters.nse_selected_count++;
+        else counters.bse_selected_count++;
+
+        // Fallback only for exact (symbol, segment); no cross-exchange swap.
+        if (!idUsed) {
+          const { data: mstr } = await supabase
+            .from("stock_master")
+            .select("dhan_security_id")
+            .eq("symbol", sym)
+            .eq("segment", seg)
+            .not("dhan_security_id", "is", null)
+            .limit(1)
+            .maybeSingle();
+          if (mstr?.dhan_security_id) {
+            idUsed = String(mstr.dhan_security_id);
+            counters.master_fallback_used_count++;
+          }
         }
 
-        if (!exUsed || !idUsed || !seg) {
+        if (!idUsed) {
           counters.missing_id_count++;
-          errors.push({ symbol: sym, reason: "no_canonical_dhan_security_id" });
-          attempts.push({ symbol: sym, exchange: null, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
+          errors.push({ symbol: sym, reason: `no_dhan_security_id (${seg})` });
+          attempts.push({ symbol: sym, exchange: exUsed, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
           continue;
         }
 
@@ -251,11 +311,20 @@ Deno.serve(async (req) => {
         });
 
         if (r.kind !== "ok") {
+          const statusKey = String((r as { status?: number }).status ?? 0);
+          counters.fetch_error_by_status[statusKey] = (counters.fetch_error_by_status[statusKey] ?? 0) + 1;
           if (r.kind === "auth_error")   counters.auth_error_count++;
           if (r.kind === "rate_limited") counters.rate_limited_count++;
           if (r.kind === "dhan_null")    counters.dhan_null_count++;
           if (r.kind === "fetch_error")  counters.fetch_error_count++;
-          errors.push({ symbol: sym, reason: `${r.kind} (${seg} id=${idUsed})` });
+          if ((r as { status?: number }).status === 400 && http_400_samples.length < 20) {
+            http_400_samples.push({
+              symbol: sym, exchange: exUsed, security_id: idUsed, status: 400,
+              message: (r as { message?: string | null }).message ?? null,
+            });
+          }
+          const upstreamMsg = (r as { message?: string | null }).message ?? null;
+          errors.push({ symbol: sym, reason: `${r.kind} status=${statusKey} (${seg} id=${idUsed})${upstreamMsg ? ` msg=${upstreamMsg}` : ""}` });
           if (counters.auth_error_count >= 3) { abortedAuth = true; break outer; }
           if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
           continue;
@@ -274,9 +343,11 @@ Deno.serve(async (req) => {
         }
         updated++;
         counters.updated_count++;
+        if (exUsed === "NSE") counters.nse_updated_count++;
+        else counters.bse_updated_count++;
         if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
       }
-      if (i + chunkSize < symbols.length) {
+      if (i + chunkSize < members.length) {
         await new Promise((r) => setTimeout(r, INTER_CHUNK_PAUSE_MS));
       }
     }
@@ -298,6 +369,8 @@ Deno.serve(async (req) => {
             errors_count: errors.length,
             ran_at: ranAt,
             counters,
+            http_400_samples,
+            universe_source: universeSource,
             aborted_systemic_auth: abortedAuth,
           },
           description: "Last sync-ltp-dhan run summary",
@@ -314,6 +387,8 @@ Deno.serve(async (req) => {
       details: {
         filter_applied: filterSymbols != null,
         counters,
+        http_400_samples,
+        universe_source: universeSource,
         aborted_systemic_auth: abortedAuth,
         errors_sample: errors.slice(0, 10),
       },
@@ -324,6 +399,8 @@ Deno.serve(async (req) => {
       attempts,
       errors,
       counters,
+      http_400_samples,
+      universe_source: universeSource,
       aborted_systemic_auth: abortedAuth,
       filter_applied: filterSymbols != null,
     });
@@ -332,3 +409,4 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: String(e) }, 500);
   }
 });
+
