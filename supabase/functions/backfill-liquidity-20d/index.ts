@@ -62,6 +62,26 @@ Deno.serve(async (req) => {
     const sleep = (ms: number) =>
       ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
+    // LIQUIDITY.DRAIN.MODE — request body extension.
+    // mode="drain" internally loops the existing chunk worker until the queue
+    // drains OR the runtime budget hits OR the error-guard trips.
+    const modeIn = typeof bodyJson.mode === "string" ? bodyJson.mode : "chunk";
+    const isDrain = modeIn === "drain";
+    const maxDrainRuntimeMs = Math.max(
+      10000,
+      Math.min(190000, Math.floor(
+        typeof bodyJson.max_drain_runtime_ms === "number"
+          ? bodyJson.max_drain_runtime_ms : 170000,
+      )),
+    );
+    const drainErrorLimit = Math.max(
+      1,
+      Math.floor(
+        typeof bodyJson.drain_error_limit === "number"
+          ? bodyJson.drain_error_limit : 200,
+      ),
+    );
+
     if (Array.isArray(bodyJson.pairs)) {
       universe = (bodyJson.pairs as Array<{ symbol: string; exchange: string }>);
       sourceLabel = "explicit_pairs";
@@ -193,91 +213,125 @@ Deno.serve(async (req) => {
     const pairKey = (p: { symbol: string; exchange: string }) => `${p.symbol}|${p.exchange}`;
     workPairs.sort((a, b) => pairKey(a).localeCompare(pairKey(b)));
 
-    // Cursor is the LAST pair key already processed by a prior invocation.
-    // We slice strictly greater than that composite key.
-    const sliceStart = cursorIn
-      ? (() => {
-          const idx = workPairs.findIndex((p) => pairKey(p) > cursorIn);
-          return idx < 0 ? workPairs.length : idx;
-        })()
-      : 0;
-    const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
-    const remainingBefore = workPairs.length - sliceStart;
-
     const maxRuntimeMs = typeof bodyJson.max_runtime_ms === "number"
       ? Math.max(5000, Math.floor(bodyJson.max_runtime_ms))
       : 100000;
     const t0 = Date.now();
 
+    // Aggregate telemetry across chunk iterations (drain mode); in single-
+    // chunk mode the loop runs exactly once and these mirror the chunk.
     const errors: Array<{ symbol: string; reason: string }> = [];
-    let processed = 0;
-    let insertedTotal = 0;
-    let timedOut = false;
-
+    let totalProcessed = 0;
+    let totalInserted = 0;
+    let drainLoopCount = 0;
+    let currentCursor: string | null = cursorIn;
     let lastProcessedKey: string | null = null;
+    let sliceStart = 0;            // last iteration's slice start
+    let iterationProcessed = 0;    // last iteration's processed count
+    let timedOut = false;
+    let finalDone = false;
+    let drainErrorTripped = false;
+    const drainStartedCursor: string | null = cursorIn;
 
-    for (let i = 0; i < chunkPairs.length; i++) {
-      if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
-      if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
-      const { symbol, exchange } = chunkPairs[i];
-      processed++;
-      const { data: rows, error: histErr } = await supabase
-        .from("stock_picker_ohlcv_history")
-        .select("symbol, exchange, record_date, close, volume")
-        .eq("symbol", symbol)
-        .eq("exchange", exchange)
-        .order("record_date", { ascending: false })
-        .limit(20);
-      if (histErr) {
-        errors.push({ symbol, reason: `history_read: ${histErr.message}` });
+    while (true) {
+      // Cursor is the LAST pair key already processed by a prior iteration.
+      // We slice strictly greater than that composite key.
+      sliceStart = currentCursor
+        ? (() => {
+            const idx = workPairs.findIndex((p) => pairKey(p) > (currentCursor as string));
+            return idx < 0 ? workPairs.length : idx;
+          })()
+        : 0;
+      const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
+
+      if (chunkPairs.length === 0) { finalDone = true; break; }
+
+      iterationProcessed = 0;
+      let iterationInserted = 0;
+
+      for (let i = 0; i < chunkPairs.length; i++) {
+        if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
+        if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
+        const { symbol, exchange } = chunkPairs[i];
+        iterationProcessed++;
+        const { data: rows, error: histErr } = await supabase
+          .from("stock_picker_ohlcv_history")
+          .select("symbol, exchange, record_date, close, volume")
+          .eq("symbol", symbol)
+          .eq("exchange", exchange)
+          .order("record_date", { ascending: false })
+          .limit(20);
+        if (histErr) {
+          errors.push({ symbol, reason: `history_read: ${histErr.message}` });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+        if (!rows || rows.length === 0) {
+          errors.push({ symbol, reason: "no_history_rows" });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+
+        const payload = rows
+          .filter((r) => r.close != null && r.volume != null && r.record_date)
+          .map((r) => {
+            const close = Number(r.close);
+            const volume = Number(r.volume);
+            return {
+              symbol: r.symbol,
+              exchange: r.exchange,
+              record_date: r.record_date as string,
+              close,
+              volume,
+              turnover_rs: close * volume,
+              adv_20d: null,
+              adt_20d_rs: null,
+              fetch_status: "ok",
+              data_snapshot_at: SNAPSHOT_TAG,
+              source_response_hash: null,
+            };
+          });
+        if (payload.length === 0) {
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+
+        const { error: upErr, count } = await supabase
+          .from("stock_picker_liquidity_20d")
+          .upsert(payload, {
+            onConflict: "symbol,exchange,record_date,data_snapshot_at",
+            ignoreDuplicates: true,
+            count: "exact",
+          });
+        if (upErr) {
+          errors.push({ symbol, reason: `upsert: ${upErr.message}` });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+        iterationInserted += count ?? 0;
         lastProcessedKey = `${symbol}|${exchange}`;
-        continue;
-      }
-      if (!rows || rows.length === 0) {
-        errors.push({ symbol, reason: "no_history_rows" });
-        lastProcessedKey = `${symbol}|${exchange}`;
-        continue;
       }
 
-      const payload = rows
-        .filter((r) => r.close != null && r.volume != null && r.record_date)
-        .map((r) => {
-          const close = Number(r.close);
-          const volume = Number(r.volume);
-          return {
-            symbol: r.symbol,
-            exchange: r.exchange,
-            record_date: r.record_date as string,
-            close,
-            volume,
-            turnover_rs: close * volume,
-            adv_20d: null,
-            adt_20d_rs: null,
-            fetch_status: "ok",
-            data_snapshot_at: SNAPSHOT_TAG,
-            source_response_hash: null,
-          };
-        });
-      if (payload.length === 0) {
-        lastProcessedKey = `${symbol}|${exchange}`;
-        continue;
-      }
+      totalProcessed += iterationProcessed;
+      totalInserted += iterationInserted;
+      drainLoopCount++;
+      currentCursor = lastProcessedKey ?? currentCursor;
 
-      const { error: upErr, count } = await supabase
-        .from("stock_picker_liquidity_20d")
-        .upsert(payload, {
-          onConflict: "symbol,exchange,record_date,data_snapshot_at",
-          ignoreDuplicates: true,
-          count: "exact",
-        });
-      if (upErr) {
-        errors.push({ symbol, reason: `upsert: ${upErr.message}` });
-        lastProcessedKey = `${symbol}|${exchange}`;
-        continue;
-      }
-      insertedTotal += count ?? 0;
-      lastProcessedKey = `${symbol}|${exchange}`;
+      // Loop-exit rules:
+      //   non-drain -> exactly one iteration
+      //   drain     -> continue until end OR budget OR error-guard
+      if (!isDrain) break;
+      if (timedOut) break;
+      const reachedEnd = (sliceStart + iterationProcessed) >= workPairs.length;
+      if (reachedEnd) { finalDone = true; break; }
+      if (errors.length >= drainErrorLimit) { drainErrorTripped = true; break; }
+      if (Date.now() - t0 > maxDrainRuntimeMs) { timedOut = true; break; }
     }
+
+    // Preserve prior single-chunk "done" semantics; drain mode uses finalDone.
+    const singleChunkDone = !timedOut && (sliceStart + iterationProcessed) >= workPairs.length;
+    const doneOut = isDrain ? finalDone : singleChunkDone;
+    const remainingPendingOut = Math.max(0, workPairs.length - (sliceStart + iterationProcessed));
 
     try {
       await supabase
@@ -289,11 +343,15 @@ Deno.serve(async (req) => {
             config_value: {
               ok: true,
               source: sourceLabel,
+              mode_used: isDrain ? "drain" : "chunk",
               universe_pairs: pairs.length,
-              symbols_processed: processed,
-              rows_inserted: insertedTotal,
+              symbols_processed: totalProcessed,
+              rows_inserted: totalInserted,
               errors_count: errors.length,
               timed_out: timedOut,
+              drain_loop_count: drainLoopCount,
+              final_done: doneOut,
+              drain_error_tripped: drainErrorTripped,
               ran_at: new Date().toISOString(),
             },
           },
@@ -304,11 +362,12 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       source: sourceLabel,
+      mode_used: isDrain ? "drain" : "chunk",
       universe_pairs: pairs.length,
       work_pairs: workPairs.length,
       skipped_already_covered: skippedCovered,
-      symbols_processed: processed,
-      rows_inserted: insertedTotal,
+      symbols_processed: totalProcessed,
+      rows_inserted: totalInserted,
       timed_out: timedOut,
       elapsed_ms: Date.now() - t0,
       errors_count: errors.length,
@@ -322,13 +381,22 @@ Deno.serve(async (req) => {
       sleep_ms_used: sleepMs,
       chunk_start_cursor: cursorIn,
       chunk_size_used: chunkSize,
-      chunk_processed: processed,
+      chunk_processed: iterationProcessed,
       last_processed_cursor: lastProcessedKey,
-      next_cursor: (!timedOut && (sliceStart + processed) >= workPairs.length)
-        ? null
-        : lastProcessedKey,
-      done: !timedOut && (sliceStart + processed) >= workPairs.length,
-      remaining_pending: Math.max(0, remainingBefore - processed),
+      next_cursor: doneOut ? null : lastProcessedKey,
+      done: doneOut,
+      remaining_pending: remainingPendingOut,
+      // ---- LIQUIDITY.DRAIN.MODE telemetry ----
+      drain_loop_count: drainLoopCount,
+      drain_started_cursor: drainStartedCursor,
+      drain_ended_cursor: lastProcessedKey,
+      total_chunk_processed: totalProcessed,
+      total_rows_inserted: totalInserted,
+      final_done: doneOut,
+      final_remaining_pending: remainingPendingOut,
+      final_timed_out: timedOut,
+      max_drain_runtime_ms_used: isDrain ? maxDrainRuntimeMs : null,
+      drain_error_tripped: drainErrorTripped,
     });
 
   } catch (e) {
