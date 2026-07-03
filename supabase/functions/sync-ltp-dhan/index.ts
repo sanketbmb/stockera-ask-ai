@@ -354,6 +354,10 @@ Deno.serve(async (req) => {
         if (r.kind !== "ok") {
           const statusKey = String((r as { status?: number }).status ?? 0);
           counters.fetch_error_by_status[statusKey] = (counters.fetch_error_by_status[statusKey] ?? 0) + 1;
+          // status 0 = network/timeout; 429 = classic rate-limit. dhan-fetch
+          // surfaces RateLimitError as status=0, treat both as throttle signal.
+          const st = (r as { status?: number }).status ?? 0;
+          if (st === 0 || st === 429) counters.rate_limit_like_count++;
           if (r.kind === "auth_error")   counters.auth_error_count++;
           if (r.kind === "rate_limited") counters.rate_limited_count++;
           if (r.kind === "dhan_null")    counters.dhan_null_count++;
@@ -366,6 +370,7 @@ Deno.serve(async (req) => {
           }
           const upstreamMsg = (r as { message?: string | null }).message ?? null;
           errors.push({ symbol: sym, reason: `${r.kind} status=${statusKey} (${seg} id=${idUsed})${upstreamMsg ? ` msg=${upstreamMsg}` : ""}` });
+          counters.processed_member_count++;
           if (counters.auth_error_count >= 3) { abortedAuth = true; break outer; }
           if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
           continue;
