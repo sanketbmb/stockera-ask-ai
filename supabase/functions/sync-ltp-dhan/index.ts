@@ -166,9 +166,18 @@ Deno.serve(async (req) => {
         "active_universe_snapshot_id",
         "universe_override_symbols",
         "universe_override_enabled",
+        "sync_ltp_dhan_cursor",
       ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
+
+    // Rolling cursor: last processed composite pair-key `${symbol}|${exchange}`.
+    // Applies only to unfiltered scheduled runs.
+    const cursorRaw = cfg.get("sync_ltp_dhan_cursor");
+    const cursorKey: string | null =
+      cursorRaw && typeof cursorRaw === "object" && typeof (cursorRaw as { last_key?: unknown }).last_key === "string"
+        ? (cursorRaw as { last_key: string }).last_key
+        : null;
 
     if (cfg.get("dhan_api_enabled") !== true) {
       return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, attempts: [], errors: [] });

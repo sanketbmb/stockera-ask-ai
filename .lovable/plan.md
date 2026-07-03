@@ -1,343 +1,237 @@
-## PHASE LIQUIDITY.FRESHNESS.GATE — REVISED PLAN (STOP-gate)
+# PHASE LTP.ROUNDROBIN.MARKET.HOURS — Plan (single-file)
 
-Single file: `supabase/functions/backfill-liquidity-20d/index.ts`. No migration. No other function touched. All four corrections applied.
+**Scope:** ONLY `supabase/functions/sync-ltp-dhan/index.ts`. No migration, no other files.
 
----
-
-### Diff 1 — Request-body parsing
-
-**Before (lines 42-45):**
-```ts
-    let bodyJson: Record<string, unknown> = {};
-    try {
-      bodyJson = (await req.json()) as Record<string, unknown>;
-    } catch { /* no body */ }
-```
-
-**After (append immediately below, before line 47):**
-```ts
-    let bodyJson: Record<string, unknown> = {};
-    try {
-      bodyJson = (await req.json()) as Record<string, unknown>;
-    } catch { /* no body */ }
-
-    // LIQUIDITY.FRESHNESS.GATE — new body knobs
-    const cursorIn = typeof bodyJson.cursor === "string" ? bodyJson.cursor : null;
-    const chunkSize = Math.max(
-      1,
-      Math.min(1000, Math.floor(
-        typeof bodyJson.chunk_size === "number" ? bodyJson.chunk_size : 100,
-      )),
-    );
-    const forceRefresh = bodyJson.force_refresh === true;
-    // History-only mode: no external API => no throttle by default.
-    // sleep_ms is exposed for future modes that hit Dhan directly.
-    const sleepMs = Math.max(
-      0,
-      Math.floor(typeof bodyJson.sleep_ms === "number" ? bodyJson.sleep_ms : 0),
-    );
-    const sleep = (ms: number) =>
-      ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
-```
+**Recommended chunk size: 50** — matches existing `FULL_RUN_CHUNK`. With ~788 members and a 5-minute cadence, wrap time ≈ 788/50 × 5 min ≈ 79 minutes (≈ every ticker refreshed ~5×/day during 09:15–15:30 IST). Small enough to keep well under Dhan gateway per-call bursts (previous full runs at ~788/invocation triggered upstream throttling; 50/invocation is safely below observed failure thresholds), large enough that wrap-around latency stays under a trading session slice. Filtered inline refresh continues to run all supplied (≤10) symbols in one invocation.
 
 ---
 
-### Diff 2 — Coverage-decision block (freshness gate)
+## Diff 1 — Runtime cursor read (extend the `.in([...])` config fetch)
 
-**Before (lines 106-137):**
+**Before (lines 161–171):**
 ```ts
-    // FIX-I-PREWARM: skip pairs already at >=20 fresh liquidity rows.
-    // Coverage probe paginated to avoid PostgREST 1000-row silent cap.
-    const skipCovered = bodyJson.skip_covered !== false;
-    let skippedCovered = 0;
-    let workPairs = pairs;
-    if (skipCovered) {
-      const PAGE = 1000;
-      let from = 0;
-      const counts = new Map<string, number>();
-      while (true) {
-        const { data: page, error } = await supabase
-          .from("stock_picker_liquidity_20d")
-          .select("symbol,exchange")
-          .eq("fetch_status", "ok")
-          .order("symbol", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) return json({ ok: false, error: `coverage_probe: ${error.message}` }, 500);
-        if (!page || page.length === 0) break;
-        for (const r of page) {
-          const k = `${r.symbol}|${r.exchange}`;
-          counts.set(k, (counts.get(k) ?? 0) + 1);
-        }
-        if (page.length < PAGE) break;
-        from += PAGE;
-      }
-      const covered = new Set<string>();
-      for (const [k, c] of counts) if (c >= 20) covered.add(k);
-      workPairs = pairs.filter((p) => {
-        if (covered.has(`${p.symbol}|${p.exchange}`)) { skippedCovered++; return false; }
-        return true;
-      });
-    }
+const { data: cfgRows } = await supabase
+  .from("stock_picker_runtime_config")
+  .select("config_key, config_value")
+  .in("config_key", [
+    "dhan_api_enabled",
+    "active_universe_snapshot_id",
+    "universe_override_symbols",
+    "universe_override_enabled",
+  ]);
+const cfg = new Map<string, unknown>();
+for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 ```
 
 **After:**
 ```ts
-    // LIQUIDITY.FRESHNESS.GATE — a pair is covered iff
-    //   rows_ok >= 20 AND MAX(record_date) >= today - N days
-    // N = stock_picker_runtime_config.liquidity_coverage_freshness_days (int, default 3).
-    // force_refresh=true bypasses the gate entirely.
-    // Rollback: set knob to 999999 (every pair "fresh" -> count-only behavior).
-    const skipCovered = bodyJson.skip_covered !== false;
-    let skippedCovered = 0;
-    let coveredByFreshness = 0;
-    let coveredByCountOnlyBefore = 0;
-    let staleNowPending = 0;
-    let freshnessDays = 3;
-    let workPairs = pairs;
+const { data: cfgRows } = await supabase
+  .from("stock_picker_runtime_config")
+  .select("config_key, config_value")
+  .in("config_key", [
+    "dhan_api_enabled",
+    "active_universe_snapshot_id",
+    "universe_override_symbols",
+    "universe_override_enabled",
+    "sync_ltp_dhan_cursor",
+  ]);
+const cfg = new Map<string, unknown>();
+for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
-    if (skipCovered && !forceRefresh) {
-      const { data: fcfg } = await supabase
-        .from("stock_picker_runtime_config")
-        .select("config_value")
-        .eq("config_key", "liquidity_coverage_freshness_days")
-        .maybeSingle();
-      const raw = fcfg?.config_value;
-      const parsed = typeof raw === "number" ? raw
-        : typeof raw === "string" ? Number(raw)
-        : (raw && typeof raw === "object" && "value" in (raw as Record<string, unknown>))
-          ? Number((raw as Record<string, unknown>).value) : NaN;
-      if (Number.isFinite(parsed) && parsed >= 1) freshnessDays = Math.floor(parsed);
-
-      const cutoff = new Date();
-      cutoff.setUTCDate(cutoff.getUTCDate() - freshnessDays);
-      const cutoffIso = cutoff.toISOString().slice(0, 10);
-
-      const PAGE = 1000;
-      let from = 0;
-      const counts = new Map<string, number>();
-      const maxDate = new Map<string, string>();
-      while (true) {
-        const { data: page, error } = await supabase
-          .from("stock_picker_liquidity_20d")
-          .select("symbol,exchange,record_date")
-          .eq("fetch_status", "ok")
-          .order("symbol", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) return json({ ok: false, error: `coverage_probe: ${error.message}` }, 500);
-        if (!page || page.length === 0) break;
-        for (const r of page) {
-          const k = `${r.symbol}|${r.exchange}`;
-          counts.set(k, (counts.get(k) ?? 0) + 1);
-          const d = r.record_date as string | null;
-          if (d && (!maxDate.has(k) || d > (maxDate.get(k) as string))) maxDate.set(k, d);
-        }
-        if (page.length < PAGE) break;
-        from += PAGE;
-      }
-
-      const covered = new Set<string>();
-      for (const [k, c] of counts) {
-        if (c >= 20) {
-          coveredByCountOnlyBefore++;
-          const md = maxDate.get(k);
-          if (md && md >= cutoffIso) { covered.add(k); coveredByFreshness++; }
-          else { staleNowPending++; }
-        }
-      }
-      workPairs = pairs.filter((p) => {
-        if (covered.has(`${p.symbol}|${p.exchange}`)) { skippedCovered++; return false; }
-        return true;
-      });
-    }
+// Cursor: last processed composite pair-key `${symbol}|${exchange}`.
+// Rolling scope applies only to unfiltered scheduled runs.
+const cursorRaw = cfg.get("sync_ltp_dhan_cursor");
+const cursorKey: string | null =
+  cursorRaw && typeof cursorRaw === "object" && typeof (cursorRaw as { last_key?: unknown }).last_key === "string"
+    ? (cursorRaw as { last_key: string }).last_key
+    : null;
 ```
 
 ---
 
-### Diff 3 — Pair-key cursor logic
+## Diff 2 — Rolling-chunk selection + filtered-inline bypass
 
-**Before (immediately after the block above, none exists today; inserted before the loop on line 151):**
+Replace the chunk-loop initialization (lines 261–266) with a rolling-cursor slice for unfiltered runs. Filtered runs (`filterSymbols`) still process every supplied symbol in one invocation and do NOT advance the cursor.
+
+**Before (lines 261–266):**
 ```ts
-    // (no cursor / chunking today; loop consumes all workPairs)
-```
+    // -------- Chunked one-call-per-symbol loop --------
+    // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
+    const chunkSize = filterSymbols ? members.length : FULL_RUN_CHUNK;
+    let abortedAuth = false;
 
-**After (insert before line 151):**
-```ts
-    // Deterministic order by composite pair key "SYMBOL|EXCHANGE".
-    const pairKey = (p: { symbol: string; exchange: string }) => `${p.symbol}|${p.exchange}`;
-    workPairs.sort((a, b) => pairKey(a).localeCompare(pairKey(b)));
-
-    // Cursor is the LAST pair key already processed by a prior invocation.
-    // We slice strictly greater than that composite key.
-    const sliceStart = cursorIn
-      ? (() => {
-          const idx = workPairs.findIndex((p) => pairKey(p) > cursorIn);
-          return idx < 0 ? workPairs.length : idx;
-        })()
-      : 0;
-    const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
-    const remainingBefore = workPairs.length - sliceStart;
-```
-
----
-
-### Diff 4 — Loop / timeout / response metrics (must reflect ACTUAL processed)
-
-**Before (lines 151-203, loop over `workPairs`):**
-```ts
-    for (const { symbol, exchange } of workPairs) {
-      if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
-      processed++;
-      // ...history read, payload build, upsert...
-      insertedTotal += count ?? 0;
-    }
+    outer: for (let i = 0; i < members.length; i += chunkSize) {
 ```
 
 **After:**
 ```ts
-    let lastProcessedKey: string | null = null;
+    // -------- Rolling-cursor scope (unfiltered) OR filtered inline --------
+    // Filtered inline runs: process all supplied symbols in one shot, no cursor advance.
+    // Unfiltered scheduled runs: deterministic order by `${symbol}|${exchange}`, pick
+    // exactly ONE FULL_RUN_CHUNK-sized window starting after the persisted cursor,
+    // wrapping to the beginning at end-of-universe.
+    const universeMode: "rolling_full_run" | "filtered_inline" =
+      filterSymbols ? "filtered_inline" : "rolling_full_run";
 
-    for (let i = 0; i < chunkPairs.length; i++) {
-      if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
-      if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
-      const { symbol, exchange } = chunkPairs[i];
-      processed++;
-      // ...unchanged history read, payload build, upsert...
-      insertedTotal += count ?? 0;
-      lastProcessedKey = `${symbol}|${exchange}`;
+    let wrappedToStart = false;
+    let cursorStartKey: string | null = null;
+    let cursorEndKey: string | null = null;
+
+    if (universeMode === "rolling_full_run") {
+      // Deterministic ordering by composite key.
+      members.sort((a, b) =>
+        `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
+      );
+      let startIdx = 0;
+      if (cursorKey) {
+        // First member with pair-key > cursorKey.
+        const found = members.findIndex((m) => `${m.symbol}|${m.exchange}` > cursorKey);
+        if (found === -1) {
+          wrappedToStart = true;
+          startIdx = 0;
+        } else {
+          startIdx = found;
+        }
+      }
+      const endIdx = Math.min(startIdx + FULL_RUN_CHUNK, members.length);
+      cursorStartKey = members[startIdx] ? `${members[startIdx].symbol}|${members[startIdx].exchange}` : null;
+      cursorEndKey = members[endIdx - 1] ? `${members[endIdx - 1].symbol}|${members[endIdx - 1].exchange}` : null;
+      members = members.slice(startIdx, endIdx);
     }
+
+    const chunkSize = universeMode === "filtered_inline" ? members.length : FULL_RUN_CHUNK;
+    let abortedAuth = false;
+
+    outer: for (let i = 0; i < members.length; i += chunkSize) {
 ```
 
-**Response JSON — append inside the existing return at line 227.** All chunk/cursor fields derive from `processed` and `lastProcessedKey`, never from `chunkPairs.length`:
+(Body of the `outer` loop is unchanged.)
 
+---
+
+## Diff 3 — Persist advanced cursor after loop (unfiltered runs only)
+
+Insert immediately BEFORE the existing `if (!filterSymbols) { ... last_sync_ltp_dhan upsert ... }` block at line 361.
+
+**Before (line 359–361):**
 ```ts
-      coverage_rule: "rows_ge_20_and_fresh_within_days",
-      coverage_freshness_days_used: freshnessDays,
-      covered_set_size_by_freshness: coveredByFreshness,
-      covered_set_size_by_count_only_before: coveredByCountOnlyBefore,
-      stale_pairs_now_pending: staleNowPending,
-      force_refresh_used: forceRefresh,
-      sleep_ms_used: sleepMs,
-      chunk_start_cursor: cursorIn,
-      chunk_size_used: chunkSize,
-      chunk_processed: processed,                   // ACTUAL, not chunkPairs.length
-      last_processed_cursor: lastProcessedKey,
-      next_cursor: (!timedOut && (sliceStart + processed) >= workPairs.length)
-        ? null                                       // fully drained
-        : lastProcessedKey,                          // resume strictly after this key
-      done: !timedOut && (sliceStart + processed) >= workPairs.length,
-      remaining_pending: Math.max(0, remainingBefore - processed),
+    // Telemetry — only for full-universe runs; partial inline refreshes
+    // (filter_applied) must not overwrite the daily summary.
+    if (!filterSymbols) {
 ```
 
-Semantics: when `timedOut` fires mid-chunk, `next_cursor` = last successfully processed pair key, so the next invocation resumes at the following pair. When the chunk completes and the whole universe is drained, `next_cursor=null` and `done=true`.
+**After:**
+```ts
+    // Persist rolling cursor for the next unfiltered invocation. On wrap or
+    // an empty slice, reset to null so the next run starts from the top.
+    if (universeMode === "rolling_full_run") {
+      const nextCursorValue = wrappedToStart || !cursorEndKey
+        ? { last_key: null, wrapped_at: new Date().toISOString() }
+        : { last_key: cursorEndKey, updated_at: new Date().toISOString() };
+      await supabase.from("stock_picker_runtime_config").upsert(
+        {
+          config_key: "sync_ltp_dhan_cursor",
+          kind: "operational",
+          config_value: nextCursorValue,
+          description: "Rolling cursor for sync-ltp-dhan full-universe pacing",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "config_key" },
+      );
+    }
+
+    // Telemetry — only for full-universe runs; partial inline refreshes
+    // (filter_applied) must not overwrite the daily summary.
+    if (!filterSymbols) {
+```
 
 ---
 
-### Telemetry fields (final)
-`coverage_rule`, `coverage_freshness_days_used`, `covered_set_size_by_freshness`, `covered_set_size_by_count_only_before`, `stale_pairs_now_pending`, `force_refresh_used`, `sleep_ms_used`, `chunk_start_cursor`, `chunk_size_used`, `chunk_processed`, `last_processed_cursor`, `next_cursor`, `done`, `remaining_pending` (+ existing `symbols_processed`, `rows_inserted`, `skipped_already_covered`, `timed_out`, `elapsed_ms`, `errors_count`, `errors`).
+## Diff 4 — Telemetry additions
 
-### Confirmations
-- Files changed: **1** (`supabase/functions/backfill-liquidity-20d/index.ts`)
-- Migrations: **0**
+Extend `counters` initializer (lines 243–259) and both telemetry sinks.
 
-### Runtime math (chunk_size=100, sleep_ms=0)
-Per-symbol wall time in history-only mode: 1 SELECT (~20 rows) + 1 upsert. Empirically ~50-150 ms round-trip inside the edge worker. 100 pairs ≈ 5-15 s per chunk. 490 pending → `ceil(490/100) = 5` invocations. Total wall clock across 5 back-to-back invocations: ~25-75 s. Well inside the 150 s edge limit and free of any 1 req/sec pacing.
+**Before (counters block, lines 243–259):** as-is with keys ending at `fetch_error_by_status`.
+
+**After — append two counters:**
+```ts
+      chunk_count: 0,
+      fetch_error_by_status: {} as Record<string, number>,
+      rate_limit_like_count: 0,
+      processed_member_count: 0,
+    };
+```
+
+Inside the error branch (line 314–319), after existing status bookkeeping, add:
+```ts
+          // status 0 = network/timeout; 429 = classic rate-limit; treat both as
+          // upstream-throttle signal (dhan-fetch surfaces RateLimitError as status=0).
+          const st = (r as { status?: number }).status ?? 0;
+          if (st === 0 || st === 429) counters.rate_limit_like_count++;
+```
+
+Inside the OK branch (after `counters.updated_count++`, ~line 346), also bump processed:
+```ts
+        counters.processed_member_count++;
+```
+And in the error branch (before `continue`), likewise bump:
+```ts
+        counters.processed_member_count++;
+```
+(Every member that was actually attempted counts as processed; skips for missing_id already increment `missing_id_count` and should NOT bump processed_member_count.)
+
+Extend the `last_sync_ltp_dhan` upsert `config_value` (line 366–375):
+```ts
+          config_value: {
+            ok: !abortedAuth,
+            symbols_updated: updated,
+            errors_count: errors.length,
+            ran_at: ranAt,
+            counters,
+            http_400_samples,
+            universe_source: universeSource,
+            universe_mode: universeMode,
+            cursor_start: cursorStartKey,
+            cursor_end: cursorEndKey,
+            wrapped_to_start: wrappedToStart,
+            aborted_systemic_auth: abortedAuth,
+          },
+```
+
+Extend `logTelemetry` details (line 387–394):
+```ts
+      details: {
+        filter_applied: filterSymbols != null,
+        universe_mode: universeMode,
+        cursor_start: cursorStartKey,
+        cursor_end: cursorEndKey,
+        wrapped_to_start: wrappedToStart,
+        counters,
+        http_400_samples,
+        universe_source: universeSource,
+        aborted_systemic_auth: abortedAuth,
+        errors_sample: errors.slice(0, 10),
+      },
+```
+
+Extend the final `return json({...})` (line 396–406) with the same four new fields (`universe_mode`, `cursor_start`, `cursor_end`, `wrapped_to_start`).
 
 ---
 
-### Operator playbook (active-universe scoped)
+## Preserved (unchanged)
 
-Set the knob:
-```sql
-insert into public.stock_picker_runtime_config (config_key, kind, config_value)
-values ('liquidity_coverage_freshness_days', 'operational', to_jsonb(3))
-on conflict (config_key) do update set config_value = excluded.config_value;
-```
+- Active snapshot as primary universe; override fallback only if snapshot empty
+- Exact member-row exchange/segment/dhan_security_id
+- `stock_master` fallback only for exact `(symbol, segment)`
+- `ltp_cache` upsert `onConflict: "symbol,exchange"`
+- Filter cap of 10, auth abort at 3 consecutive auth errors
+- `Retry-After` handling via `fetchLtpWithRetry`
+- Existing `INTER_CHUNK_PAUSE_MS = 800` pacing (relevant only if a single rolling slice ever exceeds FULL_RUN_CHUNK — kept as safety net; not tuned up)
+- No cron schedule change, no UI change
 
-Loop-invoke (composite pair-key cursor):
-```bash
-CURSOR=null
-while : ; do
-  BODY=$(jq -nc --arg c "$CURSOR" \
-    '{source:"snapshot", chunk_size:100, sleep_ms:0}
-     + (if $c=="null" then {} else {cursor:$c} end)')
-  RESP=$(curl -sS -X POST "$FN_URL/backfill-liquidity-20d" \
-    -H "Authorization: Bearer $SERVICE_ROLE" \
-    -H "content-type: application/json" -d "$BODY")
-  echo "$RESP" | jq '{next_cursor, remaining_pending, chunk_processed,
-                      rows_inserted, timed_out, done,
-                      covered_set_size_by_freshness,
-                      covered_set_size_by_count_only_before,
-                      stale_pairs_now_pending}'
-  DONE=$(echo "$RESP" | jq -r '.done')
-  CURSOR=$(echo "$RESP" | jq -r '.next_cursor')
-  [ "$DONE" = "true" ] && break
-  [ "$CURSOR" = "null" ] && break
-done
-```
+## Confirmations
 
-### Corrected verification SQL (ACTIVE-UNIVERSE SCOPED)
+1. **Only one file changes:** `supabase/functions/sync-ltp-dhan/index.ts`
+2. **No migration.** Cursor is a new *row* in existing `stock_picker_runtime_config` (`config_key = 'sync_ltp_dhan_cursor'`), written via existing upsert path.
 
-Scope to the active snapshot from `stock_picker_runtime_config.active_universe_snapshot_id` and its members — never the whole `stock_picker_liquidity_20d` table.
-
-```sql
--- Coverage of the active universe only.
-with active as (
-  select (config_value #>> '{}')::uuid as snapshot_id
-  from public.stock_picker_runtime_config
-  where config_key = 'active_universe_snapshot_id'
-),
-universe as (
-  select m.symbol, m.exchange
-  from public.stock_picker_universe_snapshot_member m
-  join active a on a.snapshot_id = m.universe_snapshot_id
-),
-agg as (
-  select l.symbol, l.exchange,
-         count(*)::int as n,
-         max(l.record_date) as mx
-  from public.stock_picker_liquidity_20d l
-  join universe u using (symbol, exchange)
-  where l.fetch_status = 'ok'
-  group by 1, 2
-)
-select
-  (select count(*) from universe)                                             as universe_pairs,
-  count(*) filter (where n >= 20 and mx >= current_date - 3)                  as fresh_ok,
-  count(*) filter (where n >= 20 and mx <  current_date - 3)                  as stale,
-  count(*) filter (where n <  20)                                             as thin,
-  (select count(*) from universe)
-    - count(*) filter (where n >= 20 and mx >= current_date - 3)              as still_pending
-from agg;
-```
-
-Per-pair drill-down for spot checks:
-```sql
-with active as (
-  select (config_value #>> '{}')::uuid as snapshot_id
-  from public.stock_picker_runtime_config
-  where config_key = 'active_universe_snapshot_id'
-)
-select u.symbol, u.exchange,
-       count(l.record_date)::int as rows_ok,
-       max(l.record_date)        as max_date,
-       (count(l.record_date) >= 20
-        and max(l.record_date) >= current_date - 3) as covered
-from public.stock_picker_universe_snapshot_member u
-join active a on a.snapshot_id = u.universe_snapshot_id
-left join public.stock_picker_liquidity_20d l
-  on l.symbol = u.symbol and l.exchange = u.exchange and l.fetch_status='ok'
-group by 1,2
-order by covered asc, u.symbol
-limit 50;
-```
-
-### Rollback (no redeploy)
-```sql
-update public.stock_picker_runtime_config
-set config_value = to_jsonb(999999)
-where config_key = 'liquidity_coverage_freshness_days';
-```
-Freshness gate becomes a no-op; behavior reverts to count-only coverage. `force_refresh` and `sleep_ms` default to inert values.
-
-### STOP-gate
-Awaiting explicit approval before touching the file.
+STOP — awaiting approval before build/deploy.
