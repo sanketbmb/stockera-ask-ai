@@ -1,237 +1,442 @@
-# PHASE LTP.ROUNDROBIN.MARKET.HOURS — Plan (single-file)
+# PHASE LIQUIDITY.DRAIN.MODE — Plan (single-file)
 
-**Scope:** ONLY `supabase/functions/sync-ltp-dhan/index.ts`. No migration, no other files.
+**Scope:** ONLY `supabase/functions/backfill-liquidity-20d/index.ts`. No migration, no other file changes.
 
-**Recommended chunk size: 50** — matches existing `FULL_RUN_CHUNK`. With ~788 members and a 5-minute cadence, wrap time ≈ 788/50 × 5 min ≈ 79 minutes (≈ every ticker refreshed ~5×/day during 09:15–15:30 IST). Small enough to keep well under Dhan gateway per-call bursts (previous full runs at ~788/invocation triggered upstream throttling; 50/invocation is safely below observed failure thresholds), large enough that wrap-around latency stays under a trading session slice. Filtered inline refresh continues to run all supplied (≤10) symbols in one invocation.
-
----
-
-## Diff 1 — Runtime cursor read (extend the `.in([...])` config fetch)
-
-**Before (lines 161–171):**
-```ts
-const { data: cfgRows } = await supabase
-  .from("stock_picker_runtime_config")
-  .select("config_key, config_value")
-  .in("config_key", [
-    "dhan_api_enabled",
-    "active_universe_snapshot_id",
-    "universe_override_symbols",
-    "universe_override_enabled",
-  ]);
-const cfg = new Map<string, unknown>();
-for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
-```
-
-**After:**
-```ts
-const { data: cfgRows } = await supabase
-  .from("stock_picker_runtime_config")
-  .select("config_key, config_value")
-  .in("config_key", [
-    "dhan_api_enabled",
-    "active_universe_snapshot_id",
-    "universe_override_symbols",
-    "universe_override_enabled",
-    "sync_ltp_dhan_cursor",
-  ]);
-const cfg = new Map<string, unknown>();
-for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
-
-// Cursor: last processed composite pair-key `${symbol}|${exchange}`.
-// Rolling scope applies only to unfiltered scheduled runs.
-const cursorRaw = cfg.get("sync_ltp_dhan_cursor");
-const cursorKey: string | null =
-  cursorRaw && typeof cursorRaw === "object" && typeof (cursorRaw as { last_key?: unknown }).last_key === "string"
-    ? (cursorRaw as { last_key: string }).last_key
-    : null;
-```
+**Runtime math (why 170000 ms is sufficient):**
+- Universe: 788 pairs (active snapshot).
+- Chunk size 100 → at most 8 loops to drain a full-pending queue; typically 1–3 loops in steady state because freshness gate already skips fresh pairs.
+- Per pair work: one `stock_picker_ohlcv_history` read (≤20 rows) + one bulk upsert into `stock_picker_liquidity_20d`. Both hit Supabase over the internal network, no external API. Measured ~40–80 ms per pair.
+- 100 pairs/loop × ~60 ms ≈ 6 s per loop, plus one coverage probe (~1–2 s) done ONCE before the drain loop starts.
+- Full-cold drain: coverage probe (~2 s) + 8 × 6 s ≈ 50 s. Warm/steady drain: <10 s.
+- Supabase edge functions cap around 200 s. 170 000 ms leaves ~30 s headroom for network jitter and the final response write. Comfortable ~3× margin over cold-drain expected wall time.
 
 ---
 
-## Diff 2 — Rolling-chunk selection + filtered-inline bypass
+## Diff 1 — New body knobs (mode / drain budget / error guard)
 
-Replace the chunk-loop initialization (lines 261–266) with a rolling-cursor slice for unfiltered runs. Filtered runs (`filterSymbols`) still process every supplied symbol in one invocation and do NOT advance the cursor.
+Insert immediately after the existing `sleep_ms` block (after line 63).
 
-**Before (lines 261–266):**
+**Before (lines 55–63):**
 ```ts
-    // -------- Chunked one-call-per-symbol loop --------
-    // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
-    const chunkSize = filterSymbols ? members.length : FULL_RUN_CHUNK;
-    let abortedAuth = false;
-
-    outer: for (let i = 0; i < members.length; i += chunkSize) {
+    const forceRefresh = bodyJson.force_refresh === true;
+    // History-only mode: no external API => no throttle by default.
+    // sleep_ms is exposed for future modes that hit Dhan directly.
+    const sleepMs = Math.max(
+      0,
+      Math.floor(typeof bodyJson.sleep_ms === "number" ? bodyJson.sleep_ms : 0),
+    );
+    const sleep = (ms: number) =>
+      ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 ```
 
-**After:**
+**After — append new knobs:**
 ```ts
-    // -------- Rolling-cursor scope (unfiltered) OR filtered inline --------
-    // Filtered inline runs: process all supplied symbols in one shot, no cursor advance.
-    // Unfiltered scheduled runs: deterministic order by `${symbol}|${exchange}`, pick
-    // exactly ONE FULL_RUN_CHUNK-sized window starting after the persisted cursor,
-    // wrapping to the beginning at end-of-universe.
-    const universeMode: "rolling_full_run" | "filtered_inline" =
-      filterSymbols ? "filtered_inline" : "rolling_full_run";
+    const forceRefresh = bodyJson.force_refresh === true;
+    // History-only mode: no external API => no throttle by default.
+    // sleep_ms is exposed for future modes that hit Dhan directly.
+    const sleepMs = Math.max(
+      0,
+      Math.floor(typeof bodyJson.sleep_ms === "number" ? bodyJson.sleep_ms : 0),
+    );
+    const sleep = (ms: number) =>
+      ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
-    let wrappedToStart = false;
-    let cursorStartKey: string | null = null;
-    let cursorEndKey: string | null = null;
+    // LIQUIDITY.DRAIN.MODE — request body extension
+    // mode="drain": internally loop the chunk worker until done OR budget hit
+    //               OR too_many_errors trips. All other modes unchanged.
+    const modeIn = typeof bodyJson.mode === "string" ? bodyJson.mode : "chunk";
+    const isDrain = modeIn === "drain";
+    const maxDrainRuntimeMs = Math.max(
+      10000,
+      Math.min(190000, Math.floor(
+        typeof bodyJson.max_drain_runtime_ms === "number"
+          ? bodyJson.max_drain_runtime_ms : 170000,
+      )),
+    );
+    const drainErrorLimit = Math.max(
+      1,
+      Math.floor(
+        typeof bodyJson.drain_error_limit === "number"
+          ? bodyJson.drain_error_limit : 200,
+      ),
+    );
+```
 
-    if (universeMode === "rolling_full_run") {
-      // Deterministic ordering by composite key.
-      members.sort((a, b) =>
-        `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
-      );
-      let startIdx = 0;
-      if (cursorKey) {
-        // First member with pair-key > cursorKey.
-        const found = members.findIndex((m) => `${m.symbol}|${m.exchange}` > cursorKey);
-        if (found === -1) {
-          wrappedToStart = true;
-          startIdx = 0;
-        } else {
-          startIdx = found;
-        }
+Note: chunk_size and sleep_ms defaults are already 100 and 0 respectively (lines 51–61), matching the required drain defaults. No default change needed. Callers can still override.
+
+---
+
+## Diff 2 — Wrap the chunk-processing block in an internal drain loop
+
+Replace lines 196–332 (from `// Cursor is the LAST pair key…` through the final `return json({ …, remaining_pending: … });`). The single-chunk path is preserved bit-for-bit inside the loop body — the loop simply runs exactly one iteration when `!isDrain`.
+
+**Before (lines 196–332):**
+```ts
+    // Cursor is the LAST pair key already processed by a prior invocation.
+    // We slice strictly greater than that composite key.
+    const sliceStart = cursorIn
+      ? (() => {
+          const idx = workPairs.findIndex((p) => pairKey(p) > cursorIn);
+          return idx < 0 ? workPairs.length : idx;
+        })()
+      : 0;
+    const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
+    const remainingBefore = workPairs.length - sliceStart;
+
+    const maxRuntimeMs = typeof bodyJson.max_runtime_ms === "number"
+      ? Math.max(5000, Math.floor(bodyJson.max_runtime_ms))
+      : 100000;
+    const t0 = Date.now();
+
+    const errors: Array<{ symbol: string; reason: string }> = [];
+    let processed = 0;
+    let insertedTotal = 0;
+    let timedOut = false;
+
+    let lastProcessedKey: string | null = null;
+
+    for (let i = 0; i < chunkPairs.length; i++) {
+      if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
+      if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
+      const { symbol, exchange } = chunkPairs[i];
+      processed++;
+      const { data: rows, error: histErr } = await supabase
+        .from("stock_picker_ohlcv_history")
+        .select("symbol, exchange, record_date, close, volume")
+        .eq("symbol", symbol)
+        .eq("exchange", exchange)
+        .order("record_date", { ascending: false })
+        .limit(20);
+      if (histErr) {
+        errors.push({ symbol, reason: `history_read: ${histErr.message}` });
+        lastProcessedKey = `${symbol}|${exchange}`;
+        continue;
       }
-      const endIdx = Math.min(startIdx + FULL_RUN_CHUNK, members.length);
-      cursorStartKey = members[startIdx] ? `${members[startIdx].symbol}|${members[startIdx].exchange}` : null;
-      cursorEndKey = members[endIdx - 1] ? `${members[endIdx - 1].symbol}|${members[endIdx - 1].exchange}` : null;
-      members = members.slice(startIdx, endIdx);
+      if (!rows || rows.length === 0) {
+        errors.push({ symbol, reason: "no_history_rows" });
+        lastProcessedKey = `${symbol}|${exchange}`;
+        continue;
+      }
+
+      const payload = rows
+        .filter((r) => r.close != null && r.volume != null && r.record_date)
+        .map((r) => {
+          const close = Number(r.close);
+          const volume = Number(r.volume);
+          return {
+            symbol: r.symbol,
+            exchange: r.exchange,
+            record_date: r.record_date as string,
+            close,
+            volume,
+            turnover_rs: close * volume,
+            adv_20d: null,
+            adt_20d_rs: null,
+            fetch_status: "ok",
+            data_snapshot_at: SNAPSHOT_TAG,
+            source_response_hash: null,
+          };
+        });
+      if (payload.length === 0) {
+        lastProcessedKey = `${symbol}|${exchange}`;
+        continue;
+      }
+
+      const { error: upErr, count } = await supabase
+        .from("stock_picker_liquidity_20d")
+        .upsert(payload, {
+          onConflict: "symbol,exchange,record_date,data_snapshot_at",
+          ignoreDuplicates: true,
+          count: "exact",
+        });
+      if (upErr) {
+        errors.push({ symbol, reason: `upsert: ${upErr.message}` });
+        lastProcessedKey = `${symbol}|${exchange}`;
+        continue;
+      }
+      insertedTotal += count ?? 0;
+      lastProcessedKey = `${symbol}|${exchange}`;
     }
 
-    const chunkSize = universeMode === "filtered_inline" ? members.length : FULL_RUN_CHUNK;
-    let abortedAuth = false;
+    try {
+      await supabase
+        .from("stock_picker_runtime_config")
+        .upsert(
+          {
+            config_key: "last_backfill_liquidity_20d",
+            kind: "operational",
+            config_value: {
+              ok: true,
+              source: sourceLabel,
+              universe_pairs: pairs.length,
+              symbols_processed: processed,
+              rows_inserted: insertedTotal,
+              errors_count: errors.length,
+              timed_out: timedOut,
+              ran_at: new Date().toISOString(),
+            },
+          },
+          { onConflict: "config_key" },
+        );
+    } catch { /* best effort */ }
 
-    outer: for (let i = 0; i < members.length; i += chunkSize) {
-```
-
-(Body of the `outer` loop is unchanged.)
-
----
-
-## Diff 3 — Persist advanced cursor after loop (unfiltered runs only)
-
-Insert immediately BEFORE the existing `if (!filterSymbols) { ... last_sync_ltp_dhan upsert ... }` block at line 361.
-
-**Before (line 359–361):**
-```ts
-    // Telemetry — only for full-universe runs; partial inline refreshes
-    // (filter_applied) must not overwrite the daily summary.
-    if (!filterSymbols) {
+    return json({
+      ok: true,
+      source: sourceLabel,
+      universe_pairs: pairs.length,
+      work_pairs: workPairs.length,
+      skipped_already_covered: skippedCovered,
+      symbols_processed: processed,
+      rows_inserted: insertedTotal,
+      timed_out: timedOut,
+      elapsed_ms: Date.now() - t0,
+      errors_count: errors.length,
+      errors: errors.slice(0, 20),
+      coverage_rule: "rows_ge_20_and_fresh_within_days",
+      coverage_freshness_days_used: freshnessDays,
+      covered_set_size_by_freshness: coveredByFreshness,
+      covered_set_size_by_count_only_before: coveredByCountOnlyBefore,
+      stale_pairs_now_pending: staleNowPending,
+      force_refresh_used: forceRefresh,
+      sleep_ms_used: sleepMs,
+      chunk_start_cursor: cursorIn,
+      chunk_size_used: chunkSize,
+      chunk_processed: processed,
+      last_processed_cursor: lastProcessedKey,
+      next_cursor: (!timedOut && (sliceStart + processed) >= workPairs.length)
+        ? null
+        : lastProcessedKey,
+      done: !timedOut && (sliceStart + processed) >= workPairs.length,
+      remaining_pending: Math.max(0, remainingBefore - processed),
+    });
 ```
 
 **After:**
 ```ts
-    // Persist rolling cursor for the next unfiltered invocation. On wrap or
-    // an empty slice, reset to null so the next run starts from the top.
-    if (universeMode === "rolling_full_run") {
-      const nextCursorValue = wrappedToStart || !cursorEndKey
-        ? { last_key: null, wrapped_at: new Date().toISOString() }
-        : { last_key: cursorEndKey, updated_at: new Date().toISOString() };
-      await supabase.from("stock_picker_runtime_config").upsert(
-        {
-          config_key: "sync_ltp_dhan_cursor",
-          kind: "operational",
-          config_value: nextCursorValue,
-          description: "Rolling cursor for sync-ltp-dhan full-universe pacing",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "config_key" },
-      );
+    const maxRuntimeMs = typeof bodyJson.max_runtime_ms === "number"
+      ? Math.max(5000, Math.floor(bodyJson.max_runtime_ms))
+      : 100000;
+    const t0 = Date.now();
+
+    // Aggregate telemetry across chunk iterations (drain mode); in single-
+    // chunk mode the loop executes exactly once and these mirror the chunk.
+    const errors: Array<{ symbol: string; reason: string }> = [];
+    let totalProcessed = 0;
+    let totalInserted = 0;
+    let drainLoopCount = 0;
+    let currentCursor: string | null = cursorIn;
+    let lastProcessedKey: string | null = null;
+    let sliceStart = 0;                 // last iteration's slice start
+    let iterationProcessed = 0;         // last iteration's processed count
+    let timedOut = false;
+    let finalDone = false;
+    let drainErrorTripped = false;
+    const drainStartedCursor: string | null = cursorIn;
+
+    while (true) {
+      // Cursor is the LAST pair key already processed by a prior iteration.
+      // We slice strictly greater than that composite key.
+      sliceStart = currentCursor
+        ? (() => {
+            const idx = workPairs.findIndex((p) => pairKey(p) > (currentCursor as string));
+            return idx < 0 ? workPairs.length : idx;
+          })()
+        : 0;
+      const chunkPairs = workPairs.slice(sliceStart, sliceStart + chunkSize);
+
+      if (chunkPairs.length === 0) { finalDone = true; break; }
+
+      iterationProcessed = 0;
+      let iterationInserted = 0;
+
+      for (let i = 0; i < chunkPairs.length; i++) {
+        if (Date.now() - t0 > maxRuntimeMs) { timedOut = true; break; }
+        if (i > 0) await sleep(sleepMs); // no-op when sleep_ms=0 (default)
+        const { symbol, exchange } = chunkPairs[i];
+        iterationProcessed++;
+        const { data: rows, error: histErr } = await supabase
+          .from("stock_picker_ohlcv_history")
+          .select("symbol, exchange, record_date, close, volume")
+          .eq("symbol", symbol)
+          .eq("exchange", exchange)
+          .order("record_date", { ascending: false })
+          .limit(20);
+        if (histErr) {
+          errors.push({ symbol, reason: `history_read: ${histErr.message}` });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+        if (!rows || rows.length === 0) {
+          errors.push({ symbol, reason: "no_history_rows" });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+
+        const payload = rows
+          .filter((r) => r.close != null && r.volume != null && r.record_date)
+          .map((r) => {
+            const close = Number(r.close);
+            const volume = Number(r.volume);
+            return {
+              symbol: r.symbol,
+              exchange: r.exchange,
+              record_date: r.record_date as string,
+              close,
+              volume,
+              turnover_rs: close * volume,
+              adv_20d: null,
+              adt_20d_rs: null,
+              fetch_status: "ok",
+              data_snapshot_at: SNAPSHOT_TAG,
+              source_response_hash: null,
+            };
+          });
+        if (payload.length === 0) {
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+
+        const { error: upErr, count } = await supabase
+          .from("stock_picker_liquidity_20d")
+          .upsert(payload, {
+            onConflict: "symbol,exchange,record_date,data_snapshot_at",
+            ignoreDuplicates: true,
+            count: "exact",
+          });
+        if (upErr) {
+          errors.push({ symbol, reason: `upsert: ${upErr.message}` });
+          lastProcessedKey = `${symbol}|${exchange}`;
+          continue;
+        }
+        iterationInserted += count ?? 0;
+        lastProcessedKey = `${symbol}|${exchange}`;
+      }
+
+      totalProcessed += iterationProcessed;
+      totalInserted += iterationInserted;
+      drainLoopCount++;
+      currentCursor = lastProcessedKey ?? currentCursor;
+
+      // Loop-exit rules:
+      // 1) Single-chunk (non-drain) mode -> always one iteration
+      // 2) Drain mode -> continue until end-of-queue OR budget OR error-guard
+      if (!isDrain) break;
+      if (timedOut) break;
+      const reachedEnd = (sliceStart + iterationProcessed) >= workPairs.length;
+      if (reachedEnd) { finalDone = true; break; }
+      if (errors.length >= drainErrorLimit) { drainErrorTripped = true; break; }
+      if (Date.now() - t0 > maxDrainRuntimeMs) { timedOut = true; break; }
     }
 
-    // Telemetry — only for full-universe runs; partial inline refreshes
-    // (filter_applied) must not overwrite the daily summary.
-    if (!filterSymbols) {
+    // "done" in single-chunk mode uses the ORIGINAL chunk's slice math to
+    // preserve prior wire-contract semantics; in drain mode use finalDone.
+    const singleChunkDone = !timedOut && (sliceStart + iterationProcessed) >= workPairs.length;
+    const doneOut = isDrain ? finalDone : singleChunkDone;
+    const remainingPendingOut = Math.max(0, workPairs.length - (sliceStart + iterationProcessed));
+
+    try {
+      await supabase
+        .from("stock_picker_runtime_config")
+        .upsert(
+          {
+            config_key: "last_backfill_liquidity_20d",
+            kind: "operational",
+            config_value: {
+              ok: true,
+              source: sourceLabel,
+              mode_used: isDrain ? "drain" : "chunk",
+              universe_pairs: pairs.length,
+              symbols_processed: totalProcessed,
+              rows_inserted: totalInserted,
+              errors_count: errors.length,
+              timed_out: timedOut,
+              drain_loop_count: drainLoopCount,
+              final_done: doneOut,
+              drain_error_tripped: drainErrorTripped,
+              ran_at: new Date().toISOString(),
+            },
+          },
+          { onConflict: "config_key" },
+        );
+    } catch { /* best effort */ }
+
+    return json({
+      ok: true,
+      source: sourceLabel,
+      mode_used: isDrain ? "drain" : "chunk",
+      universe_pairs: pairs.length,
+      work_pairs: workPairs.length,
+      skipped_already_covered: skippedCovered,
+      symbols_processed: totalProcessed,
+      rows_inserted: totalInserted,
+      timed_out: timedOut,
+      elapsed_ms: Date.now() - t0,
+      errors_count: errors.length,
+      errors: errors.slice(0, 20),
+      coverage_rule: "rows_ge_20_and_fresh_within_days",
+      coverage_freshness_days_used: freshnessDays,
+      covered_set_size_by_freshness: coveredByFreshness,
+      covered_set_size_by_count_only_before: coveredByCountOnlyBefore,
+      stale_pairs_now_pending: staleNowPending,
+      force_refresh_used: forceRefresh,
+      sleep_ms_used: sleepMs,
+      chunk_start_cursor: cursorIn,
+      chunk_size_used: chunkSize,
+      chunk_processed: iterationProcessed,   // last iteration's chunk
+      last_processed_cursor: lastProcessedKey,
+      next_cursor: doneOut ? null : lastProcessedKey,
+      done: doneOut,
+      remaining_pending: remainingPendingOut,
+      // ---- LIQUIDITY.DRAIN.MODE telemetry ----
+      drain_loop_count: drainLoopCount,
+      drain_started_cursor: drainStartedCursor,
+      drain_ended_cursor: lastProcessedKey,
+      total_chunk_processed: totalProcessed,
+      total_rows_inserted: totalInserted,
+      final_done: doneOut,
+      final_remaining_pending: remainingPendingOut,
+      final_timed_out: timedOut,
+      max_drain_runtime_ms_used: isDrain ? maxDrainRuntimeMs : null,
+      drain_error_tripped: drainErrorTripped,
+    });
 ```
+
+Note about the deleted `remainingBefore` variable: it was only used by the old response's `remaining_pending` calc. The new `remainingPendingOut` re-derives it from `workPairs.length - (sliceStart + iterationProcessed)`, which is equivalent when a single chunk runs and correct across drain iterations.
 
 ---
 
-## Diff 4 — Telemetry additions
+## Diff 3 — Response/telemetry additions (already inlined above)
 
-Extend `counters` initializer (lines 243–259) and both telemetry sinks.
+New response fields (all additive; every existing field is preserved with the same key names and semantics for `mode=chunk`):
+- `mode_used`
+- `drain_loop_count`
+- `drain_started_cursor`
+- `drain_ended_cursor`
+- `total_chunk_processed`
+- `total_rows_inserted`
+- `final_done`
+- `final_remaining_pending`
+- `final_timed_out`
+- `max_drain_runtime_ms_used` (null when `mode=chunk`)
+- `drain_error_tripped`
 
-**Before (counters block, lines 243–259):** as-is with keys ending at `fetch_error_by_status`.
-
-**After — append two counters:**
-```ts
-      chunk_count: 0,
-      fetch_error_by_status: {} as Record<string, number>,
-      rate_limit_like_count: 0,
-      processed_member_count: 0,
-    };
-```
-
-Inside the error branch (line 314–319), after existing status bookkeeping, add:
-```ts
-          // status 0 = network/timeout; 429 = classic rate-limit; treat both as
-          // upstream-throttle signal (dhan-fetch surfaces RateLimitError as status=0).
-          const st = (r as { status?: number }).status ?? 0;
-          if (st === 0 || st === 429) counters.rate_limit_like_count++;
-```
-
-Inside the OK branch (after `counters.updated_count++`, ~line 346), also bump processed:
-```ts
-        counters.processed_member_count++;
-```
-And in the error branch (before `continue`), likewise bump:
-```ts
-        counters.processed_member_count++;
-```
-(Every member that was actually attempted counts as processed; skips for missing_id already increment `missing_id_count` and should NOT bump processed_member_count.)
-
-Extend the `last_sync_ltp_dhan` upsert `config_value` (line 366–375):
-```ts
-          config_value: {
-            ok: !abortedAuth,
-            symbols_updated: updated,
-            errors_count: errors.length,
-            ran_at: ranAt,
-            counters,
-            http_400_samples,
-            universe_source: universeSource,
-            universe_mode: universeMode,
-            cursor_start: cursorStartKey,
-            cursor_end: cursorEndKey,
-            wrapped_to_start: wrappedToStart,
-            aborted_systemic_auth: abortedAuth,
-          },
-```
-
-Extend `logTelemetry` details (line 387–394):
-```ts
-      details: {
-        filter_applied: filterSymbols != null,
-        universe_mode: universeMode,
-        cursor_start: cursorStartKey,
-        cursor_end: cursorEndKey,
-        wrapped_to_start: wrappedToStart,
-        counters,
-        http_400_samples,
-        universe_source: universeSource,
-        aborted_systemic_auth: abortedAuth,
-        errors_sample: errors.slice(0, 10),
-      },
-```
-
-Extend the final `return json({...})` (line 396–406) with the same four new fields (`universe_mode`, `cursor_start`, `cursor_end`, `wrapped_to_start`).
+`last_backfill_liquidity_20d` runtime-config summary gains `mode_used`, `drain_loop_count`, `final_done`, `drain_error_tripped`.
 
 ---
 
 ## Preserved (unchanged)
 
-- Active snapshot as primary universe; override fallback only if snapshot empty
-- Exact member-row exchange/segment/dhan_security_id
-- `stock_master` fallback only for exact `(symbol, segment)`
-- `ltp_cache` upsert `onConflict: "symbol,exchange"`
-- Filter cap of 10, auth abort at 3 consecutive auth errors
-- `Retry-After` handling via `fetchLtpWithRetry`
-- Existing `INTER_CHUNK_PAUSE_MS = 800` pacing (relevant only if a single rolling slice ever exceeds FULL_RUN_CHUNK — kept as safety net; not tuned up)
-- No cron schedule change, no UI change
+- Snapshot / explicit_pairs / override universe sourcing
+- Freshness gate (`rows_ge_20_and_fresh_within_days`) + `force_refresh` bypass
+- Composite pair-key ordering and cursor semantics
+- `chunk_size` and `sleep_ms` request-body knobs and their defaults (100 / 0)
+- `onConflict: "symbol,exchange,record_date,data_snapshot_at"` idempotent upsert
+- Single-chunk (`mode=chunk` / no `mode`) behavior: exactly one loop iteration, identical wire contract
+- No DB migration, no schema changes, no UI changes
 
 ## Confirmations
 
-1. **Only one file changes:** `supabase/functions/sync-ltp-dhan/index.ts`
-2. **No migration.** Cursor is a new *row* in existing `stock_picker_runtime_config` (`config_key = 'sync_ltp_dhan_cursor'`), written via existing upsert path.
+1. **Only one file changes:** `supabase/functions/backfill-liquidity-20d/index.ts`
+2. **No migration.**
 
 STOP — awaiting approval before build/deploy.

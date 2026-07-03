@@ -62,6 +62,26 @@ Deno.serve(async (req) => {
     const sleep = (ms: number) =>
       ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
+    // LIQUIDITY.DRAIN.MODE — request body extension.
+    // mode="drain" internally loops the existing chunk worker until the queue
+    // drains OR the runtime budget hits OR the error-guard trips.
+    const modeIn = typeof bodyJson.mode === "string" ? bodyJson.mode : "chunk";
+    const isDrain = modeIn === "drain";
+    const maxDrainRuntimeMs = Math.max(
+      10000,
+      Math.min(190000, Math.floor(
+        typeof bodyJson.max_drain_runtime_ms === "number"
+          ? bodyJson.max_drain_runtime_ms : 170000,
+      )),
+    );
+    const drainErrorLimit = Math.max(
+      1,
+      Math.floor(
+        typeof bodyJson.drain_error_limit === "number"
+          ? bodyJson.drain_error_limit : 200,
+      ),
+    );
+
     if (Array.isArray(bodyJson.pairs)) {
       universe = (bodyJson.pairs as Array<{ symbol: string; exchange: string }>);
       sourceLabel = "explicit_pairs";
