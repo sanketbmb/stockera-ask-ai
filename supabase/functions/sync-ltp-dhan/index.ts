@@ -265,11 +265,43 @@ Deno.serve(async (req) => {
       master_fallback_used_count: 0,
       chunk_count: 0,
       fetch_error_by_status: {} as Record<string, number>,
+      rate_limit_like_count: 0,
+      processed_member_count: 0,
     };
 
-    // -------- Chunked one-call-per-symbol loop --------
-    // Manual filtered runs (<=10 symbols) execute inline without chunk pauses.
-    const chunkSize = filterSymbols ? members.length : FULL_RUN_CHUNK;
+    // -------- Rolling-cursor scope (unfiltered) OR filtered inline --------
+    // Filtered inline runs: process all supplied symbols in one shot, cursor NOT advanced.
+    // Unfiltered scheduled runs: deterministic order by `${symbol}|${exchange}`, pick
+    // exactly ONE FULL_RUN_CHUNK-sized window starting after the persisted cursor,
+    // wrapping to the beginning at end-of-universe.
+    const universeMode: "rolling_full_run" | "filtered_inline" =
+      filterSymbols ? "filtered_inline" : "rolling_full_run";
+
+    let wrappedToStart = false;
+    let cursorStartKey: string | null = null;
+    let cursorEndKey: string | null = null;
+
+    if (universeMode === "rolling_full_run") {
+      members.sort((a, b) =>
+        `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
+      );
+      let startIdx = 0;
+      if (cursorKey) {
+        const found = members.findIndex((m) => `${m.symbol}|${m.exchange}` > cursorKey);
+        if (found === -1) {
+          wrappedToStart = true;
+          startIdx = 0;
+        } else {
+          startIdx = found;
+        }
+      }
+      const endIdx = Math.min(startIdx + FULL_RUN_CHUNK, members.length);
+      cursorStartKey = members[startIdx] ? `${members[startIdx].symbol}|${members[startIdx].exchange}` : null;
+      cursorEndKey = members[endIdx - 1] ? `${members[endIdx - 1].symbol}|${members[endIdx - 1].exchange}` : null;
+      members = members.slice(startIdx, endIdx);
+    }
+
+    const chunkSize = universeMode === "filtered_inline" ? members.length : FULL_RUN_CHUNK;
     let abortedAuth = false;
 
     outer: for (let i = 0; i < members.length; i += chunkSize) {
