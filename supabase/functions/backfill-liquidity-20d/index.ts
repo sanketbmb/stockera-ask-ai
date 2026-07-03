@@ -313,6 +313,22 @@ Deno.serve(async (req) => {
       elapsed_ms: Date.now() - t0,
       errors_count: errors.length,
       errors: errors.slice(0, 20),
+      coverage_rule: "rows_ge_20_and_fresh_within_days",
+      coverage_freshness_days_used: freshnessDays,
+      covered_set_size_by_freshness: coveredByFreshness,
+      covered_set_size_by_count_only_before: coveredByCountOnlyBefore,
+      stale_pairs_now_pending: staleNowPending,
+      force_refresh_used: forceRefresh,
+      sleep_ms_used: sleepMs,
+      chunk_start_cursor: cursorIn,
+      chunk_size_used: chunkSize,
+      chunk_processed: processed,
+      last_processed_cursor: lastProcessedKey,
+      next_cursor: (!timedOut && (sliceStart + processed) >= workPairs.length)
+        ? null
+        : lastProcessedKey,
+      done: !timedOut && (sliceStart + processed) >= workPairs.length,
+      remaining_pending: Math.max(0, remainingBefore - processed),
     });
 
   } catch (e) {
