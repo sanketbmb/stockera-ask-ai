@@ -624,6 +624,12 @@ Deno.serve(async (req) => {
         stop_reached: stopReached,
         stop_reason: stopReason,
         elapsed_ms: Date.now() - t0n,
+        coverage_rule: 'rows_ge_20_and_fresh_within_days',
+        coverage_freshness_days: freshnessDays,
+        force_refresh: forceRefresh,
+        symbols_covered_by_count_only: coveredByCountOnly.size,
+        symbols_stale_now_pending: staleNowPending.length,
+        stale_sample: staleNowPending.slice(0, 20),
         failures: failures.slice(0, 20),
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
