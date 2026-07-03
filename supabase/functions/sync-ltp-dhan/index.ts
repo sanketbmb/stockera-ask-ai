@@ -403,6 +403,24 @@ Deno.serve(async (req) => {
       ? "error"
       : (errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"));
 
+    // Persist rolling cursor for the next unfiltered invocation. On wrap or
+    // empty slice, reset to null so the next run starts from the top.
+    if (universeMode === "rolling_full_run") {
+      const nextCursorValue = wrappedToStart || !cursorEndKey
+        ? { last_key: null, wrapped_at: new Date().toISOString() }
+        : { last_key: cursorEndKey, updated_at: new Date().toISOString() };
+      await supabase.from("stock_picker_runtime_config").upsert(
+        {
+          config_key: "sync_ltp_dhan_cursor",
+          kind: "operational",
+          config_value: nextCursorValue,
+          description: "Rolling cursor for sync-ltp-dhan full-universe pacing",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "config_key" },
+      );
+    }
+
     // Telemetry — only for full-universe runs; partial inline refreshes
     // (filter_applied) must not overwrite the daily summary.
     if (!filterSymbols) {
@@ -418,6 +436,10 @@ Deno.serve(async (req) => {
             counters,
             http_400_samples,
             universe_source: universeSource,
+            universe_mode: universeMode,
+            cursor_start: cursorStartKey,
+            cursor_end: cursorEndKey,
+            wrapped_to_start: wrappedToStart,
             aborted_systemic_auth: abortedAuth,
           },
           description: "Last sync-ltp-dhan run summary",
@@ -433,6 +455,10 @@ Deno.serve(async (req) => {
       errors_count: errors.length,
       details: {
         filter_applied: filterSymbols != null,
+        universe_mode: universeMode,
+        cursor_start: cursorStartKey,
+        cursor_end: cursorEndKey,
+        wrapped_to_start: wrappedToStart,
         counters,
         http_400_samples,
         universe_source: universeSource,
@@ -448,6 +474,10 @@ Deno.serve(async (req) => {
       counters,
       http_400_samples,
       universe_source: universeSource,
+      universe_mode: universeMode,
+      cursor_start: cursorStartKey,
+      cursor_end: cursorEndKey,
+      wrapped_to_start: wrappedToStart,
       aborted_systemic_auth: abortedAuth,
       filter_applied: filterSymbols != null,
     });
