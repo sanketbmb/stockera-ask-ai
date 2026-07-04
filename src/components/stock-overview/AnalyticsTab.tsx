@@ -88,9 +88,21 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
       />
       <ReturnsAtAGlance returns={analytics.returns_snapshot} />
       <div className="grid gap-4 md:grid-cols-2">
-        <BusinessQualityCard quality={analytics.long_term_quality_snapshot ?? null} fundamentals={analytics.fundamental_snapshot} />
-        <ValuationFairValueCard fundamentals={analytics.fundamental_snapshot} />
-        <RiskProfileCard risk={analytics.risk_snapshot} />
+        <BusinessQualityCard
+          quality={analytics.long_term_quality_snapshot ?? null}
+          fundamentals={analytics.fundamental_snapshot}
+          auditMeta={analytics.audit_meta}
+          scoreBreakdown={analytics.score_breakdown}
+        />
+        <ValuationFairValueCard
+          fundamentals={analytics.fundamental_snapshot}
+          auditMeta={analytics.audit_meta}
+        />
+        <RiskProfileCard
+          risk={analytics.risk_snapshot}
+          flags={analytics.flags}
+          scoreBreakdown={analytics.score_breakdown}
+        />
         <LongTermReturnsCard returns={analytics.returns_snapshot} quality={analytics.long_term_quality_snapshot ?? null} />
       </div>
       <Latest30dNewsBlock sentiment={analytics.sentiment_snapshot} />

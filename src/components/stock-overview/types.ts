@@ -39,13 +39,18 @@ export interface StockOverview {
   meta: { provider_failures: number[]; elapsed_ms: number };
 }
 
-// Stage 4A.2 — public /stock/$symbol Analytics tab payload (report-only
-// fields already stripped server-side: user_context, summary_reason,
-// verdict_reason, confidence_pct, risk_label, time_horizon).
+// Stage 4A.2b — public /stock/$symbol Analytics tab payload.
+// Server-side whitelist strips: final_verdict.action / summary_reason /
+// verdict_reason / confidence_pct, levels, user_context, technical_snapshot,
+// intraday_microstructure_snapshot, and all trade-planning audit_meta.*.
 export interface PublicAnalyticsPayload {
   as_of_date: string | null;
   stock: { symbol: string; company_name: string; sector: string; industry: string; exchange: string } | null;
-  final_verdict: { action: string | null; overall_score: number | null } | null;
+  final_verdict: {
+    overall_score: number | null;
+    risk_label: string | null;
+    time_horizon: string | null;
+  } | null;
   score_breakdown: {
     technical_score: number;
     fundamental_score: number;
@@ -80,6 +85,7 @@ export interface PublicAnalyticsPayload {
     var_95: number | null;
     liquidity_label: string;
   } | null;
+  momentum_snapshot?: Record<string, unknown> | null;
   sentiment_snapshot: {
     news_sentiment_score: number | null;
     sentiment_label: string;
@@ -101,8 +107,23 @@ export interface PublicAnalyticsPayload {
     market_share_trend_label: string | null;
     data_completeness_pct: number;
   } | null;
-  audit_meta: { formula_version: string | null; tier_weights: Record<string, number> | null } | null;
-  flags: Record<string, boolean> | null;
+  audit_meta: {
+    formula_version: string | null;
+    weighting_profile_id?: string | null;
+    action_bucket_version?: string | null;
+    tier_weights: Record<string, number> | null;
+    dcf_status?: string | null;
+    dcf_method_used?: string | null;
+    banking_override_applied?: boolean | null;
+    banking_override_reason?: string | null;
+  } | null;
+  flags: {
+    incomplete_data?: boolean;
+    news_data_limited?: boolean;
+    benchmark_fallback_used?: boolean;
+    banking_override_applied?: boolean;
+    [k: string]: boolean | undefined;
+  } | null;
 }
 
 export interface AnalyticsProvenance {

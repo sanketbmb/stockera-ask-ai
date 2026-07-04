@@ -189,7 +189,12 @@ Deno.serve(async (req) => {
     const rawVerdict = val<Array<{ verdict: string | null; published_at: string | null }>>(10);
     const rawAnalyticsRows = val<Array<Record<string, unknown>>>(11);
 
-    // Shape analytics for public /stock/$symbol page. Strips report-only fields.
+    // Stage 4A.2b — Public-safe analytics whitelist.
+    // DROPS: final_verdict.action / summary_reason / verdict_reason / confidence_pct,
+    //        levels, user_context, query_context, price_context, report_modules,
+    //        technical_snapshot, intraday_microstructure_snapshot, and all
+    //        trade-planning audit_meta fields (tier_guardrails, horizon_shaping,
+    //        entry_strategy, targets_meta, source_trace, trade_plan_*, regime, etc.).
     let analytics: Record<string, unknown> | null = null;
     let analytics_provenance: Record<string, unknown> | null = null;
     if (Array.isArray(rawAnalyticsRows) && rawAnalyticsRows.length > 0) {
@@ -197,19 +202,35 @@ Deno.serve(async (req) => {
       const payload = row.payload as Record<string, unknown> | undefined;
       if (payload && typeof payload === "object") {
         const fv = payload.final_verdict as Record<string, unknown> | undefined;
+        const am = payload.audit_meta as Record<string, unknown> | undefined;
         analytics = {
           as_of_date: payload.as_of_date ?? null,
           stock: payload.stock ?? null,
-          final_verdict: fv ? { action: fv.action ?? null, overall_score: fv.overall_score ?? null } : null,
+          final_verdict: fv
+            ? {
+                overall_score: fv.overall_score ?? null,
+                risk_label: fv.risk_label ?? null,
+                time_horizon: fv.time_horizon ?? null,
+              }
+            : null,
           score_breakdown: payload.score_breakdown ?? null,
           returns_snapshot: payload.returns_snapshot ?? null,
           fundamental_snapshot: payload.fundamental_snapshot ?? null,
           risk_snapshot: payload.risk_snapshot ?? null,
+          momentum_snapshot: payload.momentum_snapshot ?? null,
           sentiment_snapshot: payload.sentiment_snapshot ?? null,
           long_term_quality_snapshot: payload.long_term_quality_snapshot ?? null,
-          audit_meta: payload.audit_meta
-            ? { formula_version: (payload.audit_meta as Record<string, unknown>).formula_version ?? null,
-                tier_weights: (payload.audit_meta as Record<string, unknown>).tier_weights ?? null }
+          audit_meta: am
+            ? {
+                formula_version: am.formula_version ?? null,
+                weighting_profile_id: am.weighting_profile_id ?? null,
+                action_bucket_version: am.action_bucket_version ?? null,
+                tier_weights: am.tier_weights ?? null,
+                dcf_status: am.dcf_status ?? null,
+                dcf_method_used: am.dcf_method_used ?? null,
+                banking_override_applied: am.banking_override_applied ?? null,
+                banking_override_reason: am.banking_override_reason ?? null,
+              }
             : null,
           flags: payload.flags ?? null,
         };
