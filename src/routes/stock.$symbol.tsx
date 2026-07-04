@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +10,7 @@ import { OverviewTab } from "@/components/stock-overview/OverviewTab";
 import { StatisticsTab } from "@/components/stock-overview/StatisticsTab";
 import { NewsTab } from "@/components/stock-overview/NewsTab";
 import { AiReportsTab } from "@/components/stock-overview/AiReportsTab";
+import { VideosBlogsTab } from "@/components/stock-overview/VideosBlogsTab";
 import type { StockOverview } from "@/components/stock-overview/types";
 
 const ORIGIN = "https://asktheexpert.lovable.app";
