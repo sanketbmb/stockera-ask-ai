@@ -126,6 +126,14 @@ interface StockOut {
   batch_id: string;
   generated_at: string;
   cmp: CmpBlock;
+  cmp_freshness: CmpFreshness;
+  cmp_source_used: string | null;
+  cmp_as_of: string | null;
+  cmp_age_days: number | null;
+  cmp_age_trading_days: number | null;
+  cmp_freshness_status: CmpFreshnessStatus;
+  reference_only: boolean;
+  action_levels_suppressed: boolean;
   technicals: TechnicalsBlock;
   fundamentals: FundamentalsBlock;
   buy_zone: BuyZoneBlock;
