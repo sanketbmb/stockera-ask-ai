@@ -160,6 +160,17 @@ Deno.serve(async (req) => {
       pgFetch(
         `library_items?symbol=eq.${encodeURIComponent(symbol)}&kind=eq.report&is_tombstoned=eq.false&select=verdict,published_at`,
       ),
+      // Stage 4A.2 — pre-warmed analytics cache (today, long-term horizon).
+      (async () => {
+        const ist = new Date(Date.now() + (5 * 60 + 30) * 60_000);
+        const cacheDate = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
+        return pgFetch(
+          `stock_analytics_cache?symbol=eq.${encodeURIComponent(symbol)}` +
+          `&exchange=eq.${encodeURIComponent(exchange)}` +
+          `&horizon=eq.long-term&cache_date=eq.${cacheDate}` +
+          `&select=payload,computed_at,formula_version,weighting_profile_id,action_bucket_version,origin&limit=1`,
+        );
+      })(),
     ]);
 
     const val = <T,>(i: number): T | null =>
