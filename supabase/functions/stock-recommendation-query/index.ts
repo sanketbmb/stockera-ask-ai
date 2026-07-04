@@ -828,6 +828,76 @@ Deno.serve(async (req) => {
       };
     }
 
+    // PHASE CMP.STALE.GUARD — trading-day age via IST calendar.
+    // Weekends excluded. NSE exchange holidays are NOT modeled (this is a
+    // safety gate, not a settlement calc). A missed holiday under-counts by
+    // ≤1–2 days, which stays inside the 2-trading-day tolerance; the
+    // cmp_warning text below discloses the limitation.
+    function tradingDayDiff(fromMs: number, toMs: number): number {
+      if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return 0;
+      const MS_DAY = 86_400_000;
+      const IST_OFFSET = 5.5 * 3600_000; // IST has no DST
+      const dayIdx = (ms: number) => Math.floor((ms + IST_OFFSET) / MS_DAY);
+      let d = dayIdx(fromMs);
+      const end = dayIdx(toMs);
+      let td = 0;
+      while (d < end) {
+        d += 1;
+        const dow = (d + 4) % 7; // 0=Sun..6=Sat (epoch day 0 = Thu 1970-01-01)
+        if (dow !== 0 && dow !== 6) td += 1;
+      }
+      return td;
+    }
+
+    function classifyCmpFreshness(cmp: CmpBlock): CmpFreshness {
+      if (cmp.value == null || !cmp.as_of) {
+        return {
+          cmp_source_used: cmp.source ?? null,
+          cmp_as_of: cmp.as_of ?? null,
+          cmp_age_days: null,
+          cmp_age_trading_days: null,
+          cmp_freshness_status: "stale",
+          reference_only: true,
+          action_levels_suppressed: true,
+          cmp_warning: "CMP unavailable — reference only, action levels suppressed.",
+        };
+      }
+      const asOfMs = new Date(cmp.as_of).getTime();
+      const nowLocal = Date.now();
+      const ageDays = Number.isFinite(asOfMs)
+        ? Math.round(((nowLocal - asOfMs) / 86_400_000) * 10) / 10
+        : null;
+      const tdays = Number.isFinite(asOfMs) ? tradingDayDiff(asOfMs, nowLocal) : null;
+
+      // Explicit branches for every label value buildCmp emits today:
+      //   "LIVE" | "CLOSE" | "CACHE" | "EOD FALLBACK" | null
+      // A future 5th label falls through to "stale" (fail safe).
+      let status: CmpFreshnessStatus;
+      if (cmp.label === "LIVE") status = "fresh_live";
+      else if (cmp.label === "CLOSE") status = "fresh_close";
+      else if (cmp.label === "CACHE") status = "fallback_recent";
+      else if (cmp.label === "EOD FALLBACK") status = "fallback_recent";
+      else status = "stale"; // null or unknown future label
+
+      if (tdays != null && tdays > 2) status = "stale";
+
+      const stale = status === "stale";
+      return {
+        cmp_source_used: cmp.source,
+        cmp_as_of: cmp.as_of,
+        cmp_age_days: ageDays,
+        cmp_age_trading_days: tdays,
+        cmp_freshness_status: status,
+        reference_only: stale,
+        action_levels_suppressed: stale,
+        cmp_warning: stale
+          ? `CMP is ${tdays ?? "?"} trading days old (source: ${cmp.source ?? "unknown"}). Shown for reference only — trade levels suppressed. (Holiday calendar not modeled; weekends excluded.)`
+          : null,
+      };
+    }
+
+
+
     function buildTechnicals(sym: string, cmpValue: number | null): TechnicalsBlock {
       const rows = closesBySymbol.get(sym) ?? [];
       // MASTER FIX — graceful fallback when liquidity_20d history is empty
