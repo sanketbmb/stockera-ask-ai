@@ -335,6 +335,8 @@ Deno.serve(async (req) => {
         latest_verdict_distribution: bucket_counts,
         most_recent_report_date,
       },
+      analytics,
+      analytics_provenance,
       meta: {
         provider_failures,
         elapsed_ms: Date.now() - started,
