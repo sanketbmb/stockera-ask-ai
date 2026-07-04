@@ -85,6 +85,8 @@ export function MasterSearchRecentTab({ onClose }: Props) {
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
     staleTime: 60 * 1000,
+    throwOnError: false,
+    retry: false,
   });
 
   // Realtime: subscribe to public.queries (NOT library_items). INSERT covers
