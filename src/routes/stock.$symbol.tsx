@@ -103,22 +103,15 @@ function StockPage() {
     <div className="flex min-h-screen flex-col bg-mesh">
       <Navbar />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-        <StockHeader data={data} loggedIn={loggedIn} />
-
-        {hasPartial && (
-          <div className="mb-4">
-            <Badge variant="secondary" className="text-xs">
-              Data limited — some providers are unavailable right now.
-            </Badge>
-          </div>
-        )}
+        <StockHeader data={data} loggedIn={loggedIn} hasPartial={hasPartial} />
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 max-w-xl">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="statistics">Statistics</TabsTrigger>
             <TabsTrigger value="news">News</TabsTrigger>
             <TabsTrigger value="ai_reports">AI Reports</TabsTrigger>
+            <TabsTrigger value="videos_blogs">Videos & Blogs</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="mt-4">
             <OverviewTab data={data} />
@@ -131,6 +124,9 @@ function StockPage() {
           </TabsContent>
           <TabsContent value="ai_reports" className="mt-4">
             <AiReportsTab data={data} loggedIn={loggedIn} />
+          </TabsContent>
+          <TabsContent value="videos_blogs" className="mt-4">
+            <VideosBlogsTab data={data} />
           </TabsContent>
         </Tabs>
       </main>
