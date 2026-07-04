@@ -151,6 +151,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
 
+  // AUTH GUARD — service_role only. Called by pg_cron (jobid 19) and by
+  // founder for manual seeding. Anonymous callers must be rejected to prevent
+  // provider-credit abuse.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!bearer || bearer !== SERVICE_KEY) {
+    return json({ error: "service_role required" }, 401);
+  }
+
   const started = Date.now();
   const startedIso = new Date().toISOString();
   try {
