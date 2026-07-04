@@ -80,7 +80,7 @@ export function MasterSearch({
     setError(null);
 
     // Primary stock suggestions: stock_master (deterministic, Indian universe, zero API cost).
-    // Fallback to twelvedata symbol_search ONLY when stock_master returns 0 rows.
+    // Fallback to twelvedata symbol_search ONLY when user is logged in and stock_master returns 0 rows.
     const stockSuggestions = (async (): Promise<LibraryStock[]> => {
       try {
         const like = `${debouncedQ}%`;
@@ -96,39 +96,49 @@ export function MasterSearch({
           name: r.company_name ?? null,
         }));
         if (primary.length > 0) return primary;
-        const { data: td } = await supabase.functions.invoke("twelvedata-fetch", {
-          body: { endpoint: "symbol_search", params: { symbol: debouncedQ } },
-        });
-        const list = (td as { success?: boolean; data?: { data?: Array<Record<string, unknown>> } } | null)?.data?.data ?? [];
-        return list.slice(0, 8).map((r) => ({
-          symbol: String(r.symbol ?? ""),
-          exchange: (String(r.exchange ?? "").includes("BSE") ? "BSE" : "NSE") as "NSE" | "BSE",
-          name: (r.instrument_name ?? r.name ?? null) as string | null,
-        }));
+        if (user == null) return [];
+        try {
+          const { data: td } = await supabase.functions.invoke("twelvedata-fetch", {
+            body: { endpoint: "symbol_search", params: { symbol: debouncedQ } },
+          });
+          const list = (td as { success?: boolean; data?: { data?: Array<Record<string, unknown>> } } | null)?.data?.data ?? [];
+          return list.slice(0, 8).map((r) => ({
+            symbol: String(r.symbol ?? ""),
+            exchange: (String(r.exchange ?? "").includes("BSE") ? "BSE" : "NSE") as "NSE" | "BSE",
+            name: (r.instrument_name ?? r.name ?? null) as string | null,
+          }));
+        } catch {
+          return [];
+        }
       } catch {
         return [];
       }
     })();
 
+    const librarySearch = (async (): Promise<SearchResponse> => {
+      const empty: SearchResponse = {
+        stocks: [], reports: [], videos: [], community: [], analysts: [], total_found: 0,
+      } as unknown as SearchResponse;
+      try {
+        const { data: libData, error: libErr } = await supabase.functions.invoke("library-search", {
+          body: { q: debouncedQ, limit: 30 },
+        });
+        if (libErr || !libData) return empty;
+        return libData as SearchResponse;
+      } catch {
+        return empty;
+      }
+    })();
 
-    Promise.all([
-      supabase.functions
-        .invoke("library-search", { body: { q: debouncedQ, limit: 30 } })
-        .then((r) => r),
-      stockSuggestions,
-    ])
-      .then(([{ data: libData, error: libErr }, stocks]) => {
+    Promise.all([librarySearch, stockSuggestions])
+      .then(([base, stocks]) => {
         if (cancelled) return;
-        if (libErr) {
-          setError("Search is temporarily unavailable. Try again in a moment.");
-          setData(null);
-        } else {
-          const base = (libData ?? {}) as SearchResponse;
-          setData({ ...base, stocks: stocks.length > 0 ? stocks : (base.stocks ?? []) });
-        }
+        setData({ ...base, stocks: stocks.length > 0 ? stocks : (base.stocks ?? []) });
       })
       .catch(() => {
-        if (!cancelled) setError("Search is temporarily unavailable. Try again in a moment.");
+        if (!cancelled) setData({
+          stocks: [], reports: [], videos: [], community: [], analysts: [], total_found: 0,
+        } as unknown as SearchResponse);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -136,7 +146,7 @@ export function MasterSearch({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQ]);
+  }, [debouncedQ, user]);
 
 
   // Flatten rows in render order for keyboard nav
