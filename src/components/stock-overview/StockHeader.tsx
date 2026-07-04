@@ -9,6 +9,7 @@ import type { StockOverview } from "./types";
 interface Props {
   data: StockOverview;
   loggedIn: boolean;
+  hasPartial?: boolean;
 }
 
 function formatPrice(v: number | null | undefined) {
@@ -16,17 +17,32 @@ function formatPrice(v: number | null | undefined) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(v);
 }
 
-export function StockHeader({ data, loggedIn }: Props) {
-  const price = data.price?.value ?? null;
-  const change = data.price?.change ?? null;
-  const changePct = data.price?.change_pct ?? null;
+export function StockHeader({ data, loggedIn, hasPartial }: Props) {
+  const candles = data.candles_30d ?? [];
+  const lastCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+  const prevCandle = candles.length > 1 ? candles[candles.length - 2] : null;
+
+  const livePrice = data.price?.value ?? null;
+  const price = livePrice ?? lastCandle?.close ?? null;
+
+  let change = data.price?.change ?? null;
+  let changePct = data.price?.change_pct ?? null;
+  if ((change == null || changePct == null) && lastCandle && prevCandle) {
+    const d = lastCandle.close - prevCandle.close;
+    if (change == null) change = d;
+    if (changePct == null && prevCandle.close !== 0) changePct = (d / prevCandle.close) * 100;
+  }
   const changeUp = (change ?? 0) >= 0;
-  const priceLabel =
-    data.price?.source?.includes("finedge") || data.price?.source?.includes("eod")
-      ? "Last close"
-      : data.price?.source
-      ? "Live"
-      : "—";
+
+  const priceLabel = livePrice != null
+    ? (data.price?.source?.includes("finedge") || data.price?.source?.includes("eod")
+        ? "Last close"
+        : "Live")
+    : lastCandle
+    ? "Last close (EOD)"
+    : "—";
+
+  const showChange = change != null || changePct != null;
 
   return (
     <Card className="sticky top-16 z-30 mb-6 p-4 sm:p-5 bg-card/95 backdrop-blur border-border">
@@ -63,10 +79,12 @@ export function StockHeader({ data, loggedIn }: Props) {
           <div className="font-display text-2xl text-foreground">
             ₹{formatPrice(price)}
           </div>
-          <div className={`text-sm ${changeUp ? "text-primary" : "text-destructive"}`}>
-            {change != null ? `${changeUp ? "+" : ""}${formatPrice(change)}` : "—"}
-            {changePct != null ? ` (${changeUp ? "+" : ""}${changePct.toFixed(2)}%)` : ""}
-          </div>
+          {showChange && (
+            <div className={`text-sm ${changeUp ? "text-primary" : "text-destructive"}`}>
+              {change != null ? `${changeUp ? "+" : ""}${formatPrice(change)}` : ""}
+              {changePct != null ? ` (${changeUp ? "+" : ""}${changePct.toFixed(2)}%)` : ""}
+            </div>
+          )}
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{priceLabel}</div>
         </div>
       </div>
@@ -74,6 +92,14 @@ export function StockHeader({ data, loggedIn }: Props) {
       <div className="mt-3 -mx-1">
         <MiniPriceChart candles={data.candles_30d} height={50} />
       </div>
+
+      {hasPartial && (
+        <div className="mt-3">
+          <Badge variant="secondary" className="text-xs">
+            Data limited — some providers are unavailable right now.
+          </Badge>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Button
