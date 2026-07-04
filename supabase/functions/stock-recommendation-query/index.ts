@@ -52,6 +52,22 @@ interface CmpBlock {
   refresh_attempted: boolean;
 }
 
+// PHASE CMP.STALE.GUARD — freshness classification block. Additive; never
+// mutates cmp itself. Consumed by the frontend to decide whether the card
+// shows actionable trade levels or is rendered as a reference-only view.
+type CmpFreshnessStatus = "fresh_live" | "fresh_close" | "fallback_recent" | "stale";
+
+interface CmpFreshness {
+  cmp_source_used: string | null;
+  cmp_as_of: string | null;
+  cmp_age_days: number | null;
+  cmp_age_trading_days: number | null;
+  cmp_freshness_status: CmpFreshnessStatus;
+  reference_only: boolean;
+  action_levels_suppressed: boolean;
+  cmp_warning: string | null;
+}
+
 interface TechnicalsBlock {
   sma_20d: number | null;
   high_20d: number | null;
