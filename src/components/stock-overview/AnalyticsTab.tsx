@@ -45,14 +45,14 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
       if (res?.success && res.analytics) {
         setAnalytics(res.analytics as PublicAnalyticsPayload);
         setProvenance(res.provenance as AnalyticsProvenance);
-        toast({ title: "Analytics generated", description: "Fresh analysis ready." });
+        toast.success("Analytics generated", { description: "Fresh analysis ready." });
       } else if (res?.error === "RATE_LIMITED") {
-        toast({ title: "Daily limit reached", description: res.message, variant: "destructive" });
+        toast.error("Daily limit reached", { description: res.message });
       } else {
-        toast({ title: "Could not generate", description: res?.error ?? "Please try again later.", variant: "destructive" });
+        toast.error("Could not generate", { description: res?.error ?? "Please try again later." });
       }
     } catch (e) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+      toast.error("Error", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
