@@ -97,6 +97,7 @@ export function Navbar() {
           <SheetContent side="right" className="w-[85vw] sm:w-96">
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <div className="mt-6 flex flex-col gap-5">
+              <MasterSearchTrigger />
               {navLinks.map((l) => (
                 <a key={l.label} href={l.href} onClick={() => setOpen(false)}
                   className="text-base font-medium text-foreground">{l.label}</a>
@@ -116,6 +117,7 @@ export function Navbar() {
                 )}
               </div>
             </div>
+
           </SheetContent>
         </Sheet>
       </div>

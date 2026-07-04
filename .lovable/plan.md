@@ -1,299 +1,211 @@
-# PHASE CMP.STALE.GUARD — Revised Plan (single file)
+# Stage 4A — APPLY prompt (approved plan, both corrections folded in)
 
-**Scope**: only `supabase/functions/stock-recommendation-query/index.ts`. No migration. No other file changes.
+Awaiting founder **APPLY** — no writes, no deploys yet.
 
-## Confirmations
+## Correction 2 — ai_reports schema findings (DO NOT GUESS, verified live)
 
-1. Only one file changes: `supabase/functions/stock-recommendation-query/index.ts`.
-2. No DB migration.
-3. Selection, scoring, quality gate, risk engine, zone math, explanation text, and replay/audit behavior remain untouched. Only the *exposure* of derived action levels is gated when CMP is stale.
+Live inspection of `public.ai_reports`:
 
-## Revisions applied
+- Top-level columns include: `id, query_id, user_id, intent, stock_symbol, stock_exchange, ltp_value, ltp_timestamp, ltp_source, pnl_state, prompt_version, llm_provider, llm_model, llm_input_tokens, llm_output_tokens, llm_cost_usd, raw_llm_response, rendered_sections, requires_analyst_review, analyst_assigned_id, generated_at, created_at`.
+- **Symbol column**: `ai_reports.stock_symbol` (top-level `text`, confirmed).
+- **Verdict inside `rendered_sections**`: **does not exist**. Distinct JSONB keys observed across all rows are:
+`ltp_value, stock_symbol, report_version, ltp_source, requires_analyst_review, stock_name, intent, generated_at, what_only_analyst_can_decide, ltp_exchange, behavioral_note, risks_to_monitor, ltp_timestamp, report_id, position_snapshot, data_confidence, what_ai_can_observe, context_relevant_to_user_question, pnl_state, sources_used, intent_acknowledged`.
+No `final_verdict`, `verdict`, or `action` key exists anywhere in `rendered_sections`. The founder brief's path `rendered_sections->>'final_verdict'->>'action'` would return NULL for every row.
+- **Where verdicts actually live** (verified): `public.library_items.verdict` (text) — populated by triggers `fn_project_query_to_library` (from `queries.ai_report->>'verdict'` or `answers.verdict`) and `fn_project_answer_to_library`. Sample: `SELECT verdict FROM library_items WHERE symbol='INFY'` → `HOLD`, `WAIT`.
 
-- **R1 — Holidays:** NSE holidays are NOT modeled in `tradingDayDiff` (weekends only). This is a safety gate, not a settlement calc; a holiday can under-count age by ≤1–2 days, which stays inside the 2-trading-day tolerance. This limitation is spelled out inline in the `cmp_warning` text (see R3).
-- **R2 — Real label enumeration:** `buildCmp` emits exactly 4 label values (`"LIVE"`, `"CLOSE"`, `"DAY_OLD_CLOSE"`, `null`). The classifier now uses an explicit if/else-if chain covering all 4 — no silent fall-through.
-- **R3 — Worked example** included below.
+**Decision (needs founder sign-off inline with APPLY):**
 
-## Real classification table (4 label values)
+Use a two-part aggregate in `stock-overview`:
 
+1. `total_reports_on_stock` — `SELECT count(*) FROM ai_reports WHERE stock_symbol = $1` (uses the confirmed top-level column).
+2. `latest_verdict_distribution` and `most_recent_report_date` — sourced from `library_items` (the canonical verdict store), filtered to `kind='report' AND symbol = $1 AND is_tombstoned = false`, grouped by `verdict`. `most_recent_report_date = max(published_at)`.
 
-| `cmp.label`       | `cmp.source`           | Age (trading days) | Status            | reference_only | action_levels_suppressed |
-| ----------------- | ---------------------- | ------------------ | ----------------- | -------------- | ------------------------ |
-| `"LIVE"`          | `dhan_live`            | 0                  | `fresh_live`      | false          | false                    |
-| `"CLOSE"`         | `dhan_close`           | 0                  | `fresh_close`     | false          | false                    |
-| `"DAY_OLD_CLOSE"` | `dhan_close` (day-old) | ≤ 2                | `fallback_recent` | false          | false                    |
-| `null`            | `liquidity_20d_close`  | ≤ 2                | `fallback_recent` | false          | false                    |
-| any               | any                    | > 2                | `stale`           | true           | true                     |
-| CMP value null    | —                      | —                  | `stale`           | true           | true                     |
+Verdicts are normalized to lowercase buckets `{ watchlist, hold, avoid, buy, other }` in the edge function (mapping table: `HOLD→hold`, `WAIT→watchlist`, `WATCHLIST→watchlist`, `AVOID→avoid`, `BUY→buy`, unknown→`other`). If founder wants a different bucketing, say so before APPLY.
 
+## Correction 1 — search source order (Task 5 / `MasterSearch.tsx`)
 
-## Diff 1 — CmpBlock/StockOut interface + classification helper
+Primary suggestion source = `stock_master` (Supabase, deterministic, zero API cost, Indian-only universe). Fallback = `twelvedata-fetch symbol_search` **only when stock_master returns 0 rows** for the debounced query. No client-side exchange filtering of Twelve Data results in the primary path.
 
-**BEFORE (near lines 39–53, 103–127):**
+- Query: `SELECT symbol, exchange, security_name FROM stock_master WHERE symbol ILIKE $q || '%' OR security_name ILIKE '%' || $q || '%' ORDER BY (symbol ILIKE $q || '%') DESC LIMIT 8`.
+- 300ms debounce.
+- Selecting a row → `navigate({ to: "/stock/$symbol", params: { symbol } })`.
+- Existing library/report search paths in `MasterSearch.tsx` remain intact; only the stock-row nav target changes (`/library/$symbol` → `/stock/$symbol`) and the suggestion source is added.
 
-```ts
-interface CmpBlock { value: number | null; ... refresh_attempted: boolean; }
-...
-interface StockOut {
-  ...
-  cmp: CmpBlock;
-  technicals: TechnicalsBlock;
-  fundamentals: FundamentalsBlock;
-  buy_zone: BuyZoneBlock;
-  target: number | null;
-  stop_loss: number | null;
-  zone_meta: ZoneMeta | null;
-  news: NewsItemOut[];
-  data_completeness: DataCompleteness;
-  pending: string[];
-  cache_health: { cmp_fresh: boolean; fundamentals_fresh: boolean; news_fresh: boolean; };
-}
+## Scope (locked — 6 files)
+
+**Create (4)**
+
+1. `supabase/functions/twelvedata-fetch/index.ts`
+2. `supabase/functions/stock-overview/index.ts`
+3. `src/routes/stock.$symbol.tsx`
+4. `src/components/stock-overview/*` (7 components in one dir: `StockHeader`, `OverviewTab`, `StatisticsTab`, `NewsTab`, `AiReportsTab`, `MiniPriceChart`, `StatCard`)
+
+**Modify (2)**
+5. `src/components/library/MasterSearch.tsx` (per Correction 1)
+6. `src/components/layout/Navbar.tsx` (mount `MasterSearchTrigger` inside mobile Sheet; desktop already renders it for all users)
+
+No 7th file. No migrations. No schema changes. No package.json changes. No touching ask-claude, generate-ai-report, generate-stock-analysis, finedge-fetch, dhan-fetch, marketaux-fetch, get-price-data, portfolio.functions.ts, watchlist.tsx.
+
+## twelvedata-fetch (contract)
+
+- Deno.serve, `POST` + `OPTIONS`, CORS `*`.
+- Reads `TWELVE_DATA_API_KEY` from Deno.env.
+- Whitelist enum: `profile, statistics, logo, dividends, splits, earnings, insider_transactions, symbol_search, time_series, quote, ipo_calendar, price_target, recommendations, growth_estimates, market_state, earliest_timestamp, exchange_schedule`.
+- Request body: `{ endpoint, params }`. URL: `${BASE}/${endpoint}?apikey=…&…params`.
+- 12s AbortController. Error codes: `TWELVEDATA_UNAUTHORIZED` (401), `TWELVEDATA_RATE_LIMIT` (429), `TWELVEDATA_UPSTREAM_ERROR` (other non-2xx or `{status:"error"}`), `TWELVEDATA_ENDPOINT_NOT_ALLOWED`. Success: `{ success:true, data }`.
+
+## stock-overview (contract, aggregate fan-out)
+
+Public POST `{ symbol, exchange="NSE" }`. `Cache-Control: public, max-age=60`. 15s ceiling. CORS `*`. No auth.
+
+```text
+├─ supabase.from('stock_master').select('dhan_security_id, segment')…  [sequential]
+└─ Promise.allSettled([
+     twelvedata-fetch profile,
+     twelvedata-fetch statistics,
+     twelvedata-fetch logo,
+     twelvedata-fetch dividends (range=5y),
+     twelvedata-fetch splits    (range=5y),
+     twelvedata-fetch earnings  (outputsize=1),
+     get-price-data { mode:"live", … },
+     get-price-data { mode:"historical", days:30 },
+     marketaux-fetch { endpoint:"news/all", symbols:[symbol], limit:8 },
+     supabase count(ai_reports) where stock_symbol = $1,
+     supabase group-by-verdict on library_items where symbol=$1 AND kind='report' AND is_tombstoned=false,
+   ])
 ```
 
-**AFTER:**
+Response shape per founder brief, with `ai_report_stats = { total_reports_on_stock, latest_verdict_distribution (bucketed as above), most_recent_report_date }`. Any failed leg → null in its slot; other legs still return.
 
-```ts
-interface CmpBlock { ... /* unchanged */ }
+## Route `src/routes/stock.$symbol.tsx`
 
-type CmpFreshnessStatus = "fresh_live" | "fresh_close" | "fallback_recent" | "stale";
+- `createFileRoute("/stock/$symbol")`, no `RequireAuth`, no `_authenticated` prefix.
+- Loader = server fn that POSTs `/functions/v1/stock-overview` with anon key (public); returns `queryClient.ensureQueryData`.
+- `head({ loaderData, params })`: dynamic `title` `"${name} (${symbol}) Stock Price, Overview | Stockera"`, `description` = `profile.description.slice(0,160)` (fallback generic), `canonical` = `https://asktheexpert.lovable.app/stock/${symbol}`, `og:title/description/type=website/url`, `og:image=logo_url` when present, `twitter:card=summary_large_image`. No noindex.
+- Sticky `StockHeader` + shadcn `<Tabs>` with `Overview | Statistics | News | AI Reports` (variants per auth state — teaser for anon, showcase for logged-in-no-report, showcase+"You have N reports" for logged-in-has-report).
+- Add-to-Watchlist button = toast placeholder for Stage 4B. Generate AI Report routes to `/post-query?symbol=…` (or `/signup?next=…` when logged out).
+- Skeleton loading, partial-data chip when any leg nulls, single "Retry" state on total failure.
 
-interface CmpFreshness {
-  cmp_source_used: string | null;    // mirrors cmp.source
-  cmp_as_of: string | null;
-  cmp_age_days: number | null;       // calendar days, 1 dp
-  cmp_age_trading_days: number | null;
-  cmp_freshness_status: CmpFreshnessStatus;
-  reference_only: boolean;
-  action_levels_suppressed: boolean;
-  cmp_warning: string | null;
-}
+## Components (`src/components/stock-overview/`)
 
-interface StockOut {
-  ...
-  cmp: CmpBlock;
-  cmp_freshness: CmpFreshness;        // NEW aggregated block
-  cmp_source_used: string | null;     // NEW top-level mirrors
-  cmp_as_of: string | null;
-  cmp_age_days: number | null;
-  cmp_age_trading_days: number | null;
-  cmp_freshness_status: CmpFreshnessStatus;
-  reference_only: boolean;
-  action_levels_suppressed: boolean;
-  ...unchanged fields...
-}
-```
+`StockHeader`, `OverviewTab`, `StatisticsTab`, `NewsTab`, `AiReportsTab`, `MiniPriceChart` (hand-rolled SVG polyline over `candles_30d.close`), `StatCard`. Design tokens only (bg-mesh, Card, gradient-brand, font-display, muted-foreground).
 
-Add helper adjacent to `buildCmp` (near line 805):
+## Navbar
 
-```ts
-// PHASE CMP.STALE.GUARD — trading-day age via IST calendar.
-// Weekends excluded. NSE exchange holidays are NOT modeled here (this is a
-// safety gate, not a settlement calc). Holiday under-counts of 1–2 days
-// stay inside the 2-trading-day tolerance; the cmp_warning text below
-// discloses that trade levels are suppressed once we cross that tolerance.
-function tradingDayDiff(fromMs: number, toMs: number): number {
-  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return 0;
-  const MS_DAY = 86_400_000;
-  const IST_OFFSET = 5.5 * 3600_000; // IST has no DST
-  const dayIdx = (ms: number) => Math.floor((ms + IST_OFFSET) / MS_DAY);
-  let d = dayIdx(fromMs);
-  const end = dayIdx(toMs);
-  let td = 0;
-  while (d < end) {
-    d += 1;
-    const dow = (d + 4) % 7; // 0=Sun..6=Sat (Jan 1 1970 was Thu)
-    if (dow !== 0 && dow !== 6) td += 1;
-  }
-  return td;
-}
+Desktop already renders `<MasterSearchTrigger />` outside the `{user ?}` block (line 53). Only change: add the same trigger inside the mobile Sheet block, above the "Post a Query" button.
 
-function classifyCmpFreshness(cmp: CmpBlock): CmpFreshness {
-  if (cmp.value == null || !cmp.as_of) {
-    return {
-      cmp_source_used: cmp.source ?? null,
-      cmp_as_of: cmp.as_of ?? null,
-      cmp_age_days: null,
-      cmp_age_trading_days: null,
-      cmp_freshness_status: "stale",
-      reference_only: true,
-      action_levels_suppressed: true,
-      cmp_warning: "CMP unavailable — reference only, action levels suppressed.",
-    };
-  }
-  const asOfMs = new Date(cmp.as_of).getTime();
-  const now = Date.now();
-  const ageDays = Number.isFinite(asOfMs)
-    ? Math.round(((now - asOfMs) / 86_400_000) * 10) / 10
-    : null;
-  const tdays = Number.isFinite(asOfMs) ? tradingDayDiff(asOfMs, now) : null;
+## Edge cases (unchanged from approved plan)
 
-  // Explicit branches for every label value emitted by buildCmp today:
-  //   "LIVE" | "CLOSE" | "DAY_OLD_CLOSE" | null
-  // A new label value in the future will fall through to "stale" rather
-  // than silently inheriting fallback_recent.
-  let status: CmpFreshnessStatus;
-  if (cmp.label === "LIVE") status = "fresh_live";
-  else if (cmp.label === "CLOSE") status = "fresh_close";
-  else if (cmp.label === "DAY_OLD_CLOSE") status = "fallback_recent";
-  else if (cmp.label === null) status = "fallback_recent"; // liquidity_20d_close path
-  else status = "stale"; // unknown future label — fail safe
+Twelve Data 429 → nulls + "Data limited" chip; MarketAux empty → News tab empty state with link placeholder; Dhan down / FinEdge OK → `price.source=finedge_eod`, header shows "Last close"; symbol missing everywhere → friendly empty-state card, no crash.
 
-  if (tdays != null && tdays > 2) status = "stale";
+## SEO
 
-  const stale = status === "stale";
-  return {
-    cmp_source_used: cmp.source,
-    cmp_as_of: cmp.as_of,
-    cmp_age_days: ageDays,
-    cmp_age_trading_days: tdays,
-    cmp_freshness_status: status,
-    reference_only: stale,
-    action_levels_suppressed: stale,
-    cmp_warning: stale
-      ? `CMP is ${tdays ?? "?"} trading days old (source: ${cmp.source ?? "unknown"}). Shown for reference only — trade levels suppressed. (Holiday calendar not modeled; weekends excluded.)`
-      : null,
-  };
-}
-```
+Dynamic per-route, leaf-only `og:image` from Twelve Data `logo_url`. Publicly indexable.
 
-## Diff 2 — Stale guard / suppression at response shaping (lines 1215–1305)
+## Founder UAT (unchanged, 6 tests)
 
-**BEFORE:**
+1. Incognito `/stock/INFY` renders.
+2. AI Reports tab (logged out) shows teaser + Sign-up CTA.
+3. Logged-in `/stock/TCS` → "Start analysis" → `/post-query?symbol=TCS`.
+4. Search "reliance" (logged out, desktop or mobile) → `/stock/RELIANCE`.
+5. `/stock/HDFCBANK` News tab shows 4–8 cards.
+6. `/stock/IREDA` (thin coverage) → renders with `—` placeholders, no crash.
 
-```ts
-const stocks: StockOut[] = limited.map((r) => {
-  const sym = r.symbol as string;
-  const cmp = buildCmp(sym);
-  const tech = buildTechnicals(sym, cmp.value);
-  const fund = buildFundamentals(sym);
-  const zones = buildZones(cmp.value, tech, zoneV2, risk_profile);
-  ...
-  return {
-    ...
-    cmp,
-    technicals: tech,
-    fundamentals: fund,
-    buy_zone: zones.buy_zone,
-    target: zones.target,
-    stop_loss: zones.stop_loss,
-    zone_meta: zones._meta,
-    ...
-  };
-});
-```
+## Post-APPLY deploy sequence
 
-**AFTER:**
+1. Write all 6 files.
+2. `supabase--deploy_edge_functions({ function_names: ["twelvedata-fetch", "stock-overview"] })`.
+3. Publish frontend.
+4. Report: both edge fn revision numbers, deploy timestamp (UTC), live URL `https://asktheexpert.lovable.app/stock/INFY`, confirmation `TWELVE_DATA_API_KEY` is readable in prod.
 
-```ts
-const stocks: StockOut[] = limited.map((r) => {
-  const sym = r.symbol as string;
-  const cmp = buildCmp(sym);
-  const tech = buildTechnicals(sym, cmp.value);
-  const fund = buildFundamentals(sym);
-  const zones = buildZones(cmp.value, tech, zoneV2, risk_profile); // math UNCHANGED
-  const compositePreview = previewComposite(cmp.value, tech);
-  const freshness = classifyCmpFreshness(cmp);                     // NEW
+## STOP — awaiting founder APPLY
 
-  // PHASE CMP.STALE.GUARD — suppress derived action levels at the response
-  // boundary only. Zone math above is untouched so audit/replay are stable;
-  // data_completeness/pending continue to reflect the computed zones.
-  const exposedBuyZone: BuyZoneBlock = freshness.action_levels_suppressed
-    ? { lower: null, upper: null }
-    : zones.buy_zone;
-  const exposedTarget: number | null = freshness.action_levels_suppressed ? null : zones.target;
-  const exposedStop: number | null   = freshness.action_levels_suppressed ? null : zones.stop_loss;
-  const exposedZoneMeta: ZoneMeta | null = freshness.action_levels_suppressed ? null : zones._meta;
-
-  ... /* cmpOk / techOk / fundOk / zonesOk / pending unchanged — read zones.*, not exposed* */
-
-  return {
-    ...
-    cmp,
-    cmp_freshness: freshness,
-    cmp_source_used: freshness.cmp_source_used,
-    cmp_as_of: freshness.cmp_as_of,
-    cmp_age_days: freshness.cmp_age_days,
-    cmp_age_trading_days: freshness.cmp_age_trading_days,
-    cmp_freshness_status: freshness.cmp_freshness_status,
-    reference_only: freshness.reference_only,
-    action_levels_suppressed: freshness.action_levels_suppressed,
-    technicals: tech,
-    fundamentals: fund,
-    buy_zone: exposedBuyZone,
-    target: exposedTarget,
-    stop_loss: exposedStop,
-    zone_meta: exposedZoneMeta,
-    ...
-  };
-});
-```
-
-## Diff 3 — Response field additions
-
-New fields per `stocks[]` element (additive, backward compatible):
-
-- `cmp_source_used`
-- `cmp_as_of`
-- `cmp_age_days`
-- `cmp_age_trading_days`
-- `cmp_freshness_status`
-- `reference_only`
-- `action_levels_suppressed`
-- `cmp_freshness` (aggregated block, includes `cmp_warning`)
-
-Existing `cmp`, `buy_zone`, `target`, `stop_loss`, `zone_meta`, `data_completeness`, `pending`, `cache_health` remain. When suppressed, `buy_zone.{lower,upper}`, `target`, `stop_loss`, `zone_meta` are `null`.
-
-## Worked example (R3)
-
-**Input card:**
-
-```
-cmp.value  = 1234.50
-cmp.label  = "CLOSE"
-cmp.source = "dhan_close"
-cmp.as_of  = "2026-06-12T10:00:00.000Z"
-```
-
-Current date: 2026-07-03 (Fri). `tradingDayDiff("2026-06-12" → "2026-07-03")` counts weekdays between the two IST day indices:
-
-- Jun 15–19 (5), Jun 22–26 (5), Jun 29–Jul 3 (5), plus Jun 12 → Jun 15 gap adds Mon Jun 15 already counted; total weekday steps = **15**.
-
-Because 15 > 2, the label short-circuit is overridden and `status = "stale"`.
-
-**Expected output for that card:**
-
-```json
-{
-  "cmp": { "value": 1234.5, "label": "CLOSE", "source": "dhan_close",
-           "as_of": "2026-06-12T10:00:00.000Z", ... },
-  "cmp_source_used": "dhan_close",
-  "cmp_as_of": "2026-06-12T10:00:00.000Z",
-  "cmp_age_days": 21.0,
-  "cmp_age_trading_days": 15,
-  "cmp_freshness_status": "stale",
-  "reference_only": true,
-  "action_levels_suppressed": true,
-  "cmp_freshness": {
-    "cmp_source_used": "dhan_close",
-    "cmp_as_of": "2026-06-12T10:00:00.000Z",
-    "cmp_age_days": 21.0,
-    "cmp_age_trading_days": 15,
-    "cmp_freshness_status": "stale",
-    "reference_only": true,
-    "action_levels_suppressed": true,
-    "cmp_warning": "CMP is 15 trading days old (source: dhan_close). Shown for reference only — trade levels suppressed. (Holiday calendar not modeled; weekends excluded.)"
-  },
-  "buy_zone": { "lower": null, "upper": null },
-  "target": null,
-  "stop_loss": null,
-  "zone_meta": null
-}
-```
-
-(The exact `N` is computed live at request time; only the fixed contract fields matter here.)
-
-## Awaiting approval
-
-STOP-gate reached. No file edits, no deploy. Awaiting explicit approval before build.  
+Please confirm the verdict-source substitution (`library_items` instead of the non-existent `rendered_sections.final_verdict.action`) and the verdict bucketing before saying APPLY. If either needs to differ, say so and I'll revise before writing code.  
   
-Approved — build and deploy. One reconciliation required: the file I have shows `buildCmp` emitting labels `"LIVE"`, `"CLOSE"`, `"CACHE"`, `"EOD FALLBACK"` — but your plan lists `"LIVE"`, `"CLOSE"`, `"DAY_OLD_CLOSE"`, `null`. Confirm the ACTUAL label values `buildCmp` emits in the deployed code, and make `classifyCmpFreshness` branch on the REAL values so recent CACHE/fallback cards are classified `fallback_recent`, not force-suppressed via the else→stale fail-safe. Preserve every existing return field byte-for-byte (ticker, exchange, sector, verdict, composite_score, composite_score_preview, batch_id, generated_at, cmp, technicals, fundamentals, news, data_completeness, pending, cache_health). Confirm all intact in your deploy note.
+
+
+APPLY approved with one final correction to verdict bucketing before code write.
+
+Live verdict values already present in `library_items`:
+
+- WAIT = 18
+
+- HOLD = 10
+
+- EXIT = 3
+
+- BUY = 3
+
+- AVERAGE = 1
+
+- PARTIAL_EXIT = 1
+
+- NULL = 8
+
+So the previous mapping is not safe enough.
+
+Use this corrected verdict-bucketing rule in `stock-overview`:
+
+- BUY → buy
+
+- WATCHLIST → watchlist
+
+- HOLD → hold
+
+- WAIT → hold
+
+- AVOID → avoid
+
+- SELL → avoid
+
+- EXIT → avoid
+
+- PARTIAL_EXIT → avoid
+
+- AVERAGE → other
+
+- NULL verdicts → exclude from verdict distribution counts
+
+- any unexpected future verdict → other, and log it once
+
+Important:
+
+- WAIT must NOT be mapped to watchlist.
+
+- Do not silently bucket unknown values without logging.
+
+- Keep `total_reports_on_stock` as planned from `ai_reports.stock_symbol`.
+
+- Keep verdict distribution and `most_recent_report_date` sourced from `library_items`.
+
+Everything else in the APPLY prompt is approved as-is:
+
+- stock_master primary, Twelve Data fallback only on zero local matches
+
+- ai_reports.stock_symbol used for report count
+
+- library_items used for verdict distribution
+
+- 6 files locked
+
+- no migrations
+
+- no schema changes
+
+- no new dependencies
+
+- public route, no auth wrapper
+
+Proceed with APPLY now:
+
+- write the 6 files
+
+- deploy `twelvedata-fetch` and `stock-overview`
+
+- publish frontend
+
+- respond with both edge-function revision numbers, deploy timestamp UTC, live URL, and confirmation that verdict bucketing matches the mapping above
+
+- then STOP for founder UAT
+
+&nbsp;

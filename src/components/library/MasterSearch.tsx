@@ -78,15 +78,53 @@ export function MasterSearch({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    supabase.functions
-      .invoke("library-search", { body: { q: debouncedQ, limit: 30 } })
-      .then(({ data, error }) => {
+
+    // Primary stock suggestions: stock_master (deterministic, Indian universe, zero API cost).
+    // Fallback to twelvedata symbol_search ONLY when stock_master returns 0 rows.
+    const stockSuggestions = (async (): Promise<LibraryStock[]> => {
+      try {
+        const like = `${debouncedQ}%`;
+        const contains = `%${debouncedQ}%`;
+        const { data: rows } = await supabase
+          .from("stock_master")
+          .select("symbol, exchange, company_name")
+          .or(`symbol.ilike.${like},company_name.ilike.${contains}`)
+          .limit(8);
+        const primary: LibraryStock[] = (rows ?? []).map((r) => ({
+          symbol: r.symbol,
+          exchange: (r.exchange === "BSE" ? "BSE" : "NSE") as "NSE" | "BSE",
+          name: r.company_name ?? null,
+        }));
+        if (primary.length > 0) return primary;
+        const { data: td } = await supabase.functions.invoke("twelvedata-fetch", {
+          body: { endpoint: "symbol_search", params: { symbol: debouncedQ } },
+        });
+        const list = (td as { success?: boolean; data?: { data?: Array<Record<string, unknown>> } } | null)?.data?.data ?? [];
+        return list.slice(0, 8).map((r) => ({
+          symbol: String(r.symbol ?? ""),
+          exchange: (String(r.exchange ?? "").includes("BSE") ? "BSE" : "NSE") as "NSE" | "BSE",
+          name: (r.instrument_name ?? r.name ?? null) as string | null,
+        }));
+      } catch {
+        return [];
+      }
+    })();
+
+
+    Promise.all([
+      supabase.functions
+        .invoke("library-search", { body: { q: debouncedQ, limit: 30 } })
+        .then((r) => r),
+      stockSuggestions,
+    ])
+      .then(([{ data: libData, error: libErr }, stocks]) => {
         if (cancelled) return;
-        if (error) {
+        if (libErr) {
           setError("Search is temporarily unavailable. Try again in a moment.");
           setData(null);
         } else {
-          setData(data as SearchResponse);
+          const base = (libData ?? {}) as SearchResponse;
+          setData({ ...base, stocks: stocks.length > 0 ? stocks : (base.stocks ?? []) });
         }
       })
       .catch(() => {
@@ -99,6 +137,7 @@ export function MasterSearch({
       cancelled = true;
     };
   }, [debouncedQ]);
+
 
   // Flatten rows in render order for keyboard nav
   const rows = useMemo<Row[]>(() => {
@@ -132,8 +171,9 @@ export function MasterSearch({
 
   const seedStock = (sym: string) => {
     onClose?.();
-    navigate({ to: "/library/$symbol", params: { symbol: sym } });
+    navigate({ to: "/stock/$symbol", params: { symbol: sym } });
   };
+
 
   const openItem = (it: LibraryItem) => {
     if (!it.related_query_id) return;
