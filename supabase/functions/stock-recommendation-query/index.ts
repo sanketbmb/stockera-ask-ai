@@ -1314,6 +1314,18 @@ Deno.serve(async (req) => {
       const zones = buildZones(cmp.value, tech, zoneV2, risk_profile);
       const compositePreview = previewComposite(cmp.value, tech);
 
+      // PHASE CMP.STALE.GUARD — classify CMP freshness and suppress derived
+      // action levels at the response boundary when stale. Zone math above
+      // is untouched so audit/replay stay stable; data_completeness/pending
+      // continue to reflect the computed zones, not the exposed values.
+      const freshness = classifyCmpFreshness(cmp);
+      const exposedBuyZone: BuyZoneBlock = freshness.action_levels_suppressed
+        ? { lower: null, upper: null }
+        : zones.buy_zone;
+      const exposedTarget: number | null = freshness.action_levels_suppressed ? null : zones.target;
+      const exposedStop: number | null = freshness.action_levels_suppressed ? null : zones.stop_loss;
+      const exposedZoneMeta: ZoneMeta | null = freshness.action_levels_suppressed ? null : zones._meta;
+
       const cmpOk = cmp.value !== null;
       // MASTER FIX — lenient gate: any non-null SMA (incl. CMP-derived
       // fallback when history is empty) qualifies as "ready" so the card
