@@ -110,7 +110,7 @@ export function StockHeader({ data, loggedIn, hasPartial }: Props) {
             to={loggedIn ? "/post-query" : "/signup"}
             search={loggedIn ? { symbol: data.symbol } as never : { next: `/stock/${data.symbol}` } as never}
           >
-            {loggedIn ? "Generate AI Report" : "Sign up to analyze"}
+            {loggedIn ? "Start Personalized AI Report" : "Sign up to analyze"}
           </Link>
         </Button>
         <Button
