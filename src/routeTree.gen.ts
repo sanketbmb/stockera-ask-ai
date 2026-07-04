@@ -35,6 +35,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LibraryIndexRouteImport } from './routes/library.index'
+import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
 import { Route as PrintSymbolRouteImport } from './routes/print.$symbol'
@@ -185,6 +186,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
   path: '/library/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StockSymbolRoute = StockSymbolRouteImport.update({
+  id: '/stock/$symbol',
+  path: '/stock/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportQueryIdRoute = ReportQueryIdRouteImport.update({
   id: '/report/$queryId',
   path: '/report/$queryId',
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
+  '/stock/$symbol': typeof StockSymbolRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -372,6 +379,7 @@ export interface FileRoutesByTo {
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
+  '/stock/$symbol': typeof StockSymbolRoute
   '/library': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -420,6 +428,7 @@ export interface FileRoutesById {
   '/print/$symbol': typeof PrintSymbolRoute
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
+  '/stock/$symbol': typeof StockSymbolRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -469,6 +478,7 @@ export interface FileRouteTypes {
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
+    | '/stock/$symbol'
     | '/library/'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -516,6 +526,7 @@ export interface FileRouteTypes {
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
+    | '/stock/$symbol'
     | '/library'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -563,6 +574,7 @@ export interface FileRouteTypes {
     | '/print/$symbol'
     | '/r/$queryId'
     | '/report/$queryId'
+    | '/stock/$symbol'
     | '/library/'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -611,6 +623,7 @@ export interface RootRouteChildren {
   PrintSymbolRoute: typeof PrintSymbolRoute
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
+  StockSymbolRoute: typeof StockSymbolRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
   DocsAccuracyRoadmapPrintRoute: typeof DocsAccuracyRoadmapPrintRoute
@@ -801,6 +814,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/stock/$symbol': {
+      id: '/stock/$symbol'
+      path: '/stock/$symbol'
+      fullPath: '/stock/$symbol'
+      preLoaderRoute: typeof StockSymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/report/$queryId': {
       id: '/report/$queryId'
       path: '/report/$queryId'
@@ -979,6 +999,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrintSymbolRoute: PrintSymbolRoute,
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
+  StockSymbolRoute: StockSymbolRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
   DocsAccuracyRoadmapPrintRoute: DocsAccuracyRoadmapPrintRoute,
