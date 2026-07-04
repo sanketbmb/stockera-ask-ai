@@ -81,6 +81,32 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs text-muted-foreground">
+          Public stock analytics · pre-warmed daily
+        </div>
+        {loggedIn ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={generateNow}
+            disabled={loading}
+            data-testid="refresh-analytics-cta"
+          >
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Refresh Analytics
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled title="Sign in to refresh analytics on demand">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Sign in to refresh
+          </Button>
+        )}
+      </div>
       <ScoreRingBlock
         finalVerdict={analytics.final_verdict}
         scoreBreakdown={analytics.score_breakdown}
