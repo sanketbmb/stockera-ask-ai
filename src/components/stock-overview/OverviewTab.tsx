@@ -13,9 +13,11 @@ function readNum(o: Record<string, unknown> | null, key: string): number | null 
 }
 
 export function OverviewTab({ data }: Props) {
-  const stats = data.statistics as Record<string, unknown> | null;
+  const statsRoot = data.statistics as { statistics?: Record<string, unknown> } | null;
+  const stats = (statsRoot?.statistics ?? statsRoot) as Record<string, unknown> | null;
   const valuation = stats && typeof stats === "object" ? (stats["valuations_metrics"] as Record<string, unknown> | undefined) ?? null : null;
   const financials = stats && typeof stats === "object" ? (stats["financials"] as Record<string, unknown> | undefined) ?? null : null;
+
   const profile = data.profile as Record<string, unknown> | null;
 
   const pe = readNum(valuation, "trailing_pe") ?? readNum(valuation, "forward_pe");

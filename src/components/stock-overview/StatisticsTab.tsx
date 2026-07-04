@@ -17,7 +17,8 @@ function pct(v: number | null): string | null {
 }
 
 export function StatisticsTab({ data }: Props) {
-  const s = (data.statistics ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  const statsRoot = data.statistics as { statistics?: Record<string, Record<string, unknown> | undefined> } | null;
+  const s = (statsRoot?.statistics ?? (data.statistics as Record<string, Record<string, unknown> | undefined> | null) ?? {}) as Record<string, Record<string, unknown> | undefined>;
   const val = s.valuations_metrics ?? null;
   const fin = s.financials ?? null;
   const inc = fin?.income_statement as Record<string, unknown> | undefined;
@@ -25,6 +26,7 @@ export function StatisticsTab({ data }: Props) {
   const div = s.dividends_and_splits ?? null;
   const price = s.stock_price_summary ?? null;
   const share = s.stock_statistics ?? null;
+
 
   if (!data.statistics) {
     return (
