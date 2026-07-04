@@ -11,6 +11,7 @@ import { StatisticsTab } from "@/components/stock-overview/StatisticsTab";
 import { NewsTab } from "@/components/stock-overview/NewsTab";
 import { AiReportsTab } from "@/components/stock-overview/AiReportsTab";
 import { VideosBlogsTab } from "@/components/stock-overview/VideosBlogsTab";
+import { AnalyticsTab } from "@/components/stock-overview/AnalyticsTab";
 import type { StockOverview } from "@/components/stock-overview/types";
 
 const ORIGIN = "https://asktheexpert.lovable.app";
@@ -106,9 +107,10 @@ function StockPage() {
         <StockHeader data={data} loggedIn={loggedIn} hasPartial={hasPartial} />
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+          <TabsList className="grid w-full grid-cols-6 max-w-3xl">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="statistics">Statistics</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="news">News</TabsTrigger>
             <TabsTrigger value="ai_reports">AI Reports</TabsTrigger>
             <TabsTrigger value="videos_blogs">Videos & Blogs</TabsTrigger>
@@ -118,6 +120,9 @@ function StockPage() {
           </TabsContent>
           <TabsContent value="statistics" className="mt-4">
             <StatisticsTab data={data} />
+          </TabsContent>
+          <TabsContent value="analytics" className="mt-4">
+            <AnalyticsTab data={data} loggedIn={loggedIn} />
           </TabsContent>
           <TabsContent value="news" className="mt-4">
             <NewsTab data={data} />

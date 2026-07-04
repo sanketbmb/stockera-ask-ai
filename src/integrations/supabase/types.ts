@@ -1566,6 +1566,57 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_analytics_cache: {
+        Row: {
+          action_bucket_version: string | null
+          cache_date: string
+          compute_duration_ms: number | null
+          computed_at: string
+          created_at: string
+          exchange: string
+          formula_version: string | null
+          horizon: string
+          origin: string
+          payload: Json
+          payload_version: number
+          provider_failures: Json | null
+          symbol: string
+          weighting_profile_id: string | null
+        }
+        Insert: {
+          action_bucket_version?: string | null
+          cache_date?: string
+          compute_duration_ms?: number | null
+          computed_at?: string
+          created_at?: string
+          exchange?: string
+          formula_version?: string | null
+          horizon?: string
+          origin: string
+          payload: Json
+          payload_version?: number
+          provider_failures?: Json | null
+          symbol: string
+          weighting_profile_id?: string | null
+        }
+        Update: {
+          action_bucket_version?: string | null
+          cache_date?: string
+          compute_duration_ms?: number | null
+          computed_at?: string
+          created_at?: string
+          exchange?: string
+          formula_version?: string | null
+          horizon?: string
+          origin?: string
+          payload?: Json
+          payload_version?: number
+          provider_failures?: Json | null
+          symbol?: string
+          weighting_profile_id?: string | null
+        }
+        Relationships: []
+      }
       stock_index_membership: {
         Row: {
           as_of_date: string
