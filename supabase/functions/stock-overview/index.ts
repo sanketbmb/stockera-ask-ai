@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
       }),
       invokeFn("marketaux-fetch", {
         endpoint: "news/all",
-        symbols: symbol,
+        symbols: exchange === "BSE" ? `${symbol}.BO` : `${symbol}.NS`,
         params: { limit: 8, language: "en" },
       }),
       pgFetch(`ai_reports?stock_symbol=eq.${encodeURIComponent(symbol)}&select=id`),
