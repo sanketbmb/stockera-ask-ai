@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
       if (cached) {
         return json({
           success: true, cached: true,
-          analytics: shapeAnalytics(cached.payload as Record<string, unknown>),
+          analytics: shapeAnalytics(cached.payload as Record<string, unknown>, cached.computed_at as string | null),
           provenance: {
             computed_at: cached.computed_at,
             formula_version: cached.formula_version,
