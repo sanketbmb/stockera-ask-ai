@@ -162,16 +162,63 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed" }, 405);
 
+  // AUTH GUARD — read bearer up-front. Every mode requires either
+  // service_role (prewarm) or a valid Supabase user JWT (on_demand).
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
   try {
     const body = await req.json().catch(() => ({}));
     const symbol = String(body?.symbol ?? "").trim().toUpperCase();
     const exchange = String(body?.exchange ?? "NSE").trim().toUpperCase();
-    const compute = body?.compute === true;
+    // Derive mode: explicit body.mode wins; else infer from compute/bearer.
+    let mode = typeof body?.mode === "string" ? String(body.mode) : "";
+    if (!mode) {
+      if (body?.compute === true) mode = "on_demand_authenticated";
+      else if (bearer && bearer === SERVICE_KEY) mode = "prewarm";
+      else mode = "prewarm"; // cache-read served under service_role only
+    }
     if (!symbol) return json({ success: false, error: "symbol required" }, 400);
 
-    // 1. Cache read (both anon + authenticated).
+    if (mode !== "prewarm" && mode !== "on_demand_authenticated") {
+      return json({ error: "invalid mode" }, 400);
+    }
+
+    // Mode: prewarm — service_role only (cache read for admin/cron callers).
+    if (mode === "prewarm") {
+      if (!bearer || bearer !== SERVICE_KEY) {
+        return json({ error: "service_role required" }, 401);
+      }
+      const cached = await readCache(symbol, exchange);
+      if (cached) {
+        return json({
+          success: true, cached: true,
+          analytics: shapeAnalytics(cached.payload as Record<string, unknown>),
+          provenance: {
+            computed_at: cached.computed_at,
+            formula_version: cached.formula_version,
+            weighting_profile_id: cached.weighting_profile_id,
+            action_bucket_version: cached.action_bucket_version,
+            origin: cached.origin,
+            cache_date: istDate(),
+          },
+        });
+      }
+      return json({ success: true, cached: false, analytics: null, provenance: null });
+    }
+
+    // Mode: on_demand_authenticated — require valid Supabase user JWT.
+    if (!bearer || bearer === ANON_KEY || bearer === SERVICE_KEY) {
+      return json({ error: "authenticated user required" }, 401);
+    }
+    const userId = await getUserId(`Bearer ${bearer}`);
+    if (!userId) {
+      return json({ error: "authenticated user required" }, 401);
+    }
+
+    // Serve cache first if fresh for today.
     const cached = await readCache(symbol, exchange);
-    if (cached && !compute) {
+    if (cached) {
       return json({
         success: true, cached: true,
         analytics: shapeAnalytics(cached.payload as Record<string, unknown>),
@@ -186,48 +233,45 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. On-demand compute — authenticated only + rate limit.
-    if (compute) {
-      const userId = await getUserId(req.headers.get("authorization"));
-      if (!userId) {
-        return json({ success: false, error: "AUTH_REQUIRED", cached: false }, 401);
+    // Rate limit AFTER JWT validation.
+    const used = await userComputeCountToday(userId);
+    if (used >= DAILY_COMPUTE_CAP) {
+      return json({
+        success: false, error: "RATE_LIMITED", cached: false,
+        message: `Daily compute limit reached (${DAILY_COMPUTE_CAP}/day). Try again tomorrow.`,
+      }, 429);
+    }
+
+    const t0 = Date.now();
+    try {
+      const genRes = await fetch(`${SUPABASE_URL}/functions/v1/generate-stock-analysis`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ symbol, exchange, query_type: "long-term", include_news: true }),
+      });
+      const payload = await genRes.json();
+      const ms = Date.now() - t0;
+      if (!genRes.ok || payload?.success !== true) {
+        await logCompute(userId, symbol, false, ms, String(payload?.error ?? genRes.status));
+        return json({ success: false, error: "COMPUTE_FAILED", cached: false }, 502);
       }
-      const used = await userComputeCountToday(userId);
-      if (used >= DAILY_COMPUTE_CAP) {
-        return json({
-          success: false, error: "RATE_LIMITED", cached: false,
-          message: `Daily compute limit reached (${DAILY_COMPUTE_CAP}/day). Try again tomorrow.`,
-        }, 429);
-      }
-      const t0 = Date.now();
-      try {
-        const genRes = await fetch(`${SUPABASE_URL}/functions/v1/generate-stock-analysis`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ symbol, exchange, query_type: "long-term", include_news: true }),
-        });
-        const payload = await genRes.json();
-        const ms = Date.now() - t0;
-        if (!genRes.ok || payload?.success !== true) {
-          await logCompute(userId, symbol, false, ms, String(payload?.error ?? genRes.status));
-          return json({ success: false, error: "COMPUTE_FAILED", cached: false }, 502);
-        }
-        await writeCache(symbol, exchange, payload, "on_demand_authenticated", ms);
-        await logCompute(userId, symbol, true, ms);
-        return json({
-          success: true, cached: false,
-          analytics: shapeAnalytics(payload),
-          provenance: {
-            computed_at: new Date().toISOString(),
-            formula_version: FORMULA_VERSION,
-            weighting_profile_id: WEIGHTING_PROFILE_ID,
-            action_bucket_version: ACTION_BUCKET_VERSION,
-            origin: "on_demand_authenticated",
-            cache_date: istDate(),
-          },
+      await writeCache(symbol, exchange, payload, "on_demand_authenticated", ms);
+      await logCompute(userId, symbol, true, ms);
+      return json({
+        success: true, cached: false,
+        analytics: shapeAnalytics(payload),
+        provenance: {
+          computed_at: new Date().toISOString(),
+          formula_version: FORMULA_VERSION,
+          weighting_profile_id: WEIGHTING_PROFILE_ID,
+          action_bucket_version: ACTION_BUCKET_VERSION,
+          origin: "on_demand_authenticated",
+          cache_date: istDate(),
+        },
+
         });
       } catch (e) {
         await logCompute(userId, symbol, false, Date.now() - t0, String(e));
