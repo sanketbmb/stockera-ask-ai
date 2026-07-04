@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +10,7 @@ import { OverviewTab } from "@/components/stock-overview/OverviewTab";
 import { StatisticsTab } from "@/components/stock-overview/StatisticsTab";
 import { NewsTab } from "@/components/stock-overview/NewsTab";
 import { AiReportsTab } from "@/components/stock-overview/AiReportsTab";
+import { VideosBlogsTab } from "@/components/stock-overview/VideosBlogsTab";
 import type { StockOverview } from "@/components/stock-overview/types";
 
 const ORIGIN = "https://asktheexpert.lovable.app";
@@ -103,22 +103,15 @@ function StockPage() {
     <div className="flex min-h-screen flex-col bg-mesh">
       <Navbar />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-        <StockHeader data={data} loggedIn={loggedIn} />
-
-        {hasPartial && (
-          <div className="mb-4">
-            <Badge variant="secondary" className="text-xs">
-              Data limited — some providers are unavailable right now.
-            </Badge>
-          </div>
-        )}
+        <StockHeader data={data} loggedIn={loggedIn} hasPartial={hasPartial} />
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 max-w-xl">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="statistics">Statistics</TabsTrigger>
             <TabsTrigger value="news">News</TabsTrigger>
             <TabsTrigger value="ai_reports">AI Reports</TabsTrigger>
+            <TabsTrigger value="videos_blogs">Videos & Blogs</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="mt-4">
             <OverviewTab data={data} />
@@ -131,6 +124,9 @@ function StockPage() {
           </TabsContent>
           <TabsContent value="ai_reports" className="mt-4">
             <AiReportsTab data={data} loggedIn={loggedIn} />
+          </TabsContent>
+          <TabsContent value="videos_blogs" className="mt-4">
+            <VideosBlogsTab data={data} />
           </TabsContent>
         </Tabs>
       </main>
