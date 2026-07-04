@@ -187,6 +187,41 @@ Deno.serve(async (req) => {
     const rawNews    = val<{ success?: boolean; data?: { data?: Array<Record<string, unknown>> } }>(8);
     const rawReports = val<Array<{ id: string }>>(9);
     const rawVerdict = val<Array<{ verdict: string | null; published_at: string | null }>>(10);
+    const rawAnalyticsRows = val<Array<Record<string, unknown>>>(11);
+
+    // Shape analytics for public /stock/$symbol page. Strips report-only fields.
+    let analytics: Record<string, unknown> | null = null;
+    let analytics_provenance: Record<string, unknown> | null = null;
+    if (Array.isArray(rawAnalyticsRows) && rawAnalyticsRows.length > 0) {
+      const row = rawAnalyticsRows[0];
+      const payload = row.payload as Record<string, unknown> | undefined;
+      if (payload && typeof payload === "object") {
+        const fv = payload.final_verdict as Record<string, unknown> | undefined;
+        analytics = {
+          as_of_date: payload.as_of_date ?? null,
+          stock: payload.stock ?? null,
+          final_verdict: fv ? { action: fv.action ?? null, overall_score: fv.overall_score ?? null } : null,
+          score_breakdown: payload.score_breakdown ?? null,
+          returns_snapshot: payload.returns_snapshot ?? null,
+          fundamental_snapshot: payload.fundamental_snapshot ?? null,
+          risk_snapshot: payload.risk_snapshot ?? null,
+          sentiment_snapshot: payload.sentiment_snapshot ?? null,
+          long_term_quality_snapshot: payload.long_term_quality_snapshot ?? null,
+          audit_meta: payload.audit_meta
+            ? { formula_version: (payload.audit_meta as Record<string, unknown>).formula_version ?? null,
+                tier_weights: (payload.audit_meta as Record<string, unknown>).tier_weights ?? null }
+            : null,
+          flags: payload.flags ?? null,
+        };
+        analytics_provenance = {
+          computed_at: row.computed_at ?? null,
+          formula_version: row.formula_version ?? null,
+          weighting_profile_id: row.weighting_profile_id ?? null,
+          action_bucket_version: row.action_bucket_version ?? null,
+          origin: row.origin ?? null,
+        };
+      }
+    }
 
     const profile   = rawProfile?.success ? rawProfile.data ?? null : null;
     const statistics = rawStats?.success ? rawStats.data ?? null : null;
