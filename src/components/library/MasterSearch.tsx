@@ -90,26 +90,26 @@ export function MasterSearch({
           .select("symbol, exchange, company_name")
           .or(`symbol.ilike.${like},company_name.ilike.${contains}`)
           .limit(8);
-        const primary = (rows ?? []).map((r) => ({
+        const primary: LibraryStock[] = (rows ?? []).map((r) => ({
           symbol: r.symbol,
-          exchange: r.exchange ?? "NSE",
-          company_name: r.company_name,
-        })) as unknown as LibraryStock[];
+          exchange: (r.exchange === "BSE" ? "BSE" : "NSE") as "NSE" | "BSE",
+          name: r.company_name ?? null,
+        }));
         if (primary.length > 0) return primary;
-        // Fallback: Twelve Data symbol_search
         const { data: td } = await supabase.functions.invoke("twelvedata-fetch", {
           body: { endpoint: "symbol_search", params: { symbol: debouncedQ } },
         });
         const list = (td as { success?: boolean; data?: { data?: Array<Record<string, unknown>> } } | null)?.data?.data ?? [];
         return list.slice(0, 8).map((r) => ({
           symbol: String(r.symbol ?? ""),
-          exchange: String(r.exchange ?? "NSE"),
-          company_name: (r.instrument_name ?? r.name ?? null) as string | null,
-        })) as unknown as LibraryStock[];
+          exchange: (String(r.exchange ?? "").includes("BSE") ? "BSE" : "NSE") as "NSE" | "BSE",
+          name: (r.instrument_name ?? r.name ?? null) as string | null,
+        }));
       } catch {
         return [];
       }
     })();
+
 
     Promise.all([
       supabase.functions
