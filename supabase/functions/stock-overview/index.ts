@@ -211,16 +211,40 @@ Deno.serve(async (req) => {
       ? rawHist!.candles.slice(-30).map((c) => ({ date: c.date, close: c.close }))
       : null;
 
-    // News
-    const news = rawNews?.success && Array.isArray(rawNews.data?.data)
-      ? rawNews.data.data.slice(0, 8).map((n) => ({
-          title: n.title ?? null,
-          source: n.source ?? null,
-          published_at: n.published_at ?? null,
-          url: n.url ?? null,
-          snippet: n.snippet ?? n.description ?? null,
-        }))
-      : null;
+    // News — with company_name fallback when suffixed symbol yields 0 items
+    type NewsItem = { title: string | null; source: string | null; published_at: string | null; url: string | null; snippet: string | null };
+    const mapNews = (arr: Array<Record<string, unknown>>): NewsItem[] =>
+      arr.map((n) => ({
+        title: (n.title as string | undefined) ?? null,
+        source: (n.source as string | undefined) ?? null,
+        published_at: (n.published_at as string | undefined) ?? null,
+        url: (n.url as string | undefined) ?? null,
+        snippet: (n.snippet as string | undefined) ?? (n.description as string | undefined) ?? null,
+      }));
+    let news: NewsItem[] | null = null;
+    const primaryNews = rawNews?.success && Array.isArray(rawNews.data?.data) ? mapNews(rawNews.data.data) : [];
+    if (primaryNews.length > 0) {
+      news = primaryNews.slice(0, 8);
+    } else if (master?.company_name) {
+      try {
+        const fb = await invokeFn("marketaux-fetch", {
+          endpoint: "news/all",
+          params: { search: master.company_name, limit: 8, language: "en" },
+        }) as { success?: boolean; data?: { data?: Array<Record<string, unknown>> } } | null;
+        const fbArr = fb?.success && Array.isArray(fb.data?.data) ? mapNews(fb.data!.data!) : [];
+        const seen = new Set<string>();
+        const merged = [...primaryNews, ...fbArr].filter((n) => {
+          const k = n.url ?? `${n.title}|${n.published_at}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        news = merged.length > 0 ? merged.slice(0, 8) : null;
+      } catch (e) {
+        console.warn("marketaux company_name fallback failed", e);
+        news = null;
+      }
+    }
 
     // AI report stats
     const total_reports_on_stock = Array.isArray(rawReports) ? rawReports.length : 0;
