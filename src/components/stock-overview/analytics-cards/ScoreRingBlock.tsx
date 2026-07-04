@@ -15,14 +15,6 @@ const PILLAR_LABELS: Record<string, string> = {
   sentiment_score: "Sentiment",
 };
 
-const ACTION_TONE: Record<string, string> = {
-  BUY: "text-emerald-500",
-  WATCHLIST: "text-blue-500",
-  HOLD: "text-amber-500",
-  SELL: "text-red-500",
-  AVOID: "text-red-500",
-};
-
 function ScoreRing({ value }: { value: number }) {
   const clamped = Math.max(0, Math.min(100, value));
   const r = 42, C = 2 * Math.PI * r;
@@ -42,8 +34,6 @@ function ScoreRing({ value }: { value: number }) {
 
 export function ScoreRingBlock({ finalVerdict, scoreBreakdown, tierWeights }: Props) {
   const overall = finalVerdict?.overall_score ?? null;
-  const action = finalVerdict?.action ?? null;
-  const actionTone = action ? (ACTION_TONE[action] ?? "text-foreground") : "text-muted-foreground";
 
   return (
     <Card>
@@ -56,7 +46,7 @@ export function ScoreRingBlock({ finalVerdict, scoreBreakdown, tierWeights }: Pr
             <ScoreRing value={overall ?? 0} />
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div className="text-3xl font-bold text-foreground">{overall != null ? Math.round(overall) : "—"}</div>
-              <div className={`text-xs font-medium uppercase tracking-wide ${actionTone}`}>{action ?? "n/a"}</div>
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Score</div>
             </div>
           </div>
           <div className="flex-1 w-full space-y-2">
