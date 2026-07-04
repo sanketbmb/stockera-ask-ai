@@ -1617,6 +1617,7 @@ export type Database = {
           sector_canonical: string | null
           seed_version: string | null
           segment: string
+          shares_outstanding: number | null
           symbol: string
           tick_size: number | null
           type: string | null
@@ -1642,6 +1643,7 @@ export type Database = {
           sector_canonical?: string | null
           seed_version?: string | null
           segment: string
+          shares_outstanding?: number | null
           symbol: string
           tick_size?: number | null
           type?: string | null
@@ -1667,6 +1669,7 @@ export type Database = {
           sector_canonical?: string | null
           seed_version?: string | null
           segment?: string
+          shares_outstanding?: number | null
           symbol?: string
           tick_size?: number | null
           type?: string | null
