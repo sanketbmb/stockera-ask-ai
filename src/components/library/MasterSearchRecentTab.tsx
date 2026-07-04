@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
@@ -81,6 +81,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   const queryClient = useQueryClient();
   const reduced = useReducedMotion();
   const { user } = useAuth();
+  const channelId = useId();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["master-search-recent"],
     queryFn: fetchRecent,
@@ -95,7 +96,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   // AskClaudeFollowup postgres_changes pattern.
   useEffect(() => {
     const channel = supabase
-      .channel("queries:homepage_recent_feed")
+      .channel(`queries:homepage_recent_feed:${channelId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "queries" },
@@ -110,7 +111,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, channelId]);
 
   if (isLoading) {
     return (
