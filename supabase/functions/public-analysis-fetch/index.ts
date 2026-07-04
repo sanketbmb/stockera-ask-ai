@@ -40,33 +40,47 @@ function istDate(): string {
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
 }
 
-// Public-safe projection — strips report-only prose/personalization.
-function shapeAnalytics(payload: Record<string, unknown>) {
+// Stage 4A.2c — Public-safe projection. MUST match stock-overview analytics
+// subtree contract. DROPS: final_verdict.action, summary_reason,
+// verdict_reason, confidence_pct, levels, technical_snapshot, price_context,
+// query_context, report_modules, intraday_microstructure_snapshot,
+// user_context, source_trace, horizon_shaping, entry_strategy, targets_meta,
+// audit_meta.tier_guardrails, any trade_plan_*, and any other
+// non-whitelisted internal or premium-only fields.
+function shapeAnalytics(payload: Record<string, unknown>, computedAt?: string | null) {
   if (!payload || typeof payload !== "object") return null;
   const fv = payload.final_verdict as Record<string, unknown> | undefined;
-  const finalVerdict = fv
-    ? {
-        action: fv.action ?? null,
-        overall_score: fv.overall_score ?? null,
-      }
-    : null;
+  const am = payload.audit_meta as Record<string, unknown> | undefined;
   return {
-    as_of_date: payload.as_of_date ?? null,
     stock: payload.stock ?? null,
-    final_verdict: finalVerdict,
+    computed_at: computedAt ?? null,
+    final_verdict: fv
+      ? {
+          overall_score: fv.overall_score ?? null,
+          risk_label: fv.risk_label ?? null,
+          time_horizon: fv.time_horizon ?? null,
+        }
+      : null,
     score_breakdown: payload.score_breakdown ?? null,
     returns_snapshot: payload.returns_snapshot ?? null,
     fundamental_snapshot: payload.fundamental_snapshot ?? null,
     risk_snapshot: payload.risk_snapshot ?? null,
+    momentum_snapshot: payload.momentum_snapshot ?? null,
     sentiment_snapshot: payload.sentiment_snapshot ?? null,
     long_term_quality_snapshot: payload.long_term_quality_snapshot ?? null,
-    audit_meta: payload.audit_meta
+    flags: payload.flags ?? null,
+    audit_meta: am
       ? {
-          formula_version: (payload.audit_meta as Record<string, unknown>).formula_version ?? FORMULA_VERSION,
-          tier_weights: (payload.audit_meta as Record<string, unknown>).tier_weights ?? null,
+          formula_version: am.formula_version ?? FORMULA_VERSION,
+          weighting_profile_id: am.weighting_profile_id ?? null,
+          action_bucket_version: am.action_bucket_version ?? null,
+          tier_weights: am.tier_weights ?? null,
+          dcf_status: am.dcf_status ?? null,
+          dcf_method_used: am.dcf_method_used ?? null,
+          banking_override_applied: am.banking_override_applied ?? null,
+          banking_override_reason: am.banking_override_reason ?? null,
         }
       : null,
-    flags: payload.flags ?? null,
   };
 }
 
