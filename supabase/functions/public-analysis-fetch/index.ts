@@ -271,16 +271,12 @@ Deno.serve(async (req) => {
           origin: "on_demand_authenticated",
           cache_date: istDate(),
         },
-
-        });
-      } catch (e) {
-        await logCompute(userId, symbol, false, Date.now() - t0, String(e));
-        return json({ success: false, error: "COMPUTE_ERROR", cached: false }, 500);
-      }
+      });
+    } catch (e) {
+      await logCompute(userId, symbol, false, Date.now() - t0, String(e));
+      return json({ success: false, error: "COMPUTE_ERROR", cached: false }, 500);
     }
 
-    // 3. Anonymous cache miss.
-    return json({ success: true, cached: false, analytics: null, provenance: null });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("public-analysis-fetch fatal", msg);
