@@ -274,9 +274,10 @@ Deno.serve(async (req) => {
       }
       await writeCache(symbol, exchange, payload, "on_demand_authenticated", ms);
       await logCompute(userId, symbol, true, ms);
+      const nowIso = new Date().toISOString();
       return json({
         success: true, cached: false,
-        analytics: shapeAnalytics(payload),
+        analytics: shapeAnalytics(payload, nowIso),
         provenance: {
           computed_at: new Date().toISOString(),
           formula_version: FORMULA_VERSION,
