@@ -332,7 +332,10 @@ export const updateVideoAnswer = createServerFn({ method: "POST" })
 
     if (Object.keys(patch).length === 0) return { answerId: data.answerId, updated: false };
 
-    const { error: upErr } = await admin.from("answers").update(patch).eq("id", data.answerId);
+    const { error: upErr } = await admin
+      .from("answers")
+      .update(patch as never)
+      .eq("id", data.answerId);
     if (upErr) {
       if ((upErr as { code?: string }).code === "23505") {
         throw new Error("This YouTube video is already attached to another video answer");
