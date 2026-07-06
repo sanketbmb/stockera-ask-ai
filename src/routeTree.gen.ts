@@ -30,6 +30,7 @@ import { Route as InvestorCharterRouteImport } from './routes/investor-charter'
 import { Route as GrievanceRedressalRouteImport } from './routes/grievance-redressal'
 import { Route as FeeScheduleRouteImport } from './routes/fee-schedule'
 import { Route as FaqRouteImport } from './routes/faq'
+import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DevChecklistRouteImport } from './routes/dev-checklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as SplatRouteImport } from './routes/$'
@@ -170,6 +171,11 @@ const FeeScheduleRoute = FeeScheduleRouteImport.update({
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiscoverRoute = DiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevChecklistRoute = DevChecklistRouteImport.update({
@@ -361,6 +367,7 @@ export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
+  '/discover': typeof DiscoverRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
   '/grievance-redressal': typeof GrievanceRedressalRoute
@@ -420,6 +427,7 @@ export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
+  '/discover': typeof DiscoverRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
   '/grievance-redressal': typeof GrievanceRedressalRoute
@@ -480,6 +488,7 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/dashboard': typeof DashboardRoute
   '/dev-checklist': typeof DevChecklistRoute
+  '/discover': typeof DiscoverRoute
   '/faq': typeof FaqRoute
   '/fee-schedule': typeof FeeScheduleRoute
   '/grievance-redressal': typeof GrievanceRedressalRoute
@@ -541,6 +550,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/dashboard'
     | '/dev-checklist'
+    | '/discover'
     | '/faq'
     | '/fee-schedule'
     | '/grievance-redressal'
@@ -600,6 +610,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/dashboard'
     | '/dev-checklist'
+    | '/discover'
     | '/faq'
     | '/fee-schedule'
     | '/grievance-redressal'
@@ -659,6 +670,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/dashboard'
     | '/dev-checklist'
+    | '/discover'
     | '/faq'
     | '/fee-schedule'
     | '/grievance-redressal'
@@ -719,6 +731,7 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   DashboardRoute: typeof DashboardRoute
   DevChecklistRoute: typeof DevChecklistRoute
+  DiscoverRoute: typeof DiscoverRoute
   FaqRoute: typeof FaqRoute
   FeeScheduleRoute: typeof FeeScheduleRoute
   GrievanceRedressalRoute: typeof GrievanceRedressalRoute
@@ -916,6 +929,13 @@ declare module '@tanstack/react-router' {
       path: '/faq'
       fullPath: '/faq'
       preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discover': {
+      id: '/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof DiscoverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dev-checklist': {
@@ -1208,6 +1228,7 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   DashboardRoute: DashboardRoute,
   DevChecklistRoute: DevChecklistRoute,
+  DiscoverRoute: DiscoverRoute,
   FaqRoute: FaqRoute,
   FeeScheduleRoute: FeeScheduleRoute,
   GrievanceRedressalRoute: GrievanceRedressalRoute,

@@ -7,11 +7,22 @@ import { MasterSearchRecentTab } from "./MasterSearchRecentTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
+import { ExternalLink } from "lucide-react";
 import type {
   LibraryItem,
   LibraryStock,
   SearchResponse,
 } from "@/types/library-search";
+
+type CuratedHit = {
+  id: string;
+  title: string;
+  description: string | null;
+  source_provider: string;
+  source_url: string;
+  category: string;
+};
+
 
 interface Props {
   onClose?: () => void;
