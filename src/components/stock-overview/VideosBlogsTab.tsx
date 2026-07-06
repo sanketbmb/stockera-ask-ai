@@ -29,7 +29,9 @@ export function VideosBlogsTab({ data }: Props) {
 
   const items: LockedVideoCardItem[] = (rows ?? []).map((r) => ({
     answerId: r.answer_id,
-    title: `Analyst video on ${r.symbol ?? symbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
+    title:
+      r.video_title?.trim() ||
+      `Analyst video on ${r.symbol ?? symbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
     verdict: r.verdict,
     symbol: r.symbol,
     analystName: r.analyst_name,
@@ -38,7 +40,10 @@ export function VideosBlogsTab({ data }: Props) {
     videoDurationSec: r.video_duration_sec,
     posterThumb: r.poster_thumb,
     publishedAt: r.published_at,
+    questionAddressed: r.question_addressed,
+    videoDescription: r.video_description,
   }));
+
 
   return (
     <div className="space-y-6">
