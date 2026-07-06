@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/layout/AppShell";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { QueryHistoryCard, type QueryHistoryItem } from "@/components/query/QueryHistoryCard";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { QueriesSearchBar } from "@/components/queries/QueriesSearchBar";
+import { UnlockedVideoCard } from "@/components/video-answers/UnlockedVideoCard";
+import { listMyUnlockedVideos } from "@/lib/my-video-entitlements.functions";
 
 
 const FILTERS = [
@@ -23,6 +26,7 @@ const FILTERS = [
   { id: "ai_answered", label: "AI Answered" },
   { id: "expert_answered", label: "Expert Answered" },
   { id: "video", label: "Video Answer" },
+  { id: "unlocked_videos", label: "Unlocked Videos" },
 ];
 
 type VideoAnswer = NonNullable<QueryHistoryItem["answers"]>[number];
@@ -43,6 +47,12 @@ export default function MyQueriesPage() {
   const [filter, setFilter] = useState("all");
   const [searchValue, setSearchValue] = useState("");
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string; createdAt: string } | null>(null);
+  const listUnlocked = useServerFn(listMyUnlockedVideos);
+  const { data: unlockedVideos = [], isLoading: isLoadingUnlocked } = useQuery({
+    queryKey: ["my-unlocked-videos", user?.id],
+    enabled: !!user && filter === "unlocked_videos",
+    queryFn: () => listUnlocked(),
+  });
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["my-queries", user?.id],
@@ -126,6 +136,26 @@ export default function MyQueriesPage() {
 
       {isLoading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div>
+      ) : filter === "unlocked_videos" ? (
+        isLoadingUnlocked ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-72 w-full" />)}
+          </div>
+        ) : unlockedVideos.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+            <VideoIcon className="mx-auto h-10 w-10 text-muted-foreground/40" />
+            <p className="mt-3 font-display text-xl">No unlocked analyst videos yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Unlock a paid analyst video to keep permanent access here.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="unlocked-videos-grid">
+            {unlockedVideos.map((v) => (
+              <UnlockedVideoCard key={v.answerId} item={v} />
+            ))}
+          </div>
+        )
       ) : filter === "video" ? (
         readyVideos.length === 0 && pendingVideos.length === 0 && hasSearch ? (
           <NoSearchResults value={searchValue} />
@@ -150,7 +180,7 @@ export default function MyQueriesPage() {
 
       {/* Bottom premium-human-analysis module — always present (except on the
           Video Answer tab, which already terminates with its own CTA). */}
-      {!isLoading && filter !== "video" && (
+      {!isLoading && filter !== "video" && filter !== "unlocked_videos" && (
         <div className="mt-10">
           <BottomPremiumModule
             readyCount={readyVideos.length}

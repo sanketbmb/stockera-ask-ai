@@ -1,11 +1,13 @@
-// Stage 4F.2 APPLY-1 — reusable locked video card.
+// Stage 4F.2 APPLY-2 — reusable locked video card.
 //
-// APPLY-1 CTA matrix (per plan §D.1):
+// CTA matrix:
 //   anon        → primary "Sign in to unlock — N credits" → /login?redirect=/v/{answerId}
-//   logged-in   → DISABLED "Unlock coming soon" (aria-disabled, no click)
+//   logged-in   → primary "Unlock — N credits" → opens UnlockVideoModal
+//                 (or calls `onUnlockClick` when the parent owns the modal)
 //
-// No modal. No unlock mutation. No watch route. No auth redirect for
-// logged-in users. `poster_thumb` on i.ytimg.com is accepted per plan §D.5.
+// Anti-leak: never renders an iframe or a raw youtube_video_id.
+// `poster_thumb` on i.ytimg.com is the accepted 4F.1 public artifact.
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { VideoPosterThumb } from "./VideoPosterThumb";
 import { InlinePriceChip } from "./InlinePriceChip";
+import { UnlockVideoModal } from "./UnlockVideoModal";
 import { VIDEO_COPY } from "./copy";
 
 export interface LockedVideoCardItem {
@@ -33,6 +36,8 @@ interface Props {
   item: LockedVideoCardItem;
   /** compact = MasterSearch dropdown row; default = grid card */
   variant?: "card" | "compact";
+  /** When set, replaces the internal modal open — parent owns it (watch route). */
+  onUnlockClick?: () => void;
 }
 
 function timeAgo(iso: string | null): string {
@@ -47,10 +52,11 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-export function LockedVideoCard({ item, variant = "card" }: Props) {
+export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isLoggedIn = !!user;
+  const [modalOpen, setModalOpen] = useState(false);
 
   const attribution =
     item.analystName && item.analystSebiRegNumber
@@ -66,14 +72,21 @@ export function LockedVideoCard({ item, variant = "card" }: Props) {
     });
   };
 
-  const ctaLabel = isLoggedIn
-    ? VIDEO_COPY.loggedInDisabledCta
-    : VIDEO_COPY.anonCta(item.unlockPriceCredits);
-  const hint = isLoggedIn ? VIDEO_COPY.loggedInDisabledHint : VIDEO_COPY.anonHint;
+  const onLoggedInClick = () => {
+    if (onUnlockClick) return onUnlockClick();
+    setModalOpen(true);
+  };
+
+  const priceKnown = item.unlockPriceCredits != null;
+  const loggedInCta = priceKnown
+    ? `Unlock — ${item.unlockPriceCredits} credits`
+    : "Unlock video";
+  const anonCta = VIDEO_COPY.anonCta(item.unlockPriceCredits);
+  const hint = isLoggedIn
+    ? "Credits debited once — permanent access."
+    : VIDEO_COPY.anonHint;
 
   if (variant === "compact") {
-    // Used inside MasterSearch dropdown rows. Non-interactive on APPLY-1 for
-    // logged-in users; anon users can still click the outer row to sign in.
     return (
       <div className="flex items-start gap-3">
         <div className="w-24 shrink-0">
@@ -94,7 +107,7 @@ export function LockedVideoCard({ item, variant = "card" }: Props) {
             {item.symbol && <span className="font-mono">{item.symbol}</span>}
           </div>
           <p className="mt-1 text-[11px] italic text-muted-foreground">
-            {isLoggedIn ? VIDEO_COPY.loggedInDisabledHint : "Sign in to unlock"}
+            {isLoggedIn ? "Click to unlock" : "Sign in to unlock"}
           </p>
         </div>
       </div>
@@ -102,62 +115,73 @@ export function LockedVideoCard({ item, variant = "card" }: Props) {
   }
 
   return (
-    <Card
-      className="flex h-full flex-col transition-transform duration-300 motion-safe:hover:-translate-y-1"
-      data-testid="locked-video-card"
-    >
-      <CardHeader className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          {item.verdict ? (
-            <Badge variant="outline" className="w-fit font-mono uppercase">
-              {item.verdict}
-            </Badge>
+    <>
+      <Card
+        className="flex h-full flex-col transition-transform duration-300 motion-safe:hover:-translate-y-1"
+        data-testid="locked-video-card"
+      >
+        <CardHeader className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            {item.verdict ? (
+              <Badge variant="outline" className="w-fit font-mono uppercase">
+                {item.verdict}
+              </Badge>
+            ) : (
+              <span />
+            )}
+            <InlinePriceChip credits={item.unlockPriceCredits} />
+          </div>
+          <VideoPosterThumb
+            src={item.posterThumb}
+            alt={item.title}
+            durationSec={item.videoDurationSec}
+          />
+          <h3 className="line-clamp-2 text-base font-semibold leading-snug">
+            {item.title}
+          </h3>
+        </CardHeader>
+        <CardContent className="flex-1 space-y-2 text-sm">
+          <p className="text-xs text-muted-foreground">{attribution}</p>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>{timeAgo(item.publishedAt)}</span>
+            {item.symbol && <span className="font-mono">{item.symbol}</span>}
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-col items-stretch gap-2">
+          {isLoggedIn ? (
+            <Button
+              className="w-full"
+              onClick={onLoggedInClick}
+              disabled={!priceKnown}
+              data-testid="locked-video-cta-unlock"
+            >
+              {loggedInCta}
+            </Button>
           ) : (
-            <span />
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={onAnonClick}
+              data-testid="locked-video-cta-anon"
+            >
+              {anonCta}
+            </Button>
           )}
-          <InlinePriceChip credits={item.unlockPriceCredits} />
-        </div>
-        <VideoPosterThumb
-          src={item.posterThumb}
-          alt={item.title}
-          durationSec={item.videoDurationSec}
+          <p className="text-center text-[11px] text-muted-foreground">{hint}</p>
+        </CardFooter>
+      </Card>
+
+      {isLoggedIn && !onUnlockClick && priceKnown && (
+        <UnlockVideoModal
+          open={modalOpen}
+          onOpenChange={setModalOpen}
+          answerId={item.answerId}
+          title={item.title}
+          unlockPriceCredits={item.unlockPriceCredits!}
+          analystName={item.analystName}
         />
-        <h3 className="line-clamp-2 text-base font-semibold leading-snug">
-          {item.title}
-        </h3>
-      </CardHeader>
-      <CardContent className="flex-1 space-y-2 text-sm">
-        <p className="text-xs text-muted-foreground">{attribution}</p>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>{timeAgo(item.publishedAt)}</span>
-          {item.symbol && <span className="font-mono">{item.symbol}</span>}
-        </div>
-      </CardContent>
-      <CardFooter className="flex flex-col items-stretch gap-2">
-        {isLoggedIn ? (
-          <Button
-            variant="secondary"
-            className="w-full"
-            disabled
-            aria-disabled="true"
-            title={VIDEO_COPY.loggedInDisabledHint}
-            data-testid="locked-video-cta-disabled"
-          >
-            {ctaLabel}
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={onAnonClick}
-            data-testid="locked-video-cta-anon"
-          >
-            {ctaLabel}
-          </Button>
-        )}
-        <p className="text-center text-[11px] text-muted-foreground">{hint}</p>
-      </CardFooter>
-    </Card>
+      )}
+    </>
   );
 }
 
