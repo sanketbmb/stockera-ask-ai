@@ -30,7 +30,13 @@ export interface LockedVideoCardItem {
   videoDurationSec: number | null;
   posterThumb: string | null;
   publishedAt: string | null;
+  // 4F.3 APPLY-3 — pre-unlock context. All optional / null-safe.
+  /** Staff-authored user-facing question this video answers. */
+  questionAddressed?: string | null;
+  /** Short pre-unlock teaser. */
+  videoDescription?: string | null;
 }
+
 
 interface Props {
   item: LockedVideoCardItem;
