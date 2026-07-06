@@ -52,7 +52,7 @@ export const listMyUnlockedVideos = createServerFn({ method: "GET" })
       .select(
         "id, query_id, verdict, unlock_price_credits, video_duration_sec, youtube_video_id, created_at",
       )
-      .in("id", answerIds)
+      .in("id", answerIds as string[])
       .eq("answer_type", "video")
       .eq("is_published", true);
     if (aErr) throw new Error(aErr.message);
