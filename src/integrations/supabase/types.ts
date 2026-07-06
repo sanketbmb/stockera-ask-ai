@@ -289,6 +289,7 @@ export type Database = {
           is_published: boolean | null
           key_level: string | null
           query_id: string
+          question_addressed_override: string | null
           report_filename: string | null
           report_label: string | null
           report_mime: string | null
@@ -298,8 +299,10 @@ export type Database = {
           time_horizon: string | null
           unlock_price_credits: number | null
           verdict: string | null
+          video_description: string | null
           video_duration_sec: number | null
           video_thumbnail: string | null
+          video_title: string | null
           video_url: string | null
           youtube_video_id: string | null
         }
@@ -313,6 +316,7 @@ export type Database = {
           is_published?: boolean | null
           key_level?: string | null
           query_id: string
+          question_addressed_override?: string | null
           report_filename?: string | null
           report_label?: string | null
           report_mime?: string | null
@@ -322,8 +326,10 @@ export type Database = {
           time_horizon?: string | null
           unlock_price_credits?: number | null
           verdict?: string | null
+          video_description?: string | null
           video_duration_sec?: number | null
           video_thumbnail?: string | null
+          video_title?: string | null
           video_url?: string | null
           youtube_video_id?: string | null
         }
@@ -337,6 +343,7 @@ export type Database = {
           is_published?: boolean | null
           key_level?: string | null
           query_id?: string
+          question_addressed_override?: string | null
           report_filename?: string | null
           report_label?: string | null
           report_mime?: string | null
@@ -346,8 +353,10 @@ export type Database = {
           time_horizon?: string | null
           unlock_price_credits?: number | null
           verdict?: string | null
+          video_description?: string | null
           video_duration_sec?: number | null
           video_thumbnail?: string | null
+          video_title?: string | null
           video_url?: string | null
           youtube_video_id?: string | null
         }
@@ -2730,11 +2739,14 @@ export type Database = {
           poster_thumb: string
           published_at: string
           query_id: string
+          question_addressed: string
           stock_name: string
           symbol: string
           unlock_price_credits: number
           verdict: string
+          video_description: string
           video_duration_sec: number
+          video_title: string
         }[]
       }
       show_limit: { Args: never; Returns: number }
