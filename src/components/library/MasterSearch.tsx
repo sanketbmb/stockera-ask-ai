@@ -85,10 +85,12 @@ export function MasterSearch({
   useEffect(() => {
     if (debouncedQ.length < 3) {
       setData(null);
+      setCurated([]);
       setError(null);
       setLoading(false);
       return;
     }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
