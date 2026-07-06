@@ -12,10 +12,10 @@ export const issuePaidVideoSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { answerId: string }) => data)
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as {
-      supabase: Awaited<ReturnType<typeof import("@supabase/supabase-js").createClient>>;
-      userId: string;
-    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = context as any;
+    const supabase = ctx.supabase;
+    const userId: string = ctx.userId;
 
     // 1) confirm entitlement + resolve storage path
     const { data: ent, error: entErr } = await supabase
