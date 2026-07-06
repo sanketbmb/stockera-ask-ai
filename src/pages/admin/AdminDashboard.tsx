@@ -200,6 +200,8 @@ function PendingApprovalLockout() {
 
 export default function AdminDashboard() {
   const { user, profile, isAdmin } = useAuth();
+  const [queueSearch, setQueueSearch] = useState("");
+
 
   // Check approval status — admins bypass
   const { data: analystProfile, isLoading: profileLoading } = useQuery({
