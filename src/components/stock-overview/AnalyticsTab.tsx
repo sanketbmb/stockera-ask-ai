@@ -7,9 +7,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Reveal } from "@/lib/motion";
 import {
   ScoreRingBlock,
   ReturnsAtAGlance,
@@ -21,6 +22,7 @@ import {
 } from "./analytics-cards";
 import { AnalyticsProvenanceFooter } from "./AnalyticsProvenanceFooter";
 import type { StockOverview, PublicAnalyticsPayload, AnalyticsProvenance } from "./types";
+
 
 interface Props {
   data: StockOverview;
