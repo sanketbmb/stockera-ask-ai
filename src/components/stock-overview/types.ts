@@ -90,8 +90,8 @@ export interface PublicAnalyticsPayload {
     news_sentiment_score: number | null;
     sentiment_label: string;
     article_count: number;
-    top_news_driver: string;
-    top_articles?: Array<{ title: string; source: string; url: string; published_at: string; sentiment: number }>;
+    // Stage 4D.1 B3 — public payload carries attribution only (no title/url/score).
+    top_articles?: Array<{ source: string; published_at: string }>;
   } | null;
   long_term_quality_snapshot?: {
     roe_5y_avg: number | null;

@@ -51,6 +51,25 @@ function istDate(): string {
 // user_context, source_trace, horizon_shaping, entry_strategy, targets_meta,
 // audit_meta.tier_guardrails, any trade_plan_*, and any other
 // non-whitelisted internal or premium-only fields.
+// Stage 4D.1 B3 — strip per-article headline / url / per-article sentiment
+// from the public sentiment_snapshot. Only aggregate signal + non-content
+// attribution (source, published_at) survives on the public surface.
+function shapePublicSentiment(s: unknown) {
+  if (!s || typeof s !== "object") return null;
+  const src = s as Record<string, unknown>;
+  const rawArts = Array.isArray(src.top_articles) ? (src.top_articles as Array<Record<string, unknown>>) : [];
+  const top_articles = rawArts.slice(0, 3).map((a) => ({
+    source: typeof a.source === "string" ? a.source : "",
+    published_at: typeof a.published_at === "string" ? a.published_at : "",
+  }));
+  return {
+    news_sentiment_score: src.news_sentiment_score ?? null,
+    sentiment_label: src.sentiment_label ?? "",
+    article_count: src.article_count ?? 0,
+    top_articles,
+  };
+}
+
 function shapeAnalytics(payload: Record<string, unknown>, computedAt?: string | null) {
   if (!payload || typeof payload !== "object") return null;
   const fv = payload.final_verdict as Record<string, unknown> | undefined;
@@ -70,12 +89,12 @@ function shapeAnalytics(payload: Record<string, unknown>, computedAt?: string | 
     fundamental_snapshot: payload.fundamental_snapshot ?? null,
     risk_snapshot: payload.risk_snapshot ?? null,
     momentum_snapshot: payload.momentum_snapshot ?? null,
-    sentiment_snapshot: payload.sentiment_snapshot ?? null,
+    sentiment_snapshot: shapePublicSentiment(payload.sentiment_snapshot),
     long_term_quality_snapshot: payload.long_term_quality_snapshot ?? null,
     flags: payload.flags ?? null,
     audit_meta: am
       ? {
-          formula_version: am.formula_version ?? FORMULA_VERSION,
+          formula_version: am.formula_version ?? null,
           weighting_profile_id: am.weighting_profile_id ?? null,
           action_bucket_version: am.action_bucket_version ?? null,
           tier_weights: am.tier_weights ?? null,
