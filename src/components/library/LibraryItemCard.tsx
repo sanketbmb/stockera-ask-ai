@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { STALE_VERDICT_DAYS } from "@/lib/firm-details";
+import { LockedVideoCard, type LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import type { SymbolLibraryItem } from "@/types/library-symbol";
 
 interface Props {
   item: SymbolLibraryItem;
+  /** Optional enrichment for kind==='video' rows keyed by answer_id (== source_id). */
+  videoEnrichment?: LockedVideoCardItem;
 }
 
 function timeAgo(iso: string | null): string {
@@ -28,8 +31,27 @@ function isStale(iso: string | null): boolean {
   return days > STALE_VERDICT_DAYS;
 }
 
-export function LibraryItemCard({ item }: Props) {
+export function LibraryItemCard({ item, videoEnrichment }: Props) {
   const navigate = useNavigate();
+
+  // Stage 4F.2 APPLY-1 — dispatch on 4F.1 video rows.
+  // `source_id` for kind==='video' is the answer_id (see plan §F.0.1).
+  if (item.kind === "video") {
+    const enriched: LockedVideoCardItem = videoEnrichment ?? {
+      answerId: item.source_id,
+      title: item.title,
+      verdict: item.verdict,
+      symbol: item.symbol,
+      analystName: item.analyst_name,
+      analystSebiRegNumber: item.analyst_sebi_reg_number,
+      unlockPriceCredits: null,
+      videoDurationSec: null,
+      posterThumb: null,
+      publishedAt: item.published_at,
+    };
+    return <LockedVideoCard item={enriched} />;
+  }
+
   const canNavigate = !!item.related_query_id;
 
   const onActivate = () => {
@@ -46,14 +68,9 @@ export function LibraryItemCard({ item }: Props) {
   const showStale = item.kind !== "community_query" && isStale(item.published_at);
 
   const ctaLabel =
-    item.kind === "report"
-      ? "View report →"
-      : item.kind === "video"
-        ? "Watch video →"
-        : "View question →";
+    item.kind === "report" ? "View report →" : "View question →";
 
-  const icon =
-    item.kind === "video" ? "▶" : item.kind === "community_query" ? "💬" : null;
+  const icon = item.kind === "community_query" ? "💬" : null;
 
   return (
     <Card className="flex h-full flex-col transition-transform duration-300 motion-safe:hover:-translate-y-1">
