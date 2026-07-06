@@ -37,7 +37,7 @@ export const recordCuratedView = createServerFn({ method: "POST" })
     const sb = publicClient();
     const { data: res, error } = await sb.rpc("record_curated_view", {
       p_id: data.id,
-      p_viewer_key: data.viewer_key ?? null,
+      p_viewer_key: data.viewer_key ?? undefined,
     });
     if (error) throw error;
     return res;
@@ -49,7 +49,7 @@ export const recordCuratedClickThrough = createServerFn({ method: "POST" })
     const sb = publicClient();
     const { data: res, error } = await sb.rpc("record_curated_click_through", {
       p_id: data.id,
-      p_viewer_key: data.viewer_key ?? null,
+      p_viewer_key: data.viewer_key ?? undefined,
     });
     if (error) throw error;
     return res;
