@@ -12,7 +12,9 @@ import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import { VIDEO_COPY } from "@/components/video-answers/copy";
 import { GeneralVideosStrip } from "@/components/video-answers/GeneralVideosStrip";
+import { CuratedForSymbolStrip } from "@/components/curated/CuratedForSymbolStrip";
 import type { StockOverview } from "./types";
+
 
 interface Props {
   data: StockOverview;
