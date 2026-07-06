@@ -180,7 +180,7 @@ export default function MyQueriesPage() {
 
       {/* Bottom premium-human-analysis module — always present (except on the
           Video Answer tab, which already terminates with its own CTA). */}
-      {!isLoading && filter !== "video" && (
+      {!isLoading && filter !== "video" && filter !== "unlocked_videos" && (
         <div className="mt-10">
           <BottomPremiumModule
             readyCount={readyVideos.length}
