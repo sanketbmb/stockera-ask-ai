@@ -52,6 +52,7 @@ import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminExportsRouteImport } from './routes/admin.exports'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminComposeVideoRouteImport } from './routes/admin.compose-video'
 import { Route as AdminBacktestRouteImport } from './routes/admin.backtest'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
@@ -276,6 +277,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/admin/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminComposeVideoRoute = AdminComposeVideoRouteImport.update({
+  id: '/admin/compose-video',
+  path: '/admin/compose-video',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminBacktestRoute = AdminBacktestRouteImport.update({
   id: '/admin/backtest',
   path: '/admin/backtest',
@@ -348,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
+  '/admin/compose-video': typeof AdminComposeVideoRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -401,6 +408,7 @@ export interface FileRoutesByTo {
   '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
+  '/admin/compose-video': typeof AdminComposeVideoRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -455,6 +463,7 @@ export interface FileRoutesById {
   '/watchlist': typeof WatchlistRoute
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
+  '/admin/compose-video': typeof AdminComposeVideoRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -510,6 +519,7 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
+    | '/admin/compose-video'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -563,6 +573,7 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
+    | '/admin/compose-video'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -616,6 +627,7 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/admin/apply'
     | '/admin/backtest'
+    | '/admin/compose-video'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -670,6 +682,7 @@ export interface RootRouteChildren {
   WatchlistRoute: typeof WatchlistRoute
   AdminApplyRoute: typeof AdminApplyRoute
   AdminBacktestRoute: typeof AdminBacktestRoute
+  AdminComposeVideoRoute: typeof AdminComposeVideoRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminExportsRoute: typeof AdminExportsRoute
   AdminLoginRoute: typeof AdminLoginRoute
@@ -996,6 +1009,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/compose-video': {
+      id: '/admin/compose-video'
+      path: '/admin/compose-video'
+      fullPath: '/admin/compose-video'
+      preLoaderRoute: typeof AdminComposeVideoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/backtest': {
       id: '/admin/backtest'
       path: '/admin/backtest'
@@ -1099,6 +1119,7 @@ const rootRouteChildren: RootRouteChildren = {
   WatchlistRoute: WatchlistRoute,
   AdminApplyRoute: AdminApplyRoute,
   AdminBacktestRoute: AdminBacktestRoute,
+  AdminComposeVideoRoute: AdminComposeVideoRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminExportsRoute: AdminExportsRoute,
   AdminLoginRoute: AdminLoginRoute,

@@ -1,5 +1,5 @@
 // Stage 4F.3 APPLY-2 — Admin list of video answers.
-// Uses the approved listAdminVideoAnswers server fn. RLS scopes analysts to own.
+// Stage 4G APPLY-2 — added mandatory QueueSearchBar with visible result count.
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QueueSearchBar } from "@/components/admin/QueueSearchBar";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   listAdminVideoAnswers,
@@ -40,6 +41,7 @@ export default function VideoAnswersList() {
   const [status, setStatus] = useState<Status>("all");
   const [symbol, setSymbol] = useState("");
   const [q, setQ] = useState("");
+  const [quickSearch, setQuickSearch] = useState("");
 
   const list = useServerFn(listAdminVideoAnswers);
   const publish = useServerFn(publishVideoAnswer);
@@ -61,6 +63,19 @@ export default function VideoAnswersList() {
   });
 
   const rows = useMemo(() => data ?? [], [data]);
+  const filteredRows = useMemo(() => {
+    const s = quickSearch.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((r) => {
+      return (
+        (r.queries?.stock_symbol ?? "").toLowerCase().includes(s) ||
+        (r.queries?.stock_name ?? "").toLowerCase().includes(s) ||
+        (r.queries?.query_text ?? "").toLowerCase().includes(s) ||
+        (r.video_title ?? "").toLowerCase().includes(s) ||
+        (r.question_addressed_override ?? "").toLowerCase().includes(s)
+      );
+    });
+  }, [rows, quickSearch]);
 
   async function onPublish(id: string) {
     try {
@@ -89,7 +104,7 @@ export default function VideoAnswersList() {
           <h1 className="font-display text-3xl">Analyst videos</h1>
         </div>
         <Button asChild>
-          <Link to={"/admin/videos/new" as never}><Plus className="h-4 w-4 mr-1.5" /> New video answer</Link>
+          <Link to={"/admin/compose-video" as never}><Plus className="h-4 w-4 mr-1.5" /> New video</Link>
         </Button>
       </div>
 
@@ -116,13 +131,21 @@ export default function VideoAnswersList() {
         <Button variant="outline" onClick={() => refetch()}>Refresh</Button>
       </Card>
 
+      <QueueSearchBar
+        value={quickSearch}
+        onChange={setQuickSearch}
+        resultCount={filteredRows.length}
+        totalCount={rows.length}
+        placeholder="Search by stock symbol, stock name, or query text…"
+      />
+
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…</div>
-      ) : rows.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">No video answers match these filters.</Card>
       ) : (
         <div className="space-y-2">
-          {rows.map((r) => {
+          {filteredRows.map((r) => {
             const title = r.video_title || r.question_addressed_override || r.queries?.query_text || "Untitled video answer";
             return (
               <Card key={r.id} className="p-4 flex flex-wrap gap-3 items-start">
