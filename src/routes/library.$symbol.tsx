@@ -164,6 +164,35 @@ function SymbolLibraryPage() {
   const items: SymbolLibraryResponse["items"] = data?.items ?? [];
   const faq: string[] = data?.faq_questions ?? [];
 
+  // Stage 4F.2 APPLY-1 — enrich kind==='video' rows via 4F.1 public RPC.
+  // `source_id` for video rows is the answer_id (plan §F.0.1).
+  const hasVideoRows = useMemo(() => items.some((it) => it.kind === "video"), [items]);
+  const listVideosFn = useServerFn(listVideoAnswersForSymbol);
+  const { data: videoRows } = useQuery({
+    queryKey: ["video-answers", displaySymbol],
+    queryFn: () => listVideosFn({ data: { symbol: displaySymbol } }),
+    enabled: hasVideoRows,
+    staleTime: 60_000,
+  });
+  const videoEnrichmentMap = useMemo(() => {
+    const m = new Map<string, LockedVideoCardItem>();
+    (videoRows ?? []).forEach((r) => {
+      m.set(r.answer_id, {
+        answerId: r.answer_id,
+        title: `Analyst video on ${r.symbol ?? displaySymbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
+        verdict: r.verdict,
+        symbol: r.symbol,
+        analystName: r.analyst_name,
+        analystSebiRegNumber: r.analyst_sebi_reg_number,
+        unlockPriceCredits: r.unlock_price_credits,
+        videoDurationSec: r.video_duration_sec,
+        posterThumb: r.poster_thumb,
+        publishedAt: r.published_at,
+      });
+    });
+    return m;
+  }, [videoRows, displaySymbol]);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar />
