@@ -201,6 +201,20 @@ export function MasterSearch({
     navigate({ to: "/report/$queryId", params: { queryId: it.related_query_id } });
   };
 
+  // Stage 4F.2 APPLY-1: video rows have their own gated CTA. Anon → login;
+  // logged-in → disabled (handled inside LockedVideoCard). Keyboard Enter on
+  // a video row mirrors the anon click behavior for anon; no-op for logged-in.
+  const openVideo = (it: LibraryItem) => {
+    onClose?.();
+    if (!user) {
+      navigate({
+        to: "/login",
+        search: { redirect: `/v/${it.source_id}` } as never,
+      });
+    }
+    // logged-in: unlock coming soon — no action
+  };
+
   const activateRow = (row: Row) => {
     if (row.kind === "stock") {
       seedStock(row.stock.symbol);
@@ -208,7 +222,11 @@ export function MasterSearch({
     }
     const { section, item } = row;
     if (section === "analyst") return;
-    if ((section === "report" || section === "video" || section === "community_query") && item.related_query_id) {
+    if (section === "video") {
+      openVideo(item);
+      return;
+    }
+    if ((section === "report" || section === "community_query") && item.related_query_id) {
       openItem(item);
     }
   };
