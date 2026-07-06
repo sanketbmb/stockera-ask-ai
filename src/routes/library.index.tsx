@@ -17,6 +17,9 @@ import {
   type VerdictFilter,
 } from "@/components/library/MasterLibraryToolbar";
 import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GeneralTab } from "@/components/library/GeneralTab";
+
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
 const TITLE =
