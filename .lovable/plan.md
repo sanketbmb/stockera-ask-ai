@@ -1,309 +1,283 @@
-# Stage 4F.1 — Video Answers: Data Model + Entitlement Transaction (PLAN ONLY)
-
-Scope of 4F.1 is deliberately narrow: get the **backend contract** for video answers correct and prove it end-to-end with a scripted UAT. **No UI surfaces** in 4F.1 — those land in 4F.2 (Library / MasterSearch / My Queries / stock-page Videos & Blogs) and 4F.3 (analyst upload flow).
-
-Founder-confirmed constraints re-stated:
-
-1. YouTube unlisted URLs only, oEmbed-validated. No direct hosting, no live streams, no auto-transcripts.
-2. Per-video analyst-set credit price.
-3. Permanent per-user entitlement (no rewatch window, no bundles).
-4. No tier gating — any logged-in user can pay-per-video. Locked cards surfaced to everyone (logged-in or anonymous).
-5. Bundle unlock, refunds UI, tier gating all **out of scope v1**.
-
----
-
-## 1. Schema changes (single migration)
-
-### 1a. Extend `public.answers`
-
-```sql
-ALTER TABLE public.answers
-  ADD COLUMN IF NOT EXISTS youtube_video_id      text,
-  ADD COLUMN IF NOT EXISTS video_duration_sec    integer,
-  ADD COLUMN IF NOT EXISTS unlock_price_credits  integer;
-
--- Enforce: if answer_type='video', youtube_video_id + unlock_price_credits must be present.
-ALTER TABLE public.answers
-  ADD CONSTRAINT answers_video_shape_chk
-  CHECK (
-    answer_type <> 'video'
-    OR (youtube_video_id IS NOT NULL
-        AND unlock_price_credits IS NOT NULL
-        AND unlock_price_credits > 0)
-  );
-
--- YouTube video id format guard (11-char base64url-ish).
-ALTER TABLE public.answers
-  ADD CONSTRAINT answers_youtube_video_id_fmt_chk
-  CHECK (youtube_video_id IS NULL OR youtube_video_id ~ '^[A-Za-z0-9_-]{11}$');
-```
-
-`video_url` (existing column) is kept as the canonical unlisted URL; `youtube_video_id` is the derived embed handle. `answer_type` already exists in the enum.
-
-### 1b. New `public.video_entitlements`
-
-```sql
-CREATE TABLE public.video_entitlements (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  answer_id     uuid NOT NULL REFERENCES public.answers(id) ON DELETE CASCADE,
-  credits_used  integer NOT NULL CHECK (credits_used > 0),
-  ledger_entry_id uuid REFERENCES public.wallet_ledger(id),
-  unlocked_at   timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, answer_id)
-);
-
-GRANT SELECT ON public.video_entitlements TO authenticated;
-GRANT ALL    ON public.video_entitlements TO service_role;
-
-ALTER TABLE public.video_entitlements ENABLE ROW LEVEL SECURITY;
-
--- Owner read only. Writes ONLY via SECURITY DEFINER RPC below (no insert policy).
-CREATE POLICY "own entitlements read"
-  ON public.video_entitlements FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
-```
-
-### 1c. Extend `public.library_items`
-
-```sql
-ALTER TABLE public.library_items
-  ADD COLUMN IF NOT EXISTS answer_id uuid REFERENCES public.answers(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_library_items_answer_id
-  ON public.library_items(answer_id) WHERE answer_id IS NOT NULL;
-```
-
-The `fn_project_answer_to_library` trigger already inserts a `library_items` row of `kind='video'` for every published answer; extend it in the same migration to also populate `answer_id = NEW.id`. No new surfaces in 4F.1 — this is just a stable join key for 4F.2.
-
-### 1d. Atomic unlock RPC (`SECURITY DEFINER`)
-
-Server-side transaction is the ONLY writer to `video_entitlements`. Debit + entitlement are one atomic unit; idempotency key is `video_unlock:{user_id}:{answer_id}` so a client retry can never double-debit.
-
-```sql
-CREATE OR REPLACE FUNCTION public.unlock_video_answer(p_answer_id uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-  v_user      uuid := auth.uid();
-  v_price     integer;
-  v_existing  uuid;
-  v_debit     jsonb;
-  v_entry_id  uuid;
-  v_new_ent   uuid;
-  v_idem      text;
-BEGIN
-  IF v_user IS NULL THEN
-    RETURN jsonb_build_object('status','unauthenticated');
-  END IF;
+# Stage 4F.2 — Video Answers: UI Surfaces (PLAN v2 — REVISED)
 
-  SELECT unlock_price_credits INTO v_price
-    FROM public.answers
-   WHERE id = p_answer_id
-     AND answer_type = 'video'
-     AND is_published = true;
+Revisions vs v1: contract-consistency clarified (§A.1), anti-leak wording rewritten to match 4F.1 reality (§D.5), APPLY-1 logged-in state changed to a non-action teaser (§D.1, §H), and the four blockers answered inline (§F.0).
 
-  IF v_price IS NULL THEN
-    RETURN jsonb_build_object('status','not_found');
-  END IF;
+## A. Objective
 
-  -- Idempotent: already unlocked → return success without any debit.
-  SELECT id INTO v_existing
-    FROM public.video_entitlements
-   WHERE user_id = v_user AND answer_id = p_answer_id;
-  IF v_existing IS NOT NULL THEN
-    RETURN jsonb_build_object('status','already_unlocked','entitlement_id',v_existing);
-  END IF;
+Expose the paid-unlock video-answer contract shipped in 4F.1 across five UI surfaces without touching the DB, RPCs, RLS, wallet code, migrations, or any 4F.1 module.
 
-  v_idem := 'video_unlock:' || v_user::text || ':' || p_answer_id::text;
+### A.1 Contract read paths — one explicit exception
 
-  -- Atomic: wallet_apply_debit already advisory-locks per user and honours idempotency.
-  v_debit := public.wallet_apply_debit(
-               p_user_id         => v_user,
-               p_action_key      => 'video_answer',
-               p_points          => v_price,
-               p_query_id        => NULL,
-               p_idempotency_key => v_idem);
+Default rule: all new video UI reads flow through the three approved 4F.1 server fns only:
 
-  IF v_debit->>'status' NOT IN ('ok','idempotent_replay') THEN
-    RETURN v_debit;   -- insufficient_funds etc. bubbles up as-is
-  END IF;
+- `listVideoAnswersForSymbol` (anon-safe public list)
+- `getVideoAnswer` (per-item, authenticated)
+- `unlockVideoAnswer` (mutation)
 
-  v_entry_id := NULLIF(v_debit->>'entry_id','')::uuid;
+**Single, founder-visible exception (My Queries "Unlocked videos" tab only):** one new client-safe server fn `listMyUnlockedVideos` in `src/lib/my-video-entitlements.functions.ts`. Justification:
+- `getVideoAnswer` is per-`answerId`; there is no 4F.1 fn that lists a user's own entitlements. Fanning out per-item requires knowing the IDs first, which is the same problem.
+- The fn adds **zero backend contract**: no migration, no RPC, no RLS policy, no wallet touch, no edge function. It is a thin `SELECT` scoped by the authenticated Supabase client (RLS already enforces `auth.uid() = user_id` on `video_entitlements` — proven in 4F.1 UAT check 8).
+- Exact file scope: **one new file only** (`src/lib/my-video-entitlements.functions.ts`), consumed **only** by the new My Queries tab (§C.14). Not consumed by any other surface.
+- Exception is opt-out: if founder rejects it, drop file §C item marked `[EXCEPTION]` and defer the My Queries tab to a later stage (§H fallback). All four other surfaces remain intact and 100% on the three approved fns.
 
-  INSERT INTO public.video_entitlements
-    (user_id, answer_id, credits_used, ledger_entry_id)
-  VALUES
-    (v_user, p_answer_id, v_price, v_entry_id)
-  ON CONFLICT (user_id, answer_id) DO NOTHING
-  RETURNING id INTO v_new_ent;
+Analyst upload of new 4F.1-shape rows is 4F.3 — not in this stage. Legacy personal-video-answer flow (Razorpay-demo, MP4 `video_url`) is untouched — see §F.1.
 
-  RETURN jsonb_build_object(
-    'status','ok',
-    'entitlement_id', v_new_ent,
-    'credits_used', v_price,
-    'new_balance', v_debit->'new_balance'
-  );
-END;
-$$;
+## B. Surfaces in scope
 
-REVOKE ALL ON FUNCTION public.unlock_video_answer(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.unlock_video_answer(uuid) TO authenticated;
-```
+1. **Locked video card** — reusable presentation component consumed by surfaces 2–5.
+2. **Stock page** — `/stock/$symbol` `Videos & Blogs` tab.
+3. **Library — symbol page** — `/library/$symbol` when tab = `video`.
+4. **MasterSearch** — the `videos` section in the search dropdown.
+5. **My Queries** — new "Unlocked videos" tab (contract exception per §A.1).
+6. **Post-unlock playback route** — `/v/$answerId` (see §F.0.3 for placement).
 
-Why this shape:
+Out of scope: producing new video rows, blog data model, changes to legacy personal-video pipeline.
 
-- `wallet_apply_debit` is the project's canonical debit path (advisory-locked, idempotent, ledger-writing). Reusing it means one code path for balance math and one entry in `wallet_ledger`.
-- The RPC is the ONLY writer to `video_entitlements` — no client insert policy exists — so the "no double-debit" and "no fake entitlement" invariants are enforced at the DB layer, not by frontend discipline.
-- `already_unlocked` short-circuits BEFORE the debit call, so a user hard-refreshing the modal cannot be charged twice even if idempotency key infra changes.
+## C. Files to touch
 
----
+New (all frontend):
 
-## 2. Server functions (client-safe modules)
+1. `src/components/video-answers/LockedVideoCard.tsx`
+2. `src/components/video-answers/UnlockedVideoCard.tsx`
+3. `src/components/video-answers/UnlockVideoModal.tsx`
+4. `src/components/video-answers/VideoPosterThumb.tsx` — thumb with fallback if YouTube 404s
+5. `src/components/video-answers/VideoAnswerEmbed.tsx` — `<iframe>` on `youtube-nocookie.com`, `rel=0`, `modestbranding=1`, `playsinline`, `origin`
+6. `src/components/video-answers/InlinePriceChip.tsx`
+7. `src/components/video-answers/copy.ts` — fixed CTA strings, consistent across surfaces
+8. `src/routes/_authenticated/v.$answerId.tsx` — see §F.0.3
+9. `src/hooks/useVideoAnswer.ts` — wraps `useServerFn(getVideoAnswer)` + `useQuery`
+10. `src/hooks/useUnlockVideoAnswer.ts` — wraps `useServerFn(unlockVideoAnswer)` + `useMutation`
+11. `src/lib/my-video-entitlements.functions.ts` **[EXCEPTION — §A.1]** — `listMyUnlockedVideos` only
 
-Three server functions land under `src/lib/video-answers.functions.ts`. No UI wiring in 4F.1 — these are the callable contract 4F.2 will consume.
+Modified:
 
+12. `src/components/stock-overview/VideosBlogsTab.tsx` — replaces placeholder; two sections (Videos + "Analyst blogs — coming soon" strip)
+13. `src/routes/library.$symbol.tsx` — when `kind === 'video'`, card renderer swaps (layout unchanged)
+14. `src/components/library/LibraryItemCard.tsx` — dispatch on `kind==='video'` → `LockedVideoCard` / `UnlockedVideoCard`
+15. `src/components/library/MasterSearch.tsx` — 4F.1-shape rows in `videos` section render compact locked chip; activation opens `UnlockVideoModal` inline
+16. `src/pages/MyQueries.tsx` — add new filter tab `Unlocked videos` alongside existing `Video Answer` tab (legacy untouched)
+17. `src/types/library-symbol.ts` — no field addition needed (see §F.0.1 — `source_id` is the answer_id for video rows)
 
-| Fn                                      | Auth                               | Purpose                                                                      | Return                                                                                                    |
-| --------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `unlockVideoAnswer({ answerId })`       | `requireSupabaseAuth`              | Calls `public.unlock_video_answer` RPC                                       | `{ status, entitlement_id?, credits_used?, new_balance?, ... }`                                           |
-| `getVideoAnswer({ answerId })`          | `requireSupabaseAuth`              | Returns locked stub or unlocked payload based on `video_entitlements` join   | `{ locked: true, price, poster_thumb, duration_sec, analyst } | { locked: false, youtube_video_id, ... }` |
-| `listVideoAnswersForSymbol({ symbol })` | public (server publishable client) | Locked-only public list for stock-page tab (no youtube_video_id in response) | `Array<{ answer_id, title, price, duration_sec, analyst, published_at }>`                                 |
+Explicitly NOT touched: `src/lib/video-answers.functions.ts`, any migration/RPC/RLS/wallet code, legacy `VideoAnswerPaymentModal`, `BookAnalystVideoButton`, `HomeAnalystCta`, `AnalystCtaCard`, `AIReportCard*`, `ExpertAnswerSection`, `QueryHistoryCard`, `admin/VideoAnswerUpload.tsx`, `library-symbol`/`library-search` edge fns.
 
+## D. UX behavior by user state
 
-Notes:
+### D.1 `LockedVideoCard` per-user-state matrix
 
-- `getVideoAnswer` uses the authenticated `supabase` from middleware context so RLS on `video_entitlements` scopes the join to the caller.
-- `listVideoAnswersForSymbol` uses the server publishable client (no session), reads only from `library_items`/`answers` joined columns that a `TO anon` SELECT policy already permits. It **never** returns `youtube_video_id`. This is the "locked cards surfaced to everyone" surface.
-- Poster thumbnail is derived server-side as `https://i.ytimg.com/vi/{id}/hqdefault.jpg` and returned only in the locked stub — not sensitive.
+**APPLY-1 (read-only phase — no unlock action possible yet):**
 
----
+| State | Layout | CTA | Copy |
+| --- | --- | --- | --- |
+| Anon | Poster, verdict pill, analyst, duration, price chip, lock glyph | Primary `Sign in to unlock — N credits` → `/login?redirect=/v/{answerId}` | Below CTA: "Unlocked answers are yours forever." |
+| Logged-in (any balance) | Same layout | **Disabled** button `Unlock coming soon` (aria-disabled, no click handler) | Below CTA: "Analyst video unlocks ship in the next release." No modal, no navigation, no login redirect. |
+| Loading | Skeleton same size | — | — |
+| Error | Neutral placeholder, "Unavailable" note, retry | — | — |
 
-## 3. Client bearer wiring
+**APPLY-2 (unlock flow enabled — rewires the logged-in row above):**
 
-Confirm `src/start.ts` middleware already attaches the Supabase bearer token to `useServerFn` calls (used by earlier authenticated fns). No new client middleware needed. Route-loader rule stands: `unlockVideoAnswer` and `getVideoAnswer` are called from **components** (`useServerFn` + event handler / `useQuery`), never from a public-route loader.
+| State | Layout | CTA | Copy |
+| --- | --- | --- | --- |
+| Anon | (unchanged from APPLY-1) | (unchanged) | (unchanged) |
+| Logged-in, no entitlement, sufficient balance | Same layout | Primary `Unlock for N credits` → opens `UnlockVideoModal` | Balance hint "You have X credits" |
+| Logged-in, no entitlement, insufficient balance | Price chip in destructive tone | Primary `Top up X credits` → `/topup?required={N}` | "You have Y credits · Need N" |
+| Logged-in, has entitlement | `UnlockedVideoCard` — poster + play glyph, no lock, no price | Card click → `/v/{answerId}` | "Unlocked · watch anytime" |
+| Loading / Error | (unchanged) | — | — |
 
----
+### D.2 Surface-level empty states
 
-## 4. Files touched in 4F.1
+- Stock page Videos section: `No analyst videos yet for {SYMBOL}. Be the first to request one — [Ask an analyst →]` → `/post-query?symbol={SYMBOL}&type=video`. Blogs strip below stays "coming soon".
+- Library `video` tab: existing `SymbolEmptyState` reused.
+- MasterSearch: current "no matches" copy; `videos` section omits when empty.
+- My Queries `Unlocked videos` tab: `You haven't unlocked any analyst videos yet. Browse videos on any stock page or in the library.` with links.
 
-Backend / DB:
+### D.3 Unlock flow (APPLY-2 only, non-optimistic)
 
-1. **new migration** — 1a (answers cols + checks), 1b (video_entitlements + grants + RLS + owner-read policy), 1c (library_items.answer_id + index + `fn_project_answer_to_library` update), 1d (`unlock_video_answer` RPC + grant).
+1. Click `Unlock for N credits` → `UnlockVideoModal` opens.
+2. Modal: analyst + SEBI reg, title, duration, `N credits`, current balance, post-unlock balance preview `Y − N = Z`, primary `Confirm unlock`, secondary `Cancel`.
+3. Confirm → button `Unlocking…` + spinner; other controls disabled.
+4. `useUnlockVideoAnswer.mutate({ answerId })` — response handling:
+   - `ok` → toast "Video unlocked", 1.2s success panel, auto-navigate to `/v/{answerId}`. Invalidate `['video-answer', answerId]`, `['video-answers', symbol]`, `['wallet-balance']`, `['my-unlocked-videos']`.
+   - `already_unlocked` → same as `ok` but toast "Already unlocked", no debit displayed.
+   - `insufficient_funds` → modal swaps to insufficient panel with `Top up →` → `/topup?required={required}`; no toast.
+   - `not_found` → destructive toast, close modal, invalidate list query.
+   - `unauthenticated` → redirect to `/login?redirect=/v/{answerId}`.
+   - Network error → keep modal open, inline retry, no cache mutation.
 
-Client-safe server fns (client module graph, protected by import guards):
-2. **new** `src/lib/video-answers.functions.ts` — the 3 server fns above.
+### D.4 Post-unlock playback (`/v/$answerId`, APPLY-2)
 
-Types:
-3. **edit** `src/integrations/supabase/types.ts` — auto-regenerated post-migration (Lovable pipeline handles this; not a manual edit).
+- Route under `_authenticated/` — Supabase managed gate handles the sign-in redirect (§F.0.3).
+- Component uses `useServerFn(getVideoAnswer)` inside `useQuery` (never in a public-route loader).
+- `locked: true` (session lost between click and mount) → replace body with `LockedVideoCard` state, no embed.
+- `locked: false` → render `VideoAnswerEmbed` (16:9, `youtube-nocookie.com`, `playsinline`, no autoplay), title, analyst attribution + SEBI reg, `Back to {symbol}` link.
+- Mobile: full-width, sticky back link. Desktop: max-w-3xl centered.
 
-**Not touched in 4F.1** (deferred to 4F.2 / 4F.3):
+### D.5 Anti-leak rules (rewritten to match 4F.1 reality)
 
-- `VideosBlogsTab.tsx`, `VideoAnswerPaymentModal.tsx`, `BookAnalystVideoButton.tsx`, `VideoAnswerUpload.tsx`
-- `library-search/index.ts`, MasterSearch, My Queries, `/r/$queryId`
-- `answers.answer_type='video'` producer path in `AnalystAnswerPanel.tsx` (still current text-only path; 4F.3 flips it)
+The public locked surface intentionally exposes `poster_thumb` at `https://i.ytimg.com/vi/{id}/hqdefault.jpg`. The 11-char YouTube video ID is therefore derivable from that URL — this is an **accepted 4F.1 design choice** (video is unlisted, not private; unlock enforces the debit, not URL opacity). It stays that way in 4F.2 unless the founder reopens 4F.1 backend design.
 
----
+Given that, 4F.2 anti-leak invariants are:
 
-## 5. UAT (backend-only, scripted, must pass before 4F.1 CLOSED)
+1. **No raw `youtube_video_id` field** anywhere in DOM, JSON payloads, `data-*` attributes, network responses, or client state for locked or anon-viewed cards.
+2. **No direct YouTube watch URL** — no `youtube.com/watch?v=…`, `youtu.be/…`, or any string that resolves to a watch page.
+3. **No embed URL** — no `youtube.com/embed/…` or `youtube-nocookie.com/embed/…` in locked surfaces.
+4. **No playable surface before unlock** — no `<iframe>`, `<video>`, or media element pointing at YouTube on locked cards; the poster is a plain `<img>`.
+5. **No `video_url`** (legacy MP4 column) rendered on 4F.2 surfaces.
 
-Founder runs against a seeded published video answer (one-time seed via the insert tool, not a migration):
+`poster_thumb` on `i.ytimg.com` is a **known accepted public artifact from 4F.1** and is not treated as a leak.
 
-1. **Locked read (anon)** — `listVideoAnswersForSymbol({ symbol: 'INFY' })` from unauthenticated client returns the seeded row; response contains `price`, `duration_sec`, `poster_thumb`, and **must not** contain `youtube_video_id` or `video_url`.
-2. **Locked read (authed, not yet unlocked)** — `getVideoAnswer({ answerId })` returns `{ locked: true, ... }`, no `youtube_video_id`.
-3. **First unlock** — `unlockVideoAnswer({ answerId })` returns `status:'ok'`, debits exactly `unlock_price_credits`, writes one `wallet_ledger` row (`entry_type='debit_video_answer'`, negative amount), writes one `video_entitlements` row with matching `ledger_entry_id`.
-4. **Idempotent replay** — same call within same session returns `status:'already_unlocked'`, ledger row count unchanged, entitlement row count unchanged, balance unchanged.
-5. **Post-unlock read** — `getVideoAnswer({ answerId })` returns `{ locked: false, youtube_video_id, ... }`.
-6. **Insufficient funds path** — drain wallet, call unlock on a fresh answer → `status:'insufficient_funds'`; no entitlement row created; no debit ledger row written.
-7. **Concurrent unlock** — two parallel calls for the same (user, answer) result in exactly ONE `video_entitlements` row and ONE debit (advisory lock + UNIQUE constraint).
-8. **RLS** — user B cannot SELECT user A's `video_entitlements` row (returns empty).
+## E. Data wiring by surface
 
-Acceptance criteria for CLOSURE:
+### E.1 Public locked list (stock page, anon-safe)
 
-- All 8 checks PASS.
-- Migration re-runnable (idempotent DDL, all `IF NOT EXISTS` / `ADD CONSTRAINT` guarded).
-- No writes to `video_entitlements` are possible from any client-side path (verified by attempted anon and authed `.insert()` both returning permission error).
+- Stock page loader stays SSR-only for `stock-overview` (no extra RPC on page load).
+- `<VideosBlogsTab>` fires `useQuery(['video-answers', symbol], listVideoAnswersForSymbol)` on tab mount.
+- Anon-safe: 4F.1 contract guarantees no `youtube_video_id` in response.
 
----
+### E.2 Authed locked read (per-item)
 
-## 6. Sequence and STOP points
+- `useVideoAnswer(answerId)` — `useQuery(['video-answer', answerId], () => getVideoAnswer({ data: { answerId } }))`, `staleTime: 60_000`. Only fired for authenticated users on visible cards.
 
-1. Founder reviews this plan.
-2. On approval → APPLY (single migration + one new `.functions.ts` file).
-3. Seed one demo video answer via insert tool (one row in `answers`, one in `library_items` via trigger).
-4. Run 8-check UAT.
-5. STOP for founder audit before 4F.2 (surfaces) opens.
+### E.3 Library symbol page
 
-**Do not** chain into 4F.2 without explicit re-authorisation.  
-  
-APPROVED — Stage 4F.1 PLAN accepted, with mandatory corrections before APPLY.
+- Reuses existing `library-symbol` output. For `kind==='video'`, use `source_id` as the answer id (§F.0.1). Locked stub for anon comes from the same list.
 
-Stage status update:
+### E.4 MasterSearch
 
-- 4D.1 is now CLOSED. Founder UAT passed on production.
+- Reuses existing `library-search` output. For `videos` group rows, use `source_id` as the answer id (§F.0.2). Rows without a resolvable answer id fall through to today's behavior.
 
-- Analytics tab loads successfully on [https://asktheexpert.lovable.app/stock/INFY](https://asktheexpert.lovable.app/stock/INFY)
+### E.5 My Queries — Unlocked videos tab **[EXCEPTION — §A.1]**
 
-- No “This page didn’t load” error
+- `listMyUnlockedVideos` — server fn with `requireSupabaseAuth`. SELECT from `video_entitlements` (RLS-scoped to `auth.uid()`) joined to `answers` (title, `youtube_video_id`, `video_duration_sec`), `analyst_profiles` (display_name, SEBI reg), `queries` (symbol, stock_name). Returns `youtube_video_id` **only** for rows the user is entitled to (RLS proof, 4F.1 UAT #8).
+- Consumed by `useQuery(['my-unlocked-videos'])` → renders `UnlockedVideoCard` grid.
+- Card click routes to `/v/{answerId}`; the embed there re-verifies entitlement via `getVideoAnswer`.
 
-- No console TypeError
+### E.6 Fallback if §A.1 exception is rejected
 
-- 4D.1 public sentiment shape is live and compliant
+Drop file C.11, drop surface B.5, skip §E.5. Everything else ships as-planned. My Queries stays legacy-only until a future stage adds either (a) a new 4F.1 backend fn or (b) approval for this helper.
 
-4F.1 approval is PLAN-only with 3 required corrections:
+## F. Risks / blockers
 
-1. Migration must be truly rerunnable.
+### F.0 Answers to the four gating questions
 
-Do not rely on plain ADD CONSTRAINT / CREATE POLICY assumptions.
+**F.0.1 Does `library-symbol` already project `answer_id` for video rows?**
+**No — and it does not need to.** `library-symbol` selects `id, kind, source_id, source_table, symbol, symbol_exchange, title, verdict, sector, analyst_id, body_excerpt, view_count, published_at` (confirmed at `supabase/functions/library-symbol/index.ts:74`). For `kind==='video'`, `source_table==='answers'` and `source_id` **is** the `answer_id` — that is the definition of that column across the library projection. 4F.2 reads `item.source_id` when `item.kind==='video'`; no edge fn change, no type change (`SymbolLibraryItem.source_id` already `string`). §C.17 accordingly reverts to "no change".
 
-Guard constraints, policies, and trigger/function updates so the migration is safely re-runnable.
+**F.0.2 Does `library-search` already project `answer_id` for video rows?**
+**No — and it does not need to.** `library-search` delegates to RPC `fn_library_search` and returns rows typed as `LibraryItem` with `source_id: string`. Same rule as F.0.1 — `source_id` on `kind==='video'` is the answer id. `LibraryItem.source_id` is already in the type. No edge fn / RPC change.
 
-2. Public locked-list read path must be explicit.
+**F.0.3 Does the `_authenticated/` route structure already exist for the watch route?**
+**No — not currently present in `src/routes/`.** (Verified: directory absent.) This is a project-managed layout per Supabase auth guards. 4F.2 must NOT hand-author `_authenticated/route.tsx`. Two acceptable paths, founder to pick:
+  - **(a) Managed creation:** trigger the Lovable Supabase integration to create the managed `_authenticated/route.tsx` gate, then author `src/routes/_authenticated/v.$answerId.tsx` in the same edit as the first child (so TanStack does not raise a duplicate "/" against `index.tsx` from a childless pathless layout).
+  - **(b) Interim placement:** put the route at top-level `src/routes/v.$answerId.tsx` and gate access **inside the component** via `useAuth()` → redirect to `/login?redirect=/v/{answerId}` client-side. Server function protection is already enforced by `requireSupabaseAuth` on `getVideoAnswer`, so no data leaks; the component-level gate is UX polish only. This mirrors what the project already does for `/my-queries` via `RequireAuth`.
 
-Do not assume existing anon/public policies already allow the exact library_items + answers projection needed by listVideoAnswersForSymbol().
+Default recommendation: **(b)** for minimum surface area. It composes with the existing `RequireAuth` component (`src/components/auth/RequireAuth.tsx`, already used by `/my-queries`) and avoids introducing a new pathless layout in a stage that is otherwise UI-only.
 
-Before APPLY, confirm either:
+**F.0.4 If My Queries remains in scope, is its extra read helper the only additional non-4F.1 read path?**
+**Yes.** `listMyUnlockedVideos` (in the new `src/lib/my-video-entitlements.functions.ts`) is the sole non-4F.1 read introduced by 4F.2. Every other surface (stock page, library, MasterSearch, watch route, unlock modal) reads exclusively through the three approved 4F.1 fns. Grep-provable at UAT — see §G-0.
 
-- existing policies already cover it, or
+### F.1 Discriminator: legacy vs 4F.1 video row
 
-- 4F.1 migration adds the minimal required public read policy for locked stubs.
+Rule at every dispatch site: 4F.1-shape iff `answer_type='video' AND unlock_price_credits IS NOT NULL AND youtube_video_id IS NOT NULL` (per the DB check constraint). Legacy row (`video_url` set, `unlock_price_credits` NULL) never appears in 4F.1 read paths because `listVideoAnswersForSymbol` and `getVideoAnswer` both filter on the video shape. Confirmed once in UAT §G-16.
 
-3. answers video-shape constraint must match the stated canonical model.
+### F.2 "& Blogs" naming — no blog model. Keep the tab label; keep a "coming soon" strip. Do not invent a table.
 
-If video_url remains the canonical unlisted YouTube URL and youtube_video_id is derived, then answer_type='video' must require:
+### F.3 SEO — the public list is client-fetched in the stock-page tab, so video counts are not in SSR HTML for `/stock/$symbol`. `/library/$symbol` continues to SSR counts. Acceptable trade-off vs adding a server-fn hop to every stock page load.
 
-- video_url IS NOT NULL
+### F.4 Legacy CTAs (`BookAnalystVideoButton`, `VideoAnswerPaymentModal`) stay untouched and remain the sole video CTA on `AIReportCard*`, `AnalystCtaCard`, `HomeAnalystCta`.
 
-- youtube_video_id IS NOT NULL
+### F.5 Mobile Safari YouTube embed needs `playsinline`. Wired in §D.4.
 
-- unlock_price_credits IS NOT NULL AND > 0
+### F.6 No changes required to migrations, RPCs, RLS, or wallet code. No 4F.3 work.
 
-Additional note:
+## G. UAT
 
-In UAT, do not hardcode a wallet_ledger entry_type string unless that is already canonical in the project.
+### G-0 · Contract-exception audit
 
-It is enough to verify:
+0.1 `rg -n "from \"@tanstack/react-start\"" src/components/video-answers src/routes/v.\$answerId.tsx src/hooks/useVideoAnswer.ts src/hooks/useUnlockVideoAnswer.ts` — every import for backend calls resolves to one of `unlockVideoAnswer | getVideoAnswer | listVideoAnswersForSymbol` from `@/lib/video-answers.functions`. Zero other server-fn imports on 4F.2 files EXCEPT §C.16 which may also import `listMyUnlockedVideos` from `@/lib/my-video-entitlements.functions`.
 
-- exactly one debit ledger row exists
+### G-1 · Anti-leak (rewritten per §D.5)
 
-- amount matches unlock_price_credits
+1. Anon `/stock/INFY` → Videos tab → INFY seed row visible. Assertions:
+   - No `youtube_video_id` field in any response body or client state.
+   - No `youtube.com/watch`, `youtu.be/`, `youtube.com/embed`, or `youtube-nocookie.com/embed` string in DOM or network payloads.
+   - No `<iframe>`/`<video>` element on the card.
+   - `video_url` field absent.
+   - `poster_thumb` on `i.ytimg.com/vi/…/hqdefault.jpg` present — **accepted**.
+2. Anon `/library/INFY` tab=video → repeat 1.
+3. Anon MasterSearch `INFY` → row in 🎥 ANALYST VIDEOS section; repeat 1.
+4. Anon clicks locked CTA → routes to `/login?redirect=/v/{answerId}`.
 
-- ledger row links to entitlement via ledger_entry_id
+### G-2 · APPLY-1 logged-in teaser
 
-- duplicate unlock does not create a second debit
+5. Logged-in user B on any of the three anon surfaces sees `Unlock coming soon` (disabled, aria-disabled). Click does nothing. No navigation to `/login`. No modal. No network call to `unlockVideoAnswer`.
 
-If these corrections are adopted, 4F.1 may proceed to APPLY:
+### G-3 · Logged-in locked (APPLY-2)
 
-- single migration
+6. B (600 credits, no entitlement) sees `Unlock for 499 credits` + "You have 600 credits".
+7. Opens modal → 600 → 101 preview.
+8. Cancels → no debit, no entitlement, balance 600.
 
-- one new video-answers.functions.ts module
+### G-4 · Unlock happy path (APPLY-2)
 
-- regenerated Supabase types
+9. B confirms → toast + success panel + auto-navigate to `/v/{answerId}` → embed renders on `youtube-nocookie`, back link works.
+10. `/wallet` shows one new debit `−499`, balance 101.
+11. Reload `/stock/INFY` Videos tab → card shows unlocked state.
 
-Then run the 8-check backend UAT and STOP for founder audit before 4F.2.
+### G-5 · Idempotent replay (APPLY-2)
 
-&nbsp;
+12. B revisits card → unlocked state (no modal), click → `/v/{answerId}`. Zero new ledger rows.
+
+### G-6 · Insufficient funds (APPLY-2)
+
+13. Fresh user C (0 credits) → CTA `Top up 499 credits` → `/topup?required=499`. If C reaches modal (race), Confirm returns `insufficient_funds` → panel with `Top up →`. Zero writes.
+
+### G-7 · Auth expiry mid-flow (APPLY-2)
+
+14. B signs out in another tab, then confirms unlock → 401 → redirected to `/login?redirect=/v/{answerId}`. Zero writes.
+
+### G-8 · My Queries [EXCEPTION — skip if §A.1 rejected]
+
+15. A (owns 4F.1 UAT seed unlock) `/my-queries` → new `Unlocked videos` tab lists the seed row. Legacy `Video Answer` tab unchanged.
+16. B (unlocked in G-4) → same tab lists the same row.
+
+### G-9 · Regressions
+
+17. Legacy `Book Analyst Video — ₹100` button on `AIReportCard*` still opens the old `VideoAnswerPaymentModal` (Razorpay-demo copy).
+18. Existing `Video Answer` tab on `/my-queries` still lists legacy personal-video rows unchanged.
+19. `/stock/$symbol` SSR HTML unchanged for Overview / Statistics / Analytics / News / AI Reports tabs.
+
+### G-10 · Mobile
+
+20. iOS Safari `/v/$answerId`: `playsinline` respected; poster fills width; back link visible.
+21. Android Chrome: modal scrolls; sticky footer CTA reachable.
+
+Any FAIL → single fix or reopen §F item. Do not proceed to APPLY-2 until APPLY-1 passes.
+
+## H. Recommended APPLY sequence
+
+**Two-pass split so the read-only surface is auditable before any state-changing UI ships.**
+
+### APPLY-1 · Read-only surfaces (no debit possible, no unlock possible)
+
+Files: §C.1 (`LockedVideoCard` with APPLY-1 CTA matrix — anon routes to login, **logged-in shows disabled "Unlock coming soon"**, per §D.1 APPLY-1 table), §C.4 (`VideoPosterThumb`), §C.6 (`InlinePriceChip`), §C.7 (`copy.ts`), §C.9 (`useVideoAnswer`), §C.12 (`VideosBlogsTab`), §C.13 (`library.$symbol.tsx`), §C.14 (`LibraryItemCard` dispatch), §C.15 (`MasterSearch` dispatch).
+
+No modal, no mutation hook, no watch route, no My Queries tab. Logged-in users cannot trigger any unlock or auth redirect.
+
+UAT scope: §G-0, §G-1, §G-2, §G-9, §G-10 (partial — no `/v/$answerId` yet).
+
+### APPLY-2 · Unlock flow + playback + My Queries
+
+Files: §C.2 (`UnlockedVideoCard`), §C.3 (`UnlockVideoModal`), §C.5 (`VideoAnswerEmbed`), §C.8 (`v.$answerId` route per §F.0.3 recommendation (b)), §C.10 (`useUnlockVideoAnswer`), §C.16 (`MyQueries` new tab), §C.11 (`my-video-entitlements.functions.ts`) **[EXCEPTION — omit if founder rejects §A.1]**.
+
+Rewire `LockedVideoCard` CTA per §D.1 APPLY-2 table.
+
+UAT scope: full §G (skip §G-8 if exception rejected).
+
+### Blockers gated before APPLY-1
+
+All four blockers answered in §F.0. Remaining founder decisions:
+
+1. §A.1 exception → **approve** the single new read fn for My Queries, or **reject** and defer My Queries surface.
+2. §F.0.3 → confirm route placement approach **(a)** managed `_authenticated/` layout or **(b)** top-level `/v/$answerId` gated by `RequireAuth` component (**recommended**).
+
+STOP after this plan. Do not APPLY without founder sign-off on the two remaining decisions above.
