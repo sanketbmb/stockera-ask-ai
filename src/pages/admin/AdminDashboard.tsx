@@ -115,7 +115,7 @@ function QueryQueueCard({ row }: { row: QueueRow }) {
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Button asChild size="sm" className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
-          <Link to="/admin/upload-answer/$queryId" params={{ queryId: row.id }}>
+          <Link to={"/admin/compose-video" as never} search={{ queryId: row.id } as never}>
             <Video className="h-3.5 w-3.5 mr-1.5" /> Upload Video Answer
           </Link>
         </Button>
