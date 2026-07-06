@@ -1,100 +1,192 @@
-# Stage 4A.3 — PLAN ONLY (UI polish + UX hardening)
+# Stage 4A.3.x — Scoped Close for B1 + B2 (PLAN ONLY)
 
-## HARD GATE — 4A.2c blocker
+## B1 — Version-drift reconciliation
 
-Stage 4A.2c authenticated verification remains **OPEN** per founder notice. 4A.3 is approved **as a plan only**. 4A.3 may **NOT** move to APPLY, and no code writes, deploys, or file edits may be performed for 4A.3 until:
+### 1. Canonical source of truth (per field)
 
-1. Founder closes Stage 4A.2c live authenticated verification for `/stock/INFY` → Analytics tab → signed-in `Refresh Analytics` request.
-2. The response shape is confirmed: exactly the 12 top-level analytics keys, `final_verdict` with 3 keys, `audit_meta` with 8 keys, and all forbidden fields absent.
 
-Any UI regression discovered during 4A.2c verification will reopen as a blocker before 4A.3 APPLY can begin.
+| Field                   | Canonical source                                                                                                                        | Value at canonical source |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `formula_version`       | `generate-stock-analysis/index.ts:18` — `const FORMULA_VERSION = "orchestrator-1.2"` (stamped into `analytics.audit_meta` at line 1255) | `"orchestrator-1.2"`      |
+| `weighting_profile_id`  | `generate-stock-analysis/index.ts:1263` — `profileIdForTier(queryType)` (e.g. `"long_v1"`)                                              | tier-derived              |
+| `action_bucket_version` | `supabase/functions/_shared/action-buckets.ts` — `ACTIVE_ACTION_BUCKET = "bucket_v1"` (stamped at orchestrator line 1264)               | `"bucket_v1"`             |
 
----
+
+**Reason:** `audit_meta.*` is written by the compute pipeline itself, so it is the only surface that provably describes the math that produced the payload. The `provenance.*` block in `public-analysis-fetch/index.ts` currently hardcodes different values (`FORMULA_VERSION="v1.0"`, `WEIGHTING_PROFILE_ID="long-term-default"`, `ACTION_BUCKET_VERSION="v1"`) that describe neither the compute layer nor a cache-schema version — it is a documentation defect on the fetch layer.
+
+### 2. Decision — (b) rename provenance fields to describe the fetch/cache layer
+
+Mirroring (option a) would require the fetch layer to import orchestrator constants across the function boundary and would confuse two distinct concerns (what math ran vs. how the row was served). Rename is the smaller and semantically honest fix. `audit_meta.*` remains the authoritative version surface for UAT and downstream consumers; `provenance.*` describes cache/fetch semantics only.
+
+Concretely in `public-analysis-fetch/index.ts` the three constants and the `provenance` object become:
+
+```
+// constants (top of file)
+const CACHE_SCHEMA_VERSION = "v1";           // was FORMULA_VERSION = "v1.0"
+const CACHE_HORIZON_PROFILE = "long-term";   // was WEIGHTING_PROFILE_ID = "long-term-default"
+const CACHE_ORIGIN_CONTRACT = "v1";          // was ACTION_BUCKET_VERSION = "v1"
+
+// provenance shape (both cache-hit and fresh-compute return sites)
+provenance: {
+  computed_at: <iso>,
+  cache_schema_version: CACHE_SCHEMA_VERSION,
+  cache_horizon_profile: CACHE_HORIZON_PROFILE,
+  cache_origin_contract: CACHE_ORIGIN_CONTRACT,
+  origin: <"prewarm" | "on_demand_authenticated">,
+  cache_date: istDate(),
+}
+```
+
+The three legacy keys (`formula_version`, `weighting_profile_id`, `action_bucket_version`) are removed from `provenance` — they exist unchanged inside `analytics.audit_meta` with authoritative values.
+
+The `writeCache()` row insert keeps its existing column names (`formula_version`, `weighting_profile_id`, `action_bucket_version`) because those are DB columns on `stock_analytics_cache`, not payload contract fields. Values written into the DB row will change to the payload-authoritative values by reading them from the fresh-compute payload's `audit_meta` (line 283 area) instead of hardcoding — the writeCache signature gains those three as parameters, or reads them from the payload directly.
+
+### 3. Files modified
+
+**Exactly one file:** `supabase/functions/public-analysis-fetch/index.ts`
+
+Diff scope:
+
+- Rename 3 module-level constants (lines 29–31).
+- Update 2 `provenance:` object literals (cache-hit branch ~line 205 and fresh-compute branch ~line 283) to use the 3 new key names and drop the 3 legacy keys.
+- Change `writeCache()` (line 87) to source `formula_version` / `weighting_profile_id` / `action_bucket_version` DB column values from `payload.audit_meta` instead of the removed module constants.
+
+No other file touched. No orchestrator change. No `_shared/*` change. No frontend change (consumers of `provenance.formula_version` etc. must be audited — see §4).
+
+### 4. Contract & schema guarantees
+
+- `**analytics` contract keys**: unchanged. Still exactly 12 top-level keys, `final_verdict` 3, `audit_meta` 8. Forbidden-field list still absent. `shapeAnalytics()` untouched.
+- **DB schema**: unchanged. `stock_analytics_cache` columns keep their names; only the *values* written to `formula_version` / `weighting_profile_id` / `action_bucket_version` change (from hardcoded `"v1.0"` / `"long-term-default"` / `"v1"` to the payload's authoritative values).
+- **RLS**: unchanged.
+- **Frontend consumer audit (must run before APPLY)**: grep `AnalyticsProvenanceFooter.tsx` and any other component reading `provenance.formula_version` / `provenance.weighting_profile_id` / `provenance.action_bucket_version`. If found, they must switch to reading from `analytics.audit_meta.*` (canonical) or from the renamed `provenance.cache_*` fields. This audit is part of the plan; the diff estimate stays "1 file" only if the frontend already reads from `audit_meta` — otherwise add those component files to the diff. B1 does not APPLY until this audit is complete.
+
+## B2 — Live compute-branch capture (`origin=on_demand_authenticated`, `cached:false`)
+
+### Recommended path: use a non-prewarmed symbol
+
+The prewarm universe (`prewarm-public-analytics/index.ts:37`) is Nifty 50 + Nifty Next 50 + top-queried recent symbols. Any liquid-but-outside-prewarm symbol will:
+
+- have no `stock_analytics_cache` row for today's IST date on first click,
+- pass the `readCache()` early-return,
+- pass the daily rate-limit check (founder is at 0/5),
+- trigger `generate-stock-analysis`,
+- return `success:true, cached:false, analytics: <shaped>, provenance.origin: "on_demand_authenticated"`.
+
+**Suggested symbol: `POLICYBZR**` (PB Fintech, NSE) — liquid, not in Nifty 50 / Next 50, and not a symbol the founder has been repeatedly querying, so it is very unlikely to be in the top-queried prewarm merge for today.
+
+**Fallback symbols (any one works):** `ZOMATO`, `PAYTM`, `NYKAA`, `IRCTC`. Founder picks whichever confirms an empty cache row (verifiable with a single read-only SQL against `stock_analytics_cache` filtered by today's `cache_date` before clicking).
+
+**Alternative (NOT recommended):** delete today's `stock_analytics_cache` row for INFY and re-invoke. Rejected because (a) it mutates the cache table during UAT window, (b) INFY may re-prewarm on the next cron tick and race the capture, (c) non-prewarmed-symbol path exercises the exact same compute branch with zero DB mutation.
+
+### No code change to force compute
+
+The compute branch is already reachable from the existing `Refresh Analytics` / `Generate now` CTA in `AnalyticsTab.tsx` when the cache is empty for today. No temporary flag, no forced `compute:true` override, no code edit required to obtain the capture.
+
+### No row deletion
+
+Plan only. No `DELETE FROM stock_analytics_cache` will be executed under this plan. If the founder rejects the non-prewarmed-symbol approach in favour of the delete-and-refetch approach, that becomes a separate approved step.
+
+### Expected response shape for the `cached:false` compute-branch response
+
+```json
+{
+  "success": true,
+  "cached": false,
+  "analytics": {
+    "stock": { ... },
+    "computed_at": "<ISO-8601 UTC, freshly stamped by this call>",
+    "final_verdict": { "overall_score": <num>, "risk_label": <str|null>, "time_horizon": <str|null> },
+    "score_breakdown": { ... },
+    "returns_snapshot": { ... },
+    "fundamental_snapshot": { ... },
+    "risk_snapshot": { ... },
+    "momentum_snapshot": { ... },
+    "sentiment_snapshot": { ... },
+    "long_term_quality_snapshot": { ... },
+    "flags": { ... },
+    "audit_meta": {
+      "formula_version": "orchestrator-1.2",
+      "weighting_profile_id": "long_v1",
+      "action_bucket_version": "bucket_v1",
+      "tier_weights": { ... },
+      "dcf_status": <str|null>,
+      "dcf_method_used": <str|null>,
+      "banking_override_applied": <bool|null>,
+      "banking_override_reason": <str|null>
+    }
+  },
+  "provenance": {
+    "computed_at": "<ISO-8601 UTC>",
+    "formula_version": "v1.0",                    // ← today; renamed to cache_schema_version after B1 lands
+    "weighting_profile_id": "long-term-default",  // ← today; renamed to cache_horizon_profile after B1 lands
+    "action_bucket_version": "v1",                // ← today; renamed to cache_origin_contract after B1 lands
+    "origin": "on_demand_authenticated",
+    "cache_date": "<YYYY-MM-DD IST>"
+  }
+}
+```
+
+Contract keys: 12 / 3 / 8 unchanged. Forbidden fields absent (`action`, `summary_reason`, `verdict_reason`, `confidence_pct`, `trade_plan_*`, `source_trace`, `user_context`, `report_modules`, `intraday_microstructure_snapshot`, `levels`, `technical_snapshot`, `price_context`, `query_context`, `horizon_shaping`, `entry_strategy`, `targets_meta`).
 
 ## Summary
 
-Presentation-only polish across the public `/stock/$symbol` surface. Zero backend, contract, RLS, schema, migration, dependency, cron, or provider changes. Analytics payload shape remains frozen at the Stage 4A.2c 12-key contract. No action-pill reintroduction. No premium/advisory fields leaked publicly.
-
----
-
-## A. Exact file list proposed for edit (7 files, all presentation)
-
-1. `src/routes/stock.$symbol.tsx` — page shell, tab wiring, skeleton
-2. `src/components/stock-overview/StockHeader.tsx` — header rhythm + CTA placement
-3. `src/components/stock-overview/AnalyticsTab.tsx` — tab wrapper spacing, CTA row, empty state
-4. `src/components/stock-overview/analytics-cards/ScoreRingBlock.tsx` — ring + pillar readability
-5. `src/components/stock-overview/StatCard.tsx` — chip/badge alignment, fallback marker
-6. `src/components/stock-overview/AnalyticsProvenanceFooter.tsx` — footnote clarity
-7. `src/components/stock-overview/OverviewTab.tsx` — card rhythm, mobile density
-
-No other files touched. No `analytics-cards/*` payload-mapping card is edited except `ScoreRingBlock.tsx` (visual only).
-
----
-
-## B. What each file solves
-
-1. **stock.$symbol.tsx** — Skeleton doesn't match final layout (header 32/64 mismatch + 8-cell grid vs actual stat count). Tabs lack sticky offset on mobile; scroll jumps on tab change. Fix: skeleton matches real header + stat rhythm; `TabsList` gets `sticky top-0 z-10 bg-background/80 backdrop-blur` on mobile; on tab change, scroll container to top of tab panel (CSS `scroll-margin-top` on panel).
-2. **StockHeader.tsx** — Header row uses `flex flex-wrap` which collapses on narrow widths (per responsive-layout-patterns rule). Personalized-AI CTA + secondary actions can wrap awkwardly. Fix: `grid grid-cols-[minmax(0,1fr)_auto] sm:flex`, `min-w-0` on text column, `shrink-0` on logo/avatar, `truncate` on company name, CTA promoted to right column on desktop and full-width below on mobile.
-3. **AnalyticsTab.tsx** — Refresh CTA row + provenance footer both compete for the same vertical band. Empty state paragraph runs edge-to-edge on mobile. Fix: single meta bar (provenance-left, refresh-right) using the responsive grid pattern; empty state gets max-width, icon, and clearer signed-in vs signed-out copy hierarchy.
-4. **ScoreRingBlock.tsx** — Ring diameter fixed → cropped on <360px; pillar labels wrap to two lines on mobile; tier-weight chips can float. Fix: `clamp()`-based ring sizing, pillar rows switch to 2-col grid on <sm, chips get `whitespace-nowrap shrink-0` and a subtle divider between raw / weight columns.
-5. **StatCard.tsx** — Fallback/sector-fallback values look identical to real values; badge floats over long labels. Fix: consistent 3-row anchor (label → value → footnote/badge), sector-fallback badge with `title` tooltip using existing `Tooltip` primitive, `truncate` + `tabular-nums` on value.
-6. **AnalyticsProvenanceFooter.tsx** — Timestamp + formula version render as raw strings; unclear what "on_demand_authenticated" means to a founder-facing viewer. Fix: humanized labels ("Refreshed just now · daily pre-warm"), muted-foreground tokens, keyboard-focusable info popover explaining public analytics vs personalized AI report distinction.
-7. **OverviewTab.tsx** — Card rhythm inconsistent (`gap-4`/`gap-6` mixed); mini price chart competes with stat grid on mobile. Fix: unify to `gap-4 md:gap-6`, promote MiniPriceChart above stat grid on mobile, stat grid to `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`.
-
----
-
-## C. Design-system primitives reused (no new components)
-
-- `Card`, `CardContent`, `CardHeader` (shadcn)
-- `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`
-- `Button` (existing variants only: `default`, `outline`, `ghost`, `sm`)
-- `Badge`, `Skeleton`, `Separator`, `Tooltip`, `Popover`
-- Icons from `lucide-react` (already imported): `RefreshCw`, `Loader2`, `Info`, `TrendingUp/Down`
-- Semantic tokens only: `bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-muted`, `bg-mesh` (existing utility)
-- Existing animation utilities: `animate-fade-in`, `animate-scale-in`, `hover-scale`, `story-link`, `transition-colors`, `transition-transform`
-
-No new tokens. No new CSS variables. No new component files.
-
----
-
-## D. framer-motion status
-
-**Present:** `framer-motion@^12.38.0` (already installed).
-
-**Where used in this stage:** Only through **existing wrappers** already imported elsewhere in the codebase:
-- `Reveal` (`src/lib/motion/Reveal.tsx`) — wrap each analytics card row in Overview and Analytics tabs for a subtle fade-in on mount, honoring `useReducedMotion`.
-- `HoverLift` (`src/lib/motion/HoverLift.tsx`) — apply to `StatCard` for existing hover treatment consistent with rest of app.
-- `useReducedMotion` — respected everywhere; users with reduced-motion preference get instant render.
-
-**Not used:** No new `motion.*` primitives, no `AnimatePresence`, no `layoutId`, no gesture props authored in this stage. No new keyframes. No `MotionConfig` overrides. Tab transitions rely on shadcn's built-in `data-state` CSS only.
-
----
-
-## E. 12-test UAT plan
-
-| # | Scenario | Device | Auth | Symbol | Pass criteria |
-|---|---|---|---|---|---|
-| 1 | Header renders, CTA visible, name truncates | Desktop 1440 | signed-out | INFY | Personalized AI CTA visible right-aligned; name single line |
-| 2 | Header responsive collapse | Mobile 375 | signed-out | HDFCBANK | Grid falls to 2-row layout; no overlap; CTA full-width below |
-| 3 | Analytics tab — cached full-data | Desktop | signed-out | INFY | Score ring + 4 cards render; provenance footer shows "pre-warmed"; NO Refresh CTA |
-| 4 | Analytics tab — cached, signed-in refresh | Desktop | signed-in | INFY | Refresh CTA visible right; click triggers request; toast on success; no layout shift |
-| 5 | Analytics tab — fallback symbol | Mobile | signed-out | IREDA | Sector-fallback cards render intentionally; fallback chip visible; sector-based valuation wording visible; NO DATA chips visible where expected; no broken or partial layout; no console errors |
-| 6 | Score ring pillar labels | Mobile 375 | any | INFY | Pillar rows 2-col grid; no label wrap to 3 lines; chips do not overflow |
-| 7 | Sector-fallback marker | Desktop | signed-out | any fallback stock | `StatCard` shows sector-fallback badge with tooltip on hover/focus |
-| 8 | Tab switch scroll behavior | Mobile | any | INFY | Switching Overview→Analytics scrolls panel top into view; sticky tabs remain visible |
-| 9 | AI Reports teaser (signed-out) vs full (signed-in) | Desktop | both | INFY | Signed-out sees paywall teaser; signed-in sees full list; no leaked premium fields either way |
-| 10 | Search → stock flow | Desktop | signed-out | search "infosys" → INFY | Autocomplete navigates; skeleton matches final layout; no CLS jump |
-| 11 | Payload contract regression check | — | signed-in | INFY | Network tab: `public-analysis-fetch` response still has exactly the 12 top-level keys, `final_verdict` has 3 keys, `audit_meta` has 8 keys, no `action`, no `summary_reason`, no `trade_plan_*`, no `source_trace` |
-| 12 | Dependency/package check | — | — | — | `git diff package.json bun.lockb` empty; no new imports from packages not already in dependency tree; edge functions unchanged |
-
-Regression bar: tests 11 + 12 are hard gates — failure blocks stage completion.
-
----
-
-## Hard constraints reaffirmed
-
-- No migrations. No schema. No RLS. No `package.json` edits. No new dependencies.
-- No changes to `generate-stock-analysis`, `public-analysis-fetch`, `stock-overview`, or any provider function.
-- No changes to `types.ts` analytics fields. No action-pill. No `final_verdict.action`. No public premium leakage.
-- File scope hard-locked to the 7 files in section A.
-- Stop after PLAN. Do not APPLY.
+- **Files to modify (B1):** 1 — `supabase/functions/public-analysis-fetch/index.ts` (plus any frontend consumer file surfaced by the pre-APPLY grep audit).
+- **Field renames (B1):** `provenance.formula_version` → `provenance.cache_schema_version`; `provenance.weighting_profile_id` → `provenance.cache_horizon_profile`; `provenance.action_bucket_version` → `provenance.cache_origin_contract`. Authoritative version strings continue to live in `analytics.audit_meta.*`, sourced from the orchestrator.
+- **Symbol for compute-branch capture (B2):** `POLICYBZR` (fallbacks: `ZOMATO`, `PAYTM`, `NYKAA`, `IRCTC`).
+- **Expected cached:false shape (B2):** as above — full 12/3/8 payload with `provenance.origin = "on_demand_authenticated"` and a freshly stamped `computed_at`.
+- **STOP for founder review.** No code, no deploy, no file edits, no row deletion.  
+  
+APPROVED — Stage 4A.3.x B1 + B2 PLAN accepted.
+  Approval scope:
+  - Modify only `supabase/functions/public-analysis-fetch/index.ts`.
+  - Do not include a frontend consumer fix unless the pre-APPLY grep audit
+    below actually finds downstream reads.
+  Mandatory clarifications to incorporate into APPLY:
+  1. writeCache() source of truth
+     After deploy, columns `stock_analytics_cache.formula_version`,
+     `weighting_profile_id`, `action_bucket_version` will hold the
+     payload-authoritative values from analytics.audit_meta
+     (e.g. `formula_version = "orchestrator-1.2"`).
+     - Existing rows are NOT backfilled.
+     - Only new writes reflect corrected values.
+     - Any consumer that reads these columns must be audited before APPLY.
+  2. Renames are full renames, not aliases
+     After deploy, the three legacy provenance keys
+     `formula_version`, `weighting_profile_id`, `action_bucket_version`)
+     do NOT exist in the response object. They are removed, not aliased.
+     - Requests will return `cache_schema_version`, `cache_horizon_profile`,
+       `cache_origin_contract`.
+     - Clients reading old keys will receive `undefined`.
+  3. Pre-APPLY grep audit commands (must run and report results before APPLY):
+     - `grep -r "provenance.formula_version" src supabase/functions`
+     - `grep -r "provenance.weighting_profile_id" src supabase/functions`
+     - `grep -r "provenance.action_bucket_version" src supabase/functions`
+     - `grep -r "stock_analytics_cache.formula_version" src supabase/functions`
+     - `grep -r "stock_analytics_cache.weighting_profile_id" src supabase/functions`
+     - `grep -r "stock_analytics_cache.action_bucket_version" src supabase/functions`
+     If any matches are found, list them in the diff estimate and include
+     those files in scope. If none are found, scope stays at exactly 1 file.
+  4. B2 capture acceptance criteria (live public-analysis-fetch response
+     for a non-prewarmed symbol, founder browser click):
+     - HTTP 200
+     - `success: true`
+     - `cached: false`
+     - `provenance.origin: "on_demand_authenticated"`
+     - `provenance.computed_at` is freshly stamped on this call
+     - `analytics` has exactly the 12 top-level keys
+     - `analytics.final_verdict` has exactly 3 keys
+     - `analytics.audit_meta` has exactly 8 keys
+     - forbidden fields absent
+     Symbols in order: `POLICYBZR`, `ZOMATO`, `PAYTM`, `NYKAA`, `IRCTC`.
+  Sequence after this approval:
+  1. Apply B1 + B2 patch.
+  2. Pre-APPLY grep audit.
+  3. Deploy.
+  4. Founder signs in /stock/POLICYBZR Analytics tab and clicks Generate now.
+  5. Capture the cached:false response.
+  6. Founder verifies acceptance criteria above.
+  7. If PASS, 4A.2c + 4A.3 are CLOSED simultaneously.
+  8. Then Stage 4D.1 (B3 compliance strip) APPLY.
+  9. Then Stage 4F (Video Answers) APPLY.
+  Stop after this plan approval. Do not APPLY without founder authorisation.
+  &nbsp;

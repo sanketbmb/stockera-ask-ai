@@ -25,9 +25,13 @@ const SERVICE_KEY =
   Deno.env.get("SB_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const FORMULA_VERSION = "v1.0";
-const WEIGHTING_PROFILE_ID = "long-term-default";
-const ACTION_BUCKET_VERSION = "v1";
+// Stage 4A.3.x B1 — provenance describes the fetch/cache layer only.
+// Authoritative compute-layer version strings live in analytics.audit_meta.*
+// (formula_version / weighting_profile_id / action_bucket_version), stamped
+// by generate-stock-analysis. Do NOT re-add compute-layer aliases here.
+const CACHE_SCHEMA_VERSION = "v1";
+const CACHE_HORIZON_PROFILE = "long-term";
+const CACHE_ORIGIN_CONTRACT = "v1";
 const HORIZON = "long-term";
 const DAILY_COMPUTE_CAP = 5;
 
@@ -104,12 +108,18 @@ async function writeCache(
   symbol: string, exchange: string, payload: Record<string, unknown>,
   origin: "prewarm" | "on_demand_authenticated", durationMs: number,
 ) {
+  // Stage 4A.3.x B1 — DB columns keep their historical names, but their
+  // values now come from the compute-layer audit_meta so the cache row is
+  // annotated with the actual math version that produced it, not a stale
+  // hardcode. Missing audit_meta falls back to nulls (never to bogus alias
+  // constants) so downstream readers can detect the gap explicitly.
+  const am = (payload?.audit_meta ?? null) as Record<string, unknown> | null;
   const row = {
     symbol, exchange, horizon: HORIZON, cache_date: istDate(),
     payload, payload_version: 1,
-    formula_version: FORMULA_VERSION,
-    weighting_profile_id: WEIGHTING_PROFILE_ID,
-    action_bucket_version: ACTION_BUCKET_VERSION,
+    formula_version: (am?.formula_version as string | null) ?? null,
+    weighting_profile_id: (am?.weighting_profile_id as string | null) ?? null,
+    action_bucket_version: (am?.action_bucket_version as string | null) ?? null,
     origin, compute_duration_ms: durationMs,
     provider_failures: [],
     computed_at: new Date().toISOString(),
@@ -210,9 +220,9 @@ Deno.serve(async (req) => {
           analytics: shapeAnalytics(cached.payload as Record<string, unknown>, cached.computed_at as string | null),
           provenance: {
             computed_at: cached.computed_at,
-            formula_version: cached.formula_version,
-            weighting_profile_id: cached.weighting_profile_id,
-            action_bucket_version: cached.action_bucket_version,
+            cache_schema_version: CACHE_SCHEMA_VERSION,
+            cache_horizon_profile: CACHE_HORIZON_PROFILE,
+            cache_origin_contract: CACHE_ORIGIN_CONTRACT,
             origin: cached.origin,
             cache_date: istDate(),
           },
@@ -238,9 +248,9 @@ Deno.serve(async (req) => {
         analytics: shapeAnalytics(cached.payload as Record<string, unknown>, cached.computed_at as string | null),
         provenance: {
           computed_at: cached.computed_at,
-          formula_version: cached.formula_version,
-          weighting_profile_id: cached.weighting_profile_id,
-          action_bucket_version: cached.action_bucket_version,
+          cache_schema_version: CACHE_SCHEMA_VERSION,
+          cache_horizon_profile: CACHE_HORIZON_PROFILE,
+          cache_origin_contract: CACHE_ORIGIN_CONTRACT,
           origin: cached.origin,
           cache_date: istDate(),
         },
@@ -280,9 +290,9 @@ Deno.serve(async (req) => {
         analytics: shapeAnalytics(payload, nowIso),
         provenance: {
           computed_at: new Date().toISOString(),
-          formula_version: FORMULA_VERSION,
-          weighting_profile_id: WEIGHTING_PROFILE_ID,
-          action_bucket_version: ACTION_BUCKET_VERSION,
+          cache_schema_version: CACHE_SCHEMA_VERSION,
+          cache_horizon_profile: CACHE_HORIZON_PROFILE,
+          cache_origin_contract: CACHE_ORIGIN_CONTRACT,
           origin: "on_demand_authenticated",
           cache_date: istDate(),
         },

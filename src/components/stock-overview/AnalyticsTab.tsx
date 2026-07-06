@@ -154,7 +154,11 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
       <Reveal delay={0.2}>
         <Latest30dNewsBlock sentiment={analytics.sentiment_snapshot} />
       </Reveal>
-      <AnalyticsProvenanceFooter provenance={provenance} formulaVersion={analytics.audit_meta?.formula_version ?? null} />
+      <AnalyticsProvenanceFooter
+        provenance={provenance}
+        formulaVersion={analytics.audit_meta?.formula_version ?? null}
+        weightingProfileId={analytics.audit_meta?.weighting_profile_id ?? null}
+      />
     </div>
   );
 }
