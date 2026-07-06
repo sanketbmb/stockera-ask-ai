@@ -51,6 +51,8 @@ export function VideosBlogsTab({ data }: Props) {
   return (
     <div className="space-y-6">
       <GeneralVideosStrip symbol={symbol} />
+      <CuratedForSymbolStrip symbol={symbol} />
+
 
       <section aria-labelledby="videos-heading">
         <h2 id="videos-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
