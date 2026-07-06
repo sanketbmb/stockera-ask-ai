@@ -139,6 +139,7 @@ export const getAllQueriesForAdmin = createServerFn({ method: "GET" })
     const emailMap = new Map(((usersRes.data?.users ?? []) as Array<{ id: string; email?: string }>).map((u) => [u.id, u.email ?? null]));
     const ansMap = new Map<string, { text: boolean; video: boolean }>();
     (answersRes.data ?? []).forEach((a) => {
+      if (!a.query_id) return;
       const r = ansMap.get(a.query_id) ?? { text: false, video: false };
       if (a.answer_type === "text") r.text = true;
       if (a.answer_type === "video") r.video = true;
