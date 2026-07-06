@@ -45,6 +45,7 @@ import { Route as PrintSectorQueryIdRouteImport } from './routes/print-sector.$q
 import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educational.$queryId'
 import { Route as LibrarySymbolRouteImport } from './routes/library.$symbol'
 import { Route as GeneralAnswerIdRouteImport } from './routes/general.$answerId'
+import { Route as CuratedItemIdRouteImport } from './routes/curated.$itemId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminVideosRouteImport } from './routes/admin.videos'
@@ -53,6 +54,7 @@ import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminExportsRouteImport } from './routes/admin.exports'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminCuratedRouteImport } from './routes/admin.curated'
 import { Route as AdminComposeVideoRouteImport } from './routes/admin.compose-video'
 import { Route as AdminBacktestRouteImport } from './routes/admin.backtest'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
@@ -60,8 +62,10 @@ import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.archite
 import { Route as DocsAccuracyRoadmapPrintRouteImport } from './routes/docs.accuracy-roadmap.print'
 import { Route as AdminVideosNewRouteImport } from './routes/admin.videos.new'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
+import { Route as AdminCuratedNewRouteImport } from './routes/admin.curated.new'
 import { Route as AdminVideosAnswerIdPreviewRouteImport } from './routes/admin.videos.$answerId.preview'
 import { Route as AdminVideosAnswerIdEditRouteImport } from './routes/admin.videos.$answerId.edit'
+import { Route as AdminCuratedItemIdEditRouteImport } from './routes/admin.curated.$itemId.edit'
 
 const WatchlistRoute = WatchlistRouteImport.update({
   id: '/watchlist',
@@ -243,6 +247,11 @@ const GeneralAnswerIdRoute = GeneralAnswerIdRouteImport.update({
   path: '/general/$answerId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CuratedItemIdRoute = CuratedItemIdRouteImport.update({
+  id: '/curated/$itemId',
+  path: '/curated/$itemId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -283,6 +292,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/admin/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCuratedRoute = AdminCuratedRouteImport.update({
+  id: '/admin/curated',
+  path: '/admin/curated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminComposeVideoRoute = AdminComposeVideoRouteImport.update({
   id: '/admin/compose-video',
   path: '/admin/compose-video',
@@ -320,6 +334,11 @@ const AdminUploadAnswerQueryIdRoute =
     path: '/admin/upload-answer/$queryId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminCuratedNewRoute = AdminCuratedNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AdminCuratedRoute,
+} as any)
 const AdminVideosAnswerIdPreviewRoute =
   AdminVideosAnswerIdPreviewRouteImport.update({
     id: '/$answerId/preview',
@@ -330,6 +349,11 @@ const AdminVideosAnswerIdEditRoute = AdminVideosAnswerIdEditRouteImport.update({
   id: '/$answerId/edit',
   path: '/$answerId/edit',
   getParentRoute: () => AdminVideosRoute,
+} as any)
+const AdminCuratedItemIdEditRoute = AdminCuratedItemIdEditRouteImport.update({
+  id: '/$itemId/edit',
+  path: '/$itemId/edit',
+  getParentRoute: () => AdminCuratedRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -361,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/compose-video': typeof AdminComposeVideoRoute
+  '/admin/curated': typeof AdminCuratedRouteWithChildren
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -369,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
@@ -380,10 +406,12 @@ export interface FileRoutesByFullPath {
   '/stock/$symbol': typeof StockSymbolRoute
   '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
+  '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
@@ -416,6 +444,7 @@ export interface FileRoutesByTo {
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/compose-video': typeof AdminComposeVideoRoute
+  '/admin/curated': typeof AdminCuratedRouteWithChildren
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -424,6 +453,7 @@ export interface FileRoutesByTo {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
@@ -435,10 +465,12 @@ export interface FileRoutesByTo {
   '/stock/$symbol': typeof StockSymbolRoute
   '/v/$answerId': typeof VAnswerIdRoute
   '/library': typeof LibraryIndexRoute
+  '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
@@ -472,6 +504,7 @@ export interface FileRoutesById {
   '/admin/apply': typeof AdminApplyRoute
   '/admin/backtest': typeof AdminBacktestRoute
   '/admin/compose-video': typeof AdminComposeVideoRoute
+  '/admin/curated': typeof AdminCuratedRouteWithChildren
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/exports': typeof AdminExportsRoute
   '/admin/login': typeof AdminLoginRoute
@@ -480,6 +513,7 @@ export interface FileRoutesById {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
@@ -491,10 +525,12 @@ export interface FileRoutesById {
   '/stock/$symbol': typeof StockSymbolRoute
   '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
+  '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
@@ -529,6 +565,7 @@ export interface FileRouteTypes {
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/compose-video'
+    | '/admin/curated'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -537,6 +574,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
@@ -548,10 +586,12 @@ export interface FileRouteTypes {
     | '/stock/$symbol'
     | '/v/$answerId'
     | '/library/'
+    | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/curated/$itemId/edit'
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
   fileRoutesByTo: FileRoutesByTo
@@ -584,6 +624,7 @@ export interface FileRouteTypes {
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/compose-video'
+    | '/admin/curated'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -592,6 +633,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
@@ -603,10 +645,12 @@ export interface FileRouteTypes {
     | '/stock/$symbol'
     | '/v/$answerId'
     | '/library'
+    | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/curated/$itemId/edit'
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
   id:
@@ -639,6 +683,7 @@ export interface FileRouteTypes {
     | '/admin/apply'
     | '/admin/backtest'
     | '/admin/compose-video'
+    | '/admin/curated'
     | '/admin/dashboard'
     | '/admin/exports'
     | '/admin/login'
@@ -647,6 +692,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
@@ -658,10 +704,12 @@ export interface FileRouteTypes {
     | '/stock/$symbol'
     | '/v/$answerId'
     | '/library/'
+    | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/curated/$itemId/edit'
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
   fileRoutesById: FileRoutesById
@@ -695,6 +743,7 @@ export interface RootRouteChildren {
   AdminApplyRoute: typeof AdminApplyRoute
   AdminBacktestRoute: typeof AdminBacktestRoute
   AdminComposeVideoRoute: typeof AdminComposeVideoRoute
+  AdminCuratedRoute: typeof AdminCuratedRouteWithChildren
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminExportsRoute: typeof AdminExportsRoute
   AdminLoginRoute: typeof AdminLoginRoute
@@ -703,6 +752,7 @@ export interface RootRouteChildren {
   AdminVideosRoute: typeof AdminVideosRouteWithChildren
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  CuratedItemIdRoute: typeof CuratedItemIdRoute
   GeneralAnswerIdRoute: typeof GeneralAnswerIdRoute
   LibrarySymbolRoute: typeof LibrarySymbolRoute
   PrintEducationalQueryIdRoute: typeof PrintEducationalQueryIdRoute
@@ -973,6 +1023,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GeneralAnswerIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/curated/$itemId': {
+      id: '/curated/$itemId'
+      path: '/curated/$itemId'
+      fullPath: '/curated/$itemId'
+      preLoaderRoute: typeof CuratedItemIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -1029,6 +1086,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/curated': {
+      id: '/admin/curated'
+      path: '/admin/curated'
+      fullPath: '/admin/curated'
+      preLoaderRoute: typeof AdminCuratedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/compose-video': {
       id: '/admin/compose-video'
       path: '/admin/compose-video'
@@ -1078,6 +1142,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUploadAnswerQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/curated/new': {
+      id: '/admin/curated/new'
+      path: '/new'
+      fullPath: '/admin/curated/new'
+      preLoaderRoute: typeof AdminCuratedNewRouteImport
+      parentRoute: typeof AdminCuratedRoute
+    }
     '/admin/videos/$answerId/preview': {
       id: '/admin/videos/$answerId/preview'
       path: '/$answerId/preview'
@@ -1092,8 +1163,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVideosAnswerIdEditRouteImport
       parentRoute: typeof AdminVideosRoute
     }
+    '/admin/curated/$itemId/edit': {
+      id: '/admin/curated/$itemId/edit'
+      path: '/$itemId/edit'
+      fullPath: '/admin/curated/$itemId/edit'
+      preLoaderRoute: typeof AdminCuratedItemIdEditRouteImport
+      parentRoute: typeof AdminCuratedRoute
+    }
   }
 }
+
+interface AdminCuratedRouteChildren {
+  AdminCuratedNewRoute: typeof AdminCuratedNewRoute
+  AdminCuratedItemIdEditRoute: typeof AdminCuratedItemIdEditRoute
+}
+
+const AdminCuratedRouteChildren: AdminCuratedRouteChildren = {
+  AdminCuratedNewRoute: AdminCuratedNewRoute,
+  AdminCuratedItemIdEditRoute: AdminCuratedItemIdEditRoute,
+}
+
+const AdminCuratedRouteWithChildren = AdminCuratedRoute._addFileChildren(
+  AdminCuratedRouteChildren,
+)
 
 interface AdminVideosRouteChildren {
   AdminVideosNewRoute: typeof AdminVideosNewRoute
@@ -1140,6 +1232,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminApplyRoute: AdminApplyRoute,
   AdminBacktestRoute: AdminBacktestRoute,
   AdminComposeVideoRoute: AdminComposeVideoRoute,
+  AdminCuratedRoute: AdminCuratedRouteWithChildren,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminExportsRoute: AdminExportsRoute,
   AdminLoginRoute: AdminLoginRoute,
@@ -1148,6 +1241,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminVideosRoute: AdminVideosRouteWithChildren,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  CuratedItemIdRoute: CuratedItemIdRoute,
   GeneralAnswerIdRoute: GeneralAnswerIdRoute,
   LibrarySymbolRoute: LibrarySymbolRoute,
   PrintEducationalQueryIdRoute: PrintEducationalQueryIdRoute,
