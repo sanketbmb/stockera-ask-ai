@@ -119,7 +119,12 @@ function WatchVideoPage() {
             open={unlockOpen}
             onOpenChange={setUnlockOpen}
             answerId={answerId}
-            title={data.stock_name ?? data.symbol ?? "Analyst video"}
+            title={
+              data.video_title?.trim() ||
+              data.stock_name ||
+              data.symbol ||
+              "Analyst video"
+            }
             unlockPriceCredits={data.unlock_price_credits}
             analystName={data.analyst?.display_name ?? null}
           />
@@ -135,7 +140,11 @@ function toLockedItem(
 ): LockedVideoCardItem {
   return {
     answerId,
-    title: d.stock_name ?? d.symbol ?? "Analyst video",
+    title:
+      d.video_title?.trim() ||
+      d.stock_name ||
+      d.symbol ||
+      "Analyst video",
     verdict: d.verdict,
     symbol: d.symbol,
     analystName: d.analyst?.display_name ?? null,
@@ -144,5 +153,8 @@ function toLockedItem(
     videoDurationSec: d.video_duration_sec,
     posterThumb: d.poster_thumb,
     publishedAt: d.published_at,
+    questionAddressed: d.question_addressed,
+    videoDescription: d.video_description,
   };
 }
+
