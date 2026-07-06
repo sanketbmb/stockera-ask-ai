@@ -73,6 +73,7 @@ export default function MyQueriesPage() {
         .eq("is_published", true);
       const byQuery = new Map<string, VideoAnswer[]>();
       (answers ?? []).forEach((a) => {
+        if (!a.query_id) return;
         const list = byQuery.get(a.query_id) ?? [];
         list.push(a as VideoAnswer);
         byQuery.set(a.query_id, list);
