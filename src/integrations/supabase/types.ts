@@ -282,13 +282,18 @@ export type Database = {
         Row: {
           answer_type: Database["public"]["Enums"]["answer_type"]
           body: string | null
+          category: string | null
           created_at: string | null
+          custom_thumbnail_url: string | null
           duration_seconds: number | null
           expert_id: string
+          external_provider: string | null
+          external_url: string | null
           id: string
           is_published: boolean | null
           key_level: string | null
-          query_id: string
+          paid_video_storage_path: string | null
+          query_id: string | null
           question_addressed_override: string | null
           report_filename: string | null
           report_label: string | null
@@ -296,6 +301,8 @@ export type Database = {
           report_size_bytes: number | null
           report_url: string | null
           risk_note: string | null
+          source_kind: string | null
+          stock_master_id: string | null
           time_horizon: string | null
           unlock_price_credits: number | null
           verdict: string | null
@@ -309,13 +316,18 @@ export type Database = {
         Insert: {
           answer_type: Database["public"]["Enums"]["answer_type"]
           body?: string | null
+          category?: string | null
           created_at?: string | null
+          custom_thumbnail_url?: string | null
           duration_seconds?: number | null
           expert_id: string
+          external_provider?: string | null
+          external_url?: string | null
           id?: string
           is_published?: boolean | null
           key_level?: string | null
-          query_id: string
+          paid_video_storage_path?: string | null
+          query_id?: string | null
           question_addressed_override?: string | null
           report_filename?: string | null
           report_label?: string | null
@@ -323,6 +335,8 @@ export type Database = {
           report_size_bytes?: number | null
           report_url?: string | null
           risk_note?: string | null
+          source_kind?: string | null
+          stock_master_id?: string | null
           time_horizon?: string | null
           unlock_price_credits?: number | null
           verdict?: string | null
@@ -336,13 +350,18 @@ export type Database = {
         Update: {
           answer_type?: Database["public"]["Enums"]["answer_type"]
           body?: string | null
+          category?: string | null
           created_at?: string | null
+          custom_thumbnail_url?: string | null
           duration_seconds?: number | null
           expert_id?: string
+          external_provider?: string | null
+          external_url?: string | null
           id?: string
           is_published?: boolean | null
           key_level?: string | null
-          query_id?: string
+          paid_video_storage_path?: string | null
+          query_id?: string | null
           question_addressed_override?: string | null
           report_filename?: string | null
           report_label?: string | null
@@ -350,6 +369,8 @@ export type Database = {
           report_size_bytes?: number | null
           report_url?: string | null
           risk_note?: string | null
+          source_kind?: string | null
+          stock_master_id?: string | null
           time_horizon?: string | null
           unlock_price_credits?: number | null
           verdict?: string | null
@@ -366,6 +387,13 @@ export type Database = {
             columns: ["query_id"]
             isOneToOne: false
             referencedRelation: "queries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answers_stock_master_id_fkey"
+            columns: ["stock_master_id"]
+            isOneToOne: false
+            referencedRelation: "stock_master"
             referencedColumns: ["id"]
           },
         ]
@@ -621,6 +649,124 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      curated_items: {
+        Row: {
+          category: string
+          click_through_count: number
+          created_at: string
+          custom_thumbnail_url: string | null
+          description: string | null
+          editorial_boost: number
+          embed_kind: string
+          id: string
+          is_published: boolean
+          og_scrape_meta: Json | null
+          posted_by: string
+          published_at: string | null
+          save_count: number
+          sector: string | null
+          source_provider: string
+          source_url: string
+          source_url_norm: string | null
+          stock_master_id: string | null
+          tags: string[]
+          title: string
+          updated_at: string
+          view_count: number
+        }
+        Insert: {
+          category?: string
+          click_through_count?: number
+          created_at?: string
+          custom_thumbnail_url?: string | null
+          description?: string | null
+          editorial_boost?: number
+          embed_kind: string
+          id?: string
+          is_published?: boolean
+          og_scrape_meta?: Json | null
+          posted_by: string
+          published_at?: string | null
+          save_count?: number
+          sector?: string | null
+          source_provider: string
+          source_url: string
+          source_url_norm?: string | null
+          stock_master_id?: string | null
+          tags?: string[]
+          title: string
+          updated_at?: string
+          view_count?: number
+        }
+        Update: {
+          category?: string
+          click_through_count?: number
+          created_at?: string
+          custom_thumbnail_url?: string | null
+          description?: string | null
+          editorial_boost?: number
+          embed_kind?: string
+          id?: string
+          is_published?: boolean
+          og_scrape_meta?: Json | null
+          posted_by?: string
+          published_at?: string | null
+          save_count?: number
+          sector?: string | null
+          source_provider?: string
+          source_url?: string
+          source_url_norm?: string | null
+          stock_master_id?: string | null
+          tags?: string[]
+          title?: string
+          updated_at?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "curated_items_stock_master_id_fkey"
+            columns: ["stock_master_id"]
+            isOneToOne: false
+            referencedRelation: "stock_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      curated_view_events: {
+        Row: {
+          created_at: string
+          id: number
+          item_id: string
+          kind: string
+          viewer_id: string | null
+          viewer_key: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          item_id: string
+          kind: string
+          viewer_id?: string | null
+          viewer_key?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          item_id?: string
+          kind?: string
+          viewer_id?: string | null
+          viewer_key?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "curated_view_events_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "curated_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fundamentals_cache: {
         Row: {
@@ -1300,6 +1446,7 @@ export type Database = {
           sector_canonical: string | null
           sector_macro_state: string | null
           status: Database["public"]["Enums"]["query_status"] | null
+          stock_master_id: string | null
           stock_name: string
           stock_symbol: string | null
           updated_at: string | null
@@ -1344,6 +1491,7 @@ export type Database = {
           sector_canonical?: string | null
           sector_macro_state?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
+          stock_master_id?: string | null
           stock_name: string
           stock_symbol?: string | null
           updated_at?: string | null
@@ -1388,6 +1536,7 @@ export type Database = {
           sector_canonical?: string | null
           sector_macro_state?: string | null
           status?: Database["public"]["Enums"]["query_status"] | null
+          stock_master_id?: string | null
           stock_name?: string
           stock_symbol?: string | null
           updated_at?: string | null
@@ -1396,6 +1545,13 @@ export type Database = {
           video_requested?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "queries_stock_master_id_fkey"
+            columns: ["stock_master_id"]
+            isOneToOne: false
+            referencedRelation: "stock_master"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "queries_video_payment_id_fkey"
             columns: ["video_payment_id"]
@@ -2657,6 +2813,10 @@ export type Database = {
       }
     }
     Functions: {
+      _record_curated_engagement: {
+        Args: { p_id: string; p_kind: string; p_viewer_key: string }
+        Returns: Json
+      }
       add_demo_credits: { Args: { _amount: number }; Returns: Json }
       admin_adjust_wallet: {
         Args: { _amount: number; _reason: string; _target_user_id: string }
@@ -2708,7 +2868,41 @@ export type Database = {
           view_count: number
         }[]
       }
+      fn_normalize_source_url: { Args: { p_url: string }; Returns: string }
       fn_normalize_symbol: { Args: { raw: string }; Returns: string }
+      get_curated_item: {
+        Args: { p_id: string }
+        Returns: {
+          category: string
+          click_through_count: number
+          created_at: string
+          custom_thumbnail_url: string | null
+          description: string | null
+          editorial_boost: number
+          embed_kind: string
+          id: string
+          is_published: boolean
+          og_scrape_meta: Json | null
+          posted_by: string
+          published_at: string | null
+          save_count: number
+          sector: string | null
+          source_provider: string
+          source_url: string
+          source_url_norm: string | null
+          stock_master_id: string | null
+          tags: string[]
+          title: string
+          updated_at: string
+          view_count: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "curated_items"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -2729,6 +2923,74 @@ export type Database = {
         }
         Returns: boolean
       }
+      list_curated_items_for_symbol: {
+        Args: { p_limit?: number; p_offset?: number; p_symbol: string }
+        Returns: {
+          category: string
+          click_through_count: number
+          created_at: string
+          custom_thumbnail_url: string | null
+          description: string | null
+          editorial_boost: number
+          embed_kind: string
+          id: string
+          is_published: boolean
+          og_scrape_meta: Json | null
+          posted_by: string
+          published_at: string | null
+          save_count: number
+          sector: string | null
+          source_provider: string
+          source_url: string
+          source_url_norm: string | null
+          stock_master_id: string | null
+          tags: string[]
+          title: string
+          updated_at: string
+          view_count: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "curated_items"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      list_discover_feed: {
+        Args: {
+          p_kind_filter?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_symbol?: string
+        }
+        Returns: {
+          content_type: string
+          description: string
+          item_id: string
+          published_at: string
+          score: number
+          stock_master_id: string
+          thumbnail_url: string
+          title: string
+        }[]
+      }
+      list_public_general_video_answers: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: {
+          answer_id: string
+          created_at: string
+          custom_thumbnail_url: string
+          expert_id: string
+          external_provider: string
+          published_at: string
+          question_addressed: string
+          source_kind: string
+          video_description: string
+          video_duration_sec: number
+          video_title: string
+          youtube_video_id: string
+        }[]
+      }
       list_public_video_answers_for_symbol: {
         Args: { p_symbol: string }
         Returns: {
@@ -2748,6 +3010,14 @@ export type Database = {
           video_duration_sec: number
           video_title: string
         }[]
+      }
+      record_curated_click_through: {
+        Args: { p_id: string; p_viewer_key?: string }
+        Returns: Json
+      }
+      record_curated_view: {
+        Args: { p_id: string; p_viewer_key?: string }
+        Returns: Json
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
