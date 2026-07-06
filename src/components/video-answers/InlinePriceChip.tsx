@@ -2,12 +2,15 @@
 import { cn } from "@/lib/utils";
 
 interface Props {
-  credits: number;
+  /** null = price unknown at this surface — chip shows "Locked" instead. */
+  credits: number | null;
   tone?: "default" | "destructive";
   className?: string;
 }
 
 export function InlinePriceChip({ credits, tone = "default", className }: Props) {
+  const label = credits == null ? "Locked" : `${credits} credits`;
+  const aria = credits == null ? "Locked video" : `${credits} credits to unlock`;
   return (
     <span
       className={cn(
@@ -17,10 +20,10 @@ export function InlinePriceChip({ credits, tone = "default", className }: Props)
           : "border-border bg-muted/60 text-foreground",
         className,
       )}
-      aria-label={`${credits} credits to unlock`}
+      aria-label={aria}
     >
       <span aria-hidden="true">🔒</span>
-      <span>{credits} credits</span>
+      <span>{label}</span>
     </span>
   );
 }

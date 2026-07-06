@@ -3,7 +3,8 @@
 // renders the exact same wording.
 
 export const VIDEO_COPY = {
-  anonCta: (credits: number) => `Sign in to unlock — ${credits} credits`,
+  anonCta: (credits: number | null) =>
+    credits == null ? "Sign in to unlock" : `Sign in to unlock — ${credits} credits`,
   anonHint: "Unlocked answers are yours forever.",
   loggedInDisabledCta: "Unlock coming soon",
   loggedInDisabledHint: "Analyst video unlocks ship in the next release.",

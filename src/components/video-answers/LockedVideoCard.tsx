@@ -22,7 +22,8 @@ export interface LockedVideoCardItem {
   symbol: string | null;
   analystName: string | null;
   analystSebiRegNumber: string | null;
-  unlockPriceCredits: number;
+  /** null when the surface has no price info (library / MasterSearch). */
+  unlockPriceCredits: number | null;
   videoDurationSec: number | null;
   posterThumb: string | null;
   publishedAt: string | null;
