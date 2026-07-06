@@ -110,5 +110,9 @@ export const listVideoAnswersForSymbol = createServerFn({ method: "POST" })
       analyst_name: string | null;
       analyst_sebi_reg_number: string | null;
       published_at: string;
+      // 4F.3 APPLY-1 additive fields.
+      question_addressed: string | null;
+      video_title: string | null;
+      video_description: string | null;
     }>;
   });
