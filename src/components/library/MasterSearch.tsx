@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MasterSearchRecentTab } from "./MasterSearchRecentTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import type {
   LibraryItem,
   LibraryStock,
