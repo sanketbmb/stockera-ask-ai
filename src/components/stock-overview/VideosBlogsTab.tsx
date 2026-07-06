@@ -12,7 +12,9 @@ import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import { VIDEO_COPY } from "@/components/video-answers/copy";
 import { GeneralVideosStrip } from "@/components/video-answers/GeneralVideosStrip";
+import { CuratedForSymbolStrip } from "@/components/curated/CuratedForSymbolStrip";
 import type { StockOverview } from "./types";
+
 
 interface Props {
   data: StockOverview;
@@ -49,6 +51,8 @@ export function VideosBlogsTab({ data }: Props) {
   return (
     <div className="space-y-6">
       <GeneralVideosStrip symbol={symbol} />
+      <CuratedForSymbolStrip symbol={symbol} />
+
 
       <section aria-labelledby="videos-heading">
         <h2 id="videos-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
