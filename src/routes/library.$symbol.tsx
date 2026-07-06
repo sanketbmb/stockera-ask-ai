@@ -13,6 +13,7 @@ import { SymbolFAQ } from "@/components/library/SymbolFAQ";
 import { SymbolCompliance } from "@/components/library/SymbolCompliance";
 import { SymbolEmptyState } from "@/components/library/SymbolEmptyState";
 import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
+import { GeneralVideosStrip } from "@/components/video-answers/GeneralVideosStrip";
 import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import type { SymbolLibraryResponse } from "@/types/library-symbol";
 
@@ -211,6 +212,9 @@ function SymbolLibraryPage() {
         <SymbolCountsStrip counts={counts} />
         <div className="mx-auto w-full max-w-5xl px-4">
           <SymbolTabs counts={counts} activeKind={activeKind} onKindChange={setActiveKind} />
+
+          <div className="mb-6"><GeneralVideosStrip symbol={displaySymbol} /></div>
+
 
           {isError && (
             <p className="py-12 text-center text-sm text-muted-foreground">

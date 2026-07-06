@@ -1,13 +1,17 @@
-// Stage 4G APPLY-2 — Unified RA video composer (DRAFT-ONLY).
+// Stage 4G APPLY-2/APPLY-3 — Unified RA video composer.
 //
-// This page NEVER publishes. Publish UI is intentionally omitted. No unlock,
-// wallet, entitlement, discover, or curated code is touched here.
+// APPLY-2: draft save (never publishes).
+// APPLY-3: adds publish-in-place for both `general` and `stock_specific`,
+//          edit-load via ?answerId=, and optional stock tagging for general.
+//
+// Never touches wallet_ledger, video_entitlements, curated tables, discover,
+// home surfaces, or the legacy ₹100 booking flow.
 import { useEffect, useMemo, useState } from "react";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Save, Loader2, Info } from "lucide-react";
+import { Save, Send, Loader2, Info } from "lucide-react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Card } from "@/components/ui/card";
@@ -29,7 +33,11 @@ import { LinkedQueryHeader } from "@/components/admin/video-composer/LinkedQuery
 import { SymbolPicker, type SymbolPick } from "@/components/admin/video-answers/SymbolPicker";
 import { AnalystSelector } from "@/components/admin/video-answers/AnalystSelector";
 
-import { saveVideoComposerDraft } from "@/lib/video-composer.functions";
+import {
+  saveVideoComposerDraft,
+  publishComposerVideoAnswer,
+  loadComposerDraft,
+} from "@/lib/video-composer.functions";
 import { parseYoutubeId } from "@/lib/youtube-id";
 
 export default function VideoComposer() {
@@ -37,11 +45,12 @@ export default function VideoComposer() {
   const navigate = useNavigate();
   const search = useSearch({ from: "/admin/compose-video" }) as { queryId?: string; answerId?: string };
   const queryId = search.queryId;
+  const editingAnswerId = search.answerId;
 
-  // Load prefill query when coming from a query card
+  // --- Prefill: from query
   const { data: prefillQuery } = useQuery({
     queryKey: ["composer_prefill_query", queryId],
-    enabled: !!queryId,
+    enabled: !!queryId && !editingAnswerId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("queries")
@@ -53,7 +62,15 @@ export default function VideoComposer() {
     },
   });
 
-  // Form state
+  // --- Prefill: from existing answer (edit mode)
+  const loadDraftFn = useServerFn(loadComposerDraft);
+  const { data: existingDraft, isLoading: draftLoading } = useQuery({
+    queryKey: ["composer_edit_draft", editingAnswerId],
+    enabled: !!editingAnswerId,
+    queryFn: () => loadDraftFn({ data: { answerId: editingAnswerId! } }),
+  });
+
+  // --- Form state
   const [category, setCategory] = useState<Category>("stock_specific");
   const [mode, setMode] = useState<InputMode>("upload");
   const [title, setTitle] = useState("");
@@ -65,9 +82,9 @@ export default function VideoComposer() {
   const [externalUrl, setExternalUrl] = useState("");
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [customThumbPath, setCustomThumbPath] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"idle" | "save" | "publish">("idle");
 
-  // Prefill from query
+  // Prefill from query card
   useEffect(() => {
     if (!prefillQuery) return;
     setCategory("stock_specific");
@@ -78,11 +95,42 @@ export default function VideoComposer() {
     if (!title) setTitle(`Answer: ${prefillQuery.stock_name ?? prefillQuery.stock_symbol ?? "query"}`.slice(0, 140));
   }, [prefillQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Analyst self-lock
+  // Prefill from existing draft
+  useEffect(() => {
+    if (!existingDraft) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = existingDraft as any;
+    setCategory((d.category as Category) ?? "stock_specific");
+    setTitle(d.video_title ?? "");
+    setDescription(d.video_description ?? "");
+    setQuestion(d.question_addressed_override ?? "");
+    setExpertId(d.expert_id ?? null);
+    setCustomThumbPath(d.custom_thumbnail_url ?? null);
+    if (d.unlock_price_credits) setPriceCredits(d.unlock_price_credits);
+    if (d.stock_master) {
+      setSymbol({ symbol: d.stock_master.symbol, name: d.stock_master.company_name });
+    } else if (d.queries?.stock_symbol) {
+      setSymbol({ symbol: d.queries.stock_symbol, name: d.queries.stock_name ?? d.queries.stock_symbol });
+    }
+    const kind = (d.source_kind ?? "external") as InputMode;
+    setMode(kind === "upload" || kind === "record" ? kind : "external");
+    if (kind === "external") {
+      setExternalUrl(d.external_url ?? "");
+    } else if (d.paid_video_storage_path) {
+      setUploadResult({
+        storagePath: d.paid_video_storage_path,
+        thumbnailStoragePath: d.video_thumbnail ?? null,
+        durationSec: d.video_duration_sec ?? undefined,
+        previewUrl: "",
+      });
+    }
+  }, [existingDraft]);
+
   const lockedTo = useMemo(() => (isAdmin ? null : user?.id ?? null), [isAdmin, user]);
   useEffect(() => { if (lockedTo && !expertId) setExpertId(lockedTo); }, [lockedTo, expertId]);
 
-  const save = useServerFn(saveVideoComposerDraft);
+  const saveFn = useServerFn(saveVideoComposerDraft);
+  const publishFn = useServerFn(publishComposerVideoAnswer);
 
   const externalIsYouTube = mode === "external" && !!parseYoutubeId(externalUrl);
   const externalYouTubeBlocked = category === "stock_specific" && externalIsYouTube;
@@ -107,50 +155,75 @@ export default function VideoComposer() {
     return errs;
   }, [title, description, expertId, category, symbol, priceCredits, mode, uploadResult, externalUrl, externalYouTubeBlocked]);
 
-  const canSave = validationErrors.length === 0 && !busy;
+  const canSave = validationErrors.length === 0 && busy === "idle";
+  const canPublish = canSave && isAdmin; // MVP: admin-only publish
+  const isEditing = !!editingAnswerId;
 
   const autoPreviewUrl =
     mode === "external" && parseYoutubeId(externalUrl)
       ? `https://i.ytimg.com/vi/${parseYoutubeId(externalUrl)}/hqdefault.jpg`
       : uploadResult?.previewUrl ?? null;
 
-  async function handleSave() {
-    if (!canSave || !expertId) return;
-    setBusy(true);
-    try {
-      const source =
-        mode === "external"
-          ? { kind: "external" as const, externalUrl: externalUrl.trim() }
-          : {
-              kind: mode,
-              storagePath: uploadResult!.storagePath,
-              thumbnailStoragePath: uploadResult!.thumbnailStoragePath,
-              durationSec: uploadResult!.durationSec ?? undefined,
-            };
+  async function doSave(): Promise<string | null> {
+    if (!canSave || !expertId) return null;
+    const source =
+      mode === "external"
+        ? { kind: "external" as const, externalUrl: externalUrl.trim() }
+        : {
+            kind: mode,
+            storagePath: uploadResult!.storagePath,
+            thumbnailStoragePath: uploadResult!.thumbnailStoragePath,
+            durationSec: uploadResult!.durationSec ?? undefined,
+          };
+    const res = await saveFn({
+      data: {
+        category,
+        title: title.trim(),
+        description: description.trim(),
+        questionAddressed: question.trim() || undefined,
+        expertId,
+        source,
+        stock: symbol ? { symbol: symbol.symbol, stockName: symbol.name } : undefined,
+        priceCredits: category === "stock_specific" ? priceCredits : undefined,
+        queryId: queryId,
+        customThumbnailPath: customThumbPath,
+        answerId: editingAnswerId,
+      },
+    });
+    return res.answerId;
+  }
 
-      const res = await save({
-        data: {
-          category,
-          title: title.trim(),
-          description: description.trim(),
-          questionAddressed: question.trim() || undefined,
-          expertId,
-          source,
-          stock: category === "stock_specific" && symbol
-            ? { symbol: symbol.symbol, stockName: symbol.name }
-            : undefined,
-          priceCredits: category === "stock_specific" ? priceCredits : undefined,
-          queryId: queryId,
-          customThumbnailPath: customThumbPath,
-        },
-      });
-      toast.success("Draft saved");
-      // Route to admin videos list; edit routes are not rewired in APPLY-2.
-      navigate({ to: "/admin/videos" as never, search: { savedAnswerId: res.answerId } as never });
+  async function handleSave() {
+    setBusy("save");
+    try {
+      const id = await doSave();
+      if (id) toast.success(isEditing ? "Draft updated" : "Draft saved");
+      if (id && !isEditing) {
+        navigate({ to: "/admin/videos" as never });
+      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy("idle");
+    }
+  }
+
+  async function handlePublish() {
+    setBusy("publish");
+    try {
+      const id = await doSave();
+      if (!id) return;
+      const res = await publishFn({ data: { answerId: id } });
+      toast.success(`Published (${res.category})`);
+      if (res.category === "general") {
+        navigate({ to: "/general/$answerId" as never, params: { answerId: id } as never });
+      } else {
+        navigate({ to: "/admin/videos" as never });
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy("idle");
     }
   }
 
@@ -161,10 +234,20 @@ export default function VideoComposer() {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <p className="text-xs text-muted-foreground font-mono uppercase tracking-wider">RA composer</p>
-          <h1 className="font-display text-3xl">Compose video answer</h1>
+          <h1 className="font-display text-3xl">{isEditing ? "Edit video answer" : "Compose video answer"}</h1>
         </div>
-        <Badge variant="secondary" className="text-[11px]">Draft only · publish disabled</Badge>
+        <Badge variant="secondary" className="text-[11px]">
+          {isEditing && (existingDraft as { is_published?: boolean } | undefined)?.is_published
+            ? "Editing published"
+            : "Draft"}
+        </Badge>
       </div>
+
+      {draftLoading && (
+        <Card className="p-4 mb-4 text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading draft…
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div className="space-y-4">
@@ -237,6 +320,16 @@ export default function VideoComposer() {
               </div>
             </Card>
           )}
+
+          {category === "general" && (
+            <Card className="p-5 space-y-3">
+              <h2 className="font-semibold text-sm">Stock tag (optional)</h2>
+              <p className="text-[11px] text-muted-foreground">
+                Tag this free video to a stock so it also appears on that stock's page. Leave empty to publish to the general feed only.
+              </p>
+              <SymbolPicker value={symbol} onChange={setSymbol} />
+            </Card>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -257,7 +350,9 @@ export default function VideoComposer() {
           <Card className="p-4">
             <p className="text-xs text-muted-foreground flex gap-2 items-start">
               <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              Draft only. Nothing is published to users. Preview, unlock and wallet flows are intentionally disabled in this build slice.
+              {isAdmin
+                ? "Admin: you can save as draft or publish immediately."
+                : "Analyst: save drafts here. An admin publishes them."}
             </p>
           </Card>
 
@@ -270,10 +365,17 @@ export default function VideoComposer() {
             </Card>
           )}
 
-          <Button className="w-full" onClick={handleSave} disabled={!canSave} size="lg">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
-            Save draft
+          <Button className="w-full" onClick={handleSave} disabled={!canSave} size="lg" variant="secondary">
+            {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
+            {isEditing ? "Update draft" : "Save draft"}
           </Button>
+
+          {isAdmin && (
+            <Button className="w-full" onClick={handlePublish} disabled={!canPublish} size="lg">
+              {busy === "publish" ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Send className="h-4 w-4 mr-1.5" />}
+              Publish {category === "general" ? "(free / public)" : "(paid)"}
+            </Button>
+          )}
         </div>
       </div>
     </AdminShell>

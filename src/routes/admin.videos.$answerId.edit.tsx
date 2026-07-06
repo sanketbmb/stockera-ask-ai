@@ -1,22 +1,11 @@
-import { createFileRoute, useParams } from "@tanstack/react-router";
-import { RequireAnalyst } from "@/components/auth/RequireAuth";
-import VideoAnswerEditor from "@/pages/admin/VideoAnswerEditor";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/videos/$answerId/edit")({
-  head: () => ({
-    meta: [
-      { title: "Edit Video Answer — Stockera Admin" },
-      { name: "robots", content: "noindex,nofollow" },
-    ],
-  }),
-  component: EditRoute,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/admin/compose-video" as never,
+      search: { answerId: params.answerId } as never,
+    });
+  },
+  component: () => null,
 });
-
-function EditRoute() {
-  const { answerId } = useParams({ from: "/admin/videos/$answerId/edit" });
-  return (
-    <RequireAnalyst>
-      <VideoAnswerEditor mode="edit" answerId={answerId} />
-    </RequireAnalyst>
-  );
-}

@@ -16,9 +16,9 @@ import { QueueSearchBar } from "@/components/admin/QueueSearchBar";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   listAdminVideoAnswers,
-  publishVideoAnswer,
   unpublishVideoAnswer,
 } from "@/lib/video-answers-admin.functions";
+import { publishComposerVideoAnswer } from "@/lib/video-composer.functions";
 
 type Status = "all" | "draft" | "published";
 
@@ -44,7 +44,7 @@ export default function VideoAnswersList() {
   const [quickSearch, setQuickSearch] = useState("");
 
   const list = useServerFn(listAdminVideoAnswers);
-  const publish = useServerFn(publishVideoAnswer);
+  const publish = useServerFn(publishComposerVideoAnswer);
   const unpublish = useServerFn(unpublishVideoAnswer);
 
   const { data, isLoading, refetch } = useQuery({
@@ -172,7 +172,7 @@ export default function VideoAnswersList() {
                     </Link>
                   </Button>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={"/admin/videos/$answerId/edit" as never} params={{ answerId: r.id } as never}>
+                    <Link to={"/admin/compose-video" as never} search={{ answerId: r.id } as never}>
                       <PencilLine className="h-3.5 w-3.5 mr-1" /> Edit
                     </Link>
                   </Button>
