@@ -154,11 +154,22 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
         </CardHeader>
         <CardContent className="flex-1 space-y-2 text-sm">
           <p className="text-xs text-muted-foreground">{attribution}</p>
+          {item.questionAddressed && (
+            <p className="line-clamp-2 text-sm text-foreground/90">
+              <span className="font-medium">Q:</span> {item.questionAddressed}
+            </p>
+          )}
+          {item.videoDescription && (
+            <p className="line-clamp-2 text-xs text-muted-foreground">
+              {item.videoDescription}
+            </p>
+          )}
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>{timeAgo(item.publishedAt)}</span>
             {item.symbol && <span className="font-mono">{item.symbol}</span>}
           </div>
         </CardContent>
+
         <CardFooter className="flex flex-col items-stretch gap-2">
           {isLoggedIn ? (
             <Button
