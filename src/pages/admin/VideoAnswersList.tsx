@@ -1,5 +1,5 @@
 // Stage 4F.3 APPLY-2 — Admin list of video answers.
-// Uses the approved listAdminVideoAnswers server fn. RLS scopes analysts to own.
+// Stage 4G APPLY-2 — added mandatory QueueSearchBar with visible result count.
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QueueSearchBar } from "@/components/admin/QueueSearchBar";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   listAdminVideoAnswers,
