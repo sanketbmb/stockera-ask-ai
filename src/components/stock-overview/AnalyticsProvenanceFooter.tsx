@@ -6,6 +6,7 @@ import type { AnalyticsProvenance } from "./types";
 interface Props {
   provenance: AnalyticsProvenance | null | undefined;
   formulaVersion?: string | null;
+  weightingProfileId?: string | null;
 }
 
 function humanizeOrigin(origin: string | null | undefined): string {
