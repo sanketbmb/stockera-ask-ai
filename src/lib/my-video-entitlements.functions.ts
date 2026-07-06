@@ -75,27 +75,27 @@ export const listMyUnlockedVideos = createServerFn({ method: "GET" })
       );
     }
 
-    return ents
-      .map((e: any): MyUnlockedVideo | null => {
-        const a = answerMap.get(e.answer_id);
-        if (!a) return null;
-        const q = a.query_id ? queryMap.get(a.query_id) : undefined;
-        const posterThumb = a.youtube_video_id
-          ? `https://i.ytimg.com/vi/${a.youtube_video_id}/hqdefault.jpg`
-          : null;
-        return {
-          answerId: a.id,
-          queryId: a.query_id ?? null,
-          symbol: q?.symbol ?? null,
-          stockName: q?.stockName ?? null,
-          verdict: a.verdict ?? null,
-          unlockPriceCredits: a.unlock_price_credits ?? null,
-          videoDurationSec: a.video_duration_sec ?? null,
-          posterThumb,
-          publishedAt: a.created_at ?? null,
-          unlockedAt: e.unlocked_at,
-          creditsUsed: e.credits_used,
-        };
-      })
-      .filter((x): x is MyUnlockedVideo => x !== null);
+    const results: MyUnlockedVideo[] = [];
+    for (const e of ents as Array<{ answer_id: string; credits_used: number; unlocked_at: string }>) {
+      const a = answerMap.get(e.answer_id);
+      if (!a) continue;
+      const q = a.query_id ? queryMap.get(a.query_id) : undefined;
+      const posterThumb = a.youtube_video_id
+        ? `https://i.ytimg.com/vi/${a.youtube_video_id}/hqdefault.jpg`
+        : null;
+      results.push({
+        answerId: a.id,
+        queryId: a.query_id ?? null,
+        symbol: q?.symbol ?? null,
+        stockName: q?.stockName ?? null,
+        verdict: a.verdict ?? null,
+        unlockPriceCredits: a.unlock_price_credits ?? null,
+        videoDurationSec: a.video_duration_sec ?? null,
+        posterThumb,
+        publishedAt: a.created_at ?? null,
+        unlockedAt: e.unlocked_at,
+        creditsUsed: e.credits_used,
+      });
+    }
+    return results;
   });
