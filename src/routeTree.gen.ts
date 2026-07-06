@@ -35,6 +35,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LibraryIndexRouteImport } from './routes/library.index'
+import { Route as VAnswerIdRouteImport } from './routes/v.$answerId'
 import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
 import { Route as ReportQueryIdRouteImport } from './routes/report.$queryId'
 import { Route as RQueryIdRouteImport } from './routes/r.$queryId'
@@ -186,6 +187,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
   path: '/library/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VAnswerIdRoute = VAnswerIdRouteImport.update({
+  id: '/v/$answerId',
+  path: '/v/$answerId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StockSymbolRoute = StockSymbolRouteImport.update({
   id: '/stock/$symbol',
   path: '/stock/$symbol',
@@ -332,6 +338,7 @@ export interface FileRoutesByFullPath {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/stock/$symbol': typeof StockSymbolRoute
+  '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -380,6 +387,7 @@ export interface FileRoutesByTo {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/stock/$symbol': typeof StockSymbolRoute
+  '/v/$answerId': typeof VAnswerIdRoute
   '/library': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -429,6 +437,7 @@ export interface FileRoutesById {
   '/r/$queryId': typeof RQueryIdRoute
   '/report/$queryId': typeof ReportQueryIdRoute
   '/stock/$symbol': typeof StockSymbolRoute
+  '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
@@ -479,6 +488,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/stock/$symbol'
+    | '/v/$answerId'
     | '/library/'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -527,6 +537,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/stock/$symbol'
+    | '/v/$answerId'
     | '/library'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -575,6 +586,7 @@ export interface FileRouteTypes {
     | '/r/$queryId'
     | '/report/$queryId'
     | '/stock/$symbol'
+    | '/v/$answerId'
     | '/library/'
     | '/admin/upload-answer/$queryId'
     | '/docs/accuracy-roadmap/print'
@@ -624,6 +636,7 @@ export interface RootRouteChildren {
   RQueryIdRoute: typeof RQueryIdRoute
   ReportQueryIdRoute: typeof ReportQueryIdRoute
   StockSymbolRoute: typeof StockSymbolRoute
+  VAnswerIdRoute: typeof VAnswerIdRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
   DocsAccuracyRoadmapPrintRoute: typeof DocsAccuracyRoadmapPrintRoute
@@ -814,6 +827,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v/$answerId': {
+      id: '/v/$answerId'
+      path: '/v/$answerId'
+      fullPath: '/v/$answerId'
+      preLoaderRoute: typeof VAnswerIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/stock/$symbol': {
       id: '/stock/$symbol'
       path: '/stock/$symbol'
@@ -1000,6 +1020,7 @@ const rootRouteChildren: RootRouteChildren = {
   RQueryIdRoute: RQueryIdRoute,
   ReportQueryIdRoute: ReportQueryIdRoute,
   StockSymbolRoute: StockSymbolRoute,
+  VAnswerIdRoute: VAnswerIdRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
   DocsAccuracyRoadmapPrintRoute: DocsAccuracyRoadmapPrintRoute,
