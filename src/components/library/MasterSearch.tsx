@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MasterSearchRecentTab } from "./MasterSearchRecentTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import type {
   LibraryItem,
   LibraryStock,
@@ -200,6 +201,20 @@ export function MasterSearch({
     navigate({ to: "/report/$queryId", params: { queryId: it.related_query_id } });
   };
 
+  // Stage 4F.2 APPLY-1: video rows have their own gated CTA. Anon → login;
+  // logged-in → disabled (handled inside LockedVideoCard). Keyboard Enter on
+  // a video row mirrors the anon click behavior for anon; no-op for logged-in.
+  const openVideo = (it: LibraryItem) => {
+    onClose?.();
+    if (!user) {
+      navigate({
+        to: "/login",
+        search: { redirect: `/v/${it.source_id}` } as never,
+      });
+    }
+    // logged-in: unlock coming soon — no action
+  };
+
   const activateRow = (row: Row) => {
     if (row.kind === "stock") {
       seedStock(row.stock.symbol);
@@ -207,7 +222,11 @@ export function MasterSearch({
     }
     const { section, item } = row;
     if (section === "analyst") return;
-    if ((section === "report" || section === "video" || section === "community_query") && item.related_query_id) {
+    if (section === "video") {
+      openVideo(item);
+      return;
+    }
+    if ((section === "report" || section === "community_query") && item.related_query_id) {
       openItem(item);
     }
   };
@@ -352,8 +371,16 @@ export function MasterSearch({
                                   const idx = rows.findIndex((r) => r.id === it.id);
                                   const active = idx === activeIdx;
                                   const isAnalyst = it.kind === "analyst";
-                                  const navigable =
-                                    !isAnalyst && !!it.related_query_id;
+                                  const isVideo = it.kind === "video";
+                                  const navigable = !isAnalyst && (isVideo || !!it.related_query_id);
+                                  const onRowClick = () => {
+                                    if (isAnalyst) return;
+                                    if (isVideo) {
+                                      openVideo(it);
+                                      return;
+                                    }
+                                    if (it.related_query_id) openItem(it);
+                                  };
                                   return (
                                     <li
                                       id={`${rowIdPrefix}-${it.id}`}
@@ -362,36 +389,51 @@ export function MasterSearch({
                                       aria-selected={active}
                                       aria-disabled={!navigable && !isAnalyst ? undefined : !navigable}
                                       onMouseEnter={() => setActiveIdx(idx)}
-                                      onClick={() => {
-                                        if (isAnalyst) return;
-                                        if (navigable) openItem(it);
-                                      }}
+                                      onClick={onRowClick}
                                       className={cn(
                                         "rounded-md px-2 py-2 text-sm",
                                         navigable ? "cursor-pointer" : "cursor-default",
                                         active ? "bg-accent text-accent-foreground" : navigable ? "hover:bg-accent/50" : "",
                                       )}
                                     >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0 flex-1">
-                                          <div className="truncate font-medium">{it.title}</div>
-                                          {it.body_excerpt && (
-                                            <div className="truncate text-xs text-muted-foreground">
-                                              {it.body_excerpt}
-                                            </div>
-                                          )}
+                                      {isVideo ? (
+                                        <LockedVideoCard
+                                          variant="compact"
+                                          item={{
+                                            answerId: it.source_id,
+                                            title: it.title,
+                                            verdict: it.verdict,
+                                            symbol: it.symbol,
+                                            analystName: it.analyst_name,
+                                            analystSebiRegNumber: it.analyst_sebi_reg_number,
+                                            unlockPriceCredits: null,
+                                            videoDurationSec: null,
+                                            posterThumb: null,
+                                            publishedAt: it.published_at,
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate font-medium">{it.title}</div>
+                                            {it.body_excerpt && (
+                                              <div className="truncate text-xs text-muted-foreground">
+                                                {it.body_excerpt}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="shrink-0 text-right text-xs text-muted-foreground">
+                                            {isAnalyst ? (
+                                              <span className="italic">Coming soon</span>
+                                            ) : (
+                                              <>
+                                                {it.symbol && <div className="font-mono">{it.symbol}</div>}
+                                                {it.analyst_name && <div>{it.analyst_name}</div>}
+                                              </>
+                                            )}
+                                          </div>
                                         </div>
-                                        <div className="shrink-0 text-right text-xs text-muted-foreground">
-                                          {isAnalyst ? (
-                                            <span className="italic">Coming soon</span>
-                                          ) : (
-                                            <>
-                                              {it.symbol && <div className="font-mono">{it.symbol}</div>}
-                                              {it.analyst_name && <div>{it.analyst_name}</div>}
-                                            </>
-                                          )}
-                                        </div>
-                                      </div>
+                                      )}
                                     </li>
                                   );
                                 })}

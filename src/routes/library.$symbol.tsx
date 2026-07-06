@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +12,8 @@ import { LibraryItemCard } from "@/components/library/LibraryItemCard";
 import { SymbolFAQ } from "@/components/library/SymbolFAQ";
 import { SymbolCompliance } from "@/components/library/SymbolCompliance";
 import { SymbolEmptyState } from "@/components/library/SymbolEmptyState";
+import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
+import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import type { SymbolLibraryResponse } from "@/types/library-symbol";
 
 type Kind = "all" | "report" | "video" | "community_query";
@@ -161,6 +164,35 @@ function SymbolLibraryPage() {
   const items: SymbolLibraryResponse["items"] = data?.items ?? [];
   const faq: string[] = data?.faq_questions ?? [];
 
+  // Stage 4F.2 APPLY-1 — enrich kind==='video' rows via 4F.1 public RPC.
+  // `source_id` for video rows is the answer_id (plan §F.0.1).
+  const hasVideoRows = useMemo(() => items.some((it) => it.kind === "video"), [items]);
+  const listVideosFn = useServerFn(listVideoAnswersForSymbol);
+  const { data: videoRows } = useQuery({
+    queryKey: ["video-answers", displaySymbol],
+    queryFn: () => listVideosFn({ data: { symbol: displaySymbol } }),
+    enabled: hasVideoRows,
+    staleTime: 60_000,
+  });
+  const videoEnrichmentMap = useMemo(() => {
+    const m = new Map<string, LockedVideoCardItem>();
+    (videoRows ?? []).forEach((r) => {
+      m.set(r.answer_id, {
+        answerId: r.answer_id,
+        title: `Analyst video on ${r.symbol ?? displaySymbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
+        verdict: r.verdict,
+        symbol: r.symbol,
+        analystName: r.analyst_name,
+        analystSebiRegNumber: r.analyst_sebi_reg_number,
+        unlockPriceCredits: r.unlock_price_credits,
+        videoDurationSec: r.video_duration_sec,
+        posterThumb: r.poster_thumb,
+        publishedAt: r.published_at,
+      });
+    });
+    return m;
+  }, [videoRows, displaySymbol]);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar />
@@ -201,7 +233,10 @@ function SymbolLibraryPage() {
                   className={`sym-row${i === 0 ? " sym-halo" : ""}`}
                   style={{ animationDelay: `${i * 40}ms` }}
                 >
-                  <LibraryItemCard item={it} />
+                  <LibraryItemCard
+                    item={it}
+                    videoEnrichment={it.kind === "video" ? videoEnrichmentMap.get(it.source_id) : undefined}
+                  />
                 </div>
               ))}
             </div>
