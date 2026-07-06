@@ -63,9 +63,14 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
   if (!hasCache) {
     return (
       <Card>
-        <CardContent className="flex flex-col items-center justify-center gap-4 py-12 text-center">
-          <div className="text-foreground text-lg font-medium">Analytics not yet cached for {data.symbol}</div>
-          <p className="max-w-md text-sm text-muted-foreground">
+        <CardContent className="mx-auto flex max-w-lg flex-col items-center justify-center gap-4 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div className="text-lg font-medium text-foreground">
+            Analytics not yet cached for {data.symbol}
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {loggedIn
               ? "Pre-warmed analytics for this stock will appear after the next nightly refresh. You can generate it now (uses 1 of 5 daily compute credits)."
               : "Pre-warmed analytics for this stock will appear after the next nightly refresh. Sign in to generate on-demand."}
@@ -83,8 +88,8 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs text-muted-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <div className="min-w-0 text-xs text-muted-foreground">
           Public stock analytics · pre-warmed daily
         </div>
         {loggedIn ? (
@@ -94,6 +99,7 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
             onClick={generateNow}
             disabled={loading}
             data-testid="refresh-analytics-cta"
+            className="shrink-0"
           >
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -103,38 +109,53 @@ export function AnalyticsTab({ data, loggedIn }: Props) {
             Refresh Analytics
           </Button>
         ) : (
-          <Button size="sm" variant="outline" disabled title="Sign in to refresh analytics on demand">
+          <Button size="sm" variant="outline" disabled title="Sign in to refresh analytics on demand" className="shrink-0">
             <RefreshCw className="mr-2 h-4 w-4" />
             Sign in to refresh
           </Button>
         )}
       </div>
-      <ScoreRingBlock
-        finalVerdict={analytics.final_verdict}
-        scoreBreakdown={analytics.score_breakdown}
-        tierWeights={analytics.audit_meta?.tier_weights ?? null}
-      />
-      <ReturnsAtAGlance returns={analytics.returns_snapshot} />
+      <Reveal>
+        <ScoreRingBlock
+          finalVerdict={analytics.final_verdict}
+          scoreBreakdown={analytics.score_breakdown}
+          tierWeights={analytics.audit_meta?.tier_weights ?? null}
+        />
+      </Reveal>
+      <Reveal delay={0.05}>
+        <ReturnsAtAGlance returns={analytics.returns_snapshot} />
+      </Reveal>
       <div className="grid gap-4 md:grid-cols-2">
-        <BusinessQualityCard
-          quality={analytics.long_term_quality_snapshot ?? null}
-          fundamentals={analytics.fundamental_snapshot}
-          auditMeta={analytics.audit_meta}
-          scoreBreakdown={analytics.score_breakdown}
-        />
-        <ValuationFairValueCard
-          fundamentals={analytics.fundamental_snapshot}
-          auditMeta={analytics.audit_meta}
-        />
-        <RiskProfileCard
-          risk={analytics.risk_snapshot}
-          flags={analytics.flags}
-          scoreBreakdown={analytics.score_breakdown}
-        />
-        <LongTermReturnsCard returns={analytics.returns_snapshot} quality={analytics.long_term_quality_snapshot ?? null} />
+        <Reveal delay={0.1}>
+          <BusinessQualityCard
+            quality={analytics.long_term_quality_snapshot ?? null}
+            fundamentals={analytics.fundamental_snapshot}
+            auditMeta={analytics.audit_meta}
+            scoreBreakdown={analytics.score_breakdown}
+          />
+        </Reveal>
+        <Reveal delay={0.12}>
+          <ValuationFairValueCard
+            fundamentals={analytics.fundamental_snapshot}
+            auditMeta={analytics.audit_meta}
+          />
+        </Reveal>
+        <Reveal delay={0.14}>
+          <RiskProfileCard
+            risk={analytics.risk_snapshot}
+            flags={analytics.flags}
+            scoreBreakdown={analytics.score_breakdown}
+          />
+        </Reveal>
+        <Reveal delay={0.16}>
+          <LongTermReturnsCard returns={analytics.returns_snapshot} quality={analytics.long_term_quality_snapshot ?? null} />
+        </Reveal>
       </div>
-      <Latest30dNewsBlock sentiment={analytics.sentiment_snapshot} />
+      <Reveal delay={0.2}>
+        <Latest30dNewsBlock sentiment={analytics.sentiment_snapshot} />
+      </Reveal>
       <AnalyticsProvenanceFooter provenance={provenance} formulaVersion={analytics.audit_meta?.formula_version ?? null} />
     </div>
   );
 }
+
