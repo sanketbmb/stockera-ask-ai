@@ -107,6 +107,11 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
             <span aria-hidden="true">🔒</span>
             <span className="truncate text-sm font-medium">{item.title}</span>
           </div>
+          {item.questionAddressed && (
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+              Q: {item.questionAddressed}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <InlinePriceChip credits={item.unlockPriceCredits} />
             {item.analystName && <span className="truncate">{item.analystName}</span>}
@@ -116,6 +121,7 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
             {isLoggedIn ? "Click to unlock" : "Sign in to unlock"}
           </p>
         </div>
+
       </div>
     );
   }
