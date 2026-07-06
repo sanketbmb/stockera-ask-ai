@@ -11,6 +11,7 @@ import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
 import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import { VIDEO_COPY } from "@/components/video-answers/copy";
+import { GeneralVideosStrip } from "@/components/video-answers/GeneralVideosStrip";
 import type { StockOverview } from "./types";
 
 interface Props {
