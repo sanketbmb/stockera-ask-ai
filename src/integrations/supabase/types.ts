@@ -296,9 +296,12 @@ export type Database = {
           report_url: string | null
           risk_note: string | null
           time_horizon: string | null
+          unlock_price_credits: number | null
           verdict: string | null
+          video_duration_sec: number | null
           video_thumbnail: string | null
           video_url: string | null
+          youtube_video_id: string | null
         }
         Insert: {
           answer_type: Database["public"]["Enums"]["answer_type"]
@@ -317,9 +320,12 @@ export type Database = {
           report_url?: string | null
           risk_note?: string | null
           time_horizon?: string | null
+          unlock_price_credits?: number | null
           verdict?: string | null
+          video_duration_sec?: number | null
           video_thumbnail?: string | null
           video_url?: string | null
+          youtube_video_id?: string | null
         }
         Update: {
           answer_type?: Database["public"]["Enums"]["answer_type"]
@@ -338,9 +344,12 @@ export type Database = {
           report_url?: string | null
           risk_note?: string | null
           time_horizon?: string | null
+          unlock_price_credits?: number | null
           verdict?: string | null
+          video_duration_sec?: number | null
           video_thumbnail?: string | null
           video_url?: string | null
+          youtube_video_id?: string | null
         }
         Relationships: [
           {
@@ -764,6 +773,7 @@ export type Database = {
       library_items: {
         Row: {
           analyst_id: string | null
+          answer_id: string | null
           body_excerpt: string | null
           created_at: string
           id: string
@@ -785,6 +795,7 @@ export type Database = {
         }
         Insert: {
           analyst_id?: string | null
+          answer_id?: string | null
           body_excerpt?: string | null
           created_at?: string
           id?: string
@@ -806,6 +817,7 @@ export type Database = {
         }
         Update: {
           analyst_id?: string | null
+          answer_id?: string | null
           body_excerpt?: string | null
           created_at?: string
           id?: string
@@ -831,6 +843,13 @@ export type Database = {
             columns: ["analyst_id"]
             isOneToOne: false
             referencedRelation: "analyst_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_items_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "answers"
             referencedColumns: ["id"]
           },
         ]
@@ -2410,6 +2429,48 @@ export type Database = {
           },
         ]
       }
+      video_entitlements: {
+        Row: {
+          answer_id: string
+          credits_used: number
+          id: string
+          ledger_entry_id: string | null
+          unlocked_at: string
+          user_id: string
+        }
+        Insert: {
+          answer_id: string
+          credits_used: number
+          id?: string
+          ledger_entry_id?: string | null
+          unlocked_at?: string
+          user_id: string
+        }
+        Update: {
+          answer_id?: string
+          credits_used?: number
+          id?: string
+          ledger_entry_id?: string | null
+          unlocked_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_entitlements_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_entitlements_ledger_entry_id_fkey"
+            columns: ["ledger_entry_id"]
+            isOneToOne: false
+            referencedRelation: "wallet_ledger"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wallet_debit_failures: {
         Row: {
           action_key: string
@@ -2643,6 +2704,7 @@ export type Database = {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
       }
+      get_video_answer: { Args: { p_answer_id: string }; Returns: Json }
       grant_first_topup_bonus: {
         Args: { p_topup_amount_inr: number; p_user_id: string }
         Returns: Json
@@ -2657,6 +2719,23 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      list_public_video_answers_for_symbol: {
+        Args: { p_symbol: string }
+        Returns: {
+          analyst_id: string
+          analyst_name: string
+          analyst_sebi_reg_number: string
+          answer_id: string
+          poster_thumb: string
+          published_at: string
+          query_id: string
+          stock_name: string
+          symbol: string
+          unlock_price_credits: number
+          verdict: string
+          video_duration_sec: number
+        }[]
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
@@ -2705,6 +2784,7 @@ export type Database = {
         }
         Returns: string
       }
+      unlock_video_answer: { Args: { p_answer_id: string }; Returns: Json }
       wallet_apply_debit: {
         Args: {
           p_action_key: string
