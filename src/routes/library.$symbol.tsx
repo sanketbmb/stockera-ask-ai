@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Navbar } from "@/components/layout/Navbar";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +12,8 @@ import { LibraryItemCard } from "@/components/library/LibraryItemCard";
 import { SymbolFAQ } from "@/components/library/SymbolFAQ";
 import { SymbolCompliance } from "@/components/library/SymbolCompliance";
 import { SymbolEmptyState } from "@/components/library/SymbolEmptyState";
+import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
+import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import type { SymbolLibraryResponse } from "@/types/library-symbol";
 
 type Kind = "all" | "report" | "video" | "community_query";
