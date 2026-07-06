@@ -47,6 +47,12 @@ export default function MyQueriesPage() {
   const [filter, setFilter] = useState("all");
   const [searchValue, setSearchValue] = useState("");
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string; createdAt: string } | null>(null);
+  const listUnlocked = useServerFn(listMyUnlockedVideos);
+  const { data: unlockedVideos = [], isLoading: isLoadingUnlocked } = useQuery({
+    queryKey: ["my-unlocked-videos", user?.id],
+    enabled: !!user && filter === "unlocked_videos",
+    queryFn: () => listUnlocked(),
+  });
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["my-queries", user?.id],
