@@ -41,6 +41,7 @@ export default function VideoAnswersList() {
   const [status, setStatus] = useState<Status>("all");
   const [symbol, setSymbol] = useState("");
   const [q, setQ] = useState("");
+  const [quickSearch, setQuickSearch] = useState("");
 
   const list = useServerFn(listAdminVideoAnswers);
   const publish = useServerFn(publishVideoAnswer);
@@ -62,6 +63,19 @@ export default function VideoAnswersList() {
   });
 
   const rows = useMemo(() => data ?? [], [data]);
+  const filteredRows = useMemo(() => {
+    const s = quickSearch.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((r) => {
+      return (
+        (r.queries?.stock_symbol ?? "").toLowerCase().includes(s) ||
+        (r.queries?.stock_name ?? "").toLowerCase().includes(s) ||
+        (r.queries?.query_text ?? "").toLowerCase().includes(s) ||
+        (r.video_title ?? "").toLowerCase().includes(s) ||
+        (r.question_addressed_override ?? "").toLowerCase().includes(s)
+      );
+    });
+  }, [rows, quickSearch]);
 
   async function onPublish(id: string) {
     try {
