@@ -374,7 +374,7 @@ export default function AdminDashboard() {
               </p>
             </Card>
           )}
-          {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
+          {filteredQueue.map((row) => <QueryQueueCard key={row.id} row={row} />)}
         </TabsContent>
 
         <TabsContent value="answered" className="space-y-3">
