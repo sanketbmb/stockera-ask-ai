@@ -327,20 +327,37 @@ export default function AdminDashboard() {
         <StatCard label="Total sessions" value={stats?.sessions ?? "—"} Icon={TrendingUp} />
       </div>
 
-      <Card className="p-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
-            <Youtube className="h-5 w-5" />
+      <div className="grid md:grid-cols-2 gap-3 mb-6">
+        <Card className="p-4 flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
+              <Youtube className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-display text-lg leading-tight">Video answers</p>
+              <p className="text-xs text-muted-foreground">Draft or manage published analyst video answers.</p>
+            </div>
           </div>
-          <div>
-            <p className="font-display text-lg leading-tight">Video answers</p>
-            <p className="text-xs text-muted-foreground">Draft or manage published analyst video answers.</p>
+          <Button asChild size="sm">
+            <Link to={"/admin/videos" as never}>Manage <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link>
+          </Button>
+        </Card>
+        <Card className="p-4 flex flex-wrap items-center justify-between gap-3 border-accent/30 bg-accent/5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
+              <Video className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-display text-lg leading-tight">Curated media</p>
+              <p className="text-xs text-muted-foreground">Free, attribution-first third-party links & embeds.</p>
+            </div>
           </div>
-        </div>
-        <Button asChild size="sm">
-          <Link to={"/admin/videos" as never}>Manage <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link>
-        </Button>
-      </Card>
+          <Button asChild size="sm" variant="secondary">
+            <Link to={"/admin/curated" as never}>Manage <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link>
+          </Button>
+        </Card>
+      </div>
+
 
       <Tabs defaultValue="pending" className="space-y-4">
         <TabsList>

@@ -17,6 +17,9 @@ import {
   type VerdictFilter,
 } from "@/components/library/MasterLibraryToolbar";
 import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GeneralTab } from "@/components/library/GeneralTab";
+
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
 const TITLE =
@@ -194,96 +197,108 @@ function LibraryIndexPage() {
       subtitle="Public market questions, verdicts, and report summaries from SEBI-registered experts."
     >
       <section className="mx-auto w-full max-w-7xl px-4 sm:px-6 animate-fade-in">
-        <MasterLibraryToolbar
-          search={search}
-          onSearchChange={setSearch}
-          verdict={verdict}
-          onVerdictChange={setVerdict}
-          sector={sector}
-          onSectorChange={setSector}
-          sectorOptions={sectorOptions}
-          sort={sort}
-          onSortChange={setSort}
-          mostViewedDisabled
-          onClear={clearAll}
-          hasActiveFilters={hasActiveFilters}
-        />
+        <Tabs defaultValue="reports" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="general">General</TabsTrigger>
+          </TabsList>
+          <TabsContent value="reports">
+            <MasterLibraryToolbar
+              search={search}
+              onSearchChange={setSearch}
+              verdict={verdict}
+              onVerdictChange={setVerdict}
+              sector={sector}
+              onSectorChange={setSector}
+              sectorOptions={sectorOptions}
+              sort={sort}
+              onSortChange={setSort}
+              mostViewedDisabled
+              onClear={clearAll}
+              hasActiveFilters={hasActiveFilters}
+            />
 
-        <div className="py-8 sm:py-10">
-          {isLoading ? (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <MasterLibrarySkeletonCard key={i} />
-              ))}
-            </div>
-          ) : isError ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">
-              Library is temporarily unavailable. Please try again shortly.
-            </p>
-          ) : rows.length === 0 ? (
-            <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
-              <h2 className="font-display text-xl text-foreground">
-                No public reports yet
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Be the first to ask a question and build the library.
-              </p>
-              <Link
-                to="/post-query"
-                className="mt-5 inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-              >
-                Post a query
-              </Link>
-            </div>
-          ) : filteredRows.length === 0 ? (
-            <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
-              <h2 className="font-display text-xl text-foreground">
-                No matches found
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Try a different search, verdict, or sector filter.
-              </p>
-              <button
-                type="button"
-                onClick={clearAll}
-                className="mt-5 inline-flex items-center rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/30"
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : (
-            <>
-              <div id="library-grid-top" />
-              <Stagger
-                key={`page-${safePage}-${search}-${verdict ?? ""}-${sector}-${sort}`}
-                staggerChildren={0.04}
-                className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
-              >
-                {pagedRows.map((row, i) =>
-                  i < 12 ? (
-                    <StaggerItem key={row.id} y={10}>
-                      <MasterLibraryCard item={row} />
-                    </StaggerItem>
-                  ) : (
-                    <div key={row.id}>
-                      <MasterLibraryCard item={row} />
-                    </div>
-                  ),
-                )}
-              </Stagger>
-              {filteredRows.length > PAGE_SIZE && (
-                <Reveal className="mt-6">
-                  <MasterLibraryPagination
-                    currentPage={safePage}
-                    totalPages={totalPages}
-                    onPageChange={handlePageChange}
-                  />
-                </Reveal>
+            <div className="py-8 sm:py-10">
+              {isLoading ? (
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <MasterLibrarySkeletonCard key={i} />
+                  ))}
+                </div>
+              ) : isError ? (
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  Library is temporarily unavailable. Please try again shortly.
+                </p>
+              ) : rows.length === 0 ? (
+                <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
+                  <h2 className="font-display text-xl text-foreground">
+                    No public reports yet
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Be the first to ask a question and build the library.
+                  </p>
+                  <Link
+                    to="/post-query"
+                    className="mt-5 inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                  >
+                    Post a query
+                  </Link>
+                </div>
+              ) : filteredRows.length === 0 ? (
+                <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
+                  <h2 className="font-display text-xl text-foreground">
+                    No matches found
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Try a different search, verdict, or sector filter.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    className="mt-5 inline-flex items-center rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/30"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div id="library-grid-top" />
+                  <Stagger
+                    key={`page-${safePage}-${search}-${verdict ?? ""}-${sector}-${sort}`}
+                    staggerChildren={0.04}
+                    className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4"
+                  >
+                    {pagedRows.map((row, i) =>
+                      i < 12 ? (
+                        <StaggerItem key={row.id} y={10}>
+                          <MasterLibraryCard item={row} />
+                        </StaggerItem>
+                      ) : (
+                        <div key={row.id}>
+                          <MasterLibraryCard item={row} />
+                        </div>
+                      ),
+                    )}
+                  </Stagger>
+                  {filteredRows.length > PAGE_SIZE && (
+                    <Reveal className="mt-6">
+                      <MasterLibraryPagination
+                        currentPage={safePage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                      />
+                    </Reveal>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="general" className="py-6">
+            <GeneralTab />
+          </TabsContent>
+        </Tabs>
       </section>
+
     </PublicShell>
   );
 }
