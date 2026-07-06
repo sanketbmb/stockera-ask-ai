@@ -69,18 +69,18 @@ export function OverviewTab({ data }: Props) {
   if (divYield != null) metrics.push({ label: "Div Yield", value: `${(divYield * 100).toFixed(2)}%` });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <Card className="p-5">
-        <h2 className="font-display text-lg text-foreground mb-2">About {data.name}</h2>
+        <h2 className="mb-2 font-display text-lg text-foreground">About {data.name}</h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
           {description.length > 700 ? `${description.slice(0, 700)}…` : description}
         </p>
         {aboutRows.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-3 md:grid-cols-4">
             {aboutRows.map((r) => (
-              <div key={r.label}>
+              <div key={r.label} className="min-w-0">
                 <span className="uppercase tracking-wide">{r.label}</span>
-                <div className="text-foreground">{r.value}</div>
+                <div className="truncate text-foreground">{r.value}</div>
               </div>
             ))}
           </div>
@@ -93,7 +93,7 @@ export function OverviewTab({ data }: Props) {
             <h3 className="font-display text-base text-foreground">Key metrics</h3>
             <Badge variant="secondary" className="text-[10px]">Extended fundamentals coming soon</Badge>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:gap-6 lg:grid-cols-6">
             {metrics.map((m) => (
               <StatCard key={m.label} label={m.label} value={m.value} />
             ))}
@@ -103,3 +103,4 @@ export function OverviewTab({ data }: Props) {
     </div>
   );
 }
+
