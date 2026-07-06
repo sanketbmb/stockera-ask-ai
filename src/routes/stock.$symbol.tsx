@@ -83,10 +83,12 @@ function PendingStockPage() {
     <div className="flex min-h-screen flex-col bg-mesh">
       <Navbar />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-        <Skeleton className="h-32 w-full mb-6" />
-        <Skeleton className="h-8 w-64 mb-4" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-20" />)}
+        <Skeleton className="mb-6 h-48 w-full sm:h-40" />
+        <Skeleton className="mb-4 h-10 w-full max-w-3xl" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
         </div>
       </main>
       <SiteFooter />
@@ -107,7 +109,7 @@ function StockPage() {
         <StockHeader data={data} loggedIn={loggedIn} hasPartial={hasPartial} />
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 max-w-3xl">
+          <TabsList className="sticky top-16 z-20 grid w-full max-w-3xl grid-cols-6 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="statistics">Statistics</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -115,22 +117,22 @@ function StockPage() {
             <TabsTrigger value="ai_reports">AI Reports</TabsTrigger>
             <TabsTrigger value="videos_blogs">Videos & Blogs</TabsTrigger>
           </TabsList>
-          <TabsContent value="overview" className="mt-4">
+          <TabsContent value="overview" className="mt-4 scroll-mt-32">
             <OverviewTab data={data} />
           </TabsContent>
-          <TabsContent value="statistics" className="mt-4">
+          <TabsContent value="statistics" className="mt-4 scroll-mt-32">
             <StatisticsTab data={data} />
           </TabsContent>
-          <TabsContent value="analytics" className="mt-4">
+          <TabsContent value="analytics" className="mt-4 scroll-mt-32">
             <AnalyticsTab data={data} loggedIn={loggedIn} />
           </TabsContent>
-          <TabsContent value="news" className="mt-4">
+          <TabsContent value="news" className="mt-4 scroll-mt-32">
             <NewsTab data={data} />
           </TabsContent>
-          <TabsContent value="ai_reports" className="mt-4">
+          <TabsContent value="ai_reports" className="mt-4 scroll-mt-32">
             <AiReportsTab data={data} loggedIn={loggedIn} />
           </TabsContent>
-          <TabsContent value="videos_blogs" className="mt-4">
+          <TabsContent value="videos_blogs" className="mt-4 scroll-mt-32">
             <VideosBlogsTab data={data} />
           </TabsContent>
         </Tabs>
@@ -139,3 +141,4 @@ function StockPage() {
     </div>
   );
 }
+
