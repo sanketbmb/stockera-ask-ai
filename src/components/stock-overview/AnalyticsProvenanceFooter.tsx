@@ -28,11 +28,14 @@ function relativeIst(iso: string | null | undefined): { absolute: string; relati
   return { absolute, relative };
 }
 
-export function AnalyticsProvenanceFooter({ provenance, formulaVersion }: Props) {
+export function AnalyticsProvenanceFooter({ provenance, formulaVersion, weightingProfileId }: Props) {
   if (!provenance) return null;
   const { absolute, relative } = relativeIst(provenance.computed_at as string | null | undefined);
   const origin = humanizeOrigin(provenance.origin);
-  const fv = formulaVersion ?? provenance.formula_version ?? "—";
+  // Stage 4A.3.x B1 — always prefer the compute-layer audit_meta values.
+  // provenance.cache_* describes the cache/fetch layer, not the math.
+  const fv = formulaVersion ?? "—";
+  const profile = weightingProfileId ?? null;
   return (
     <div className="mt-6 rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -44,8 +47,8 @@ export function AnalyticsProvenanceFooter({ provenance, formulaVersion }: Props)
         </span>
         <span>Source: <span className="text-foreground">{origin}</span></span>
         <span>Formula: <span className="text-foreground">{fv}</span></span>
-        {provenance.weighting_profile_id && (
-          <span>Profile: <span className="text-foreground">{provenance.weighting_profile_id}</span></span>
+        {profile && (
+          <span>Profile: <span className="text-foreground">{profile}</span></span>
         )}
         <Popover>
           <PopoverTrigger asChild>
