@@ -213,6 +213,9 @@ function SymbolLibraryPage() {
         <div className="mx-auto w-full max-w-5xl px-4">
           <SymbolTabs counts={counts} activeKind={activeKind} onKindChange={setActiveKind} />
 
+          <div className="mb-6"><GeneralVideosStrip symbol={displaySymbol} /></div>
+
+
           {isError && (
             <p className="py-12 text-center text-sm text-muted-foreground">
               Library is temporarily unavailable. Try again shortly.
