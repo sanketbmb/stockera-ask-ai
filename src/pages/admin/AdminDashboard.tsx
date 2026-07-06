@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Video, PencilLine, ChevronDown, Star, Inbox as InboxIcon, Clock, TrendingUp, CheckCircle2, ShieldAlert, ArrowRight } from "lucide-react";
+import { Video, PencilLine, ChevronDown, Star, Inbox as InboxIcon, Clock, TrendingUp, CheckCircle2, ShieldAlert, ArrowRight, Youtube } from "lucide-react";
 import { VERDICT_MAP } from "@/lib/verdict";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AnalystAnswerPanel } from "@/components/admin/AnalystAnswerPanel";
@@ -306,6 +306,21 @@ export default function AdminDashboard() {
         <StatCard label="Avg rating" value={stats ? `${Number(stats.rating).toFixed(1)} ★` : "—"} Icon={Star} accent="bg-yellow-500/10 text-yellow-600" />
         <StatCard label="Total sessions" value={stats?.sessions ?? "—"} Icon={TrendingUp} />
       </div>
+
+      <Card className="p-4 mb-6 flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
+            <Youtube className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-display text-lg leading-tight">Video answers (YouTube)</p>
+            <p className="text-xs text-muted-foreground">Publish analyst video answers with metered unlocks.</p>
+          </div>
+        </div>
+        <Button asChild size="sm">
+          <Link to={"/admin/videos" as never}>Manage <ArrowRight className="h-3.5 w-3.5 ml-1" /></Link>
+        </Button>
+      </Card>
 
       <Tabs defaultValue="pending" className="space-y-4">
         <TabsList>

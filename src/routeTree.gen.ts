@@ -46,6 +46,7 @@ import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educ
 import { Route as LibrarySymbolRouteImport } from './routes/library.$symbol'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
+import { Route as AdminVideosRouteImport } from './routes/admin.videos'
 import { Route as AdminSuperRouteImport } from './routes/admin.super'
 import { Route as AdminProfileRouteImport } from './routes/admin.profile'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
@@ -55,7 +56,10 @@ import { Route as AdminBacktestRouteImport } from './routes/admin.backtest'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
 import { Route as DocsAccuracyRoadmapPrintRouteImport } from './routes/docs.accuracy-roadmap.print'
+import { Route as AdminVideosNewRouteImport } from './routes/admin.videos.new'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
+import { Route as AdminVideosAnswerIdPreviewRouteImport } from './routes/admin.videos.$answerId.preview'
+import { Route as AdminVideosAnswerIdEditRouteImport } from './routes/admin.videos.$answerId.edit'
 
 const WatchlistRoute = WatchlistRouteImport.update({
   id: '/watchlist',
@@ -242,6 +246,11 @@ const AnalysisSymbolRoute = AnalysisSymbolRouteImport.update({
   path: '/analysis/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminVideosRoute = AdminVideosRouteImport.update({
+  id: '/admin/videos',
+  path: '/admin/videos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminSuperRoute = AdminSuperRouteImport.update({
   id: '/admin/super',
   path: '/admin/super',
@@ -288,12 +297,28 @@ const DocsAccuracyRoadmapPrintRoute =
     path: '/docs/accuracy-roadmap/print',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminVideosNewRoute = AdminVideosNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AdminVideosRoute,
+} as any)
 const AdminUploadAnswerQueryIdRoute =
   AdminUploadAnswerQueryIdRouteImport.update({
     id: '/admin/upload-answer/$queryId',
     path: '/admin/upload-answer/$queryId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminVideosAnswerIdPreviewRoute =
+  AdminVideosAnswerIdPreviewRouteImport.update({
+    id: '/$answerId/preview',
+    path: '/$answerId/preview',
+    getParentRoute: () => AdminVideosRoute,
+  } as any)
+const AdminVideosAnswerIdEditRoute = AdminVideosAnswerIdEditRouteImport.update({
+  id: '/$answerId/edit',
+  path: '/$answerId/edit',
+  getParentRoute: () => AdminVideosRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -328,6 +353,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -341,8 +367,11 @@ export interface FileRoutesByFullPath {
   '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
+  '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -377,6 +406,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -390,8 +420,11 @@ export interface FileRoutesByTo {
   '/v/$answerId': typeof VAnswerIdRoute
   '/library': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
+  '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -427,6 +460,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/profile': typeof AdminProfileRoute
   '/admin/super': typeof AdminSuperRoute
+  '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -440,8 +474,11 @@ export interface FileRoutesById {
   '/v/$answerId': typeof VAnswerIdRoute
   '/library/': typeof LibraryIndexRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
+  '/admin/videos/new': typeof AdminVideosNewRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
+  '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
+  '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -478,6 +515,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/library/$symbol'
@@ -491,8 +529,11 @@ export interface FileRouteTypes {
     | '/v/$answerId'
     | '/library/'
     | '/admin/upload-answer/$queryId'
+    | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/videos/$answerId/edit'
+    | '/admin/videos/$answerId/preview'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -527,6 +568,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/library/$symbol'
@@ -540,8 +582,11 @@ export interface FileRouteTypes {
     | '/v/$answerId'
     | '/library'
     | '/admin/upload-answer/$queryId'
+    | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/videos/$answerId/edit'
+    | '/admin/videos/$answerId/preview'
   id:
     | '__root__'
     | '/'
@@ -576,6 +621,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/profile'
     | '/admin/super'
+    | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
     | '/library/$symbol'
@@ -589,8 +635,11 @@ export interface FileRouteTypes {
     | '/v/$answerId'
     | '/library/'
     | '/admin/upload-answer/$queryId'
+    | '/admin/videos/new'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
+    | '/admin/videos/$answerId/edit'
+    | '/admin/videos/$answerId/preview'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -626,6 +675,7 @@ export interface RootRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminProfileRoute: typeof AdminProfileRoute
   AdminSuperRoute: typeof AdminSuperRoute
+  AdminVideosRoute: typeof AdminVideosRouteWithChildren
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
   LibrarySymbolRoute: typeof LibrarySymbolRoute
@@ -904,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalysisSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/videos': {
+      id: '/admin/videos'
+      path: '/admin/videos'
+      fullPath: '/admin/videos'
+      preLoaderRoute: typeof AdminVideosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/super': {
       id: '/admin/super'
       path: '/admin/super'
@@ -967,6 +1024,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsAccuracyRoadmapPrintRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/videos/new': {
+      id: '/admin/videos/new'
+      path: '/new'
+      fullPath: '/admin/videos/new'
+      preLoaderRoute: typeof AdminVideosNewRouteImport
+      parentRoute: typeof AdminVideosRoute
+    }
     '/admin/upload-answer/$queryId': {
       id: '/admin/upload-answer/$queryId'
       path: '/admin/upload-answer/$queryId'
@@ -974,8 +1038,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUploadAnswerQueryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/videos/$answerId/preview': {
+      id: '/admin/videos/$answerId/preview'
+      path: '/$answerId/preview'
+      fullPath: '/admin/videos/$answerId/preview'
+      preLoaderRoute: typeof AdminVideosAnswerIdPreviewRouteImport
+      parentRoute: typeof AdminVideosRoute
+    }
+    '/admin/videos/$answerId/edit': {
+      id: '/admin/videos/$answerId/edit'
+      path: '/$answerId/edit'
+      fullPath: '/admin/videos/$answerId/edit'
+      preLoaderRoute: typeof AdminVideosAnswerIdEditRouteImport
+      parentRoute: typeof AdminVideosRoute
+    }
   }
 }
+
+interface AdminVideosRouteChildren {
+  AdminVideosNewRoute: typeof AdminVideosNewRoute
+  AdminVideosAnswerIdEditRoute: typeof AdminVideosAnswerIdEditRoute
+  AdminVideosAnswerIdPreviewRoute: typeof AdminVideosAnswerIdPreviewRoute
+}
+
+const AdminVideosRouteChildren: AdminVideosRouteChildren = {
+  AdminVideosNewRoute: AdminVideosNewRoute,
+  AdminVideosAnswerIdEditRoute: AdminVideosAnswerIdEditRoute,
+  AdminVideosAnswerIdPreviewRoute: AdminVideosAnswerIdPreviewRoute,
+}
+
+const AdminVideosRouteWithChildren = AdminVideosRoute._addFileChildren(
+  AdminVideosRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -1010,6 +1104,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminProfileRoute: AdminProfileRoute,
   AdminSuperRoute: AdminSuperRoute,
+  AdminVideosRoute: AdminVideosRouteWithChildren,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
   LibrarySymbolRoute: LibrarySymbolRoute,
