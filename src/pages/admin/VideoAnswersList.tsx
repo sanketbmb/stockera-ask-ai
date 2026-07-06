@@ -104,7 +104,7 @@ export default function VideoAnswersList() {
           <h1 className="font-display text-3xl">Analyst videos</h1>
         </div>
         <Button asChild>
-          <Link to={"/admin/videos/new" as never}><Plus className="h-4 w-4 mr-1.5" /> New video answer</Link>
+          <Link to={"/admin/compose-video" as never}><Plus className="h-4 w-4 mr-1.5" /> New video</Link>
         </Button>
       </div>
 
