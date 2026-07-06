@@ -131,13 +131,21 @@ export default function VideoAnswersList() {
         <Button variant="outline" onClick={() => refetch()}>Refresh</Button>
       </Card>
 
+      <QueueSearchBar
+        value={quickSearch}
+        onChange={setQuickSearch}
+        resultCount={filteredRows.length}
+        totalCount={rows.length}
+        placeholder="Search by stock symbol, stock name, or query text…"
+      />
+
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…</div>
-      ) : rows.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">No video answers match these filters.</Card>
       ) : (
         <div className="space-y-2">
-          {rows.map((r) => {
+          {filteredRows.map((r) => {
             const title = r.video_title || r.question_addressed_override || r.queries?.query_text || "Untitled video answer";
             return (
               <Card key={r.id} className="p-4 flex flex-wrap gap-3 items-start">
