@@ -57,6 +57,10 @@ export const getVideoAnswer = createServerFn({ method: "POST" })
           video_duration_sec: number | null;
           poster_thumb: string;
           published_at: string;
+          // 4F.3 APPLY-1 additive fields (types-only surface here; RPC already returns them).
+          question_addressed: string | null;
+          video_title: string | null;
+          video_description: string | null;
         }
       | {
           status: "ok";
@@ -70,7 +74,11 @@ export const getVideoAnswer = createServerFn({ method: "POST" })
           youtube_video_id: string;
           video_duration_sec: number | null;
           published_at: string;
+          question_addressed: string | null;
+          video_title: string | null;
+          video_description: string | null;
         };
+
   });
 
 // ------- listVideoAnswersForSymbol -------
