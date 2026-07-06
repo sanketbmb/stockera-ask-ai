@@ -40,7 +40,7 @@ export const listMyUnlockedVideos = createServerFn({ method: "GET" })
     if (entErr) throw new Error(entErr.message);
     if (!ents?.length) return [];
 
-    const answerIds = Array.from(new Set(ents.map((e: any) => e.answer_id)));
+    const answerIds = Array.from(new Set(ents.map((e: any) => e.answer_id as string)));
 
     // 2) Metadata fetch via admin client — RLS on `answers` is variable;
     // admin read is limited to the columns needed for a card, and the raw
