@@ -25,9 +25,13 @@ const SERVICE_KEY =
   Deno.env.get("SB_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const FORMULA_VERSION = "v1.0";
-const WEIGHTING_PROFILE_ID = "long-term-default";
-const ACTION_BUCKET_VERSION = "v1";
+// Stage 4A.3.x B1 — provenance describes the fetch/cache layer only.
+// Authoritative compute-layer version strings live in analytics.audit_meta.*
+// (formula_version / weighting_profile_id / action_bucket_version), stamped
+// by generate-stock-analysis. Do NOT re-add compute-layer aliases here.
+const CACHE_SCHEMA_VERSION = "v1";
+const CACHE_HORIZON_PROFILE = "long-term";
+const CACHE_ORIGIN_CONTRACT = "v1";
 const HORIZON = "long-term";
 const DAILY_COMPUTE_CAP = 5;
 
