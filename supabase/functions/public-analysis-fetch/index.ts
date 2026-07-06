@@ -248,9 +248,9 @@ Deno.serve(async (req) => {
         analytics: shapeAnalytics(cached.payload as Record<string, unknown>, cached.computed_at as string | null),
         provenance: {
           computed_at: cached.computed_at,
-          formula_version: cached.formula_version,
-          weighting_profile_id: cached.weighting_profile_id,
-          action_bucket_version: cached.action_bucket_version,
+          cache_schema_version: CACHE_SCHEMA_VERSION,
+          cache_horizon_profile: CACHE_HORIZON_PROFILE,
+          cache_origin_contract: CACHE_ORIGIN_CONTRACT,
           origin: cached.origin,
           cache_date: istDate(),
         },
