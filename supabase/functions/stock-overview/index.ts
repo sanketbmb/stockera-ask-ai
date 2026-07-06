@@ -218,7 +218,23 @@ Deno.serve(async (req) => {
           fundamental_snapshot: payload.fundamental_snapshot ?? null,
           risk_snapshot: payload.risk_snapshot ?? null,
           momentum_snapshot: payload.momentum_snapshot ?? null,
-          sentiment_snapshot: payload.sentiment_snapshot ?? null,
+          sentiment_snapshot: (() => {
+            // Stage 4D.1 B3 — same strip as public-analysis-fetch:
+            // aggregate signal + source/date only. No headline, url,
+            // per-article sentiment, or top_news_driver on the public SSR path.
+            const s = payload.sentiment_snapshot as Record<string, unknown> | null | undefined;
+            if (!s || typeof s !== "object") return null;
+            const rawArts = Array.isArray(s.top_articles) ? (s.top_articles as Array<Record<string, unknown>>) : [];
+            return {
+              news_sentiment_score: s.news_sentiment_score ?? null,
+              sentiment_label: s.sentiment_label ?? "",
+              article_count: s.article_count ?? 0,
+              top_articles: rawArts.slice(0, 3).map((a) => ({
+                source: typeof a.source === "string" ? a.source : "",
+                published_at: typeof a.published_at === "string" ? a.published_at : "",
+              })),
+            };
+          })(),
           long_term_quality_snapshot: payload.long_term_quality_snapshot ?? null,
           audit_meta: am
             ? {
