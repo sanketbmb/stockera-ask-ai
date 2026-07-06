@@ -136,6 +136,26 @@ export default function MyQueriesPage() {
 
       {isLoading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-36 w-full" />)}</div>
+      ) : filter === "unlocked_videos" ? (
+        isLoadingUnlocked ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-72 w-full" />)}
+          </div>
+        ) : unlockedVideos.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+            <VideoIcon className="mx-auto h-10 w-10 text-muted-foreground/40" />
+            <p className="mt-3 font-display text-xl">No unlocked analyst videos yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Unlock a paid analyst video to keep permanent access here.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="unlocked-videos-grid">
+            {unlockedVideos.map((v) => (
+              <UnlockedVideoCard key={v.answerId} item={v} />
+            ))}
+          </div>
+        )
       ) : filter === "video" ? (
         readyVideos.length === 0 && pendingVideos.length === 0 && hasSearch ? (
           <NoSearchResults value={searchValue} />
