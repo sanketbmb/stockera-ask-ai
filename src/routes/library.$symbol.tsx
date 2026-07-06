@@ -13,6 +13,7 @@ import { SymbolFAQ } from "@/components/library/SymbolFAQ";
 import { SymbolCompliance } from "@/components/library/SymbolCompliance";
 import { SymbolEmptyState } from "@/components/library/SymbolEmptyState";
 import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
+import { GeneralVideosStrip } from "@/components/video-answers/GeneralVideosStrip";
 import type { LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import type { SymbolLibraryResponse } from "@/types/library-symbol";
 
