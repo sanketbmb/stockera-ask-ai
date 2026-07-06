@@ -179,7 +179,9 @@ function SymbolLibraryPage() {
     (videoRows ?? []).forEach((r) => {
       m.set(r.answer_id, {
         answerId: r.answer_id,
-        title: `Analyst video on ${r.symbol ?? displaySymbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
+        title:
+          r.video_title?.trim() ||
+          `Analyst video on ${r.symbol ?? displaySymbol}${r.verdict ? ` — ${r.verdict}` : ""}`,
         verdict: r.verdict,
         symbol: r.symbol,
         analystName: r.analyst_name,
@@ -188,7 +190,10 @@ function SymbolLibraryPage() {
         videoDurationSec: r.video_duration_sec,
         posterThumb: r.poster_thumb,
         publishedAt: r.published_at,
+        questionAddressed: r.question_addressed,
+        videoDescription: r.video_description,
       });
+
     });
     return m;
   }, [videoRows, displaySymbol]);
