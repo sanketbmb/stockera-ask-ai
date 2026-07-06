@@ -233,7 +233,10 @@ function SymbolLibraryPage() {
                   className={`sym-row${i === 0 ? " sym-halo" : ""}`}
                   style={{ animationDelay: `${i * 40}ms` }}
                 >
-                  <LibraryItemCard item={it} />
+                  <LibraryItemCard
+                    item={it}
+                    videoEnrichment={it.kind === "video" ? videoEnrichmentMap.get(it.source_id) : undefined}
+                  />
                 </div>
               ))}
             </div>
