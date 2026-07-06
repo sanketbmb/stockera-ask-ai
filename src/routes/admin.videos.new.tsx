@@ -1,17 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { RequireAnalyst } from "@/components/auth/RequireAuth";
-import VideoAnswerEditor from "@/pages/admin/VideoAnswerEditor";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/videos/new")({
-  head: () => ({
-    meta: [
-      { title: "New Video Answer — Stockera Admin" },
-      { name: "robots", content: "noindex,nofollow" },
-    ],
-  }),
-  component: () => (
-    <RequireAnalyst>
-      <VideoAnswerEditor mode="new" />
-    </RequireAnalyst>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/compose-video" as never });
+  },
+  component: () => null,
 });

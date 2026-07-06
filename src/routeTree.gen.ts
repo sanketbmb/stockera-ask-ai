@@ -44,6 +44,7 @@ import { Route as PrintStockQueryIdRouteImport } from './routes/print-stock.$que
 import { Route as PrintSectorQueryIdRouteImport } from './routes/print-sector.$queryId'
 import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educational.$queryId'
 import { Route as LibrarySymbolRouteImport } from './routes/library.$symbol'
+import { Route as GeneralAnswerIdRouteImport } from './routes/general.$answerId'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminVideosRouteImport } from './routes/admin.videos'
@@ -237,6 +238,11 @@ const LibrarySymbolRoute = LibrarySymbolRouteImport.update({
   path: '/library/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GeneralAnswerIdRoute = GeneralAnswerIdRouteImport.update({
+  id: '/general/$answerId',
+  path: '/general/$answerId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -363,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
@@ -417,6 +424,7 @@ export interface FileRoutesByTo {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
@@ -472,6 +480,7 @@ export interface FileRoutesById {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
   '/print-educational/$queryId': typeof PrintEducationalQueryIdRoute
   '/print-sector/$queryId': typeof PrintSectorQueryIdRoute
@@ -528,6 +537,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
@@ -582,6 +592,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
@@ -636,6 +647,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/general/$answerId'
     | '/library/$symbol'
     | '/print-educational/$queryId'
     | '/print-sector/$queryId'
@@ -691,6 +703,7 @@ export interface RootRouteChildren {
   AdminVideosRoute: typeof AdminVideosRouteWithChildren
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  GeneralAnswerIdRoute: typeof GeneralAnswerIdRoute
   LibrarySymbolRoute: typeof LibrarySymbolRoute
   PrintEducationalQueryIdRoute: typeof PrintEducationalQueryIdRoute
   PrintSectorQueryIdRoute: typeof PrintSectorQueryIdRoute
@@ -953,6 +966,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibrarySymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/general/$answerId': {
+      id: '/general/$answerId'
+      path: '/general/$answerId'
+      fullPath: '/general/$answerId'
+      preLoaderRoute: typeof GeneralAnswerIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -1128,6 +1148,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminVideosRoute: AdminVideosRouteWithChildren,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  GeneralAnswerIdRoute: GeneralAnswerIdRoute,
   LibrarySymbolRoute: LibrarySymbolRoute,
   PrintEducationalQueryIdRoute: PrintEducationalQueryIdRoute,
   PrintSectorQueryIdRoute: PrintSectorQueryIdRoute,

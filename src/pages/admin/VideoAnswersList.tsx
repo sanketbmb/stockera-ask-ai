@@ -16,9 +16,9 @@ import { QueueSearchBar } from "@/components/admin/QueueSearchBar";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   listAdminVideoAnswers,
-  publishVideoAnswer,
   unpublishVideoAnswer,
 } from "@/lib/video-answers-admin.functions";
+import { publishComposerVideoAnswer } from "@/lib/video-composer.functions";
 
 type Status = "all" | "draft" | "published";
 
@@ -44,7 +44,7 @@ export default function VideoAnswersList() {
   const [quickSearch, setQuickSearch] = useState("");
 
   const list = useServerFn(listAdminVideoAnswers);
-  const publish = useServerFn(publishVideoAnswer);
+  const publish = useServerFn(publishComposerVideoAnswer);
   const unpublish = useServerFn(unpublishVideoAnswer);
 
   const { data, isLoading, refetch } = useQuery({

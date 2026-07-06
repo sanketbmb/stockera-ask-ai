@@ -75,6 +75,8 @@ const payloadSchema = z
     priceCredits: z.number().int().min(49).max(999).optional(),
     queryId: z.string().uuid().optional(),
     customThumbnailPath: z.string().trim().min(1).nullable().optional(),
+    // APPLY-3: optional target answerId for update (edit flow).
+    answerId: z.string().uuid().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.category === "stock_specific") {
@@ -93,6 +95,52 @@ const payloadSchema = z
     }
   });
 
+function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null): Record<string, unknown> {
+  const insert: Record<string, unknown> = {
+    answer_type: "video",
+    expert_id: data.expertId,
+    query_id: queryId,
+    category: data.category,
+    video_title: data.title,
+    video_description: data.description,
+    question_addressed_override: data.questionAddressed ?? null,
+    custom_thumbnail_url: data.customThumbnailPath ?? null,
+  };
+  if (data.stock) {
+    insert.stock_master_id = data.stock.stockMasterId ?? null;
+  } else {
+    insert.stock_master_id = null;
+  }
+  if (data.category === "stock_specific") {
+    insert.unlock_price_credits = data.priceCredits ?? null;
+  } else {
+    insert.unlock_price_credits = null;
+  }
+  if (data.source.kind === "upload" || data.source.kind === "record") {
+    insert.source_kind = data.source.kind;
+    insert.paid_video_storage_path = data.source.storagePath;
+    insert.video_thumbnail = data.source.thumbnailStoragePath ?? null;
+    insert.video_duration_sec = data.source.durationSec ?? null;
+    insert.external_url = null;
+    insert.external_provider = null;
+    insert.youtube_video_id = null;
+  } else {
+    insert.source_kind = "external";
+    insert.paid_video_storage_path = null;
+    const yt = parseYoutubeId(data.source.externalUrl);
+    if (yt) {
+      insert.youtube_video_id = yt;
+      insert.external_provider = "youtube";
+      insert.external_url = data.source.externalUrl;
+    } else {
+      insert.youtube_video_id = null;
+      insert.external_provider = "link";
+      insert.external_url = data.source.externalUrl;
+    }
+  }
+  return insert;
+}
+
 export const saveVideoComposerDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => payloadSchema.parse(input))
@@ -101,12 +149,10 @@ export const saveVideoComposerDraft = createServerFn({ method: "POST" })
     if (!isAdmin && data.expertId !== context.userId) {
       throw new Error("Forbidden: analysts can only author under their own profile");
     }
-
     const admin = await getAdmin();
 
-    // Resolve linked query
     let queryId: string | null = data.queryId ?? null;
-    if (data.category === "stock_specific" && !queryId && data.stock) {
+    if (data.category === "stock_specific" && !queryId && data.stock && !data.answerId) {
       const seedText = data.questionAddressed?.trim() || data.title;
       const { data: q, error: qErr } = await admin
         .from("queries")
@@ -123,61 +169,133 @@ export const saveVideoComposerDraft = createServerFn({ method: "POST" })
       if (qErr) throw new Error(qErr.message);
       queryId = q.id;
     }
-    // general category: query_id remains null (allowed by APPLY-1 hardening)
 
-    // Assemble source-specific columns
-    const insert: Record<string, unknown> = {
-      answer_type: "video",
-      is_published: false,
-      expert_id: data.expertId,
-      query_id: queryId,
-      category: data.category,
-      video_title: data.title,
-      video_description: data.description,
-      question_addressed_override: data.questionAddressed ?? null,
-      custom_thumbnail_url: data.customThumbnailPath ?? null,
-    };
-    if (data.category === "stock_specific" && data.stock) {
-      insert.stock_master_id = data.stock.stockMasterId ?? null;
-      insert.unlock_price_credits = data.priceCredits ?? null;
-    }
-
-    if (data.source.kind === "upload" || data.source.kind === "record") {
-      insert.source_kind = data.source.kind;
-      insert.paid_video_storage_path = data.source.storagePath;
-      insert.video_thumbnail = data.source.thumbnailStoragePath ?? null;
-      insert.video_duration_sec = data.source.durationSec ?? null;
-    } else {
-      insert.source_kind = "external";
-      const yt = parseYoutubeId(data.source.externalUrl);
-      if (yt) {
-        insert.youtube_video_id = yt;
-        insert.external_provider = "youtube";
-        insert.external_url = data.source.externalUrl;
-      } else {
-        insert.external_provider = "link";
-        insert.external_url = data.source.externalUrl;
+    const base = buildInsert(data, queryId);
+    let answerId: string;
+    if (data.answerId) {
+      const { data: existing, error: readErr } = await admin
+        .from("answers")
+        .select("id, expert_id, query_id")
+        .eq("id", data.answerId)
+        .maybeSingle();
+      if (readErr || !existing) throw new Error("Draft not found");
+      if (!isAdmin && existing.expert_id !== context.userId) {
+        throw new Error("Forbidden: not your draft");
       }
+      const patch = { ...base } as Record<string, unknown>;
+      if (existing.query_id && !queryId) patch.query_id = existing.query_id;
+      const { error: upErr } = await admin
+        .from("answers")
+        .update(patch as never)
+        .eq("id", data.answerId);
+      if (upErr) throw new Error(upErr.message);
+      answerId = data.answerId;
+    } else {
+      const insert = { ...base, is_published: false };
+      const { data: row, error } = await admin
+        .from("answers")
+        .insert(insert as never)
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message);
+      answerId = row.id as string;
     }
-
-    const { data: row, error } = await admin
-      .from("answers")
-      .insert(insert as never)
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
 
     await admin.from("audit_events").insert({
-      event_type: "video_composer.draft_saved",
+      event_type: data.answerId ? "video_composer.draft_updated" : "video_composer.draft_saved",
       actor_id: context.userId,
       resource_type: "answer",
-      resource_id: row.id,
+      resource_id: answerId,
       payload: {
         category: data.category,
         source_kind: data.source.kind,
         query_id: queryId,
       } as never,
     });
+    return { answerId, queryId };
+  });
 
-    return { answerId: row.id as string, queryId };
+// ---------------------------------------------------------------------------
+// APPLY-3: publishComposerVideoAnswer — category-aware publish. Never touches
+// wallet_ledger, video_entitlements, curated, discover, or 4F.1 RPCs.
+// ---------------------------------------------------------------------------
+export const publishComposerVideoAnswer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ answerId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await assertStaff(context.userId);
+    const admin = await getAdmin();
+
+    const { data: row, error } = await admin
+      .from("answers")
+      .select(
+        "id, expert_id, answer_type, category, source_kind, external_provider, external_url, youtube_video_id, paid_video_storage_path, video_title, video_description, unlock_price_credits, stock_master_id, query_id, is_published",
+      )
+      .eq("id", data.answerId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Answer not found");
+    if (row.answer_type !== "video") throw new Error("Not a video answer");
+    if (!isAdmin && row.expert_id !== context.userId) throw new Error("Forbidden: not your draft");
+    if (!isAdmin) throw new Error("Forbidden: only admins may publish");
+
+    const missing: string[] = [];
+    if (!row.video_title?.trim()) missing.push("video_title");
+    if (!row.video_description || row.video_description.trim().length < 40) missing.push("video_description");
+    if (!row.expert_id) missing.push("expert_id");
+
+    const kind = row.source_kind ?? "external";
+    if (kind === "upload" || kind === "record") {
+      if (!row.paid_video_storage_path) missing.push("paid_video_storage_path");
+    } else {
+      if (!row.external_url) missing.push("external_url");
+    }
+    if (row.category === "stock_specific") {
+      if (!row.unlock_price_credits) missing.push("unlock_price_credits");
+      if (!row.stock_master_id) missing.push("stock_master_id");
+      if (!row.query_id) missing.push("query_id");
+      if (row.external_provider === "youtube") {
+        throw new Error("YouTube is not allowed for stock_specific videos");
+      }
+    } else if (row.category !== "general") {
+      throw new Error("Unknown category");
+    }
+    if (missing.length) throw new Error(`Cannot publish — missing: ${missing.join(", ")}`);
+
+    const { error: upErr } = await admin
+      .from("answers")
+      .update({ is_published: true })
+      .eq("id", data.answerId);
+    if (upErr) throw new Error(upErr.message);
+
+    await admin.from("audit_events").insert({
+      event_type: "video_composer.published",
+      actor_id: context.userId,
+      resource_type: "answer",
+      resource_id: data.answerId,
+      payload: { category: row.category, source_kind: kind } as never,
+    });
+    return { answerId: data.answerId, published: true, category: row.category };
+  });
+
+// ---------------------------------------------------------------------------
+// APPLY-3: loadComposerDraft — fetch a row for edit prefill.
+// ---------------------------------------------------------------------------
+export const loadComposerDraft = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ answerId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await assertStaff(context.userId);
+    const admin = await getAdmin();
+    const { data: row, error } = await admin
+      .from("answers")
+      .select(
+        "id, expert_id, query_id, category, source_kind, external_provider, external_url, youtube_video_id, paid_video_storage_path, video_thumbnail, custom_thumbnail_url, video_title, video_description, question_addressed_override, unlock_price_credits, stock_master_id, video_duration_sec, is_published, stock_master:stock_master_id(id, symbol, company_name), queries:query_id(id, stock_symbol, stock_name, query_text)",
+      )
+      .eq("id", data.answerId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Not found");
+    if (!isAdmin && row.expert_id !== context.userId) throw new Error("Forbidden");
+    return row;
   });

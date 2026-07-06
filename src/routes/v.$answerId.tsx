@@ -1,13 +1,17 @@
-// Stage 4F.2 APPLY-2 — top-level playback route for a single video answer.
-// Founder decision #2: top-level `/v/$answerId`, gated by existing RequireAuth
-// (no `_authenticated/` layout).
+// Stage 4F.2 APPLY-2 + 4G APPLY-3 — top-level playback route.
 //
-// Truth source: getVideoAnswer (4F.1). No other read path is consulted.
-//   • payload.locked === true  → LockedVideoCard + UnlockVideoModal (opens auto)
-//   • payload.locked === false → VideoAnswerEmbed with youtube_video_id
-import { useState } from "react";
+// Truth source for locked/unlocked: getVideoAnswer (4F.1 RPC — signature LOCKED).
+//   • payload.locked === true  → LockedVideoCard + UnlockVideoModal (auto-open)
+//   • payload.locked === false → resolve actual source via getPaidVideoPlayback
+//                                 which branches by source_kind:
+//                                   external+youtube → embed
+//                                   external+link   → open-in-new-tab card
+//                                   upload | record → <video> with 90 s signed URL
+import { useEffect, useState } from "react";
 import { createFileRoute, useParams, Link } from "@tanstack/react-router";
-import { AlertCircle, ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { AlertCircle, ArrowLeft, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -17,6 +21,7 @@ import { useVideoAnswer } from "@/hooks/useVideoAnswer";
 import { LockedVideoCard, type LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 import { UnlockVideoModal } from "@/components/video-answers/UnlockVideoModal";
 import { VideoAnswerEmbed } from "@/components/video-answers/VideoAnswerEmbed";
+import { getPaidVideoPlayback } from "@/lib/paid-video-playback.functions";
 
 export const Route = createFileRoute("/v/$answerId")({
   head: () => ({
@@ -85,8 +90,9 @@ function WatchVideoPage() {
 
       {!isLoading && data && data.status === "ok" && data.locked === false && (
         <div className="mx-auto max-w-3xl space-y-4">
-          <VideoAnswerEmbed
-            youtubeVideoId={data.youtube_video_id}
+          <UnlockedSourceResolver
+            answerId={answerId}
+            fallbackYouTubeId={data.youtube_video_id}
             title={data.stock_name ?? data.symbol ?? "Analyst video"}
           />
           <div className="space-y-1">
@@ -131,6 +137,68 @@ function WatchVideoPage() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+/**
+ * After unlock, resolve the true source via getPaidVideoPlayback. If the
+ * resolver fails (e.g. legacy MP4 rows without paid_video_storage_path but
+ * with a youtube_video_id from the 4F.1 RPC), fall back to the YouTube embed.
+ */
+function UnlockedSourceResolver({
+  answerId,
+  fallbackYouTubeId,
+  title,
+}: {
+  answerId: string;
+  fallbackYouTubeId: string | null | undefined;
+  title: string;
+}) {
+  const playbackFn = useServerFn(getPaidVideoPlayback);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["paid-playback", answerId],
+    queryFn: () => playbackFn({ data: { answerId } }),
+    staleTime: 60_000,
+    retry: 0,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="aspect-video w-full overflow-hidden rounded-xl border bg-muted/40 flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (error || !data) {
+    // Legacy compatibility: YouTube-only rows shipped before source_kind existed.
+    if (fallbackYouTubeId) {
+      return <VideoAnswerEmbed youtubeVideoId={fallbackYouTubeId} title={title} />;
+    }
+    return (
+      <Card className="p-6 text-center text-sm text-muted-foreground">
+        Playback failed. Try refreshing.
+      </Card>
+    );
+  }
+  if (data.kind === "youtube") {
+    return <VideoAnswerEmbed youtubeVideoId={data.videoId} title={title} />;
+  }
+  if (data.kind === "external") {
+    return (
+      <Card className="p-6 text-center">
+        <p className="text-sm text-muted-foreground">Analyst-hosted external video.</p>
+        <Button asChild className="mt-3">
+          <a href={data.url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="mr-1 h-4 w-4" /> Open video
+          </a>
+        </Button>
+      </Card>
+    );
+  }
+  return (
+    <div className="aspect-video w-full overflow-hidden rounded-xl border bg-black">
+      <video src={data.url} controls playsInline className="h-full w-full" />
+    </div>
   );
 }
 
