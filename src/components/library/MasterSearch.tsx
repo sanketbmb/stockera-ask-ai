@@ -69,8 +69,10 @@ export function MasterSearch({
   const [q, setQ] = useState(initialQuery);
   const debouncedQ = useDebounced(q.trim(), 200);
   const [data, setData] = useState<SearchResponse | null>(null);
+  const [curated, setCurated] = useState<CuratedHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
