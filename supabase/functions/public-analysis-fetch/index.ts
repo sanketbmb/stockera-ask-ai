@@ -290,9 +290,9 @@ Deno.serve(async (req) => {
         analytics: shapeAnalytics(payload, nowIso),
         provenance: {
           computed_at: new Date().toISOString(),
-          formula_version: FORMULA_VERSION,
-          weighting_profile_id: WEIGHTING_PROFILE_ID,
-          action_bucket_version: ACTION_BUCKET_VERSION,
+          cache_schema_version: CACHE_SCHEMA_VERSION,
+          cache_horizon_profile: CACHE_HORIZON_PROFILE,
+          cache_origin_contract: CACHE_ORIGIN_CONTRACT,
           origin: "on_demand_authenticated",
           cache_date: istDate(),
         },
