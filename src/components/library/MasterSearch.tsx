@@ -146,20 +146,40 @@ export function MasterSearch({
       }
     })();
 
-    Promise.all([librarySearch, stockSuggestions])
-      .then(([base, stocks]) => {
+    // Curated media grouped-search (free, published only)
+    const curatedSearch = (async (): Promise<CuratedHit[]> => {
+      try {
+        const s = debouncedQ.replace(/[%,]/g, " ");
+        const { data: c } = await supabase
+          .from("curated_items")
+          .select("id, title, description, source_provider, source_url, category")
+          .eq("is_published", true)
+          .or(`title.ilike.%${s}%,description.ilike.%${s}%`)
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .limit(6);
+        return (c ?? []) as CuratedHit[];
+      } catch { return []; }
+    })();
+
+    Promise.all([librarySearch, stockSuggestions, curatedSearch])
+      .then(([base, stocks, curatedRows]) => {
         if (cancelled) return;
         setData({ ...base, stocks: stocks.length > 0 ? stocks : (base.stocks ?? []) });
+        setCurated(curatedRows);
       })
       .catch(() => {
-        if (!cancelled) setData({
-          stocks: [], reports: [], videos: [], community: [], analysts: [], total_found: 0,
-        } as unknown as SearchResponse);
+        if (!cancelled) {
+          setData({
+            stocks: [], reports: [], videos: [], community: [], analysts: [], total_found: 0,
+          } as unknown as SearchResponse);
+          setCurated([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
+
       cancelled = true;
     };
   }, [debouncedQ, user]);
