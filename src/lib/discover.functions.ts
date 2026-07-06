@@ -53,8 +53,8 @@ export const listDiscoverFeed = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const sb = publicClient();
     const { data: rows, error } = await sb.rpc("list_discover_feed", {
-      p_kind_filter: data.kind_filter ?? null,
-      p_symbol: data.symbol ?? null,
+      p_kind_filter: data.kind_filter ?? undefined,
+      p_symbol: data.symbol ?? undefined,
       p_limit: data.limit ?? 30,
       p_offset: data.offset ?? 0,
     });
