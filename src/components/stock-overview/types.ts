@@ -128,8 +128,10 @@ export interface PublicAnalyticsPayload {
 
 export interface AnalyticsProvenance {
   computed_at: string | null;
-  formula_version: string | null;
-  weighting_profile_id: string | null;
-  action_bucket_version: string | null;
+  // Stage 4A.3.x B1 — provenance describes the fetch/cache layer.
+  // Compute-layer authoritative versions live in analytics.audit_meta.*.
+  cache_schema_version: string | null;
+  cache_horizon_profile: string | null;
+  cache_origin_contract: string | null;
   origin: string | null;
 }
