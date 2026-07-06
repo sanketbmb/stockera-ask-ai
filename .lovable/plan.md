@@ -1,283 +1,285 @@
-# Stage 4F.2 — Video Answers: UI Surfaces (PLAN v2 — REVISED)
 
-Revisions vs v1: contract-consistency clarified (§A.1), anti-leak wording rewritten to match 4F.1 reality (§D.5), APPLY-1 logged-in state changed to a non-action teaser (§D.1, §H), and the four blockers answered inline (§F.0).
+# Stage 4F.3 PLAN — Video Answer Publishing
+
+Read-only plan. No files touched. No APPLY.
+
+---
 
 ## A. Objective
 
-Expose the paid-unlock video-answer contract shipped in 4F.1 across five UI surfaces without touching the DB, RPCs, RLS, wallet code, migrations, or any 4F.1 module.
+Give staff a safe, minimal internal workflow to publish a YouTube-hosted analyst video answer into the product so that a user, **before spending credits**, can decide it is worth unlocking. Users must see: what question is being answered, which SEBI-registered analyst is answering, which stock it is about, a short teaser, title/caption, duration, thumbnail, and unlock price.
+
+4F.3 is **authoring + management** on top of the frozen 4F.1 read/unlock contract and the 4F.2 UI. No changes to `unlock_video_answer`, `get_video_answer`, `list_public_video_answers_for_symbol`, `video_entitlements`, wallet logic, or the legacy `Book Analyst Video ₹100` upload path.
+
+---
+
+## B. Publisher roles and permissions
+
+Recommended default: **both**, admin-first.
+
+| Role | Create draft | Edit own draft | Publish | Unpublish | Edit published | Replace YT link | Delete |
+|---|---|---|---|---|---|---|---|
+| `admin` | ✅ any RA | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (soft) |
+| `analyst` (RA) | ✅ own | ✅ own | ⚠️ own, gated by admin toggle (default OFF for MVP) | ✅ own | ✅ own | ✅ own | ❌ |
+| user | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Rationale: existing RLS on `answers` already supports both surfaces (`admin_full_access` + `answers_analyst_manage where auth.uid() = expert_id`). For 4F.3 MVP, ship admin-first with a hidden feature flag `analyst_publish_enabled` (config row) — analysts can draft but only admins can flip `is_published=true`. This keeps SEBI-attribution and pricing under review.
+
+Guardrails:
+- `expert_id` must reference an `analyst_profiles` row with a non-null `sebi_reg_number`.
+- Only `has_role(auth.uid(),'admin')` may set `unlock_price_credits` above a configured ceiling (e.g. 999) or below a floor (e.g. 49) — enforced in the write server fn, not the DB.
+- Every publish/unpublish/edit writes an `audit_events` row.
+
+---
+
+## C. Exact surfaces in scope
+
+New (all under existing admin/analyst gating):
+1. `/admin/videos` — list + filter (status, analyst, symbol, created_at) with actions (edit / preview / publish / unpublish).
+2. `/admin/videos/new` — create video answer (URL-first flow).
+3. `/admin/videos/$answerId/edit` — edit draft or published metadata.
+4. `/admin/videos/$answerId/preview` — renders the exact user-visible locked card + watch page as the target user would see, without debit (uses `getVideoAnswer` in a `preview=true` server fn variant OR a client-side render of the same components with in-memory metadata — plan §G).
+
+Modified: `AdminDashboard` and (if analyst-publish is enabled) `AnalystProfile` gain a "Video answers" entry point.
+
+Explicitly **out of scope**:
+- Legacy `/admin/upload-answer/$queryId` (MP4 upload flow) — untouched.
+- Any change to the user-facing 4F.2 surfaces.
+- Custom-uploaded thumbnails (deferred, see §F/§G).
+
+---
+
+## D. Exact fields matrix
 
-### A.1 Contract read paths — one explicit exception
+| Field | Kind | Source / notes |
+|---|---|---|
+| `answer_type` | **read-only** | Hard-coded `'video'` on insert. |
+| YouTube URL | **required** (input only, not persisted directly) | Parsed → `youtube_video_id`. |
+| `youtube_video_id` | **auto-derived** | Regex extract from URL (supports `youtu.be/`, `watch?v=`, `shorts/`, `embed/`). Unique per non-null value (see §G). |
+| `title` / caption | **required** | New optional column recommended (`video_title`, see §G). If schema stays frozen, derived as "Analyst video on {stock_name}" — same as `fn_project_answer_to_library` today. |
+| `body` (short description / teaser) | **required** (min 40 chars, max 400) | Reuses existing `answers.body` text column. Displayed as teaser under the locked card. |
+| Question addressed (user-facing) | **required** | Canonical: `query_id` FK → `queries.query_text`. Fallback: staff-authored `question_addressed` text (see §G) when no user query exists (seeded / evergreen videos). |
+| `query_id` | **required** | Existing NOT-NULL FK. Publisher must either pick an existing query OR click "Create synthetic query" to insert a system-owned `queries` row (`user_id = <SYSTEM_UID>`, `stock_symbol/name`, `query_text=<question addressed>`, `query_type='video_seed'`). |
+| Stock symbol | **required** | Selected from `stock_master`. Written to the linked query row's `stock_symbol` (not to `answers`, which has no symbol column today). |
+| Stock name | **auto-derived** | From `stock_master.company_name` given symbol. Written to `queries.stock_name`. |
+| Exchange | **auto-derived** | From `stock_master.exchange`. |
+| RA / expert answering | **required** | `expert_id` = analyst_profile.id. Dropdown of analysts with non-null `sebi_reg_number`. Admins may pick any; analysts locked to self. |
+| `verdict` | **optional** | Free-select from existing verdict labels (`buy`/`hold`/`avoid`/`wait`/…). Surfaced in locked card. |
+| `unlock_price_credits` | **required** | Integer, floor/ceiling enforced in server fn (see §B). Default suggestion pulled from `stock_picker_runtime_config.action_costs.video_answer.points` (currently 499). |
+| `video_duration_sec` | **auto-derived, editable** | Fetched via YouTube oEmbed / server-side fetch when possible; editable manual override. Non-blocking on missing. |
+| `poster_thumb` | **auto-derived** | Always `https://i.ytimg.com/vi/{youtube_video_id}/hqdefault.jpg`. Same public artifact 4F.1 exposes. |
+| Custom thumbnail override | **out of scope for 4F.3** | Requires storage bucket + `video_thumbnail` write path. Column already exists; UI deferred to 4F.4 to keep 4F.3 tight. |
+| `is_published` | **required action (toggle)** | Boolean; flipped only via explicit "Publish" / "Unpublish" button. Draft = `false`. |
+| Publish scheduling | **out of scope** | No `published_at`/scheduled column added. Publish is immediate. |
+| Tags / topics | **out of scope** | Deferred; existing library search already indexes symbol + verdict + body. |
+| `key_level` / `time_horizon` / `risk_note` | **optional** | Existing columns; reuse as-is. Not surfaced pre-unlock. |
+| `created_at` | **read-only** | DB default. |
 
-Default rule: all new video UI reads flow through the three approved 4F.1 server fns only:
-
-- `listVideoAnswersForSymbol` (anon-safe public list)
-- `getVideoAnswer` (per-item, authenticated)
-- `unlockVideoAnswer` (mutation)
+---
 
-**Single, founder-visible exception (My Queries "Unlocked videos" tab only):** one new client-safe server fn `listMyUnlockedVideos` in `src/lib/my-video-entitlements.functions.ts`. Justification:
-- `getVideoAnswer` is per-`answerId`; there is no 4F.1 fn that lists a user's own entitlements. Fanning out per-item requires knowing the IDs first, which is the same problem.
-- The fn adds **zero backend contract**: no migration, no RPC, no RLS policy, no wallet touch, no edge function. It is a thin `SELECT` scoped by the authenticated Supabase client (RLS already enforces `auth.uid() = user_id` on `video_entitlements` — proven in 4F.1 UAT check 8).
-- Exact file scope: **one new file only** (`src/lib/my-video-entitlements.functions.ts`), consumed **only** by the new My Queries tab (§C.14). Not consumed by any other surface.
-- Exception is opt-out: if founder rejects it, drop file §C item marked `[EXCEPTION]` and defer the My Queries tab to a later stage (§H fallback). All four other surfaces remain intact and 100% on the three approved fns.
+## E. User-visible metadata BEFORE unlock
 
-Analyst upload of new 4F.1-shape rows is 4F.3 — not in this stage. Legacy personal-video-answer flow (Razorpay-demo, MP4 `video_url`) is untouched — see §F.1.
-
-## B. Surfaces in scope
-
-1. **Locked video card** — reusable presentation component consumed by surfaces 2–5.
-2. **Stock page** — `/stock/$symbol` `Videos & Blogs` tab.
-3. **Library — symbol page** — `/library/$symbol` when tab = `video`.
-4. **MasterSearch** — the `videos` section in the search dropdown.
-5. **My Queries** — new "Unlocked videos" tab (contract exception per §A.1).
-6. **Post-unlock playback route** — `/v/$answerId` (see §F.0.3 for placement).
-
-Out of scope: producing new video rows, blog data model, changes to legacy personal-video pipeline.
-
-## C. Files to touch
-
-New (all frontend):
-
-1. `src/components/video-answers/LockedVideoCard.tsx`
-2. `src/components/video-answers/UnlockedVideoCard.tsx`
-3. `src/components/video-answers/UnlockVideoModal.tsx`
-4. `src/components/video-answers/VideoPosterThumb.tsx` — thumb with fallback if YouTube 404s
-5. `src/components/video-answers/VideoAnswerEmbed.tsx` — `<iframe>` on `youtube-nocookie.com`, `rel=0`, `modestbranding=1`, `playsinline`, `origin`
-6. `src/components/video-answers/InlinePriceChip.tsx`
-7. `src/components/video-answers/copy.ts` — fixed CTA strings, consistent across surfaces
-8. `src/routes/_authenticated/v.$answerId.tsx` — see §F.0.3
-9. `src/hooks/useVideoAnswer.ts` — wraps `useServerFn(getVideoAnswer)` + `useQuery`
-10. `src/hooks/useUnlockVideoAnswer.ts` — wraps `useServerFn(unlockVideoAnswer)` + `useMutation`
-11. `src/lib/my-video-entitlements.functions.ts` **[EXCEPTION — §A.1]** — `listMyUnlockedVideos` only
-
-Modified:
-
-12. `src/components/stock-overview/VideosBlogsTab.tsx` — replaces placeholder; two sections (Videos + "Analyst blogs — coming soon" strip)
-13. `src/routes/library.$symbol.tsx` — when `kind === 'video'`, card renderer swaps (layout unchanged)
-14. `src/components/library/LibraryItemCard.tsx` — dispatch on `kind==='video'` → `LockedVideoCard` / `UnlockedVideoCard`
-15. `src/components/library/MasterSearch.tsx` — 4F.1-shape rows in `videos` section render compact locked chip; activation opens `UnlockVideoModal` inline
-16. `src/pages/MyQueries.tsx` — add new filter tab `Unlocked videos` alongside existing `Video Answer` tab (legacy untouched)
-17. `src/types/library-symbol.ts` — no field addition needed (see §F.0.1 — `source_id` is the answer_id for video rows)
-
-Explicitly NOT touched: `src/lib/video-answers.functions.ts`, any migration/RPC/RLS/wallet code, legacy `VideoAnswerPaymentModal`, `BookAnalystVideoButton`, `HomeAnalystCta`, `AnalystCtaCard`, `AIReportCard*`, `ExpertAnswerSection`, `QueryHistoryCard`, `admin/VideoAnswerUpload.tsx`, `library-symbol`/`library-search` edge fns.
-
-## D. UX behavior by user state
-
-### D.1 `LockedVideoCard` per-user-state matrix
-
-**APPLY-1 (read-only phase — no unlock action possible yet):**
-
-| State | Layout | CTA | Copy |
-| --- | --- | --- | --- |
-| Anon | Poster, verdict pill, analyst, duration, price chip, lock glyph | Primary `Sign in to unlock — N credits` → `/login?redirect=/v/{answerId}` | Below CTA: "Unlocked answers are yours forever." |
-| Logged-in (any balance) | Same layout | **Disabled** button `Unlock coming soon` (aria-disabled, no click handler) | Below CTA: "Analyst video unlocks ship in the next release." No modal, no navigation, no login redirect. |
-| Loading | Skeleton same size | — | — |
-| Error | Neutral placeholder, "Unavailable" note, retry | — | — |
-
-**APPLY-2 (unlock flow enabled — rewires the logged-in row above):**
-
-| State | Layout | CTA | Copy |
-| --- | --- | --- | --- |
-| Anon | (unchanged from APPLY-1) | (unchanged) | (unchanged) |
-| Logged-in, no entitlement, sufficient balance | Same layout | Primary `Unlock for N credits` → opens `UnlockVideoModal` | Balance hint "You have X credits" |
-| Logged-in, no entitlement, insufficient balance | Price chip in destructive tone | Primary `Top up X credits` → `/topup?required={N}` | "You have Y credits · Need N" |
-| Logged-in, has entitlement | `UnlockedVideoCard` — poster + play glyph, no lock, no price | Card click → `/v/{answerId}` | "Unlocked · watch anytime" |
-| Loading / Error | (unchanged) | — | — |
-
-### D.2 Surface-level empty states
-
-- Stock page Videos section: `No analyst videos yet for {SYMBOL}. Be the first to request one — [Ask an analyst →]` → `/post-query?symbol={SYMBOL}&type=video`. Blogs strip below stays "coming soon".
-- Library `video` tab: existing `SymbolEmptyState` reused.
-- MasterSearch: current "no matches" copy; `videos` section omits when empty.
-- My Queries `Unlocked videos` tab: `You haven't unlocked any analyst videos yet. Browse videos on any stock page or in the library.` with links.
-
-### D.3 Unlock flow (APPLY-2 only, non-optimistic)
-
-1. Click `Unlock for N credits` → `UnlockVideoModal` opens.
-2. Modal: analyst + SEBI reg, title, duration, `N credits`, current balance, post-unlock balance preview `Y − N = Z`, primary `Confirm unlock`, secondary `Cancel`.
-3. Confirm → button `Unlocking…` + spinner; other controls disabled.
-4. `useUnlockVideoAnswer.mutate({ answerId })` — response handling:
-   - `ok` → toast "Video unlocked", 1.2s success panel, auto-navigate to `/v/{answerId}`. Invalidate `['video-answer', answerId]`, `['video-answers', symbol]`, `['wallet-balance']`, `['my-unlocked-videos']`.
-   - `already_unlocked` → same as `ok` but toast "Already unlocked", no debit displayed.
-   - `insufficient_funds` → modal swaps to insufficient panel with `Top up →` → `/topup?required={required}`; no toast.
-   - `not_found` → destructive toast, close modal, invalidate list query.
-   - `unauthenticated` → redirect to `/login?redirect=/v/{answerId}`.
-   - Network error → keep modal open, inline retry, no cache mutation.
-
-### D.4 Post-unlock playback (`/v/$answerId`, APPLY-2)
-
-- Route under `_authenticated/` — Supabase managed gate handles the sign-in redirect (§F.0.3).
-- Component uses `useServerFn(getVideoAnswer)` inside `useQuery` (never in a public-route loader).
-- `locked: true` (session lost between click and mount) → replace body with `LockedVideoCard` state, no embed.
-- `locked: false` → render `VideoAnswerEmbed` (16:9, `youtube-nocookie.com`, `playsinline`, no autoplay), title, analyst attribution + SEBI reg, `Back to {symbol}` link.
-- Mobile: full-width, sticky back link. Desktop: max-w-3xl centered.
-
-### D.5 Anti-leak rules (rewritten to match 4F.1 reality)
-
-The public locked surface intentionally exposes `poster_thumb` at `https://i.ytimg.com/vi/{id}/hqdefault.jpg`. The 11-char YouTube video ID is therefore derivable from that URL — this is an **accepted 4F.1 design choice** (video is unlisted, not private; unlock enforces the debit, not URL opacity). It stays that way in 4F.2 unless the founder reopens 4F.1 backend design.
-
-Given that, 4F.2 anti-leak invariants are:
-
-1. **No raw `youtube_video_id` field** anywhere in DOM, JSON payloads, `data-*` attributes, network responses, or client state for locked or anon-viewed cards.
-2. **No direct YouTube watch URL** — no `youtube.com/watch?v=…`, `youtu.be/…`, or any string that resolves to a watch page.
-3. **No embed URL** — no `youtube.com/embed/…` or `youtube-nocookie.com/embed/…` in locked surfaces.
-4. **No playable surface before unlock** — no `<iframe>`, `<video>`, or media element pointing at YouTube on locked cards; the poster is a plain `<img>`.
-5. **No `video_url`** (legacy MP4 column) rendered on 4F.2 surfaces.
-
-`poster_thumb` on `i.ytimg.com` is a **known accepted public artifact from 4F.1** and is not treated as a leak.
-
-## E. Data wiring by surface
-
-### E.1 Public locked list (stock page, anon-safe)
-
-- Stock page loader stays SSR-only for `stock-overview` (no extra RPC on page load).
-- `<VideosBlogsTab>` fires `useQuery(['video-answers', symbol], listVideoAnswersForSymbol)` on tab mount.
-- Anon-safe: 4F.1 contract guarantees no `youtube_video_id` in response.
-
-### E.2 Authed locked read (per-item)
-
-- `useVideoAnswer(answerId)` — `useQuery(['video-answer', answerId], () => getVideoAnswer({ data: { answerId } }))`, `staleTime: 60_000`. Only fired for authenticated users on visible cards.
-
-### E.3 Library symbol page
-
-- Reuses existing `library-symbol` output. For `kind==='video'`, use `source_id` as the answer id (§F.0.1). Locked stub for anon comes from the same list.
-
-### E.4 MasterSearch
-
-- Reuses existing `library-search` output. For `videos` group rows, use `source_id` as the answer id (§F.0.2). Rows without a resolvable answer id fall through to today's behavior.
-
-### E.5 My Queries — Unlocked videos tab **[EXCEPTION — §A.1]**
-
-- `listMyUnlockedVideos` — server fn with `requireSupabaseAuth`. SELECT from `video_entitlements` (RLS-scoped to `auth.uid()`) joined to `answers` (title, `youtube_video_id`, `video_duration_sec`), `analyst_profiles` (display_name, SEBI reg), `queries` (symbol, stock_name). Returns `youtube_video_id` **only** for rows the user is entitled to (RLS proof, 4F.1 UAT #8).
-- Consumed by `useQuery(['my-unlocked-videos'])` → renders `UnlockedVideoCard` grid.
-- Card click routes to `/v/{answerId}`; the embed there re-verifies entitlement via `getVideoAnswer`.
-
-### E.6 Fallback if §A.1 exception is rejected
-
-Drop file C.11, drop surface B.5, skip §E.5. Everything else ships as-planned. My Queries stays legacy-only until a future stage adds either (a) a new 4F.1 backend fn or (b) approval for this helper.
-
-## F. Risks / blockers
-
-### F.0 Answers to the four gating questions
-
-**F.0.1 Does `library-symbol` already project `answer_id` for video rows?**
-**No — and it does not need to.** `library-symbol` selects `id, kind, source_id, source_table, symbol, symbol_exchange, title, verdict, sector, analyst_id, body_excerpt, view_count, published_at` (confirmed at `supabase/functions/library-symbol/index.ts:74`). For `kind==='video'`, `source_table==='answers'` and `source_id` **is** the `answer_id` — that is the definition of that column across the library projection. 4F.2 reads `item.source_id` when `item.kind==='video'`; no edge fn change, no type change (`SymbolLibraryItem.source_id` already `string`). §C.17 accordingly reverts to "no change".
-
-**F.0.2 Does `library-search` already project `answer_id` for video rows?**
-**No — and it does not need to.** `library-search` delegates to RPC `fn_library_search` and returns rows typed as `LibraryItem` with `source_id: string`. Same rule as F.0.1 — `source_id` on `kind==='video'` is the answer id. `LibraryItem.source_id` is already in the type. No edge fn / RPC change.
-
-**F.0.3 Does the `_authenticated/` route structure already exist for the watch route?**
-**No — not currently present in `src/routes/`.** (Verified: directory absent.) This is a project-managed layout per Supabase auth guards. 4F.2 must NOT hand-author `_authenticated/route.tsx`. Two acceptable paths, founder to pick:
-  - **(a) Managed creation:** trigger the Lovable Supabase integration to create the managed `_authenticated/route.tsx` gate, then author `src/routes/_authenticated/v.$answerId.tsx` in the same edit as the first child (so TanStack does not raise a duplicate "/" against `index.tsx` from a childless pathless layout).
-  - **(b) Interim placement:** put the route at top-level `src/routes/v.$answerId.tsx` and gate access **inside the component** via `useAuth()` → redirect to `/login?redirect=/v/{answerId}` client-side. Server function protection is already enforced by `requireSupabaseAuth` on `getVideoAnswer`, so no data leaks; the component-level gate is UX polish only. This mirrors what the project already does for `/my-queries` via `RequireAuth`.
-
-Default recommendation: **(b)** for minimum surface area. It composes with the existing `RequireAuth` component (`src/components/auth/RequireAuth.tsx`, already used by `/my-queries`) and avoids introducing a new pathless layout in a stage that is otherwise UI-only.
-
-**F.0.4 If My Queries remains in scope, is its extra read helper the only additional non-4F.1 read path?**
-**Yes.** `listMyUnlockedVideos` (in the new `src/lib/my-video-entitlements.functions.ts`) is the sole non-4F.1 read introduced by 4F.2. Every other surface (stock page, library, MasterSearch, watch route, unlock modal) reads exclusively through the three approved 4F.1 fns. Grep-provable at UAT — see §G-0.
-
-### F.1 Discriminator: legacy vs 4F.1 video row
-
-Rule at every dispatch site: 4F.1-shape iff `answer_type='video' AND unlock_price_credits IS NOT NULL AND youtube_video_id IS NOT NULL` (per the DB check constraint). Legacy row (`video_url` set, `unlock_price_credits` NULL) never appears in 4F.1 read paths because `listVideoAnswersForSymbol` and `getVideoAnswer` both filter on the video shape. Confirmed once in UAT §G-16.
-
-### F.2 "& Blogs" naming — no blog model. Keep the tab label; keep a "coming soon" strip. Do not invent a table.
-
-### F.3 SEO — the public list is client-fetched in the stock-page tab, so video counts are not in SSR HTML for `/stock/$symbol`. `/library/$symbol` continues to SSR counts. Acceptable trade-off vs adding a server-fn hop to every stock page load.
-
-### F.4 Legacy CTAs (`BookAnalystVideoButton`, `VideoAnswerPaymentModal`) stay untouched and remain the sole video CTA on `AIReportCard*`, `AnalystCtaCard`, `HomeAnalystCta`.
-
-### F.5 Mobile Safari YouTube embed needs `playsinline`. Wired in §D.4.
-
-### F.6 No changes required to migrations, RPCs, RLS, or wallet code. No 4F.3 work.
-
-## G. UAT
-
-### G-0 · Contract-exception audit
-
-0.1 `rg -n "from \"@tanstack/react-start\"" src/components/video-answers src/routes/v.\$answerId.tsx src/hooks/useVideoAnswer.ts src/hooks/useUnlockVideoAnswer.ts` — every import for backend calls resolves to one of `unlockVideoAnswer | getVideoAnswer | listVideoAnswersForSymbol` from `@/lib/video-answers.functions`. Zero other server-fn imports on 4F.2 files EXCEPT §C.16 which may also import `listMyUnlockedVideos` from `@/lib/my-video-entitlements.functions`.
-
-### G-1 · Anti-leak (rewritten per §D.5)
-
-1. Anon `/stock/INFY` → Videos tab → INFY seed row visible. Assertions:
-   - No `youtube_video_id` field in any response body or client state.
-   - No `youtube.com/watch`, `youtu.be/`, `youtube.com/embed`, or `youtube-nocookie.com/embed` string in DOM or network payloads.
-   - No `<iframe>`/`<video>` element on the card.
-   - `video_url` field absent.
-   - `poster_thumb` on `i.ytimg.com/vi/…/hqdefault.jpg` present — **accepted**.
-2. Anon `/library/INFY` tab=video → repeat 1.
-3. Anon MasterSearch `INFY` → row in 🎥 ANALYST VIDEOS section; repeat 1.
-4. Anon clicks locked CTA → routes to `/login?redirect=/v/{answerId}`.
-
-### G-2 · APPLY-1 logged-in teaser
-
-5. Logged-in user B on any of the three anon surfaces sees `Unlock coming soon` (disabled, aria-disabled). Click does nothing. No navigation to `/login`. No modal. No network call to `unlockVideoAnswer`.
-
-### G-3 · Logged-in locked (APPLY-2)
-
-6. B (600 credits, no entitlement) sees `Unlock for 499 credits` + "You have 600 credits".
-7. Opens modal → 600 → 101 preview.
-8. Cancels → no debit, no entitlement, balance 600.
-
-### G-4 · Unlock happy path (APPLY-2)
-
-9. B confirms → toast + success panel + auto-navigate to `/v/{answerId}` → embed renders on `youtube-nocookie`, back link works.
-10. `/wallet` shows one new debit `−499`, balance 101.
-11. Reload `/stock/INFY` Videos tab → card shows unlocked state.
-
-### G-5 · Idempotent replay (APPLY-2)
-
-12. B revisits card → unlocked state (no modal), click → `/v/{answerId}`. Zero new ledger rows.
-
-### G-6 · Insufficient funds (APPLY-2)
-
-13. Fresh user C (0 credits) → CTA `Top up 499 credits` → `/topup?required=499`. If C reaches modal (race), Confirm returns `insufficient_funds` → panel with `Top up →`. Zero writes.
-
-### G-7 · Auth expiry mid-flow (APPLY-2)
-
-14. B signs out in another tab, then confirms unlock → 401 → redirected to `/login?redirect=/v/{answerId}`. Zero writes.
-
-### G-8 · My Queries [EXCEPTION — skip if §A.1 rejected]
-
-15. A (owns 4F.1 UAT seed unlock) `/my-queries` → new `Unlocked videos` tab lists the seed row. Legacy `Video Answer` tab unchanged.
-16. B (unlocked in G-4) → same tab lists the same row.
-
-### G-9 · Regressions
-
-17. Legacy `Book Analyst Video — ₹100` button on `AIReportCard*` still opens the old `VideoAnswerPaymentModal` (Razorpay-demo copy).
-18. Existing `Video Answer` tab on `/my-queries` still lists legacy personal-video rows unchanged.
-19. `/stock/$symbol` SSR HTML unchanged for Overview / Statistics / Analytics / News / AI Reports tabs.
-
-### G-10 · Mobile
-
-20. iOS Safari `/v/$answerId`: `playsinline` respected; poster fills width; back link visible.
-21. Android Chrome: modal scrolls; sticky footer CTA reachable.
-
-Any FAIL → single fix or reopen §F item. Do not proceed to APPLY-2 until APPLY-1 passes.
-
-## H. Recommended APPLY sequence
-
-**Two-pass split so the read-only surface is auditable before any state-changing UI ships.**
-
-### APPLY-1 · Read-only surfaces (no debit possible, no unlock possible)
-
-Files: §C.1 (`LockedVideoCard` with APPLY-1 CTA matrix — anon routes to login, **logged-in shows disabled "Unlock coming soon"**, per §D.1 APPLY-1 table), §C.4 (`VideoPosterThumb`), §C.6 (`InlinePriceChip`), §C.7 (`copy.ts`), §C.9 (`useVideoAnswer`), §C.12 (`VideosBlogsTab`), §C.13 (`library.$symbol.tsx`), §C.14 (`LibraryItemCard` dispatch), §C.15 (`MasterSearch` dispatch).
-
-No modal, no mutation hook, no watch route, no My Queries tab. Logged-in users cannot trigger any unlock or auth redirect.
-
-UAT scope: §G-0, §G-1, §G-2, §G-9, §G-10 (partial — no `/v/$answerId` yet).
-
-### APPLY-2 · Unlock flow + playback + My Queries
-
-Files: §C.2 (`UnlockedVideoCard`), §C.3 (`UnlockVideoModal`), §C.5 (`VideoAnswerEmbed`), §C.8 (`v.$answerId` route per §F.0.3 recommendation (b)), §C.10 (`useUnlockVideoAnswer`), §C.16 (`MyQueries` new tab), §C.11 (`my-video-entitlements.functions.ts`) **[EXCEPTION — omit if founder rejects §A.1]**.
-
-Rewire `LockedVideoCard` CTA per §D.1 APPLY-2 table.
-
-UAT scope: full §G (skip §G-8 if exception rejected).
-
-### Blockers gated before APPLY-1
-
-All four blockers answered in §F.0. Remaining founder decisions:
-
-1. §A.1 exception → **approve** the single new read fn for My Queries, or **reject** and defer My Queries surface.
-2. §F.0.3 → confirm route placement approach **(a)** managed `_authenticated/` layout or **(b)** top-level `/v/$answerId` gated by `RequireAuth` component (**recommended**).
-
-STOP after this plan. Do not APPLY without founder sign-off on the two remaining decisions above.
+Rule: whatever a user sees pre-unlock must come from the 4F.1 payloads (`list_public_video_answers_for_symbol` for grids, `get_video_answer` locked branch for the watch route). This plan lists what 4F.3 must ensure is present.
+
+| Surface | Fields shown pre-unlock |
+|---|---|
+| Stock page video card (`VideosBlogsTab`) | title (or "Analyst video on {stock}"), verdict badge, poster_thumb, duration, price chip, analyst name + "SEBI RA {reg}", "Answered on: {stock_name} ({symbol})". |
+| Library card | Same as above plus body_excerpt teaser (already projected by `fn_project_answer_to_library`). |
+| MasterSearch dropdown row | title, symbol, price chip, "By {analyst}". |
+| Watch page header (locked branch) | title, verdict, stock, analyst attribution, duration, **question addressed** paragraph, short description teaser, unlock CTA. |
+| My Queries "Unlocked videos" tab | Post-unlock only — unchanged from 4F.2. |
+
+Explicitly YES pre-unlock: "Question answered: {…}" and "Answered by {RA} · SEBI RA {reg}". These are the founder's core "worth-it?" signals. Both must be added to the 4F.1 `list_…` and `get_video_answer(locked)` payload projections (see §G).
+
+---
+
+## F. File-by-file plan
+
+New files:
+- `src/routes/admin.videos.tsx` — list route (RequireAdmin OR RequireAnalyst-with-flag).
+- `src/routes/admin.videos.new.tsx` — create route.
+- `src/routes/admin.videos.$answerId.edit.tsx` — edit route.
+- `src/routes/admin.videos.$answerId.preview.tsx` — preview route (renders LockedVideoCard + WatchPage-like shell using in-memory metadata; NO debit path).
+- `src/pages/admin/VideoAnswersList.tsx`
+- `src/pages/admin/VideoAnswerEditor.tsx` (shared by new / edit)
+- `src/pages/admin/VideoAnswerPreview.tsx`
+- `src/components/admin/video-answers/VideoUrlInput.tsx` — URL paste + YT ID derivation + duplicate warning.
+- `src/components/admin/video-answers/QuerySelector.tsx` — search existing query OR "Create synthetic query" panel.
+- `src/components/admin/video-answers/AnalystSelector.tsx` — RA dropdown gated by SEBI reg.
+- `src/components/admin/video-answers/SymbolPicker.tsx` — stock_master search (or reuse existing picker if one exists).
+- `src/lib/video-answers-admin.functions.ts` — server fns (see §G): `createVideoAnswerDraft`, `updateVideoAnswer`, `publishVideoAnswer`, `unpublishVideoAnswer`, `listAdminVideoAnswers`, `resolveYoutubeMetadata`, `createSyntheticSeedQuery`.
+- `src/hooks/useAdminVideoAnswer.ts` — thin query wrapper for the editor.
+- `src/lib/youtube-id.ts` — pure YT-URL → ID parser (reused by SSR + client, no side effects).
+
+Modified files:
+- `src/pages/admin/AdminDashboard.tsx` — add "Video answers" tile linking to `/admin/videos`.
+- `src/routes/__root.tsx` — none (existing head suffices).
+- (If §G additions land) `src/lib/video-answers.functions.ts` — extend the SELECT projections in `listVideoAnswersForSymbol` and the RPC-returned locked payload consumers to include the new safe columns. **RPCs themselves are NOT changed**; the extra columns are new nullable columns on `answers` + `queries` that the RPCs' `SELECT *`-style body already pass through, OR we add them to the RPC in a separate, narrowly-scoped migration (see §G decision).
+
+Untouched (regression firewall):
+- `src/pages/admin/VideoAnswerUpload.tsx`
+- `src/routes/admin.upload-answer.$queryId.tsx`
+- Every 4F.2 file: `LockedVideoCard`, `UnlockVideoModal`, `UnlockedVideoCard`, `VideoAnswerEmbed`, `useUnlockVideoAnswer`, `useVideoAnswer`, `v.$answerId.tsx`, `MyQueries.tsx`.
+- Every 4F.1 file: `video-answers.functions.ts` unlock/get mutations, `my-video-entitlements.functions.ts`, RPCs, `video_entitlements`, wallet ledger.
+
+---
+
+## G. Backend / schema changes
+
+Founder rule respected: **surface everything up front — nothing hidden inside the UI plan.**
+
+### G.1 Strictly required (minimum set)
+
+To meet founder requirement E ("question answered + answered by RA before unlock") with the current 4F.1 read RPCs, no new columns are strictly required — `get_video_answer` already returns `analyst`, `stock_name`, `symbol`, `verdict`, and (via `queries.query_text`, joinable by `query_id`) the question text. The **only real gap** is exposing `queries.query_text` inside the locked payload.
+
+**Minimum backend delta:**
+1. **Update `get_video_answer` RPC** to include `question_addressed: text` on the locked branch (derived: `COALESCE(a.question_addressed_override, q.query_text)`).
+2. **Update `list_public_video_answers_for_symbol` RPC** to include `question_addressed: text` on each row.
+3. **New column `answers.question_addressed_override text NULL`** — used only when the linked `queries.query_text` is a synthetic seed or when staff want to rewrite the user's messy question into a clean single sentence. Ships in 4F.3.
+4. **New column `answers.video_title text NULL`** — optional caption override; renderers fall back to "Analyst video on {stock_name}". Purely additive.
+5. **New column `answers.video_description text NULL`** — short pre-unlock teaser (40–400 chars). Renderers fall back to `body` truncated, then to a stock generic. Purely additive. (Alternative: reuse `body`, but `body` is already the post-unlock long-form; keeping them separate avoids leaking long-form snippets pre-unlock.)
+
+All three columns are nullable additive; **no default backfill**, **no data migration**, **no impact on 4F.2 UI** (which does not read them yet — added to 4F.2 read paths as part of 4F.3 APPLY-2).
+
+### G.2 Nice-to-have, deferred
+
+- `answers.published_at timestamptz` for a "just now / 3d ago" chip that survives edits (today the UI uses `created_at`). Defer to 4F.4 unless the founder wants it in 4F.3.
+- Custom thumbnail upload (bucket + upload flow) — defer.
+- Scheduling — defer.
+- Analyst self-publish flag — config row only, no schema.
+
+### G.3 Not changed
+
+- `video_entitlements`, `wallet_ledger`, `unlock_video_answer` RPC, wallet logic, RLS on any of the above.
+- Legacy `answers.video_url` / `video_thumbnail` / `duration_seconds` — untouched; still owned by the legacy `Book Analyst Video ₹100` MP4 pipeline. 4F.3 writes only to the YT-family columns (`youtube_video_id`, `video_duration_sec`, `unlock_price_credits`) plus the three new nullable columns.
+
+### G.4 Server functions (new, all admin/analyst-gated via `requireSupabaseAuth` + role check)
+
+- `createVideoAnswerDraft({ youtubeUrl, expertId, queryId?, syntheticQuery?, priceCredits, verdict?, videoTitle?, videoDescription?, questionAddressedOverride?, videoDurationSec? })` — writes `answers` row with `answer_type='video'`, `is_published=false`. If `syntheticQuery` provided, inserts the query first inside a single transaction (server fn), assigning the caller-configured `SYSTEM_SEED_USER_ID` (config-row, not env — reviewable) as owner.
+- `updateVideoAnswer({ answerId, ...patch })` — RLS enforces analyst-owns-answer OR admin.
+- `publishVideoAnswer({ answerId })` — validates required fields present; sets `is_published=true`; writes audit row.
+- `unpublishVideoAnswer({ answerId })` — flips `is_published=false`; writes audit row. Users with active entitlements retain access (RPC contract already handles this correctly).
+- `listAdminVideoAnswers({ status?, expertId?, symbol?, q? })` — admin/analyst listing; RLS scopes analysts to own.
+- `resolveYoutubeMetadata({ youtubeUrl })` — server-side fetch of YouTube oEmbed JSON to prefill title suggestion + duration hint. Best-effort; failures are non-blocking.
+- `createSyntheticSeedQuery({ symbol, stockName, exchange, questionText })` — helper called by the editor when there is no user query.
+
+### G.5 Migration count
+
+**One** migration in 4F.3: adds three nullable columns and updates the two read RPCs (`get_video_answer`, `list_public_video_answers_for_symbol`) to project `question_addressed`. No RLS changes. No data changes.
+
+---
+
+## H. Draft / edit / publish / unpublish workflow
+
+```
+                ┌────────────────────────────┐
+                │  /admin/videos  (list)     │
+                └───────────┬────────────────┘
+                            │ New
+                            ▼
+   ┌──────────────────────────────────────────────┐
+   │ /admin/videos/new — VideoAnswerEditor         │
+   │   1. Paste YouTube URL → derive youtube_id    │
+   │      • duplicate check on youtube_video_id    │
+   │      • oEmbed prefill (title, duration)       │
+   │   2. Pick stock (SymbolPicker)                │
+   │   3. Pick analyst (AnalystSelector)           │
+   │   4. Question addressed:                      │
+   │        (a) link existing query, OR            │
+   │        (b) synthetic seed (auto-creates       │
+   │            queries row via server fn)         │
+   │   5. Fill video_title, video_description,     │
+   │      verdict, unlock_price_credits            │
+   │   6. Save Draft → is_published=false          │
+   └───────────┬──────────────────────┬────────────┘
+               │                      │
+               ▼                      ▼
+     ┌──────────────────┐   ┌───────────────────────┐
+     │ Preview (locked  │   │ Edit (same editor,    │
+     │ + watch shell)   │   │ pre-loaded)           │
+     └────────┬─────────┘   └───────────┬───────────┘
+              │ Publish                  │
+              ▼                          ▼
+       ┌──────────────────────────────────────┐
+       │ Published → visible on stock page,   │
+       │ library, MasterSearch, watch route   │
+       │  Unpublish available at any time     │
+       └──────────────────────────────────────┘
+```
+
+Validation gates before "Publish" is enabled:
+- `youtube_video_id` present + parseable
+- unique `youtube_video_id` (no other published row uses it)
+- `expert_id` set, analyst has SEBI reg
+- `query_id` set (real or synthetic)
+- `unlock_price_credits` within floor/ceiling
+- `video_description` (or `body`) ≥ 40 chars
+- `video_duration_sec` present (auto-derived or manual)
+
+Replace YouTube link: allowed on draft freely; on a **published** row it requires an admin (analyst is blocked) and writes an audit row noting the previous ID. It does **not** invalidate existing `video_entitlements` (unlock is per `answer_id`, not per YT ID).
+
+---
+
+## I. Validation & anti-regression rules
+
+Client + server (Zod both sides):
+- YouTube URL regex covers `youtu.be`, `watch?v=`, `shorts/`, `embed/`; 11-char ID; anything else → error.
+- Duplicate `youtube_video_id` on `INSERT` and on `UPDATE` (partial unique index recommended; add in same migration: `CREATE UNIQUE INDEX ... ON answers(youtube_video_id) WHERE youtube_video_id IS NOT NULL AND answer_type='video'`).
+- Price integer bounded server-side.
+- `answer_type='video'` immutable after insert (server fn refuses to change it).
+
+Anti-regression firewall:
+- No 4F.3 file touches `VideoAnswerUpload.tsx` or the MP4 storage bucket.
+- No 4F.3 file imports `unlockVideoAnswer` / `useUnlockVideoAnswer` / `useVideoAnswer` — publisher preview must not be routable through the user unlock path.
+- No 4F.3 file writes to `video_entitlements` or `wallet_ledger`.
+- Preview route must render `LockedVideoCard` in a mode where the unlock button is disabled/labeled "Preview only" and cannot open `UnlockVideoModal`.
+- RPC changes are additive (new columns in return JSON only) — 4F.2 clients ignoring the new fields must keep working.
+
+---
+
+## J. UAT checklist
+
+- **P-1 Auth**: anon/user redirected off `/admin/videos*`; analyst sees only own; admin sees all.
+- **P-2 URL parse**: 4 URL shapes accepted, non-YT rejected.
+- **P-3 Duplicate**: publishing a second row with the same `youtube_video_id` blocked with a clear error.
+- **P-4 Synthetic query**: "Create synthetic query" writes a `queries` row owned by the system UID; the resulting video answer surfaces on the stock page and shows the seeded question in the watch header.
+- **P-5 Draft invisible**: `is_published=false` row is absent from `list_public_video_answers_for_symbol`, absent from library, absent from MasterSearch, and locked payload for the watch route returns `not_found` for anon / other users.
+- **P-6 Publish**: after Publish, row appears in all four user surfaces within one refetch cycle; locked payload shows `question_addressed`, `analyst.display_name`, `analyst.sebi_reg_number`, `verdict`, price, duration, poster.
+- **P-7 Unpublish**: row disappears from all public surfaces; **existing entitlement holders retain playback** on `/v/$answerId` (regression check against 4F.1).
+- **P-8 Edit metadata**: title/description/price/verdict edits reflect on the next locked payload fetch; no impact on `video_entitlements`.
+- **P-9 Replace YT link (admin)**: allowed; audit row written; entitlement holders still get the new video on `/v/$answerId`. (Admin acknowledges the swap via confirm dialog.)
+- **P-10 Replace YT link (analyst)**: blocked on published rows.
+- **P-11 Preview**: renders exactly what a locked user sees, unlock button is inert, no debit possible.
+- **P-12 Wallet firewall**: full publish → unpublish → edit → republish cycle produces zero rows in `wallet_ledger` and zero rows in `video_entitlements`.
+- **P-13 Legacy untouched**: `/admin/upload-answer/$queryId` still uploads MP4s to the legacy `Book Analyst Video ₹100` pipeline unchanged; no shared components leak between the two pages.
+- **P-14 Anti-leak carried forward**: no admin surface prints `youtube_video_id` to the DOM outside its owning `VideoAnswerEmbed`; preview uses embed only when user would already be unlocked (never on locked preview).
+- **P-15 Mobile**: editor + list + preview usable at 360px.
+
+---
+
+## K. Recommended execution split
+
+Three-part APPLY, each stopping for founder audit:
+
+- **APPLY-1 — Backend delta (single migration + server fns)**
+  - Migration: add `answers.question_addressed_override`, `answers.video_title`, `answers.video_description`; partial unique index on `youtube_video_id`; update `get_video_answer` and `list_public_video_answers_for_symbol` to project `question_addressed`.
+  - New file `src/lib/video-answers-admin.functions.ts` with all seven server fns.
+  - `src/lib/youtube-id.ts` + unit tests.
+  - No UI. UAT subset: P-3, P-5 (via direct RPC calls), migration lint clean, RPC return shape verified.
+
+- **APPLY-2 — Admin authoring UI**
+  - Routes + pages + components under `admin.videos.*` and `src/pages/admin/VideoAnswer*` and `src/components/admin/video-answers/*`.
+  - `AdminDashboard` tile.
+  - Wires the APPLY-1 server fns.
+  - UAT subset: P-1, P-2, P-4, P-6, P-7, P-8, P-9, P-10, P-11, P-15.
+
+- **APPLY-3 — 4F.2 read-path surfacing of new fields**
+  - Add `question_addressed`, `video_title`, `video_description` to `LockedVideoCardItem` and to the watch route locked header.
+  - Update `VideosBlogsTab`, `library.$symbol.tsx`, `MasterSearch.tsx` to render the new fields when present (with fallbacks preserved).
+  - UAT subset: P-6 end-to-end at user surfaces, P-12, P-13, P-14, G-1 anti-leak re-run.
+
+Stop after each APPLY for founder audit. Do not open 4F.4.
+
+---
+
+STOP for founder review.
