@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/layout/AppShell";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { QueryHistoryCard, type QueryHistoryItem } from "@/components/query/QueryHistoryCard";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { QueriesSearchBar } from "@/components/queries/QueriesSearchBar";
+import { UnlockedVideoCard } from "@/components/video-answers/UnlockedVideoCard";
+import { listMyUnlockedVideos } from "@/lib/my-video-entitlements.functions";
 
 
 const FILTERS = [
@@ -23,6 +26,7 @@ const FILTERS = [
   { id: "ai_answered", label: "AI Answered" },
   { id: "expert_answered", label: "Expert Answered" },
   { id: "video", label: "Video Answer" },
+  { id: "unlocked_videos", label: "Unlocked Videos" },
 ];
 
 type VideoAnswer = NonNullable<QueryHistoryItem["answers"]>[number];
