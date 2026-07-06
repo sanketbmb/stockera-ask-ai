@@ -296,11 +296,28 @@ export default function AdminDashboard() {
     return <AdminShell><PendingApprovalLockout /></AdminShell>;
   }
 
+  const filteredQueue = (queue ?? []).filter((r) => {
+    const s = queueSearch.trim().toLowerCase();
+    if (!s) return true;
+    return (
+      (r.stock_symbol ?? "").toLowerCase().includes(s) ||
+      (r.stock_name ?? "").toLowerCase().includes(s) ||
+      (r.query_text ?? "").toLowerCase().includes(s)
+    );
+  });
+
   return (
     <AdminShell>
-      <div className="mb-6">
-        <p className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Expert dashboard</p>
-        <h1 className="font-display text-3xl md:text-4xl mt-1">Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}</h1>
+      <div className="mb-6 flex flex-wrap gap-3 items-start justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Expert dashboard</p>
+          <h1 className="font-display text-3xl md:text-4xl mt-1">Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}</h1>
+        </div>
+        <Button asChild size="lg" className="bg-gradient-to-r from-primary to-accent text-primary-foreground">
+          <Link to={"/admin/compose-video" as never}>
+            <Plus className="h-4 w-4 mr-1.5" /> New video
+          </Link>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -316,8 +333,8 @@ export default function AdminDashboard() {
             <Youtube className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-display text-lg leading-tight">Video answers (YouTube)</p>
-            <p className="text-xs text-muted-foreground">Publish analyst video answers with metered unlocks.</p>
+            <p className="font-display text-lg leading-tight">Video answers</p>
+            <p className="text-xs text-muted-foreground">Draft or manage published analyst video answers.</p>
           </div>
         </div>
         <Button asChild size="sm">
@@ -338,14 +355,23 @@ export default function AdminDashboard() {
         </TabsList>
 
         <TabsContent value="pending" id="queue" className="space-y-3">
+          <QueueSearchBar
+            value={queueSearch}
+            onChange={setQueueSearch}
+            resultCount={filteredQueue.length}
+            totalCount={queue?.length ?? 0}
+            placeholder="Search assigned queries by stock symbol, stock name, or query text…"
+          />
           {isLoading && (
             <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}</div>
           )}
-          {!isLoading && (!queue || queue.length === 0) && (
+          {!isLoading && filteredQueue.length === 0 && (
             <Card className="p-10 text-center">
               <InboxIcon className="h-10 w-10 mx-auto text-muted-foreground" />
-              <p className="font-display text-xl mt-3">All caught up</p>
-              <p className="text-sm text-muted-foreground mt-1">New queries assigned to you will appear here.</p>
+              <p className="font-display text-xl mt-3">{queueSearch ? "No matches" : "All caught up"}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {queueSearch ? "Try a different search term." : "New queries assigned to you will appear here."}
+              </p>
             </Card>
           )}
           {queue?.map((row) => <QueryQueueCard key={row.id} row={row} />)}
