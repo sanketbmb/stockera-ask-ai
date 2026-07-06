@@ -30,7 +30,13 @@ export interface LockedVideoCardItem {
   videoDurationSec: number | null;
   posterThumb: string | null;
   publishedAt: string | null;
+  // 4F.3 APPLY-3 — pre-unlock context. All optional / null-safe.
+  /** Staff-authored user-facing question this video answers. */
+  questionAddressed?: string | null;
+  /** Short pre-unlock teaser. */
+  videoDescription?: string | null;
 }
+
 
 interface Props {
   item: LockedVideoCardItem;
@@ -101,6 +107,11 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
             <span aria-hidden="true">🔒</span>
             <span className="truncate text-sm font-medium">{item.title}</span>
           </div>
+          {item.questionAddressed && (
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+              Q: {item.questionAddressed}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <InlinePriceChip credits={item.unlockPriceCredits} />
             {item.analystName && <span className="truncate">{item.analystName}</span>}
@@ -110,6 +121,7 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
             {isLoggedIn ? "Click to unlock" : "Sign in to unlock"}
           </p>
         </div>
+
       </div>
     );
   }
@@ -142,11 +154,22 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
         </CardHeader>
         <CardContent className="flex-1 space-y-2 text-sm">
           <p className="text-xs text-muted-foreground">{attribution}</p>
+          {item.questionAddressed && (
+            <p className="line-clamp-2 text-sm text-foreground/90">
+              <span className="font-medium">Q:</span> {item.questionAddressed}
+            </p>
+          )}
+          {item.videoDescription && (
+            <p className="line-clamp-2 text-xs text-muted-foreground">
+              {item.videoDescription}
+            </p>
+          )}
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>{timeAgo(item.publishedAt)}</span>
             {item.symbol && <span className="font-mono">{item.symbol}</span>}
           </div>
         </CardContent>
+
         <CardFooter className="flex flex-col items-stretch gap-2">
           {isLoggedIn ? (
             <Button
