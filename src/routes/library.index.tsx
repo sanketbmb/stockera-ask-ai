@@ -18,7 +18,7 @@ import {
 } from "@/components/library/MasterLibraryToolbar";
 import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { GeneralTab } from "@/components/library/GeneralTab";
+import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
@@ -200,7 +200,7 @@ function LibraryIndexPage() {
         <Tabs defaultValue="reports" className="space-y-4">
           <TabsList>
             <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="general">Videos &amp; Blogs</TabsTrigger>
           </TabsList>
           <TabsContent value="reports">
             <MasterLibraryToolbar
@@ -294,7 +294,7 @@ function LibraryIndexPage() {
             </div>
           </TabsContent>
           <TabsContent value="general" className="py-6">
-            <GeneralTab />
+            <VideosBlogsTab />
           </TabsContent>
         </Tabs>
       </section>
