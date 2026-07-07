@@ -5,6 +5,11 @@
  * stock data: LTP, OHLC, full quote, historical charts, and holdings.
  *
  * Docs: https://dhanhq.co/docs/v2/
+ *
+ * Batch mode (marketfeed endpoints only): pass `securityIds: number[]`
+ * (max 1000, per Dhan Market-Quote API) to fetch many instruments in a
+ * single upstream call. When `securityIds` is absent, the single-`securityId`
+ * path is byte-identical to prior behavior.
  */
 
 /** CORS headers for browser access */
@@ -30,6 +35,8 @@ type ExchangeSegment = "NSE_EQ" | "BSE_EQ" | "NSE_FNO" | "IDX_I" | "BSE_I";
 interface RequestBody {
   endpoint: string;
   securityId?: string;
+  /** Batch mode for marketfeed endpoints (ltp/ohlc/quote/marketfeed). Max 1000. */
+  securityIds?: Array<string | number>;
   exchangeSegment?: ExchangeSegment;
   params?: {
     fromDate?: string;
@@ -67,6 +74,13 @@ Deno.serve(async (req) => {
     const exchangeSegment: ExchangeSegment = body?.exchangeSegment ?? "NSE_EQ";
     const params = body?.params ?? {};
 
+    /** Batch-mode sanitization (marketfeed only) */
+    const batchIds: number[] | null = Array.isArray(body?.securityIds)
+      ? body!.securityIds!
+          .map((x) => Number(x))
+          .filter((n) => Number.isFinite(n) && n > 0)
+      : null;
+
     if (!endpoint || !ALLOWED_ENDPOINTS.has(endpoint)) {
       return jsonResponse(
         {
@@ -78,10 +92,28 @@ Deno.serve(async (req) => {
       );
     }
 
+    const isMarketfeedEp =
+      endpoint === "ltp" ||
+      endpoint === "ohlc" ||
+      endpoint === "quote" ||
+      endpoint === "marketfeed";
+
     /** Per-endpoint required-field validation */
-    if (endpoint !== "holdings" && !securityId) {
+    if (endpoint !== "holdings" && !securityId && !(batchIds && batchIds.length > 0)) {
       return jsonResponse(
-        { success: false, error: "securityId is required for this endpoint", status: 400 },
+        { success: false, error: "securityId or securityIds is required for this endpoint", status: 400 },
+        400,
+      );
+    }
+    if (batchIds && batchIds.length > 1000) {
+      return jsonResponse(
+        { success: false, error: "securityIds exceeds Dhan max of 1000 per call", status: 400 },
+        400,
+      );
+    }
+    if (batchIds && batchIds.length > 0 && !isMarketfeedEp) {
+      return jsonResponse(
+        { success: false, error: "securityIds is only supported for marketfeed endpoints (ltp/ohlc/quote/marketfeed)", status: 400 },
         400,
       );
     }
@@ -114,7 +146,8 @@ Deno.serve(async (req) => {
       case "marketfeed": {
         const path = endpoint === "marketfeed" ? "quote" : endpoint;
         url = `${BASE_URL}/marketfeed/${path}`;
-        upstreamBody = { [exchangeSegment]: [Number(securityId)] };
+        const ids = batchIds && batchIds.length > 0 ? batchIds : [Number(securityId)];
+        upstreamBody = { [exchangeSegment]: ids };
         break;
       }
       case "historical": {
@@ -163,13 +196,7 @@ Deno.serve(async (req) => {
       /** Detect empty marketfeed responses (status:success but no segment data).
        *  Dhan returns this when: market is closed, Data API marketfeed tier is
        *  not active on the plan, or the segment is not enabled on the token. */
-      const isMarketfeed =
-        endpoint === "ltp" ||
-        endpoint === "ohlc" ||
-        endpoint === "quote" ||
-        endpoint === "marketfeed";
-
-      if (isMarketfeed && typeof data === "object" && data !== null) {
+      if (isMarketfeedEp && typeof data === "object" && data !== null) {
         const outer = data as Record<string, unknown>;
         const inner = outer.data;
         if (typeof inner === "object" && inner !== null) {
@@ -194,6 +221,7 @@ Deno.serve(async (req) => {
                   "Dhan returned no data for this security. Likely causes: market is closed (NSE: 09:15–15:30 IST Mon–Fri), Data API marketfeed tier not active on your Dhan plan, or the requested segment is not enabled on the token.",
                 endpoint,
                 securityId: securityId ?? null,
+                securityIds: batchIds ?? null,
                 exchangeSegment,
                 raw: data,
               },
@@ -209,6 +237,7 @@ Deno.serve(async (req) => {
           data,
           endpoint,
           securityId: securityId ?? null,
+          securityIds: batchIds ?? null,
         },
         200,
       );
