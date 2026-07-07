@@ -1,9 +1,16 @@
-// Phase 2F — Background LTP sync (Dhan), single-leg NSE-first/BSE-fallback.
-// Reads universe_override_symbols from runtime_config, looks up canonical
-// dhan_security_id per (symbol, segment) from stock_master (paginated to
-// defeat PostgREST's silent 1000-row cap), fetches LTP via dhan-fetch with
-// classified failures + Retry-After handling, upserts public.ltp_cache on
-// the composite PK (symbol, exchange), and emits explicit telemetry counters.
+// Phase 2F — Background LTP sync (Dhan), batched Quote-API contract.
+//
+// Reads active universe snapshot members, resolves canonical dhan_security_id
+// per (symbol, segment) (with stock_master fallback), buckets by segment, and
+// calls dhan-fetch ONCE per DHAN_BATCH_SIZE chunk using Dhan's native
+// batched quote body. Paced at ~1 rps to stay under Dhan's Quote API limit
+// (https://dhanhq.co/docs/v2/market-quote/). Upserts per-symbol LTP into
+// public.ltp_cache on the composite PK (symbol, exchange).
+//
+// Cursor: retired. With ~788 snapshot members and DHAN_BATCH_SIZE=100 the
+// whole universe fits in one tick (~9s), so we always process the entire
+// snapshot per invocation. Legacy `sync_ltp_dhan_cursor` config row is left
+// in place for rollback safety; cursor telemetry keys preserved as nulls.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -15,11 +22,10 @@ const cors = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// ---- Chunking / throttle knobs (writer-only; no DB / no UI impact) ----
-const MASTER_CHUNK = 200;            // canonical stock_master pagination
-const FULL_RUN_CHUNK = 50;           // symbols per Dhan batch
-const INTER_CHUNK_PAUSE_MS = 800;    // pause between batches
-const INTRA_CHUNK_PAUSE_MS = 0;      // no extra pause inside a batch
+// ---- Batching / pacing knobs ----
+const MASTER_CHUNK = 200;             // snapshot pagination (unchanged)
+const DHAN_BATCH_SIZE = 100;          // instruments per Dhan call (Dhan max 1000)
+const DHAN_INTER_CALL_MS = 1100;      // ~1 rps — Dhan Quote API hard limit
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -43,9 +49,9 @@ function parseOverrideSymbols(raw: unknown): { symbol: string; exchange: string 
     .filter((e): e is { symbol: string; exchange: string } => e !== null);
 }
 
-// Discriminated result for upstream failure classification.
-type DhanFetchResult =
-  | { kind: "ok"; ltp: number }
+// Discriminated result for upstream batch failure classification.
+type BatchResult =
+  | { kind: "ok"; ltpBySecId: Map<string, number> }
   | { kind: "dhan_null"; status: number; message: string | null }
   | { kind: "auth_error"; status: number; message: string | null }
   | { kind: "rate_limited"; retryAfterMs: number; status: number }
@@ -59,7 +65,10 @@ function extractUpstreamMessage(body: Record<string, unknown>): string | null {
   return typeof m === "string" ? m : JSON.stringify(m);
 }
 
-async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFetchResult> {
+async function fetchDhanLtpBatch(
+  securityIds: string[],
+  segment: "NSE_EQ" | "BSE_EQ",
+): Promise<BatchResult> {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/dhan-fetch`, {
       method: "POST",
@@ -68,7 +77,11 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFe
         apikey: SERVICE_KEY,
         authorization: `Bearer ${SERVICE_KEY}`,
       },
-      body: JSON.stringify({ endpoint: "ltp", securityId, exchangeSegment: segment }),
+      body: JSON.stringify({
+        endpoint: "ltp",
+        exchangeSegment: segment,
+        securityIds: securityIds.map((x) => Number(x)),
+      }),
     });
     const text = await res.text();
     let body: Record<string, unknown> = {};
@@ -94,22 +107,30 @@ async function fetchDhanLtp(securityId: string, segment: string): Promise<DhanFe
     const data = body.data as Record<string, unknown> | undefined;
     const inner = data?.data as Record<string, unknown> | undefined;
     const seg = inner?.[segment] as Record<string, unknown> | undefined;
-    const node = seg?.[securityId] as Record<string, unknown> | undefined;
-    const ltp = node?.last_price ?? node?.ltp ?? node?.lastPrice;
-    return typeof ltp === "number" && ltp > 0
-      ? { kind: "ok", ltp }
-      : { kind: "dhan_null", status: res.status, message: upstreamMsg };
+
+    const ltpBySecId = new Map<string, number>();
+    if (seg && typeof seg === "object") {
+      for (const [secId, nodeRaw] of Object.entries(seg)) {
+        const node = nodeRaw as Record<string, unknown> | null;
+        if (!node || typeof node !== "object") continue;
+        const ltp = node.last_price ?? node.ltp ?? node.lastPrice;
+        if (typeof ltp === "number" && ltp > 0) ltpBySecId.set(String(secId), ltp);
+      }
+    }
+    return { kind: "ok", ltpBySecId };
   } catch (e) {
     return { kind: "fetch_error", status: 0, message: String(e) };
   }
 }
 
-
-async function fetchLtpWithRetry(id: string, seg: "NSE_EQ" | "BSE_EQ"): Promise<DhanFetchResult> {
-  const r1 = await fetchDhanLtp(id, seg);
+async function fetchBatchWithRetry(
+  ids: string[],
+  seg: "NSE_EQ" | "BSE_EQ",
+): Promise<BatchResult> {
+  const r1 = await fetchDhanLtpBatch(ids, seg);
   if (r1.kind === "rate_limited") {
     await new Promise((r) => setTimeout(r, r1.retryAfterMs));
-    return fetchDhanLtp(id, seg);
+    return fetchDhanLtpBatch(ids, seg);
   }
   return r1;
 }
@@ -166,18 +187,9 @@ Deno.serve(async (req) => {
         "active_universe_snapshot_id",
         "universe_override_symbols",
         "universe_override_enabled",
-        "sync_ltp_dhan_cursor",
       ]);
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
-
-    // Rolling cursor: last processed composite pair-key `${symbol}|${exchange}`.
-    // Applies only to unfiltered scheduled runs.
-    const cursorRaw = cfg.get("sync_ltp_dhan_cursor");
-    const cursorKey: string | null =
-      cursorRaw && typeof cursorRaw === "object" && typeof (cursorRaw as { last_key?: unknown }).last_key === "string"
-        ? (cursorRaw as { last_key: string }).last_key
-        : null;
 
     if (cfg.get("dhan_api_enabled") !== true) {
       return json({ ok: true, skipped: "dhan_api_enabled=false", symbols_updated: 0, attempts: [], errors: [] });
@@ -193,14 +205,13 @@ Deno.serve(async (req) => {
     const snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
 
     if (snapshotId) {
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
+      for (let from = 0; ; from += MASTER_CHUNK) {
         const { data: rows, error: mErr } = await supabase
           .from("stock_picker_universe_snapshot_member")
           .select("symbol, exchange, segment, dhan_security_id")
           .eq("universe_snapshot_id", snapshotId)
           .order("symbol", { ascending: true })
-          .range(from, from + PAGE - 1);
+          .range(from, from + MASTER_CHUNK - 1);
         if (mErr) return json({ ok: false, error: `snapshot_read: ${mErr.message}` }, 500);
         if (!rows || rows.length === 0) break;
         for (const r of rows) {
@@ -218,7 +229,7 @@ Deno.serve(async (req) => {
             dhan_security_id: r.dhan_security_id ? String(r.dhan_security_id) : null,
           });
         }
-        if (rows.length < PAGE) break;
+        if (rows.length < MASTER_CHUNK) break;
       }
     }
 
@@ -245,6 +256,14 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Deterministic order (kept for stable telemetry / attempts ordering).
+    members.sort((a, b) =>
+      `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
+    );
+
+    const universeMode: "full_snapshot_per_tick" | "filtered_inline" =
+      filterSymbols ? "filtered_inline" : "full_snapshot_per_tick";
+
     const errors: Array<{ symbol: string; reason: string }> = [];
     const attempts: Array<Record<string, unknown>> = [];
     const http_400_samples: Array<{ symbol: string; exchange: string; security_id: string; status: number; message: string | null }> = [];
@@ -267,159 +286,159 @@ Deno.serve(async (req) => {
       fetch_error_by_status: {} as Record<string, number>,
       rate_limit_like_count: 0,
       processed_member_count: 0,
+      dhan_batch_count: 0,
+      dhan_batch_avg_ltp_per_call: 0,
     };
 
-    // -------- Rolling-cursor scope (unfiltered) OR filtered inline --------
-    // Filtered inline runs: process all supplied symbols in one shot, cursor NOT advanced.
-    // Unfiltered scheduled runs: deterministic order by `${symbol}|${exchange}`, pick
-    // exactly ONE FULL_RUN_CHUNK-sized window starting after the persisted cursor,
-    // wrapping to the beginning at end-of-universe.
-    const universeMode: "rolling_full_run" | "filtered_inline" =
-      filterSymbols ? "filtered_inline" : "rolling_full_run";
+    // -------- Per-member id resolution (with stock_master fallback) --------
+    const nseMembers: Array<Member & { dhan_security_id: string }> = [];
+    const bseMembers: Array<Member & { dhan_security_id: string }> = [];
 
-    let wrappedToStart = false;
-    let cursorStartKey: string | null = null;
-    let cursorEndKey: string | null = null;
+    for (const m of members) {
+      counters.symbols_seen++;
+      if (m.exchange === "NSE") counters.nse_selected_count++;
+      else counters.bse_selected_count++;
 
-    if (universeMode === "rolling_full_run") {
-      members.sort((a, b) =>
-        `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
-      );
-      let startIdx = 0;
-      if (cursorKey) {
-        const found = members.findIndex((m) => `${m.symbol}|${m.exchange}` > cursorKey);
-        if (found === -1) {
-          wrappedToStart = true;
-          startIdx = 0;
-        } else {
-          startIdx = found;
+      let idUsed: string | null = m.dhan_security_id;
+      if (!idUsed) {
+        const { data: mstr } = await supabase
+          .from("stock_master")
+          .select("dhan_security_id")
+          .eq("symbol", m.symbol)
+          .eq("segment", m.segment)
+          .not("dhan_security_id", "is", null)
+          .limit(1)
+          .maybeSingle();
+        if (mstr?.dhan_security_id) {
+          idUsed = String(mstr.dhan_security_id);
+          counters.master_fallback_used_count++;
         }
       }
-      const endIdx = Math.min(startIdx + FULL_RUN_CHUNK, members.length);
-      cursorStartKey = members[startIdx] ? `${members[startIdx].symbol}|${members[startIdx].exchange}` : null;
-      cursorEndKey = members[endIdx - 1] ? `${members[endIdx - 1].symbol}|${members[endIdx - 1].exchange}` : null;
-      members = members.slice(startIdx, endIdx);
+
+      if (!idUsed) {
+        counters.missing_id_count++;
+        errors.push({ symbol: m.symbol, reason: `no_dhan_security_id (${m.segment})` });
+        attempts.push({ symbol: m.symbol, exchange: m.exchange, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
+        continue;
+      }
+
+      const resolved = { ...m, dhan_security_id: idUsed };
+      if (m.segment === "NSE_EQ") nseMembers.push(resolved);
+      else bseMembers.push(resolved);
     }
 
-    const chunkSize = universeMode === "filtered_inline" ? members.length : FULL_RUN_CHUNK;
+    // -------- Batched fetch loop, paced at ≤1 rps --------
     let abortedAuth = false;
+    let firstBatch = true;
+    const nowIsoBase = () => new Date().toISOString();
 
-    outer: for (let i = 0; i < members.length; i += chunkSize) {
-      counters.chunk_count++;
-      const chunk = members.slice(i, i + chunkSize);
-      for (const m of chunk) {
-        counters.symbols_seen++;
-        const sym = m.symbol;
-        const exUsed: "NSE" | "BSE" = m.exchange;
-        const seg: "NSE_EQ" | "BSE_EQ" = m.segment;
-        let idUsed: string | null = m.dhan_security_id;
+    async function runSegment(
+      seg: "NSE_EQ" | "BSE_EQ",
+      list: Array<Member & { dhan_security_id: string }>,
+    ): Promise<void> {
+      if (abortedAuth) return;
+      for (let i = 0; i < list.length; i += DHAN_BATCH_SIZE) {
+        if (abortedAuth) return;
+        const chunk = list.slice(i, i + DHAN_BATCH_SIZE);
+        const ids = chunk.map((m) => m.dhan_security_id);
 
-        if (exUsed === "NSE") counters.nse_selected_count++;
-        else counters.bse_selected_count++;
-
-        // Fallback only for exact (symbol, segment); no cross-exchange swap.
-        if (!idUsed) {
-          const { data: mstr } = await supabase
-            .from("stock_master")
-            .select("dhan_security_id")
-            .eq("symbol", sym)
-            .eq("segment", seg)
-            .not("dhan_security_id", "is", null)
-            .limit(1)
-            .maybeSingle();
-          if (mstr?.dhan_security_id) {
-            idUsed = String(mstr.dhan_security_id);
-            counters.master_fallback_used_count++;
-          }
+        if (!firstBatch) {
+          await new Promise((r) => setTimeout(r, DHAN_INTER_CALL_MS));
         }
+        firstBatch = false;
 
-        if (!idUsed) {
-          counters.missing_id_count++;
-          errors.push({ symbol: sym, reason: `no_dhan_security_id (${seg})` });
-          attempts.push({ symbol: sym, exchange: exUsed, dhan_security_id_used: null, ltp_or_null: null, source: "dhan" });
-          continue;
-        }
+        counters.chunk_count++;
+        counters.dhan_batch_count++;
+        counters.attempted_count += chunk.length;
 
-        counters.attempted_count++;
-        const r = await fetchLtpWithRetry(idUsed, seg);
-        attempts.push({
-          symbol: sym,
-          exchange: exUsed,
-          dhan_security_id_used: idUsed,
-          ltp_or_null: r.kind === "ok" ? r.ltp : null,
-          source: "dhan",
-          kind: r.kind,
-        });
+        const r = await fetchBatchWithRetry(ids, seg);
 
         if (r.kind !== "ok") {
-          const statusKey = String((r as { status?: number }).status ?? 0);
-          counters.fetch_error_by_status[statusKey] = (counters.fetch_error_by_status[statusKey] ?? 0) + 1;
-          // status 0 = network/timeout; 429 = classic rate-limit. dhan-fetch
-          // surfaces RateLimitError as status=0, treat both as throttle signal.
           const st = (r as { status?: number }).status ?? 0;
+          const statusKey = String(st);
+          counters.fetch_error_by_status[statusKey] = (counters.fetch_error_by_status[statusKey] ?? 0) + 1;
           if (st === 0 || st === 429) counters.rate_limit_like_count++;
           if (r.kind === "auth_error")   counters.auth_error_count++;
           if (r.kind === "rate_limited") counters.rate_limited_count++;
           if (r.kind === "dhan_null")    counters.dhan_null_count++;
           if (r.kind === "fetch_error")  counters.fetch_error_count++;
-          if ((r as { status?: number }).status === 400 && http_400_samples.length < 20) {
-            http_400_samples.push({
-              symbol: sym, exchange: exUsed, security_id: idUsed, status: 400,
-              message: (r as { message?: string | null }).message ?? null,
-            });
-          }
+
           const upstreamMsg = (r as { message?: string | null }).message ?? null;
-          errors.push({ symbol: sym, reason: `${r.kind} status=${statusKey} (${seg} id=${idUsed})${upstreamMsg ? ` msg=${upstreamMsg}` : ""}` });
-          counters.processed_member_count++;
-          if (counters.auth_error_count >= 3) { abortedAuth = true; break outer; }
-          if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
+          for (const m of chunk) {
+            if (st === 400 && http_400_samples.length < 20) {
+              http_400_samples.push({
+                symbol: m.symbol, exchange: m.exchange, security_id: m.dhan_security_id,
+                status: 400, message: upstreamMsg,
+              });
+            }
+            errors.push({
+              symbol: m.symbol,
+              reason: `${r.kind} status=${statusKey} (${seg} id=${m.dhan_security_id})${upstreamMsg ? ` msg=${upstreamMsg}` : ""}`,
+            });
+            attempts.push({
+              symbol: m.symbol, exchange: m.exchange,
+              dhan_security_id_used: m.dhan_security_id,
+              ltp_or_null: null, source: "dhan", kind: r.kind,
+            });
+            counters.processed_member_count++;
+          }
+          if (counters.auth_error_count >= 3) { abortedAuth = true; return; }
           continue;
         }
 
-        const nowIso = new Date().toISOString();
-        const { error: upErr } = await supabase
-          .from("ltp_cache")
-          .upsert(
-            { symbol: sym, exchange: exUsed, ltp: r.ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
-            { onConflict: "symbol,exchange" },
-          );
-        if (upErr) {
-          errors.push({ symbol: sym, reason: `upsert_failed: ${upErr.message}` });
-          continue;
+        // ok — per-member upsert
+        const nowIso = nowIsoBase();
+        for (const m of chunk) {
+          const ltp = r.ltpBySecId.get(m.dhan_security_id);
+          if (typeof ltp === "number" && ltp > 0) {
+            const { error: upErr } = await supabase
+              .from("ltp_cache")
+              .upsert(
+                { symbol: m.symbol, exchange: m.exchange, ltp, as_of: nowIso, source: "dhan", fetched_at: nowIso, updated_at: nowIso },
+                { onConflict: "symbol,exchange" },
+              );
+            if (upErr) {
+              errors.push({ symbol: m.symbol, reason: `upsert_failed: ${upErr.message}` });
+              attempts.push({
+                symbol: m.symbol, exchange: m.exchange,
+                dhan_security_id_used: m.dhan_security_id,
+                ltp_or_null: null, source: "dhan", kind: "upsert_failed",
+              });
+              counters.processed_member_count++;
+              continue;
+            }
+            updated++;
+            counters.updated_count++;
+            if (m.exchange === "NSE") counters.nse_updated_count++;
+            else counters.bse_updated_count++;
+            attempts.push({
+              symbol: m.symbol, exchange: m.exchange,
+              dhan_security_id_used: m.dhan_security_id,
+              ltp_or_null: ltp, source: "dhan", kind: "ok",
+            });
+          } else {
+            counters.dhan_null_count++;
+            errors.push({ symbol: m.symbol, reason: `dhan_null (${seg} id=${m.dhan_security_id})` });
+            attempts.push({
+              symbol: m.symbol, exchange: m.exchange,
+              dhan_security_id_used: m.dhan_security_id,
+              ltp_or_null: null, source: "dhan", kind: "dhan_null",
+            });
+          }
+          counters.processed_member_count++;
         }
-        updated++;
-        counters.updated_count++;
-        if (exUsed === "NSE") counters.nse_updated_count++;
-        else counters.bse_updated_count++;
-        counters.processed_member_count++;
-        if (INTRA_CHUNK_PAUSE_MS) await new Promise((r) => setTimeout(r, INTRA_CHUNK_PAUSE_MS));
-      }
-      if (i + chunkSize < members.length) {
-        await new Promise((r) => setTimeout(r, INTER_CHUNK_PAUSE_MS));
       }
     }
+
+    await runSegment("NSE_EQ", nseMembers);
+    await runSegment("BSE_EQ", bseMembers);
+
+    counters.dhan_batch_avg_ltp_per_call =
+      counters.updated_count / Math.max(1, counters.dhan_batch_count);
 
     const runStatus = abortedAuth
       ? "error"
       : (errors.length === 0 ? "ok" : (updated === 0 ? "error" : "partial"));
-
-    // Persist rolling cursor for the next unfiltered invocation. On wrap or
-    // empty slice, reset to null so the next run starts from the top.
-    if (universeMode === "rolling_full_run") {
-      const nextCursorValue = wrappedToStart || !cursorEndKey
-        ? { last_key: null, wrapped_at: new Date().toISOString() }
-        : { last_key: cursorEndKey, updated_at: new Date().toISOString() };
-      await supabase.from("stock_picker_runtime_config").upsert(
-        {
-          config_key: "sync_ltp_dhan_cursor",
-          kind: "operational",
-          config_value: nextCursorValue,
-          description: "Rolling cursor for sync-ltp-dhan full-universe pacing",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "config_key" },
-      );
-    }
 
     // Telemetry — only for full-universe runs; partial inline refreshes
     // (filter_applied) must not overwrite the daily summary.
@@ -437,9 +456,10 @@ Deno.serve(async (req) => {
             http_400_samples,
             universe_source: universeSource,
             universe_mode: universeMode,
-            cursor_start: cursorStartKey,
-            cursor_end: cursorEndKey,
-            wrapped_to_start: wrappedToStart,
+            // Cursor retired — kept as nulls for telemetry-shape compatibility.
+            cursor_start: null,
+            cursor_end: null,
+            wrapped_to_start: false,
             aborted_systemic_auth: abortedAuth,
           },
           description: "Last sync-ltp-dhan run summary",
@@ -456,9 +476,9 @@ Deno.serve(async (req) => {
       details: {
         filter_applied: filterSymbols != null,
         universe_mode: universeMode,
-        cursor_start: cursorStartKey,
-        cursor_end: cursorEndKey,
-        wrapped_to_start: wrappedToStart,
+        cursor_start: null,
+        cursor_end: null,
+        wrapped_to_start: false,
         counters,
         http_400_samples,
         universe_source: universeSource,
@@ -475,9 +495,9 @@ Deno.serve(async (req) => {
       http_400_samples,
       universe_source: universeSource,
       universe_mode: universeMode,
-      cursor_start: cursorStartKey,
-      cursor_end: cursorEndKey,
-      wrapped_to_start: wrappedToStart,
+      cursor_start: null,
+      cursor_end: null,
+      wrapped_to_start: false,
       aborted_systemic_auth: abortedAuth,
       filter_applied: filterSymbols != null,
     });
@@ -486,4 +506,3 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: String(e) }, 500);
   }
 });
-
