@@ -426,7 +426,7 @@ Deno.serve(async (req) => {
         while (fe.status === "miss" && TRANSIENT.has(fe.http_status) && feRetries < retryMaxAttempts) {
           feRetries++;
           retriesAttempted++;
-          await sleep(retryBackoffMs);
+          await sleep(retryBackoffMs * Math.pow(2, feRetries - 1));
           fe = await tryFinEdgeOnce(sym, finedgeSleepMs);
           bumpHist(fe.http_status);
           await sleep(finedgeSleepMs);
