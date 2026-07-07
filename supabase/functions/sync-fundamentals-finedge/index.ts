@@ -488,7 +488,8 @@ Deno.serve(async (req) => {
           // Last-ditch: seed market_cap from stock_master so row doesn't stay null.
           if (source === "none") {
             const m = masterKey.get(key);
-            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            // PostgREST returns numeric columns as strings; coerce before the finiteness check.
+            const mMcap = m ? pickNum(m.market_cap_rs) : null;
             if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
               finalMcap = mMcap;
               source = "finedge"; // enum-safe; provenance in attempts
