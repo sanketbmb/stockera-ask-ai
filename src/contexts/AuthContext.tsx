@@ -66,12 +66,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Set up auth listener FIRST
+    // Task A — stale refresh-token guard. If Supabase returns a
+    // refresh-token error on init (browser was signed in earlier with a
+    // token that has since been revoked/expired), gotrue-js will emit a
+    // one-time 400 to /auth/v1/token?grant_type=refresh_token. Clear the
+    // stale local session so it does NOT retry on every mount/tab-focus.
+    const isRefreshError = (msg: string | undefined) =>
+      !!msg && /refresh.?token/i.test(msg);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
-        // Defer Supabase calls to avoid deadlock inside the listener
         setTimeout(() => {
           fetchProfileAndRoles(newSession.user.id);
         }, 0);
@@ -81,16 +87,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Then check existing session
-    supabase.auth.getSession().then(({ data: { session: existing } }) => {
-      setSession(existing);
-      setUser(existing?.user ?? null);
-      if (existing?.user) {
-        fetchProfileAndRoles(existing.user.id).finally(() => setIsLoading(false));
-      } else {
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session: existing }, error }) => {
+        if (error && isRefreshError(error.message)) {
+          try { await supabase.auth.signOut({ scope: "local" }); } catch { /* noop */ }
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+        setSession(existing);
+        setUser(existing?.user ?? null);
+        if (existing?.user) {
+          fetchProfileAndRoles(existing.user.id).finally(() => setIsLoading(false));
+        } else {
+          setIsLoading(false);
+        }
+      })
+      .catch(async (err) => {
+        if (isRefreshError(err?.message)) {
+          try { await supabase.auth.signOut({ scope: "local" }); } catch { /* noop */ }
+        }
         setIsLoading(false);
-      }
-    });
+      });
 
     return () => subscription.unsubscribe();
   }, [fetchProfileAndRoles]);
