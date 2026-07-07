@@ -346,7 +346,7 @@ Deno.serve(async (req) => {
 
     const { data: masters } = await supabase
       .from("stock_master")
-      .select("symbol, exchange, type, segment, dhan_security_id, is_suspended, company_name")
+      .select("symbol, exchange, type, segment, dhan_security_id, is_suspended, company_name, market_cap_rs")
       .in("symbol", symbols.map((s) => s.symbol));
     const masterKey = new Map<string, Record<string, unknown>>();
     for (const m of masters ?? []) masterKey.set(`${m.symbol}|${m.exchange}`, m as Record<string, unknown>);
@@ -361,7 +361,10 @@ Deno.serve(async (req) => {
       if (typ && !["EQUITY", "EQ", "STOCK", ""].includes(typ)) return { ok: false, reason: `non_equity_type:${typ}` };
       if (seg && !["E", "EQ", "NSE_EQ", "BSE_EQ", "EQUITY", ""].includes(seg)) return { ok: false, reason: `non_equity_segment:${seg}` };
       const name = String(m.company_name ?? "").toLowerCase();
-      if (/\b(bond|etf|sgb|gilt|liquidbees|debenture|ncd)\b/.test(name)) return { ok: false, reason: "bond_or_etf_pattern" };
+      if (/\b(bond|etf|sgb|gilt|liquidbees|debenture|ncd|invit|reit)\b/.test(name)
+          || /infrastructure investment trust|real estate investment trust/.test(name)) {
+        return { ok: false, reason: "non_equity_instrument_pattern" };
+      }
       return { ok: true };
     };
 
@@ -423,7 +426,7 @@ Deno.serve(async (req) => {
         while (fe.status === "miss" && TRANSIENT.has(fe.http_status) && feRetries < retryMaxAttempts) {
           feRetries++;
           retriesAttempted++;
-          await sleep(retryBackoffMs);
+          await sleep(retryBackoffMs * Math.pow(2, feRetries - 1));
           fe = await tryFinEdgeOnce(sym, finedgeSleepMs);
           bumpHist(fe.http_status);
           await sleep(finedgeSleepMs);
@@ -464,7 +467,7 @@ Deno.serve(async (req) => {
             while (td.status === "miss" && TRANSIENT.has(td.http_status) && tdRetries < retryMaxAttempts) {
               tdRetries++;
               retriesAttempted++;
-              await sleep(retryBackoffMs);
+              await sleep(retryBackoffMs * Math.pow(2, tdRetries - 1));
               td = await tryTwelveDataOnce(sym, ex, twelveSleepMs);
               bumpHist(td.http_status);
               await sleep(twelveSleepMs);
@@ -482,10 +485,37 @@ Deno.serve(async (req) => {
           } else {
             stillMissing.push(`${sym}/${ex}`);
           }
+          // Last-ditch: seed market_cap from stock_master so row doesn't stay null.
+          if (source === "none") {
+            const m = masterKey.get(key);
+            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
+              finalMcap = mMcap;
+              source = "finedge"; // enum-safe; provenance in attempts
+              attempts.push({ symbol: sym, exchange: ex, source: "stock_master_seed", status: "ok_last_ditch", value: mMcap });
+              // remove from stillMissing since we now have a value
+              const idx = stillMissing.indexOf(`${sym}/${ex}`);
+              if (idx >= 0) stillMissing.splice(idx, 1);
+            }
+          }
           attempts.push(feAttempt);
         }
 
         if (source !== "none") {
+          // Seed mcap from stock_master when upstream succeeded on sector but missed mcap.
+          if (finalMcap == null) {
+            const m = masterKey.get(key);
+            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
+              finalMcap = mMcap;
+              attempts.push({ symbol: sym, exchange: ex, source: "stock_master_seed", status: "mcap_filled", value: mMcap });
+            }
+          }
+          // Never overwrite existing non-null mcap with null.
+          if (finalMcap == null) {
+            const prior = (existing ?? []).find((r) => r.symbol === sym && r.exchange === ex);
+            if (prior && prior.market_cap_rs != null) finalMcap = prior.market_cap_rs as number;
+          }
           const nowIso = new Date().toISOString();
           const { error: upErr } = await supabase
             .from("fundamentals_cache")

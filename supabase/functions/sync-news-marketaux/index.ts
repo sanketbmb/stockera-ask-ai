@@ -1,5 +1,7 @@
 // Phase 2X.5 — News fan-out (Marketaux per-symbol variants) + Indian RSS fallback.
 // Honest insertion only: real headlines/URLs/dates. No fabrication.
+// v2: reduced fan-out (2 variants max), tighter defaults, durable finally-block
+// telemetry so partial runs still advance the cursor and write cron_run_log.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -19,6 +21,7 @@ function json(body: unknown, status = 200) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const WALL_CLOCK_BUDGET_MS = 55_000;
 
 interface NewsItem {
   headline: string;
@@ -167,9 +170,13 @@ function toIsoOrNull(s: string | null): string | null {
   return d.toISOString();
 }
 
+type Sym = { symbol: string; exchange: string };
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+
   async function logTelemetry(args: { status: string; processed: number; errors_count: number; details?: Record<string, unknown>; error_message?: string }): Promise<void> {
     try {
       const finishedAt = new Date().toISOString();
@@ -188,8 +195,30 @@ Deno.serve(async (req) => {
     } catch { /* */ }
   }
 
+  // Hoisted state so `finally` can persist partial progress.
+  let overrideEntries: Sym[] = [];
+  let cursorStart: string | null = null;
+  let cursorEnd: string | null = null;
+  let wrappedToStart = false;
+  let universeMode: "active_snapshot" | "override_fallback" | "empty" = "empty";
+  let membersTotal = 0;
+  let snapshotId: string | null = null;
+  const perSymbol: Record<string, { marketaux: number; rss: number }> = {};
+  let marketauxInserted = 0;
+  let rssInsertedTotal = 0;
+  let errorsCount = 0;
+  const errors: Array<{ symbol: string; reason: string }> = [];
+  let processedCount = 0;
+  let earlyExit = false;
+  const rssInsertedPerFeed: Record<string, number> = {};
+  const rssFeedErrors: Record<string, string> = {};
+  let withRecent = 0;
+  let drySymbols: string[] = [];
+  let supabase: ReturnType<typeof createClient> | null = null;
+  let fatalError: string | null = null;
+
   try {
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+    supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -215,11 +244,9 @@ Deno.serve(async (req) => {
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
     // ---------- Universe resolver: snapshot primary, override fallback ----------
-    type Sym = { symbol: string; exchange: string };
     let allSymbols: Sym[] = [];
-    let universeMode: "active_snapshot" | "override_fallback" | "empty" = "empty";
     const snapshotIdRaw = cfg.get("active_universe_snapshot_id");
-    const snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
+    snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
     if (snapshotId) {
       const CHUNK = 1000;
       for (let from = 0; ; from += CHUNK) {
@@ -256,18 +283,16 @@ Deno.serve(async (req) => {
     }
 
     allSymbols.sort((a, b) => a.symbol.localeCompare(b.symbol));
-    const membersTotal = allSymbols.length;
+    membersTotal = allSymbols.length;
     const perTickMaxRaw = cfg.get("news_per_tick_max");
-    const perTickMax = Math.max(1, typeof perTickMaxRaw === "number" && Number.isFinite(perTickMaxRaw) ? perTickMaxRaw : 60);
+    const perTickMax = Math.max(1, typeof perTickMaxRaw === "number" && Number.isFinite(perTickMaxRaw) ? perTickMaxRaw : 20);
     const cursorRaw = cfg.get("news_cursor_symbol");
-    const cursorStart: string | null = typeof cursorRaw === "string" && cursorRaw.length > 0 ? cursorRaw : null;
+    cursorStart = typeof cursorRaw === "string" && cursorRaw.length > 0 ? cursorRaw : null;
     let startIdx = 0;
     if (cursorStart) {
-      const found = allSymbols.findIndex((s) => s.symbol > cursorStart);
+      const found = allSymbols.findIndex((s) => s.symbol > cursorStart!);
       startIdx = found === -1 ? 0 : found;
     }
-    let wrappedToStart = false;
-    const overrideEntries: Sym[] = [];
     for (let i = 0; i < perTickMax && i < membersTotal; i++) {
       let idx = startIdx + i;
       if (idx >= membersTotal) { idx -= membersTotal; wrappedToStart = true; }
@@ -278,7 +303,7 @@ Deno.serve(async (req) => {
     const rssEnabled = cfg.get("news_rss_fallback_enabled") === true;
     const freshMaxDays = Number(cfg.get("news_freshness_max_days") ?? 30);
     const perSymbolMax = Number(cfg.get("news_per_symbol_max_items") ?? 5);
-    const mxSleep = Number(cfg.get("news_marketaux_request_sleep_ms") ?? 600);
+    const mxSleep = Number(cfg.get("news_marketaux_request_sleep_ms") ?? 200);
     const rssSleep = Number(cfg.get("news_rss_request_sleep_ms") ?? 400);
     const feedList = Array.isArray(cfg.get("news_rss_feed_list"))
       ? (cfg.get("news_rss_feed_list") as Array<{ id: string; url: string }>)
@@ -306,8 +331,6 @@ Deno.serve(async (req) => {
 
     // ---------- PRE-FETCH RSS FEEDS ONCE ----------
     const rssCache = new Map<string, RssItem[]>();
-    const rssFeedErrors: Record<string, string> = {};
-    const rssInsertedPerFeed: Record<string, number> = {};
     const rssStart = Date.now();
     if (rssEnabled) {
       for (const f of feedList) {
@@ -324,32 +347,33 @@ Deno.serve(async (req) => {
     }
 
     // ---------- PER-SYMBOL LOOP ----------
-    const perSymbol: Record<string, { marketaux: number; rss: number }> = {};
-    let marketauxInserted = 0;
-    let rssInsertedTotal = 0;
-    let errorsCount = 0;
-    const errors: Array<{ symbol: string; reason: string }> = [];
-
     for (const entry of overrideEntries) {
+      // Wall-clock guard so `finally` can still persist cursor/telemetry.
+      if (Date.now() - startedMs > WALL_CLOCK_BUDGET_MS) {
+        earlyExit = true;
+        break;
+      }
       const sym = entry.symbol;
       const exch = entry.exchange || "NSE";
       const key = `${sym}/${exch}`;
       perSymbol[key] = { marketaux: 0, rss: 0 };
+      processedCount++;
+      cursorEnd = sym;
 
       const company = companyMap.get(sym) || "";
       const normalized = company ? normalizeCompany(company) : "";
       const token = shortToken(normalized);
 
-      // ---- Marketaux fan-out ----
+      // ---- Marketaux fan-out: at most 2 strong variants ----
       let mxItems: NewsItem[] = [];
       if (marketauxEnabled) {
+        const tickerSuffix = exch === "BSE" ? "BO" : "NS";
         const tries: Array<{ label: string; params: Record<string, string> }> = [
-          { label: "ticker_ns", params: { symbols: `${sym}.NS`, limit: String(perSymbolMax) } },
-          { label: "ticker_bo", params: { symbols: `${sym}.BO`, limit: String(perSymbolMax) } },
-          { label: "entity_search", params: { entity_search: sym, limit: String(perSymbolMax), countries: "in" } },
+          { label: `ticker_${tickerSuffix.toLowerCase()}`, params: { symbols: `${sym}.${tickerSuffix}`, limit: String(perSymbolMax) } },
         ];
-        if (normalized) tries.push({ label: "company_name", params: { search: normalized, entity_types: "equity", countries: "in", limit: String(perSymbolMax) } });
-        if (token && token.length >= 4 && token !== normalized) tries.push({ label: "short_token", params: { search: token, entity_types: "equity", countries: "in", limit: String(perSymbolMax) } });
+        if (normalized && normalized.length >= 5) {
+          tries.push({ label: "company_name", params: { search: normalized, entity_types: "equity", countries: "in", limit: String(perSymbolMax) } });
+        }
 
         for (const t of tries) {
           const got = await callMarketaux(t.params);
@@ -388,10 +412,6 @@ Deno.serve(async (req) => {
 
       // ---- RSS fallback only if marketaux returned 0 fresh items for THIS symbol ----
       if (rssEnabled && mxItems.length === 0 && rssCache.size > 0) {
-        // Strong = full normalized company name OR long ticker (>=4).
-        // Weak = short ticker, or short_token, or token that falls in the
-        // stopword blocklist of generic Indian brand words (prevents
-        // false-positives like "AAYUSHBULL" matching every "bull" mention).
         const TOKEN_STOPWORDS = new Set([
           "tata","reliance","bharat","bharti","india","indian","national","state",
           "bank","power","steel","motors","finance","capital","industries","bull",
@@ -430,7 +450,6 @@ Deno.serve(async (req) => {
             matched.push({ item: it, feedId });
           }
         }
-        // de-dup by URL and cap per symbol
         const seen = new Set<string>();
         const capped: Array<{ item: RssItem; feedId: string }> = [];
         for (const m of matched) {
@@ -441,7 +460,6 @@ Deno.serve(async (req) => {
           if (capped.length >= perSymbolMax) break;
         }
         if (capped.length > 0) {
-          // Group inserts; track per-feed counts.
           const rows = capped.map((c) => ({
             symbol: sym,
             exchange: exch,
@@ -470,73 +488,117 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Coverage tally — query news_cache for fresh items on override.
-    const { data: freshRows } = await supabase
-      .from("news_cache")
-      .select("symbol, exchange")
-      .gte("published_at", new Date(freshCutoffMs).toISOString())
-      .in("symbol", symbols);
-    const freshSet = new Set<string>();
-    for (const r of freshRows ?? []) freshSet.add(`${r.symbol}/${r.exchange}`);
-    let withRecent = 0;
-    const dry: string[] = [];
-    for (const e of overrideEntries) {
-      const k = `${e.symbol}/${e.exchange}`;
-      if (freshSet.has(k)) withRecent++;
-      else dry.push(k);
+    // Coverage tally — query news_cache for fresh items on the window we processed.
+    const seenSymbols = overrideEntries.slice(0, processedCount).map((e) => e.symbol);
+    if (seenSymbols.length > 0) {
+      const { data: freshRows } = await supabase
+        .from("news_cache")
+        .select("symbol, exchange")
+        .gte("published_at", new Date(freshCutoffMs).toISOString())
+        .in("symbol", seenSymbols);
+      const freshSet = new Set<string>();
+      for (const r of freshRows ?? []) freshSet.add(`${r.symbol}/${r.exchange}`);
+      for (const e of overrideEntries.slice(0, processedCount)) {
+        const k = `${e.symbol}/${e.exchange}`;
+        if (freshSet.has(k)) withRecent++;
+        else drySymbols.push(k);
+      }
+    }
+  } catch (e) {
+    fatalError = String(e);
+    errorsCount++;
+    errors.push({ symbol: "__fatal__", reason: fatalError });
+  } finally {
+    // Durable persistence — runs even on early exit / thrown error.
+    const totalInserted = marketauxInserted + rssInsertedTotal;
+    const finalStatus = fatalError
+      ? "error"
+      : (earlyExit
+          ? "partial"
+          : (errorsCount === 0 ? "ok" : (totalInserted === 0 ? "error" : "partial")));
+
+    if (supabase && overrideEntries.length > 0 && cursorEnd) {
+      try {
+        await supabase.from("stock_picker_runtime_config").upsert(
+          { config_key: "news_cursor_symbol", kind: "operational", config_value: cursorEnd },
+          { onConflict: "config_key" },
+        );
+      } catch { /* best-effort */ }
+      try {
+        await supabase.from("stock_picker_runtime_config").upsert(
+          {
+            config_key: "last_sync_news_marketaux",
+            kind: "operational",
+            config_value: {
+              ok: finalStatus === "ok",
+              status: finalStatus,
+              inserted: totalInserted,
+              withRecent,
+              ran_at: startedAt,
+              universe_mode: universeMode,
+              members_total: membersTotal,
+              members_seen: processedCount,
+              cursor_start: cursorStart,
+              cursor_end: cursorEnd,
+              wrapped_to_start: wrappedToStart,
+              early_exit: earlyExit,
+            },
+            description: "Last sync-news-marketaux run summary",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "config_key" },
+        );
+      } catch { /* best-effort */ }
     }
 
-    const totalInserted = marketauxInserted + rssInsertedTotal;
-    const status = errorsCount === 0 ? "ok" : (totalInserted === 0 ? "error" : "partial");
-
-    const cursorEnd: string | null = overrideEntries.length > 0 ? overrideEntries[overrideEntries.length - 1].symbol : cursorStart;
-    try {
-      await supabase.from("stock_picker_runtime_config").upsert(
-        { config_key: "news_cursor_symbol", kind: "operational", config_value: cursorEnd },
-        { onConflict: "config_key" },
-      );
-    } catch { /* best-effort */ }
-
-    const details = {
-      universe_mode: universeMode,
-      snapshot_id: snapshotId,
-      members_total: membersTotal,
-      members_seen: overrideEntries.length,
-      cursor_start: cursorStart,
-      cursor_end: cursorEnd,
-      wrapped_to_start: wrappedToStart,
-      marketaux_inserted: marketauxInserted,
-      rss_inserted_total: rssInsertedTotal,
-      rss_inserted_per_feed: rssInsertedPerFeed,
-      rss_feed_errors: rssFeedErrors,
-      symbols_with_recent_news: withRecent,
-      symbols_still_dry: dry.length,
-      dry_symbols: dry,
-      per_symbol: perSymbol,
-      errors_sample: errors.slice(0, 10),
-    };
-
-    await supabase.from("stock_picker_runtime_config").upsert(
-      {
-        config_key: "last_sync_news_marketaux",
-        kind: "operational",
-        config_value: {
-          ok: true, inserted: totalInserted, withRecent, ran_at: startedAt,
-          universe_mode: universeMode, members_total: membersTotal,
-          members_seen: overrideEntries.length, cursor_start: cursorStart,
-          cursor_end: cursorEnd, wrapped_to_start: wrappedToStart,
-        },
-        description: "Last sync-news-marketaux run summary",
-        updated_at: startedAt,
+    await logTelemetry({
+      status: finalStatus,
+      processed: totalInserted,
+      errors_count: errorsCount,
+      error_message: fatalError ?? undefined,
+      details: {
+        universe_mode: universeMode,
+        snapshot_id: snapshotId,
+        members_total: membersTotal,
+        members_seen: processedCount,
+        cursor_start: cursorStart,
+        cursor_end: cursorEnd,
+        wrapped_to_start: wrappedToStart,
+        early_exit: earlyExit,
+        marketaux_inserted: marketauxInserted,
+        rss_inserted_total: rssInsertedTotal,
+        rss_inserted_per_feed: rssInsertedPerFeed,
+        rss_feed_errors: rssFeedErrors,
+        symbols_with_recent_news: withRecent,
+        symbols_still_dry: drySymbols.length,
+        dry_symbols: drySymbols,
+        per_symbol: perSymbol,
+        errors_sample: errors.slice(0, 10),
       },
-      { onConflict: "config_key" },
-    );
-
-    await logTelemetry({ status, processed: totalInserted, errors_count: errorsCount, details });
-
-    return json({ ok: true, status, processed: totalInserted, ...details });
-  } catch (e) {
-    await logTelemetry({ status: "error", processed: 0, errors_count: 1, error_message: String(e) });
-    return json({ ok: false, error: String(e) }, 500);
+    });
   }
+
+  const totalInserted = marketauxInserted + rssInsertedTotal;
+  return json({
+    ok: fatalError === null,
+    status: fatalError
+      ? "error"
+      : (earlyExit
+          ? "partial"
+          : (errorsCount === 0 ? "ok" : (totalInserted === 0 ? "error" : "partial"))),
+    processed: totalInserted,
+    universe_mode: universeMode,
+    snapshot_id: snapshotId,
+    members_total: membersTotal,
+    members_seen: processedCount,
+    cursor_start: cursorStart,
+    cursor_end: cursorEnd,
+    wrapped_to_start: wrappedToStart,
+    early_exit: earlyExit,
+    marketaux_inserted: marketauxInserted,
+    rss_inserted_total: rssInsertedTotal,
+    symbols_with_recent_news: withRecent,
+    symbols_still_dry: drySymbols.length,
+    error: fatalError,
+  }, fatalError ? 500 : 200);
 });
