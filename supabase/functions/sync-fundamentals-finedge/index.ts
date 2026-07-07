@@ -361,7 +361,10 @@ Deno.serve(async (req) => {
       if (typ && !["EQUITY", "EQ", "STOCK", ""].includes(typ)) return { ok: false, reason: `non_equity_type:${typ}` };
       if (seg && !["E", "EQ", "NSE_EQ", "BSE_EQ", "EQUITY", ""].includes(seg)) return { ok: false, reason: `non_equity_segment:${seg}` };
       const name = String(m.company_name ?? "").toLowerCase();
-      if (/\b(bond|etf|sgb|gilt|liquidbees|debenture|ncd)\b/.test(name)) return { ok: false, reason: "bond_or_etf_pattern" };
+      if (/\b(bond|etf|sgb|gilt|liquidbees|debenture|ncd|invit|reit)\b/.test(name)
+          || /infrastructure investment trust|real estate investment trust/.test(name)) {
+        return { ok: false, reason: "non_equity_instrument_pattern" };
+      }
       return { ok: true };
     };
 
