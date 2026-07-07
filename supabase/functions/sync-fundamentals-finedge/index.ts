@@ -346,7 +346,7 @@ Deno.serve(async (req) => {
 
     const { data: masters } = await supabase
       .from("stock_master")
-      .select("symbol, exchange, type, segment, dhan_security_id, is_suspended, company_name")
+      .select("symbol, exchange, type, segment, dhan_security_id, is_suspended, company_name, market_cap_rs")
       .in("symbol", symbols.map((s) => s.symbol));
     const masterKey = new Map<string, Record<string, unknown>>();
     for (const m of masters ?? []) masterKey.set(`${m.symbol}|${m.exchange}`, m as Record<string, unknown>);
