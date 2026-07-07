@@ -485,10 +485,37 @@ Deno.serve(async (req) => {
           } else {
             stillMissing.push(`${sym}/${ex}`);
           }
+          // Last-ditch: seed market_cap from stock_master so row doesn't stay null.
+          if (source === "none") {
+            const m = masterKey.get(key);
+            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
+              finalMcap = mMcap;
+              source = "finedge"; // enum-safe; provenance in attempts
+              attempts.push({ symbol: sym, exchange: ex, source: "stock_master_seed", status: "ok_last_ditch", value: mMcap });
+              // remove from stillMissing since we now have a value
+              const idx = stillMissing.indexOf(`${sym}/${ex}`);
+              if (idx >= 0) stillMissing.splice(idx, 1);
+            }
+          }
           attempts.push(feAttempt);
         }
 
         if (source !== "none") {
+          // Seed mcap from stock_master when upstream succeeded on sector but missed mcap.
+          if (finalMcap == null) {
+            const m = masterKey.get(key);
+            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
+              finalMcap = mMcap;
+              attempts.push({ symbol: sym, exchange: ex, source: "stock_master_seed", status: "mcap_filled", value: mMcap });
+            }
+          }
+          // Never overwrite existing non-null mcap with null.
+          if (finalMcap == null) {
+            const prior = (existing ?? []).find((r) => r.symbol === sym && r.exchange === ex);
+            if (prior && prior.market_cap_rs != null) finalMcap = prior.market_cap_rs as number;
+          }
           const nowIso = new Date().toISOString();
           const { error: upErr } = await supabase
             .from("fundamentals_cache")
