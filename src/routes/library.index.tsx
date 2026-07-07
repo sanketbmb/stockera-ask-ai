@@ -19,6 +19,7 @@ import {
 import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralTab } from "@/components/library/GeneralTab";
+import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 
 
 const SITE_ORIGIN = "https://asktheexpert.lovable.app";
