@@ -467,7 +467,7 @@ Deno.serve(async (req) => {
             while (td.status === "miss" && TRANSIENT.has(td.http_status) && tdRetries < retryMaxAttempts) {
               tdRetries++;
               retriesAttempted++;
-              await sleep(retryBackoffMs);
+              await sleep(retryBackoffMs * Math.pow(2, tdRetries - 1));
               td = await tryTwelveDataOnce(sym, ex, twelveSleepMs);
               bumpHist(td.http_status);
               await sleep(twelveSleepMs);
