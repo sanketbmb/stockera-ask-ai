@@ -295,7 +295,7 @@ function LibraryIndexPage() {
             </div>
           </TabsContent>
           <TabsContent value="general" className="py-6">
-            <GeneralTab />
+            <VideosBlogsTab />
           </TabsContent>
         </Tabs>
       </section>
