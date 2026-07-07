@@ -254,6 +254,9 @@ Deno.serve(async (req) => {
         "finedge_api_enabled",
         "universe_override_symbols",
         "universe_override_enabled",
+        "active_universe_snapshot_id",
+        "fundamentals_cursor_symbol",
+        "fundamentals_per_tick_max",
         "fundamentals_finedge_primary_enabled",
         "fundamentals_twelvedata_fallback_enabled",
         "fundamentals_max_runtime_ms",
@@ -269,9 +272,6 @@ Deno.serve(async (req) => {
     if (cfg.get("finedge_api_enabled") !== true || cfg.get("fundamentals_finedge_primary_enabled") !== true) {
       return json({ ok: true, skipped: "finedge_disabled", processed: 0, errors_count: 0 });
     }
-    if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false", processed: 0, errors_count: 0 });
-    }
     const tdFallbackEnabled = cfg.get("fundamentals_twelvedata_fallback_enabled") === true;
     const num = (k: string, def: number): number => {
       const v = cfg.get(k);
@@ -283,10 +283,65 @@ Deno.serve(async (req) => {
     const retryMaxAttempts = num("fundamentals_retry_max_attempts", 2);
     const retryBackoffMs = num("fundamentals_retry_backoff_ms", 2000);
     const freshMinutes = num("fundamentals_skip_if_fresh_minutes", 1440);
+    const perTickMax = Math.max(1, num("fundamentals_per_tick_max", 40));
 
-    const symbols = parseOverrideSymbols(cfg.get("universe_override_symbols"));
-    if (symbols.length === 0) {
-      return json({ ok: true, processed: 0, errors_count: 0, details: { reason: "no override symbols", invoked_by: invokedBy } });
+    // ---------- Universe resolver: snapshot primary, override fallback ----------
+    type Sym = { symbol: string; exchange: string };
+    let allSymbols: Sym[] = [];
+    let universeMode: "active_snapshot" | "override_fallback" | "empty" = "empty";
+    const snapshotIdRaw = cfg.get("active_universe_snapshot_id");
+    const snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
+    if (snapshotId) {
+      const CHUNK = 1000;
+      for (let from = 0; ; from += CHUNK) {
+        const { data: rows, error: mErr } = await supabase
+          .from("stock_picker_universe_snapshot_member")
+          .select("symbol, exchange")
+          .eq("universe_snapshot_id", snapshotId)
+          .order("symbol", { ascending: true })
+          .range(from, from + CHUNK - 1);
+        if (mErr) break;
+        if (!rows || rows.length === 0) break;
+        for (const r of rows) {
+          if (!r.symbol) continue;
+          const ex = r.exchange === "BSE" ? "BSE" : "NSE";
+          allSymbols.push({ symbol: r.symbol as string, exchange: ex });
+        }
+        if (rows.length < CHUNK) break;
+      }
+      if (allSymbols.length > 0) universeMode = "active_snapshot";
+    }
+    if (allSymbols.length === 0 && cfg.get("universe_override_enabled") === true) {
+      const parsed = parseOverrideSymbols(cfg.get("universe_override_symbols"));
+      if (parsed.length > 0) {
+        allSymbols = parsed;
+        universeMode = "override_fallback";
+      }
+    }
+    if (allSymbols.length === 0) {
+      await logTelemetry({
+        status: "ok", processed: 0, errors_count: 0,
+        details: { universe_mode: "empty", snapshot_id: snapshotId, members_total: 0, invoked_by: invokedBy },
+      });
+      return json({ ok: true, processed: 0, errors_count: 0, details: { reason: "empty universe", universe_mode: "empty", snapshot_id: snapshotId, invoked_by: invokedBy } });
+    }
+
+    // Sort ascending; apply rolling cursor + per-tick window.
+    allSymbols.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    const membersTotal = allSymbols.length;
+    const cursorRaw = cfg.get("fundamentals_cursor_symbol");
+    const cursorStart: string | null = typeof cursorRaw === "string" && cursorRaw.length > 0 ? cursorRaw : null;
+    let startIdx = 0;
+    if (cursorStart) {
+      const found = allSymbols.findIndex((s) => s.symbol > cursorStart);
+      startIdx = found === -1 ? 0 : found;
+    }
+    let wrappedToStart = false;
+    const symbols: Sym[] = [];
+    for (let i = 0; i < perTickMax && i < membersTotal; i++) {
+      let idx = startIdx + i;
+      if (idx >= membersTotal) { idx -= membersTotal; wrappedToStart = true; }
+      symbols.push(allSymbols[idx]);
     }
 
     const { data: masters } = await supabase
@@ -458,6 +513,14 @@ Deno.serve(async (req) => {
     const errorsCount = stillMissing.length;
     const status = earlyExit ? "partial" : (errorsCount === 0 ? "ok" : (processed === 0 ? "error" : "partial"));
 
+    const cursorEnd: string | null = symbols.length > 0 ? symbols[symbols.length - 1].symbol : cursorStart;
+    try {
+      await supabase.from("stock_picker_runtime_config").upsert(
+        { config_key: "fundamentals_cursor_symbol", kind: "operational", config_value: cursorEnd },
+        { onConflict: "config_key" },
+      );
+    } catch { /* best-effort */ }
+
     try {
       await supabase.from("stock_picker_runtime_config").upsert(
         {
@@ -468,6 +531,9 @@ Deno.serve(async (req) => {
             finedge_ok: finedgeOk, twelve_data_recovered: twelveRecovered,
             still_missing: stillMissing.length, ran_at: new Date().toISOString(),
             invoked_by: invokedBy,
+            universe_mode: universeMode, members_total: membersTotal,
+            members_seen: symbols.length, cursor_start: cursorStart,
+            cursor_end: cursorEnd, wrapped_to_start: wrappedToStart,
           },
         },
         { onConflict: "config_key" },
@@ -475,6 +541,13 @@ Deno.serve(async (req) => {
     } catch { /* best-effort */ }
 
     const details = {
+      universe_mode: universeMode,
+      snapshot_id: snapshotId,
+      members_total: membersTotal,
+      members_seen: symbols.length,
+      cursor_start: cursorStart,
+      cursor_end: cursorEnd,
+      wrapped_to_start: wrappedToStart,
       finedge_ok: finedgeOk,
       finedge_missed: finedgeMissed,
       twelve_data_recovered: twelveRecovered,
@@ -494,6 +567,10 @@ Deno.serve(async (req) => {
     return json({
       ok: true, status, processed, errors_count: errorsCount,
       details: {
+        universe_mode: universeMode, snapshot_id: snapshotId,
+        members_total: membersTotal, members_seen: symbols.length,
+        cursor_start: cursorStart, cursor_end: cursorEnd,
+        wrapped_to_start: wrappedToStart,
         finedge_ok: finedgeOk, finedge_missed: finedgeMissed,
         twelve_data_recovered: twelveRecovered, still_missing: stillMissing.length,
         missing_symbols: stillMissing, pending_runtime_cap: pendingCount,

@@ -200,6 +200,9 @@ Deno.serve(async (req) => {
         "marketaux_api_enabled",
         "universe_override_symbols",
         "universe_override_enabled",
+        "active_universe_snapshot_id",
+        "news_cursor_symbol",
+        "news_per_tick_max",
         "news_marketaux_enabled",
         "news_rss_fallback_enabled",
         "news_freshness_max_days",
@@ -211,12 +214,64 @@ Deno.serve(async (req) => {
     const cfg = new Map<string, unknown>();
     for (const r of cfgRows ?? []) cfg.set(r.config_key as string, r.config_value);
 
-    if (cfg.get("universe_override_enabled") !== true) {
-      return json({ ok: true, skipped: "universe_override_enabled=false" });
+    // ---------- Universe resolver: snapshot primary, override fallback ----------
+    type Sym = { symbol: string; exchange: string };
+    let allSymbols: Sym[] = [];
+    let universeMode: "active_snapshot" | "override_fallback" | "empty" = "empty";
+    const snapshotIdRaw = cfg.get("active_universe_snapshot_id");
+    const snapshotId = typeof snapshotIdRaw === "string" && snapshotIdRaw.length > 0 ? snapshotIdRaw : null;
+    if (snapshotId) {
+      const CHUNK = 1000;
+      for (let from = 0; ; from += CHUNK) {
+        const { data: rows, error: mErr } = await supabase
+          .from("stock_picker_universe_snapshot_member")
+          .select("symbol, exchange")
+          .eq("universe_snapshot_id", snapshotId)
+          .order("symbol", { ascending: true })
+          .range(from, from + CHUNK - 1);
+        if (mErr) break;
+        if (!rows || rows.length === 0) break;
+        for (const r of rows) {
+          if (!r.symbol) continue;
+          const ex = r.exchange === "BSE" ? "BSE" : "NSE";
+          allSymbols.push({ symbol: r.symbol as string, exchange: ex });
+        }
+        if (rows.length < CHUNK) break;
+      }
+      if (allSymbols.length > 0) universeMode = "active_snapshot";
     }
-    const overrideEntries = parseOverrideSymbols(cfg.get("universe_override_symbols"));
-    if (overrideEntries.length === 0) {
-      return json({ ok: true, skipped: "no override symbols" });
+    if (allSymbols.length === 0 && cfg.get("universe_override_enabled") === true) {
+      const parsed = parseOverrideSymbols(cfg.get("universe_override_symbols"));
+      if (parsed.length > 0) {
+        allSymbols = parsed;
+        universeMode = "override_fallback";
+      }
+    }
+    if (allSymbols.length === 0) {
+      await logTelemetry({
+        status: "ok", processed: 0, errors_count: 0,
+        details: { universe_mode: "empty", snapshot_id: snapshotId, members_total: 0 },
+      });
+      return json({ ok: true, skipped: "empty universe", universe_mode: "empty", snapshot_id: snapshotId });
+    }
+
+    allSymbols.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    const membersTotal = allSymbols.length;
+    const perTickMaxRaw = cfg.get("news_per_tick_max");
+    const perTickMax = Math.max(1, typeof perTickMaxRaw === "number" && Number.isFinite(perTickMaxRaw) ? perTickMaxRaw : 60);
+    const cursorRaw = cfg.get("news_cursor_symbol");
+    const cursorStart: string | null = typeof cursorRaw === "string" && cursorRaw.length > 0 ? cursorRaw : null;
+    let startIdx = 0;
+    if (cursorStart) {
+      const found = allSymbols.findIndex((s) => s.symbol > cursorStart);
+      startIdx = found === -1 ? 0 : found;
+    }
+    let wrappedToStart = false;
+    const overrideEntries: Sym[] = [];
+    for (let i = 0; i < perTickMax && i < membersTotal; i++) {
+      let idx = startIdx + i;
+      if (idx >= membersTotal) { idx -= membersTotal; wrappedToStart = true; }
+      overrideEntries.push(allSymbols[idx]);
     }
 
     const marketauxEnabled = cfg.get("news_marketaux_enabled") === true && cfg.get("marketaux_api_enabled") === true;
@@ -333,14 +388,29 @@ Deno.serve(async (req) => {
 
       // ---- RSS fallback only if marketaux returned 0 fresh items for THIS symbol ----
       if (rssEnabled && mxItems.length === 0 && rssCache.size > 0) {
-        // Build candidate regexes with word boundaries. Short tokens (<4) alone
-        // are NOT sufficient to match — they must coexist with another candidate.
+        // Strong = full normalized company name OR long ticker (>=4).
+        // Weak = short ticker, or short_token, or token that falls in the
+        // stopword blocklist of generic Indian brand words (prevents
+        // false-positives like "AAYUSHBULL" matching every "bull" mention).
+        const TOKEN_STOPWORDS = new Set([
+          "tata","reliance","bharat","bharti","india","indian","national","state",
+          "bank","power","steel","motors","finance","capital","industries","bull",
+          "bullion","gold","silver","metal","metals","energy","oil","gas","cement",
+          "pharma","chem","chemicals","group","holdings","enterprises","limited",
+        ]);
+        const tokenIsStopword = (() => {
+          if (!token) return true;
+          const parts = token.split(" ").filter(Boolean);
+          if (parts.length === 0) return true;
+          return parts.every((p) => TOKEN_STOPWORDS.has(p));
+        })();
         type Cand = { re: RegExp; weak: boolean };
         const cands: Cand[] = [];
-        // ticker (uppercase as stored). Weak if length < 4.
         cands.push({ re: new RegExp(`\\b${escapeRegex(sym)}\\b`, "i"), weak: sym.length < 4 });
         if (normalized) cands.push({ re: new RegExp(`\\b${escapeRegex(normalized)}\\b`, "i"), weak: false });
-        if (token && token !== normalized) cands.push({ re: new RegExp(`\\b${escapeRegex(token)}\\b`, "i"), weak: token.length < 4 });
+        if (token && token !== normalized) {
+          cands.push({ re: new RegExp(`\\b${escapeRegex(token)}\\b`, "i"), weak: token.length < 4 || tokenIsStopword });
+        }
 
         const matched: Array<{ item: RssItem; feedId: string }> = [];
         for (const [feedId, items] of rssCache.entries()) {
@@ -419,7 +489,22 @@ Deno.serve(async (req) => {
     const totalInserted = marketauxInserted + rssInsertedTotal;
     const status = errorsCount === 0 ? "ok" : (totalInserted === 0 ? "error" : "partial");
 
+    const cursorEnd: string | null = overrideEntries.length > 0 ? overrideEntries[overrideEntries.length - 1].symbol : cursorStart;
+    try {
+      await supabase.from("stock_picker_runtime_config").upsert(
+        { config_key: "news_cursor_symbol", kind: "operational", config_value: cursorEnd },
+        { onConflict: "config_key" },
+      );
+    } catch { /* best-effort */ }
+
     const details = {
+      universe_mode: universeMode,
+      snapshot_id: snapshotId,
+      members_total: membersTotal,
+      members_seen: overrideEntries.length,
+      cursor_start: cursorStart,
+      cursor_end: cursorEnd,
+      wrapped_to_start: wrappedToStart,
       marketaux_inserted: marketauxInserted,
       rss_inserted_total: rssInsertedTotal,
       rss_inserted_per_feed: rssInsertedPerFeed,
@@ -435,7 +520,12 @@ Deno.serve(async (req) => {
       {
         config_key: "last_sync_news_marketaux",
         kind: "operational",
-        config_value: { ok: true, inserted: totalInserted, withRecent, ran_at: startedAt },
+        config_value: {
+          ok: true, inserted: totalInserted, withRecent, ran_at: startedAt,
+          universe_mode: universeMode, members_total: membersTotal,
+          members_seen: overrideEntries.length, cursor_start: cursorStart,
+          cursor_end: cursorEnd, wrapped_to_start: wrappedToStart,
+        },
         description: "Last sync-news-marketaux run summary",
         updated_at: startedAt,
       },
