@@ -506,7 +506,8 @@ Deno.serve(async (req) => {
           // Seed mcap from stock_master when upstream succeeded on sector but missed mcap.
           if (finalMcap == null) {
             const m = masterKey.get(key);
-            const mMcap = m && typeof m.market_cap_rs === "number" ? (m.market_cap_rs as number) : null;
+            // PostgREST returns numeric columns as strings; coerce before the finiteness check.
+            const mMcap = m ? pickNum(m.market_cap_rs) : null;
             if (mMcap != null && Number.isFinite(mMcap) && mMcap > 0) {
               finalMcap = mMcap;
               attempts.push({ symbol: sym, exchange: ex, source: "stock_master_seed", status: "mcap_filled", value: mMcap });
