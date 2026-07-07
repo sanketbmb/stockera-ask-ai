@@ -201,7 +201,7 @@ function LibraryIndexPage() {
         <Tabs defaultValue="reports" className="space-y-4">
           <TabsList>
             <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="general">Videos &amp; Blogs</TabsTrigger>
           </TabsList>
           <TabsContent value="reports">
             <MasterLibraryToolbar
