@@ -3,6 +3,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import { NSE_STOCKS, type NseStock } from "@/data/nseStocks";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { StockLogo } from "@/components/common/StockLogo";
 
 interface StockAutocompleteProps {
   value?: NseStock | null;
