@@ -170,6 +170,7 @@ function ViewModeTopBlock({
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
   queryType, entryPrice, qty, customQuestion, viewMode,
+  publicPayload,
 }: {
   queryId: string;
   symbol: string;
@@ -180,11 +181,13 @@ function TierShapedReportContent({
   qty: number | null;
   customQuestion: string | null;
   viewMode?: "text" | "video";
+  publicPayload?: StockAnalysisPayload | null;
 }) {
   const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
-    queryKey: ["stock-analysis", "v1", "frozen", queryId],
-    queryFn: () => freezeOrRead({ data: { queryId } }),
+    queryKey: ["stock-analysis", "v1", "frozen", queryId, publicPayload ? "public" : "authed"],
+    queryFn: () =>
+      publicPayload ? Promise.resolve(publicPayload) : freezeOrRead({ data: { queryId } }),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
