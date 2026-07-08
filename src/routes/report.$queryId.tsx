@@ -883,12 +883,6 @@ export const Route = createFileRoute("/report/$queryId")({
         { property: "og:type", content: "article" },
         { property: "og:url", content: canonical },
         { property: "og:image", content: image },
-        ...(meta.stock_symbol
-          ? [
-              { property: "og:image:width", content: "1200" },
-              { property: "og:image:height", content: "630" },
-            ]
-          : []),
         { name: "twitter:card", content: "summary_large_image" },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: description },
