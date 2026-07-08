@@ -781,7 +781,97 @@ export const Route = createFileRoute("/report/$queryId")({
       focus: f === "followup" ? ("followup" as const) : undefined,
     };
   },
-  head: () => ({ meta: [{ title: "AI Report — Stockera" }, { name: "robots", content: "noindex,nofollow" }] }),
+  loader: async ({ params }) => {
+    if (!UUID_RE.test(params.queryId)) return { status: "not_found" as const };
+    try {
+      return await getPublicReportMeta({ data: { queryId: params.queryId } });
+    } catch {
+      return { status: "not_found" as const };
+    }
+  },
+  head: ({ params, loaderData }) => {
+    const canonical = `${SITE_ORIGIN}/report/${params.queryId}`;
+    const meta = loaderData;
+    if (!meta || meta.status !== "ok" || !meta.is_public) {
+      return {
+        meta: [
+          { title: "AI Analyst Report — Stockera" },
+          {
+            name: "description",
+            content:
+              "SEBI-registered AI + expert analyst verdict on Indian equities. Live from Stockera.",
+          },
+          { name: "robots", content: "noindex,follow" },
+          { property: "og:url", content: canonical },
+        ],
+        links: [{ rel: "canonical", href: canonical }],
+      };
+    }
+    const stockLabel =
+      meta.stock_name && meta.stock_symbol
+        ? `${meta.stock_name} (${meta.stock_symbol})`
+        : meta.stock_symbol ?? meta.stock_name ?? "Indian equities";
+    const verdictPart = meta.verdict ? ` — ${meta.verdict}` : "";
+    const title = `${stockLabel}${verdictPart} | AI Analyst Report | Stockera`;
+    const description = truncate(
+      meta.query_text
+        ? `${meta.query_text}${meta.verdict ? ` — Verdict: ${meta.verdict}` : ""}`
+        : `SEBI-registered AI + expert analyst verdict on ${
+            meta.stock_symbol ?? stockLabel
+          }. Live from Stockera.`,
+    );
+    const image = SITE_DEFAULT_OG;
+    const ld: Record<string, unknown> = {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: title,
+      description,
+      url: canonical,
+      datePublished: meta.created_at,
+      dateModified: meta.updated_at ?? meta.created_at,
+      author: {
+        "@type": "Organization",
+        name: "Stockera Technologist",
+        url: SITE_ORIGIN,
+        identifier: "SEBI RA INH000019071",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "Ask The Expert by Stockera",
+        logo: {
+          "@type": "ImageObject",
+          url: `${SITE_ORIGIN}/stockera-logo.png`,
+        },
+      },
+    };
+    if (meta.stock_name || meta.stock_symbol) {
+      ld.about = {
+        "@type": "Corporation",
+        name: meta.stock_name ?? meta.stock_symbol,
+        ...(meta.stock_symbol ? { tickerSymbol: meta.stock_symbol } : {}),
+      };
+    }
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "index,follow" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:type", content: "article" },
+        { property: "og:url", content: canonical },
+        { property: "og:image", content: image },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
+        { name: "twitter:image", content: image },
+      ],
+      links: [{ rel: "canonical", href: canonical }],
+      scripts: [
+        { type: "application/ld+json", children: JSON.stringify(ld) },
+      ],
+    };
+  },
   component: ReportContent,
   notFoundComponent: () => <NotFoundCard />,
   // HOTFIX — keep report render failures scoped to the route so the
