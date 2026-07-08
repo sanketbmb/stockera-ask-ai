@@ -41,7 +41,7 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
     const { data: row, error } = await admin
       .from("answers")
       .select(
-        "id, expert_id, category, is_published, answer_type, source_kind, external_provider, external_url, youtube_video_id, video_title, video_description, question_addressed_override, custom_thumbnail_url, video_duration_sec, created_at, analyst_profiles:expert_id(display_name, sebi_reg_number)",
+        "id, expert_id, category, is_published, answer_type, source_kind, external_provider, external_url, youtube_video_id, video_title, video_description, question_addressed_override, custom_thumbnail_url, video_duration_sec, created_at",
       )
       .eq("id", data.answerId)
       .maybeSingle();
@@ -49,8 +49,22 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
     if (!row || row.answer_type !== "video" || row.category !== "general" || !row.is_published) {
       return { status: "not_found" as const };
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ap = (row as any).analyst_profiles ?? null;
+    // Manual join — no FK exists between answers.expert_id and
+    // analyst_profiles.id, so a PostgREST embed fails. Fetch separately.
+    let analyst: { display_name: string | null; sebi_reg_number: string | null } | null = null;
+    if (row.expert_id) {
+      const { data: ap } = await admin
+        .from("analyst_profiles")
+        .select("display_name, sebi_reg_number")
+        .eq("id", row.expert_id)
+        .maybeSingle();
+      if (ap) {
+        analyst = {
+          display_name: (ap.display_name as string | null) ?? null,
+          sebi_reg_number: (ap.sebi_reg_number as string | null) ?? null,
+        };
+      }
+    }
     return {
       status: "ok" as const,
       answer_id: row.id,
@@ -65,12 +79,7 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
       thumbnail_url: row.custom_thumbnail_url,
       video_duration_sec: row.video_duration_sec,
       published_at: row.created_at,
-      analyst: ap
-        ? {
-            display_name: ap.display_name as string | null,
-            sebi_reg_number: ap.sebi_reg_number as string | null,
-          }
-        : null,
+      analyst,
     };
   });
 
