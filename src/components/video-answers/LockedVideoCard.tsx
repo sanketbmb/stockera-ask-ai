@@ -17,6 +17,7 @@ import { VideoPosterThumb } from "./VideoPosterThumb";
 import { InlinePriceChip } from "./InlinePriceChip";
 import { UnlockVideoModal } from "./UnlockVideoModal";
 import { VIDEO_COPY } from "./copy";
+import { StockLogo } from "@/components/common/StockLogo";
 
 export interface LockedVideoCardItem {
   answerId: string;
