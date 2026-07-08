@@ -5,7 +5,7 @@ import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 import { Mail, Phone, MapPin, Clock, ExternalLink } from "lucide-react";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Grievance Redressal — SEBI SCORES & SmartODR | Stockera";
 const DESCRIPTION = "Grievance redressal process, SEBI SCORES escalation, and SmartODR resolution path for Stockera Research Analyst clients.";
 

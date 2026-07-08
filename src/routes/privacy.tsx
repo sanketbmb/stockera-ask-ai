@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import Privacy from "@/pages/Privacy";
 import { PublicShell } from "@/components/layout/PublicShell";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Privacy Policy — Stockera Technology Private Limited";
 const DESCRIPTION = "How Stockera collects, uses, and protects your personal data. GDPR-aware and compliant with Indian data protection law.";
 

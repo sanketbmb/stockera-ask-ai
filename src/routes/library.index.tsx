@@ -22,7 +22,7 @@ import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
 
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE =
   "Public Research Library — Browse analyst-answered stock questions | Stockera";
 const DESCRIPTION =

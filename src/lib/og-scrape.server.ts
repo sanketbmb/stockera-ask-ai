@@ -95,7 +95,7 @@ export async function scrapeOg(rawUrl: string): Promise<OgScrapeResult> {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "Mozilla/5.0 (compatible; StockeraBot/1.0; +https://asktheexpert.lovable.app)",
+        "user-agent": "Mozilla/5.0 (compatible; StockeraBot/1.0; +https://asktheexpert.in)",
         "accept": "text/html,application/xhtml+xml",
       },
     });

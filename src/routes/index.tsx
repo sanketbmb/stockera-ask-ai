@@ -16,7 +16,7 @@ import { ReferralBanner } from "@/components/landing/ReferralBanner";
 import { MobileStickyCta } from "@/components/layout/MobileStickyCta";
 import { FIRM } from "@/lib/firm-details";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -55,10 +55,10 @@ function Index() {
             "@graph": [
               {
                 "@type": "Organization",
-                "@id": "https://asktheexpert.lovable.app/#organization",
+                "@id": "https://asktheexpert.in/#organization",
                 "name": FIRM.legalName,
                 "alternateName": FIRM.brand,
-                "url": "https://asktheexpert.lovable.app/",
+                "url": "https://asktheexpert.in/",
                 "email": FIRM.email,
                 "telephone": FIRM.phone,
                 "address": {
@@ -72,12 +72,12 @@ function Index() {
               },
               {
                 "@type": "FinancialService",
-                "@id": "https://asktheexpert.lovable.app/#service",
+                "@id": "https://asktheexpert.in/#service",
                 "name": FIRM.product,
                 "description": "SEBI-registered Research Analyst. AI-grounded stock research reports and personalized video answers from SEBI-registered analysts. Educational research; not investment advice.",
-                "provider": { "@id": "https://asktheexpert.lovable.app/#organization" },
+                "provider": { "@id": "https://asktheexpert.in/#organization" },
                 "areaServed": "IN",
-                "termsOfService": "https://asktheexpert.lovable.app/terms",
+                "termsOfService": "https://asktheexpert.in/terms",
                 "offers": [
                   { "@type": "Offer", "name": "Personalized analyst video answer", "price": "100", "priceCurrency": "INR" },
                   { "@type": "Offer", "name": "15-minute live consultation", "price": "499", "priceCurrency": "INR" },

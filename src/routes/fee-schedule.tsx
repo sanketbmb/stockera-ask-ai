@@ -3,7 +3,7 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Fee Schedule — Transparent Pricing | Stockera";
 const DESCRIPTION = "Complete fee schedule for personalized video answers, live consultations, and stock research. SEBI-disclosed pricing under RA Regulations 2014.";
 

@@ -5,7 +5,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-export const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+export const SITE_ORIGIN = "https://asktheexpert.in";
 export const SITE_DEFAULT_OG = `${SITE_ORIGIN}/stockera-logo.png`;
 
 const uuidInput = z.object({ queryId: z.string().uuid() });

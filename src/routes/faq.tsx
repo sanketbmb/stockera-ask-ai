@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import FAQ, { FAQ_SECTIONS } from "@/pages/FAQ";
 import { PublicShell } from "@/components/layout/PublicShell";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Frequently Asked Questions — Ask The Expert by Stockera";
 const DESCRIPTION = "Answers about SEBI registration, pricing, video turnaround time, refund policy, and how Stockera's AI + analyst workflow protects retail investors.";
 

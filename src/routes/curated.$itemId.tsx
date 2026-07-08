@@ -11,7 +11,7 @@ import {
   recordCuratedClickThrough,
 } from "@/lib/curated.functions";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 
 function viewerKey(): string {
   if (typeof window === "undefined") return "ssr";

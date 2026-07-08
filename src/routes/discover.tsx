@@ -4,7 +4,7 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { DiscoverFilters, type DiscoverTab } from "@/components/discover/DiscoverFilters";
 import { DiscoverFeed } from "@/components/discover/DiscoverFeed";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Discover — Free analyst videos, curated media & AI reports | Stockera";
 const DESCRIPTION =
   "Fresh, editorially ranked analyst videos, curated market media, and AI research reports — all free to browse on Stockera Discover.";
