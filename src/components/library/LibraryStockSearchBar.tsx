@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { searchStockMaster, type StockMasterHit } from "@/lib/library-videos.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 
 export type SelectedSymbol = {
   symbol: string;
