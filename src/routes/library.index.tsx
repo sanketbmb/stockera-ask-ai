@@ -204,6 +204,7 @@ function LibraryIndexPage() {
             <TabsTrigger value="general">Videos &amp; Blogs</TabsTrigger>
           </TabsList>
           <TabsContent value="reports">
+            <MyAiReportsSection />
             <MasterLibraryToolbar
               search={search}
               onSearchChange={setSearch}
