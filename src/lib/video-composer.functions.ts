@@ -187,7 +187,8 @@ export const saveVideoComposerDraft = createServerFn({ method: "POST" })
       queryId = q.id;
     }
 
-    const base = buildInsert(data, queryId);
+    const resolvedStockMasterId = await resolveStockMasterId(admin, data);
+    const base = buildInsert(data, queryId, resolvedStockMasterId);
     let answerId: string;
     if (data.answerId) {
       const { data: existing, error: readErr } = await admin
