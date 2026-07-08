@@ -48,19 +48,12 @@ export function StockHeader({ data, loggedIn, hasPartial }: Props) {
     <Card className="sticky top-16 z-30 mb-6 border-border bg-card/95 p-4 backdrop-blur sm:p-5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          {data.logo_url ? (
-            <img
-              src={data.logo_url}
-              alt={`${data.name} logo`}
-              className="h-12 w-12 shrink-0 rounded-lg border border-border bg-white object-contain p-1"
-              loading="lazy"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
-          ) : (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted font-display text-lg text-muted-foreground">
-              {data.symbol.slice(0, 2)}
-            </div>
-          )}
+          <StockLogo
+            symbol={data.symbol}
+            size={48}
+            className="rounded-lg h-12 w-12"
+            alt={`${data.name} logo`}
+          />
           <div className="min-w-0">
             <h1 className="truncate font-display text-xl text-foreground sm:text-2xl">
               {data.name}
