@@ -18,6 +18,7 @@ import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
 import { QueriesSearchBar } from "@/components/queries/QueriesSearchBar";
 import { UnlockedVideoCard } from "@/components/video-answers/UnlockedVideoCard";
 import { listMyUnlockedVideos } from "@/lib/my-video-entitlements.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 
 
 const FILTERS = [
