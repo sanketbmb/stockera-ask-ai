@@ -286,6 +286,43 @@ export const publishComposerVideoAnswer = createServerFn({ method: "POST" })
       .eq("id", data.answerId);
     if (upErr) throw new Error(upErr.message);
 
+    // Publish to library_items so MasterSearch (fn_library_search) can find
+    // this video by title / symbol. Idempotent by (source_table, source_id).
+    let libSymbol: string | null = null;
+    let libExchange: string | null = null;
+    if (row.stock_master_id) {
+      const { data: sm } = await admin
+        .from("stock_master")
+        .select("symbol, exchange")
+        .eq("id", row.stock_master_id)
+        .maybeSingle();
+      if (sm) {
+        libSymbol = (sm.symbol as string | null) ?? null;
+        libExchange = (sm.exchange as string | null) ?? null;
+      }
+    }
+    await admin
+      .from("library_items")
+      .delete()
+      .eq("source_table", "answers")
+      .eq("source_id", data.answerId);
+    await admin.from("library_items").insert({
+      kind: "video",
+      source_id: data.answerId,
+      source_table: "answers",
+      answer_id: data.answerId,
+      symbol: libSymbol,
+      symbol_exchange: libExchange,
+      title: row.video_title ?? "Analyst video",
+      verdict: null,
+      analyst_id: row.expert_id ?? null,
+      body_excerpt: (row.video_description ?? "").slice(0, 300),
+      is_public: true,
+      is_tombstoned: false,
+      published_at: new Date().toISOString(),
+    } as never);
+
+
     await admin.from("audit_events").insert({
       event_type: "video_composer.published",
       actor_id: context.userId,
