@@ -134,9 +134,8 @@ export const issuePublicGeneralSignedUrl = createServerFn({ method: "POST" })
 export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => symbolInput.parse(input))
   .handler(async ({ data }) => {
-    const sb = publicClient();
-    // Resolve ALL stock_master rows matching the symbol (NSE + BSE + dupes)
-    // via publishable client + narrow policy, then match answers by any id.
+    // No anon RLS SELECT policy exists on public.answers; use the admin
+    // client with strict safe-column projection + is_published=true filter.
     const admin = await loadAdmin();
     const { data: sms } = await admin
       .from("stock_master")
@@ -145,7 +144,7 @@ export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
       .in("exchange", ["NSE", "BSE"]);
     const ids = (sms ?? []).map((s) => s.id as string);
     if (ids.length === 0) return [];
-    const { data: rows, error } = await sb
+    const { data: rows, error } = await admin
       .from("answers")
       .select(
         "id, video_title, video_description, source_kind, external_provider, youtube_video_id, custom_thumbnail_url, video_duration_sec, created_at",
