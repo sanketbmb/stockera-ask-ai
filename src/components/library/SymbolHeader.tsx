@@ -14,9 +14,12 @@ export function SymbolHeader({ symbol }: Props) {
   const sym = symbol.toUpperCase();
   return (
     <header className="mx-auto w-full max-w-5xl px-4 pt-8 pb-6">
-      <h1 className="sym-fade-1 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-        {sym}
-      </h1>
+      <div className="flex items-center gap-3">
+        <StockLogo symbol={sym} size={48} />
+        <h1 className="sym-fade-1 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          {sym}
+        </h1>
+      </div>
       <p className="sym-fade-2 mt-2 text-sm text-muted-foreground sm:text-base">
         Analyst research library for {sym}
       </p>
