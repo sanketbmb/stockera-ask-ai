@@ -82,6 +82,7 @@ export function LibraryItemCard({ item, videoEnrichment }: Props) {
           </Badge>
         )}
         <div className="flex items-start gap-2">
+          {item.symbol && <StockLogo symbol={item.symbol} size={32} />}
           {icon && <span aria-hidden="true" className="text-lg leading-none">{icon}</span>}
           <h3 className="line-clamp-2 text-base font-semibold leading-snug">
             {item.title}
