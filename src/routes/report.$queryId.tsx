@@ -340,7 +340,8 @@ function TierShapedReportContent({
         skipRevealId={skipRevealId}
       />
 
-      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-2 pb-2">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 md:px-6 pt-2 pb-2">
+        <StockLogo symbol={data.stock.symbol} size={48} />
         <ReportCtaStrip
           queryId={queryId}
           stockName={data.stock.company_name}
