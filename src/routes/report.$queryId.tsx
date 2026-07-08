@@ -39,6 +39,7 @@ import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate } from "@/lib/seo-head";
+import { getPublicReportRow } from "@/lib/public-report-row.functions";
 
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
@@ -169,6 +170,7 @@ function ViewModeTopBlock({
 function TierShapedReportContent({
   queryId, symbol, horizon, rawQuestion,
   queryType, entryPrice, qty, customQuestion, viewMode,
+  publicPayload,
 }: {
   queryId: string;
   symbol: string;
@@ -179,11 +181,13 @@ function TierShapedReportContent({
   qty: number | null;
   customQuestion: string | null;
   viewMode?: "text" | "video";
+  publicPayload?: StockAnalysisPayload | null;
 }) {
   const freezeOrRead = useServerFn(freezeOrReadReport);
   const { data, isLoading, error, refetch } = useQuery<StockAnalysisPayload>({
-    queryKey: ["stock-analysis", "v1", "frozen", queryId],
-    queryFn: () => freezeOrRead({ data: { queryId } }),
+    queryKey: ["stock-analysis", "v1", "frozen", queryId, publicPayload ? "public" : "authed"],
+    queryFn: () =>
+      publicPayload ? Promise.resolve(publicPayload) : freezeOrRead({ data: { queryId } }),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -602,10 +606,22 @@ function ReportContent() {
   }, [queryId, isValidUuid]);
 
 
+  const fetchPublicRow = useServerFn(getPublicReportRow);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["query-report", queryId],
-    enabled: isValidUuid,
+    queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
+    enabled: isValidUuid && !authLoading,
     queryFn: async () => {
+      // SEO Stage 1 hotfix — anon users cannot read `queries` via RLS. Fall back
+      // to an admin-gated server fn that only returns public-library rows.
+      if (!user) {
+        const res = await fetchPublicRow({ data: { queryId } });
+        if (!res.found) {
+          const err = new Error("Results contain 0 rows") as Error & { code?: string };
+          err.code = "PGRST116";
+          throw err;
+        }
+        return res.row;
+      }
       const { data, error } = await supabase
         .from("queries")
         .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
@@ -734,6 +750,7 @@ function ReportContent() {
           qty={(data.qty as number | null) ?? null}
           customQuestion={(data.custom_question as string | null) ?? null}
           viewMode={viewMode}
+          publicPayload={isAnon ? ((data.ai_report as unknown as StockAnalysisPayload) ?? null) : null}
         />
         {isAnon && <AnonReportCta />}
       </>
