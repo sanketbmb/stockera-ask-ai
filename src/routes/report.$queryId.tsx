@@ -750,6 +750,7 @@ function ReportContent() {
           qty={(data.qty as number | null) ?? null}
           customQuestion={(data.custom_question as string | null) ?? null}
           viewMode={viewMode}
+          publicPayload={isAnon ? ((data.ai_report as unknown as StockAnalysisPayload) ?? null) : null}
         />
         {isAnon && <AnonReportCta />}
       </>
