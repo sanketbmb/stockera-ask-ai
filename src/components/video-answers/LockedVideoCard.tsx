@@ -136,13 +136,14 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
       >
         <CardHeader className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            {item.verdict ? (
-              <Badge variant="outline" className="w-fit font-mono uppercase">
-                {item.verdict}
-              </Badge>
-            ) : (
-              <span />
-            )}
+            <div className="flex items-center gap-2">
+              {item.symbol && <StockLogo symbol={item.symbol} size={32} />}
+              {item.verdict ? (
+                <Badge variant="outline" className="w-fit font-mono uppercase">
+                  {item.verdict}
+                </Badge>
+              ) : null}
+            </div>
             <InlinePriceChip credits={item.unlockPriceCredits} />
           </div>
           <VideoPosterThumb
