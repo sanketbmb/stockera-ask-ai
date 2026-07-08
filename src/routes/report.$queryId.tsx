@@ -606,10 +606,22 @@ function ReportContent() {
   }, [queryId, isValidUuid]);
 
 
+  const fetchPublicRow = useServerFn(getPublicReportRow);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["query-report", queryId],
-    enabled: isValidUuid,
+    queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
+    enabled: isValidUuid && !authLoading,
     queryFn: async () => {
+      // SEO Stage 1 hotfix — anon users cannot read `queries` via RLS. Fall back
+      // to an admin-gated server fn that only returns public-library rows.
+      if (!user) {
+        const res = await fetchPublicRow({ data: { queryId } });
+        if (!res.found) {
+          const err = new Error("Results contain 0 rows") as Error & { code?: string };
+          err.code = "PGRST116";
+          throw err;
+        }
+        return res.row;
+      }
       const { data, error } = await supabase
         .from("queries")
         .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
