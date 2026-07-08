@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { LockedVideoCard } from "@/components/video-answers/LockedVideoCard";
 import { ExternalLink } from "lucide-react";
+import { StockLogo } from "@/components/common/StockLogo";
 import type {
   LibraryItem,
   LibraryStock,
