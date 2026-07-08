@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { StockLogo } from "@/components/common/StockLogo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
