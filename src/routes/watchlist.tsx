@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, Target, ShieldAlert, TrendingUp, TrendingDown, Trash2, Loader2 } from "lucide-react";
 import { getPortfolio, removeFromPortfolio, type PortfolioRow } from "@/lib/portfolio.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 import { toast } from "sonner";
 
 function StatusBadge({ status }: { status: PortfolioRow["status"] }) {
