@@ -178,6 +178,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
+                  {r.symbol && <StockLogo symbol={r.symbol} size={24} />}
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary transition-colors group-hover:bg-primary/20">
                     {r.symbol}
                   </span>
