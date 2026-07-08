@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { StockLogo } from "@/components/common/StockLogo";
 import type { SymbolLibraryCounts } from "@/types/library-symbol";
 
 interface Props {
