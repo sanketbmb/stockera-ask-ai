@@ -8,6 +8,20 @@ import { z } from "zod";
 export const SITE_ORIGIN = "https://asktheexpert.in";
 export const SITE_DEFAULT_OG = `${SITE_ORIGIN}/stockera-logo.png`;
 
+// SEO STAGE B — canonical absolute URLs for stock logos and OG previews.
+export function stockLogoAbsoluteUrl(symbol: string | null | undefined): string {
+  const s = (symbol ?? "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!s) return SITE_DEFAULT_OG;
+  return `${SITE_ORIGIN}/api/logo/${s}`;
+}
+
+// Stage B ships plain-logo OG (composite deferred to Stage C).
+// This helper is a stable seam so the URL surface never changes when the
+// composite lands.
+export function stockOgImageUrl(symbol: string | null | undefined): string {
+  return stockLogoAbsoluteUrl(symbol);
+}
+
 const uuidInput = z.object({ queryId: z.string().uuid() });
 
 export type ReportMetaResult =

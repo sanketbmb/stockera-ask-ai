@@ -61,6 +61,7 @@ import { Route as AdminBacktestRouteImport } from './routes/admin.backtest'
 import { Route as AdminApplyRouteImport } from './routes/admin.apply'
 import { Route as DocsArchitecturePrintRouteImport } from './routes/docs.architecture.print'
 import { Route as DocsAccuracyRoadmapPrintRouteImport } from './routes/docs.accuracy-roadmap.print'
+import { Route as ApiLogoSymbolRouteImport } from './routes/api.logo.$symbol'
 import { Route as AdminVideosNewRouteImport } from './routes/admin.videos.new'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
 import { Route as AdminCuratedNewRouteImport } from './routes/admin.curated.new'
@@ -329,6 +330,11 @@ const DocsAccuracyRoadmapPrintRoute =
     path: '/docs/accuracy-roadmap/print',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiLogoSymbolRoute = ApiLogoSymbolRouteImport.update({
+  id: '/api/logo/$symbol',
+  path: '/api/logo/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminVideosNewRoute = AdminVideosNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -416,6 +422,7 @@ export interface FileRoutesByFullPath {
   '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
+  '/api/logo/$symbol': typeof ApiLogoSymbolRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
   '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
@@ -476,6 +483,7 @@ export interface FileRoutesByTo {
   '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
+  '/api/logo/$symbol': typeof ApiLogoSymbolRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
   '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
@@ -537,6 +545,7 @@ export interface FileRoutesById {
   '/admin/curated/new': typeof AdminCuratedNewRoute
   '/admin/upload-answer/$queryId': typeof AdminUploadAnswerQueryIdRoute
   '/admin/videos/new': typeof AdminVideosNewRoute
+  '/api/logo/$symbol': typeof ApiLogoSymbolRoute
   '/docs/accuracy-roadmap/print': typeof DocsAccuracyRoadmapPrintRoute
   '/docs/architecture/print': typeof DocsArchitecturePrintRoute
   '/admin/curated/$itemId/edit': typeof AdminCuratedItemIdEditRoute
@@ -599,6 +608,7 @@ export interface FileRouteTypes {
     | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
+    | '/api/logo/$symbol'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
     | '/admin/curated/$itemId/edit'
@@ -659,6 +669,7 @@ export interface FileRouteTypes {
     | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
+    | '/api/logo/$symbol'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
     | '/admin/curated/$itemId/edit'
@@ -719,6 +730,7 @@ export interface FileRouteTypes {
     | '/admin/curated/new'
     | '/admin/upload-answer/$queryId'
     | '/admin/videos/new'
+    | '/api/logo/$symbol'
     | '/docs/accuracy-roadmap/print'
     | '/docs/architecture/print'
     | '/admin/curated/$itemId/edit'
@@ -778,6 +790,7 @@ export interface RootRouteChildren {
   VAnswerIdRoute: typeof VAnswerIdRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   AdminUploadAnswerQueryIdRoute: typeof AdminUploadAnswerQueryIdRoute
+  ApiLogoSymbolRoute: typeof ApiLogoSymbolRoute
   DocsAccuracyRoadmapPrintRoute: typeof DocsAccuracyRoadmapPrintRoute
   DocsArchitecturePrintRoute: typeof DocsArchitecturePrintRoute
 }
@@ -1148,6 +1161,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsAccuracyRoadmapPrintRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/logo/$symbol': {
+      id: '/api/logo/$symbol'
+      path: '/api/logo/$symbol'
+      fullPath: '/api/logo/$symbol'
+      preLoaderRoute: typeof ApiLogoSymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/videos/new': {
       id: '/admin/videos/new'
       path: '/new'
@@ -1275,19 +1295,10 @@ const rootRouteChildren: RootRouteChildren = {
   VAnswerIdRoute: VAnswerIdRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   AdminUploadAnswerQueryIdRoute: AdminUploadAnswerQueryIdRoute,
+  ApiLogoSymbolRoute: ApiLogoSymbolRoute,
   DocsAccuracyRoadmapPrintRoute: DocsAccuracyRoadmapPrintRoute,
   DocsArchitecturePrintRoute: DocsArchitecturePrintRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
