@@ -295,9 +295,12 @@ function VideoReadyCard({ q, video, onPlay }: { q: ExtendedQueryItem; video: Vid
         </button>
         <div className="p-4 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-2 flex-wrap">
-            <Badge variant="outline" className="font-mono text-[11px]">
-              {q.stock_name}{q.stock_symbol ? ` · ${q.stock_symbol}` : ""}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {q.stock_symbol && <StockLogo symbol={q.stock_symbol} size={24} />}
+              <Badge variant="outline" className="font-mono text-[11px]">
+                {q.stock_name}{q.stock_symbol ? ` · ${q.stock_symbol}` : ""}
+              </Badge>
+            </div>
             <span className="text-[11px] text-muted-foreground">
               {formatDistanceToNow(new Date(video.created_at), { addSuffix: true })}
             </span>
