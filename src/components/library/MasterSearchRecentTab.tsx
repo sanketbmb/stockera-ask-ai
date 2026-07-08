@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
+import { StockLogo } from "@/components/common/StockLogo";
 
 
 type RecentRow = {
