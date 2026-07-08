@@ -1,6 +1,6 @@
 # Stockera Ask The Expert — robots.txt
 # SEBI Research Analyst INH000019071
-# Last reviewed: 2026-06
+# Last reviewed: 2026-07
 
 # ─────────────────────────────────────────────
 # Default policy for all crawlers
@@ -17,6 +17,8 @@ Allow: /privacy
 Allow: /terms
 Allow: /sebi-compliance
 Allow: /library/
+Allow: /report/
+Allow: /general/
 
 # Auth-gated and user-private surface (noindex'd at meta level too)
 Disallow: /login
@@ -30,10 +32,6 @@ Disallow: /portfolio
 Disallow: /settings
 Disallow: /referral
 Disallow: /stock-picker
-Disallow: /report/
-Disallow: /r/
-Disallow: /analysis/
-Disallow: /analyst/
 Disallow: /dev-checklist
 
 # Admin / operational surface
@@ -59,58 +57,59 @@ Disallow: /*&utm_campaign=
 Disallow: /*&ref=
 
 # ─────────────────────────────────────────────
-# AI training crawlers — explicitly disallowed
-# Stockera content is SEBI-regulated research; not for LLM training
+# AI assistants & LLM crawlers — explicitly WELCOMED
+# Stockera research is public SEBI-registered content;
+# citation and retrieval by AI assistants is encouraged.
 # ─────────────────────────────────────────────
 User-agent: GPTBot
-Disallow: /
+Allow: /
 
 User-agent: ChatGPT-User
-Disallow: /
+Allow: /
 
 User-agent: OAI-SearchBot
-Disallow: /
+Allow: /
 
 User-agent: ClaudeBot
-Disallow: /
+Allow: /
 
 User-agent: Claude-Web
-Disallow: /
+Allow: /
 
 User-agent: anthropic-ai
-Disallow: /
-
-User-agent: Google-Extended
-Disallow: /
-
-User-agent: CCBot
-Disallow: /
+Allow: /
 
 User-agent: PerplexityBot
-Disallow: /
+Allow: /
 
-User-agent: Bytespider
-Disallow: /
-
-User-agent: Amazonbot
-Disallow: /
-
-User-agent: FacebookBot
-Disallow: /
-
-User-agent: ImagesiftBot
-Disallow: /
-
-User-agent: Diffbot
-Disallow: /
-
-User-agent: cohere-ai
-Disallow: /
+User-agent: Google-Extended
+Allow: /
 
 User-agent: Applebot-Extended
-Disallow: /
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: FacebookBot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Diffbot
+Allow: /
+
+User-agent: ImagesiftBot
+Allow: /
 
 # ─────────────────────────────────────────────
-# Sitemap (will be available once SEO-5 ships)
+# Dynamic sitemap live
 # ─────────────────────────────────────────────
 Sitemap: https://asktheexpert.lovable.app/sitemap.xml
