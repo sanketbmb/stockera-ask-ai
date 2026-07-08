@@ -18,6 +18,7 @@ import {
   listAdminVideoAnswers,
   unpublishVideoAnswer,
 } from "@/lib/video-answers-admin.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 import { publishComposerVideoAnswer } from "@/lib/video-composer.functions";
 
 type Status = "all" | "draft" | "published";
