@@ -135,15 +135,16 @@ export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => symbolInput.parse(input))
   .handler(async ({ data }) => {
     const sb = publicClient();
-    // Resolve symbol → stock_master_id via publishable client + narrow policy.
+    // Resolve ALL stock_master rows matching the symbol (NSE + BSE + dupes)
+    // via publishable client + narrow policy, then match answers by any id.
     const admin = await loadAdmin();
-    const { data: sm } = await admin
+    const { data: sms } = await admin
       .from("stock_master")
       .select("id")
       .ilike("symbol", data.symbol)
-      .limit(1)
-      .maybeSingle();
-    if (!sm?.id) return [];
+      .in("exchange", ["NSE", "BSE"]);
+    const ids = (sms ?? []).map((s) => s.id as string);
+    if (ids.length === 0) return [];
     const { data: rows, error } = await sb
       .from("answers")
       .select(
@@ -152,7 +153,7 @@ export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
       .eq("category", "general")
       .eq("is_published", true)
       .eq("answer_type", "video")
-      .eq("stock_master_id", sm.id)
+      .in("stock_master_id", ids)
       .order("created_at", { ascending: false })
       .limit(30);
     if (error) return [];
