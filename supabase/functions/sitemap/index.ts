@@ -59,9 +59,13 @@ Deno.serve(async (req) => {
     return new Response("method_not_allowed", { status: 405, headers: CORS });
   }
 
+  const comments: string[] = [];
+  let symbolBlock = "";
+  let reportBlock = "";
+  let generalBlock = "";
+
+  // (b) library_items → /library/<symbol> (existing behaviour)
   try {
-    // Fetch all public, non-tombstoned rows; aggregate per-symbol max(updated_at) in JS.
-    // (PostgREST has no GROUP BY; ordering desc lets first occurrence be the max.)
     const { data, error } = await admin
       .from("library_items")
       .select("symbol, updated_at")
@@ -71,18 +75,15 @@ Deno.serve(async (req) => {
       .order("updated_at", { ascending: false })
       .limit(45000);
     if (error) throw error;
-
     const maxBySymbol = new Map<string, string>();
     for (const r of (data ?? []) as Array<{ symbol: string; updated_at: string }>) {
       if (!r.symbol) continue;
       if (!maxBySymbol.has(r.symbol)) maxBySymbol.set(r.symbol, r.updated_at);
     }
-
     const symbols = Array.from(maxBySymbol.entries()).sort((a, b) =>
       a[0].localeCompare(b[0]),
     );
-
-    const dynamicBlock = symbols
+    symbolBlock = symbols
       .map(([sym, lastmod]) => {
         const iso = new Date(lastmod).toISOString();
         const loc = `${ORIGIN}/library/${encodeURIComponent(sym)}`;
@@ -94,28 +95,81 @@ Deno.serve(async (req) => {
   </url>`;
       })
       .join("\n");
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${staticBlock()}
-${dynamicBlock}
-</urlset>`;
-
-    return new Response(xml, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        "Cache-Control": "public, max-age=3600",
-        ...CORS,
-      },
-    });
   } catch (_e) {
-    return new Response(degradedSitemap(), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        ...CORS,
-      },
-    });
+    comments.push("  <!-- partial: library symbols unavailable -->");
   }
+
+  // (c) published AI reports → /report/<uuid>
+  try {
+    const { data, error } = await admin
+      .from("queries")
+      .select("id, updated_at, created_at")
+      .eq("is_public_library", true)
+      .is("library_tombstoned_at", null)
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .limit(45000);
+    if (error) throw error;
+    reportBlock = ((data ?? []) as Array<{ id: string; updated_at: string | null; created_at: string | null }>)
+      .map((r) => {
+        const iso = new Date(r.updated_at ?? r.created_at ?? Date.now()).toISOString();
+        const loc = `${ORIGIN}/report/${r.id}`;
+        return `  <url>
+    <loc>${xmlEscape(loc)}</loc>
+    <lastmod>${iso}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>`;
+      })
+      .join("\n");
+  } catch (_e) {
+    comments.push("  <!-- partial: reports unavailable -->");
+  }
+
+  // (d) published general analyst videos → /general/<answerId>
+  try {
+    const { data, error } = await admin
+      .from("answers")
+      .select("id, created_at")
+      .eq("category", "general")
+      .eq("is_published", true)
+      .eq("answer_type", "video")
+      .order("created_at", { ascending: false })
+      .limit(45000);
+    if (error) throw error;
+    generalBlock = ((data ?? []) as Array<{ id: string; created_at: string | null }>)
+      .map((r) => {
+        const iso = new Date(r.created_at ?? Date.now()).toISOString();
+        const loc = `${ORIGIN}/general/${r.id}`;
+        return `  <url>
+    <loc>${xmlEscape(loc)}</loc>
+    <lastmod>${iso}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>`;
+      })
+      .join("\n");
+  } catch (_e) {
+    comments.push("  <!-- partial: general videos unavailable -->");
+  }
+
+  const parts = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`,
+    ...comments,
+    staticBlock(),
+  ];
+  if (symbolBlock) parts.push(symbolBlock);
+  if (reportBlock) parts.push(reportBlock);
+  if (generalBlock) parts.push(generalBlock);
+  parts.push(`</urlset>`);
+  const xml = parts.join("\n");
+
+  return new Response(xml, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Cache-Control": "public, max-age=3600",
+      ...CORS,
+    },
+  });
 });
