@@ -261,6 +261,7 @@ export default function AnalystPublicProfile() {
                   <Link key={a.id} to="/r/$queryId" params={{ queryId: a.query_id }}>
                     <Card className="p-4 h-full hover:shadow-card-hover transition-all hover:-translate-y-0.5">
                       <div className="flex items-center justify-between gap-2 mb-2">
+                        {stock?.stock_symbol && <StockLogo symbol={stock.stock_symbol} size={20} />}
                         <span className="font-mono text-[11px] text-muted-foreground">{stock?.stock_name}</span>
                         {v && <span className={`text-[10px] px-2 py-0.5 rounded border ${v.color}`}>{v.label}</span>}
                       </div>
