@@ -1,4 +1,4 @@
-// SEO STAGE B.1 — public stock-logo proxy with in-memory cache + Twelve Data auth.
+// SEO STAGE B.3 — public stock-logo proxy with retry chain (bare / :NSE / .BSE).
 // GET /functions/v1/stock-logo/:symbol  (or ?symbol=INFY)
 // Fetches Twelve Data logo (authed), caches bytes for 24h, serves with CDN headers.
 // Falls back to site default PNG on miss/timeout/auth-failed/rate-limited.
@@ -10,6 +10,7 @@ const TTL_OK_MS = 24 * 60 * 60 * 1000;
 const TTL_NEG_MS = 60 * 60 * 1000;       // not-found / auth-failed / upstream-error
 const TTL_RATE_MS = 60 * 1000;            // rate-limited (short so throttle can clear)
 const UPSTREAM_TIMEOUT_MS = 4000;
+const CHAIN_BUDGET_MS = 10_000;           // skip last attempt if we've spent this long
 
 const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
 
@@ -20,6 +21,8 @@ let warnedAuthFailed = false;
 type LogoSource =
   | "twelvedata"
   | "twelvedata-cache"
+  | "twelvedata-nse"
+  | "twelvedata-bse"
   | "not-found"
   | "auth-failed"
   | "rate-limited"
@@ -81,29 +84,33 @@ function okResponse(bytes: ArrayBuffer, contentType: string, source: LogoSource)
   });
 }
 
-type UpstreamResult =
+type AttemptResult =
   | { kind: "ok"; bytes: ArrayBuffer; contentType: string }
-  | { kind: "redirect"; source: Exclude<LogoSource, "twelvedata" | "twelvedata-cache"> };
+  | { kind: "empty" }
+  | { kind: "auth-failed" }
+  | { kind: "rate-limited" }
+  | { kind: "upstream-error" }
+  | { kind: "exception" }
+  | { kind: "config-missing" };
 
-async function loadFromTwelveData(symbol: string): Promise<UpstreamResult> {
+async function tryTwelveData(form: string): Promise<AttemptResult> {
   if (!TWELVE_DATA_API_KEY) {
     if (!warnedMissingKey) {
       console.warn("[stock-logo] TWELVE_DATA_API_KEY missing — serving fallback");
       warnedMissingKey = true;
     }
-    return { kind: "redirect", source: "config-missing" };
+    return { kind: "config-missing" };
   }
 
-  // TODO(B.2): stock_master may contain tickers like "M&M" that fail A-Z0-9 sanitize.
   const upstreamUrl =
-    `https://api.twelvedata.com/logo?symbol=${symbol}` +
+    `https://api.twelvedata.com/logo?symbol=${encodeURIComponent(form)}` +
     `&apikey=${TWELVE_DATA_API_KEY}`;
 
   let meta: Response;
   try {
     meta = await fetchWithTimeout(upstreamUrl, UPSTREAM_TIMEOUT_MS);
   } catch {
-    return { kind: "redirect", source: "exception" };
+    return { kind: "exception" };
   }
 
   if (meta.status === 401 || meta.status === 403) {
@@ -111,41 +118,64 @@ async function loadFromTwelveData(symbol: string): Promise<UpstreamResult> {
       console.warn("[stock-logo] Twelve Data auth failed");
       warnedAuthFailed = true;
     }
-    return { kind: "redirect", source: "auth-failed" };
+    return { kind: "auth-failed" };
   }
-  if (meta.status === 429) {
-    return { kind: "redirect", source: "rate-limited" };
-  }
-  if (!meta.ok) {
-    return { kind: "redirect", source: "upstream-error" };
-  }
+  if (meta.status === 429) return { kind: "rate-limited" };
+  if (!meta.ok) return { kind: "upstream-error" };
 
   let json: { url?: string } = {};
   try {
     json = (await meta.json()) as { url?: string };
   } catch {
-    return { kind: "redirect", source: "upstream-error" };
+    return { kind: "empty" };
   }
   const imgUrl = typeof json?.url === "string" ? json.url.trim() : "";
-  if (!imgUrl) {
-    return { kind: "redirect", source: "not-found" };
-  }
+  if (!imgUrl) return { kind: "empty" };
 
   try {
     const img = await fetchWithTimeout(imgUrl, UPSTREAM_TIMEOUT_MS);
-    if (!img.ok) return { kind: "redirect", source: "upstream-error" };
+    if (!img.ok) return { kind: "upstream-error" };
     const bytes = await img.arrayBuffer();
     const contentType = img.headers.get("content-type") ?? "image/png";
     return { kind: "ok", bytes, contentType };
   } catch {
-    return { kind: "redirect", source: "exception" };
+    return { kind: "exception" };
   }
 }
 
 function ttlFor(source: LogoSource): number {
-  if (source === "twelvedata") return TTL_OK_MS;
+  if (source === "twelvedata" || source === "twelvedata-nse" || source === "twelvedata-bse") return TTL_OK_MS;
   if (source === "rate-limited") return TTL_RATE_MS;
-  return TTL_NEG_MS; // not-found / auth-failed / upstream-error / exception
+  return TTL_NEG_MS;
+}
+
+type ChainResult =
+  | { kind: "ok"; bytes: ArrayBuffer; contentType: string; source: LogoSource }
+  | { kind: "redirect"; source: LogoSource };
+
+async function resolveLogo(symbol: string): Promise<ChainResult> {
+  const started = Date.now();
+  const forms: Array<{ form: string; source: LogoSource }> = [
+    { form: symbol, source: "twelvedata" },
+    { form: `${symbol}:NSE`, source: "twelvedata-nse" },
+    { form: `${symbol}.BSE`, source: "twelvedata-bse" },
+  ];
+
+  let lastNegative: LogoSource = "not-found";
+
+  for (let i = 0; i < forms.length; i++) {
+    if (i > 0 && Date.now() - started > CHAIN_BUDGET_MS) break;
+    const { form, source } = forms[i];
+    const r = await tryTwelveData(form);
+    if (r.kind === "ok") return { kind: "ok", bytes: r.bytes, contentType: r.contentType, source };
+    if (r.kind === "auth-failed") return { kind: "redirect", source: "auth-failed" };
+    if (r.kind === "rate-limited") return { kind: "redirect", source: "rate-limited" };
+    if (r.kind === "config-missing") return { kind: "redirect", source: "config-missing" };
+    if (r.kind === "upstream-error") lastNegative = "upstream-error";
+    else if (r.kind === "exception") lastNegative = "exception";
+    // "empty" → keep lastNegative as "not-found" and continue chain
+  }
+  return { kind: "redirect", source: lastNegative };
 }
 
 Deno.serve(async (req) => {
@@ -170,20 +200,19 @@ Deno.serve(async (req) => {
     }
   }
 
-  const result = await loadFromTwelveData(symbol);
+  const result = await resolveLogo(symbol);
 
   if (result.kind === "ok") {
     cache.set(symbol, {
       kind: "ok",
       bytes: result.bytes,
       contentType: result.contentType,
-      source: "twelvedata",
-      expiresAt: now + ttlFor("twelvedata"),
+      source: result.source,
+      expiresAt: now + ttlFor(result.source),
     });
-    return okResponse(result.bytes, result.contentType, "twelvedata");
+    return okResponse(result.bytes, result.contentType, result.source);
   }
 
-  // Do not cache config-missing — retry on next request when secret returns.
   if (result.source !== "config-missing") {
     cache.set(symbol, {
       kind: "redirect",
