@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StockLogo } from "@/components/common/StockLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { STALE_VERDICT_DAYS } from "@/lib/firm-details";
 import { LockedVideoCard, type LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
@@ -81,6 +82,7 @@ export function LibraryItemCard({ item, videoEnrichment }: Props) {
           </Badge>
         )}
         <div className="flex items-start gap-2">
+          {item.symbol && <StockLogo symbol={item.symbol} size={32} />}
           {icon && <span aria-hidden="true" className="text-lg leading-none">{icon}</span>}
           <h3 className="line-clamp-2 text-base font-semibold leading-snug">
             {item.title}

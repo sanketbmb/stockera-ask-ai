@@ -38,7 +38,8 @@ import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
-import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate } from "@/lib/seo-head";
+import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate, stockLogoAbsoluteUrl, stockOgImageUrl } from "@/lib/seo-head";
+import { StockLogo } from "@/components/common/StockLogo";
 import { getPublicReportRow } from "@/lib/public-report-row.functions";
 
 
@@ -339,7 +340,8 @@ function TierShapedReportContent({
         skipRevealId={skipRevealId}
       />
 
-      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-2 pb-2">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 md:px-6 pt-2 pb-2">
+        <StockLogo symbol={data.stock.symbol} size={48} />
         <ReportCtaStrip
           queryId={queryId}
           stockName={data.stock.company_name}
@@ -838,7 +840,7 @@ export const Route = createFileRoute("/report/$queryId")({
             meta.stock_symbol ?? stockLabel
           }. Live from Stockera.`,
     );
-    const image = SITE_DEFAULT_OG;
+    const image = meta.stock_symbol ? stockOgImageUrl(meta.stock_symbol) : SITE_DEFAULT_OG;
     const ld: Record<string, unknown> = {
       "@context": "https://schema.org",
       "@type": "Article",
@@ -862,6 +864,9 @@ export const Route = createFileRoute("/report/$queryId")({
         },
       },
     };
+    if (meta.stock_symbol) {
+      ld.image = [stockLogoAbsoluteUrl(meta.stock_symbol)];
+    }
     if (meta.stock_name || meta.stock_symbol) {
       ld.about = {
         "@type": "Corporation",

@@ -18,6 +18,7 @@ import {
   listAdminVideoAnswers,
   unpublishVideoAnswer,
 } from "@/lib/video-answers-admin.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 import { publishComposerVideoAnswer } from "@/lib/video-composer.functions";
 
 type Status = "all" | "draft" | "published";
@@ -154,6 +155,7 @@ export default function VideoAnswersList() {
                     <Badge variant={r.is_published ? "default" : "secondary"} className="text-[10px]">
                       {r.is_published ? "Published" : "Draft"}
                     </Badge>
+                    {r.queries?.stock_symbol && <StockLogo symbol={r.queries.stock_symbol} size={20} />}
                     {r.queries?.stock_symbol && <Badge variant="outline" className="font-mono text-[10px]">{r.queries.stock_symbol}</Badge>}
                     {r.verdict && <Badge variant="outline" className="text-[10px] uppercase">{r.verdict}</Badge>}
                     {r.unlock_price_credits != null && <span className="text-[11px] text-muted-foreground font-mono">{r.unlock_price_credits} cr</span>}

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { searchStockMaster, type StockMasterHit } from "@/lib/library-videos.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 
 export type SelectedSymbol = {
   symbol: string;
@@ -112,7 +113,8 @@ export function LibraryStockSearchBar({ selected, onSelect, placeholder }: Props
               }}
               className="w-full text-left px-3 py-2 hover:bg-accent focus:bg-accent focus:outline-none flex items-center justify-between gap-3"
             >
-              <span className="min-w-0 flex-1">
+              <span className="min-w-0 flex-1 flex items-center gap-2">
+                <StockLogo symbol={h.symbol} size={24} />
                 <span className="font-mono font-medium">{h.symbol}</span>
                 {h.company_name ? (
                   <span className="ml-2 text-sm text-muted-foreground truncate">{h.company_name}</span>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, Target, ShieldAlert, TrendingUp, TrendingDown, Trash2, Loader2 } from "lucide-react";
 import { getPortfolio, removeFromPortfolio, type PortfolioRow } from "@/lib/portfolio.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 import { toast } from "sonner";
 
 function StatusBadge({ status }: { status: PortfolioRow["status"] }) {
@@ -100,7 +101,8 @@ function WatchlistContent() {
               <Card key={r.id} className="p-5">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex-1 min-w-[200px]">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <StockLogo symbol={r.stock_symbol} size={32} />
                       <h3 className="font-display text-xl">{r.stock_name}</h3>
                       <Badge variant="outline" className="font-mono text-[10px]">{r.stock_symbol}</Badge>
                       <StatusBadge status={r.status} />

@@ -3,6 +3,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import { NSE_STOCKS, type NseStock } from "@/data/nseStocks";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { StockLogo } from "@/components/common/StockLogo";
 
 interface StockAutocompleteProps {
   value?: NseStock | null;
@@ -277,6 +278,7 @@ export function StockAutocomplete({
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-3">
+                        <StockLogo symbol={s.symbol} size={20} />
                         <span className="font-mono text-sm font-semibold text-foreground">
                           {s.symbol}
                         </span>
