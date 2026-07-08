@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import Terms from "@/pages/Terms";
 import { PublicShell } from "@/components/layout/PublicShell";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Terms of Service — Stockera";
-const DESCRIPTION = "Terms governing use of asktheexpert.lovable.app, Ask The Expert by Stockera, and all related SEBI Research Analyst services.";
+const DESCRIPTION = "Terms governing use of asktheexpert.in, Ask The Expert by Stockera, and all related SEBI Research Analyst services.";
 
 export const Route = createFileRoute("/terms")({
   head: () => ({

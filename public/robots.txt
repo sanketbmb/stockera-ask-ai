@@ -112,4 +112,4 @@ Allow: /
 # ─────────────────────────────────────────────
 # Dynamic sitemap live
 # ─────────────────────────────────────────────
-Sitemap: https://asktheexpert.lovable.app/sitemap.xml
+Sitemap: https://asktheexpert.in/sitemap.xml

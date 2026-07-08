@@ -14,7 +14,7 @@ import { VideosBlogsTab } from "@/components/stock-overview/VideosBlogsTab";
 import { AnalyticsTab } from "@/components/stock-overview/AnalyticsTab";
 import type { StockOverview } from "@/components/stock-overview/types";
 
-const ORIGIN = "https://asktheexpert.lovable.app";
+const ORIGIN = "https://asktheexpert.in";
 
 function fallback(symbol: string): StockOverview {
   return {

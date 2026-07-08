@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import Pricing from "@/pages/Pricing";
 import { PublicShell } from "@/components/layout/PublicShell";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Pricing — ₹100 Video Answers from SEBI-Registered Analysts | Stockera";
 const DESCRIPTION = "₹100 personalized video answers from SEBI-registered Research Analysts. ₹499 / ₹999 / ₹1,799 for live 1:1 consultations. Transparent, one-time pricing. No subscription.";
 
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/pricing")({
           "@context": "https://schema.org",
           "@type": "Service",
           name: "Ask The Expert by Stockera",
-          provider: { "@id": "https://asktheexpert.lovable.app/#organization" },
+          provider: { "@id": "https://asktheexpert.in/#organization" },
           areaServed: "IN",
           url: `${SITE_ORIGIN}/pricing`,
           hasOfferCatalog: {

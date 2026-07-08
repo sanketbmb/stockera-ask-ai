@@ -3,7 +3,7 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { Card } from "@/components/ui/card";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Investor Charter — SEBI Research Analyst Disclosure | Stockera";
 const DESCRIPTION = "Investor charter, services offered, rights and obligations under SEBI Research Analyst Regulations, 2014. Stockera Technology Private Limited · INH000019071.";
 

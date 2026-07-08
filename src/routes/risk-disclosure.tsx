@@ -3,7 +3,7 @@ import { PublicShell } from "@/components/layout/PublicShell";
 import { FIRM } from "@/lib/firm-details";
 import { AlertTriangle } from "lucide-react";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "Risk Disclosure — Stockera Research Analyst";
 const DESCRIPTION = "Risk disclosure for SEBI-registered Research Analyst services. Investments in securities are subject to market risks.";
 

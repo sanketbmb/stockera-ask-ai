@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import SebiCompliance from "@/pages/SebiCompliance";
 import { PublicShell } from "@/components/layout/PublicShell";
 
-const SITE_ORIGIN = "https://asktheexpert.lovable.app";
+const SITE_ORIGIN = "https://asktheexpert.in";
 const TITLE = "SEBI Compliance Overview — Research Analyst INH000019071 | Stockera";
 const DESCRIPTION = "Overview of SEBI Research Analyst Regulations 2014 compliance at Stockera Technology Private Limited. Registration, supervision, audit, and investor protection.";
 

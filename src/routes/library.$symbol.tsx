@@ -19,7 +19,7 @@ import type { SymbolLibraryResponse } from "@/types/library-symbol";
 
 type Kind = "all" | "report" | "video" | "community_query";
 
-const ORIGIN = "https://asktheexpert.lovable.app";
+const ORIGIN = "https://asktheexpert.in";
 
 function fallbackResponse(input: string): SymbolLibraryResponse {
   return {
@@ -109,7 +109,7 @@ export const Route = createFileRoute("/library/$symbol")({
         "@type": "FinancialProduct",
         name: `${symbol} stock research`,
         category: "Equity research",
-        provider: { "@id": "https://asktheexpert.lovable.app/#organization" },
+        provider: { "@id": "https://asktheexpert.in/#organization" },
         url: `${ORIGIN}/library/${symbol}`,
         description: `Analyst-verified research, video answers, and community questions for ${symbol} on the Stockera Research Library.`,
       }),
