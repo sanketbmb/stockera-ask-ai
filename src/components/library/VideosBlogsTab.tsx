@@ -29,6 +29,7 @@ import { listVideoAnswersForSymbol } from "@/lib/video-answers.functions";
 import { listCuratedItemsForSymbol } from "@/lib/discover.functions";
 import { listPublishedCurated } from "@/lib/curated.functions";
 import { listAllPublishedVideoAnswers, type UnifiedVideoRow } from "@/lib/library-videos.functions";
+import { StockLogo } from "@/components/common/StockLogo";
 import { LockedVideoCard, type LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
 
 type CuratedRow = {
