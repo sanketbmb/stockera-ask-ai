@@ -839,7 +839,7 @@ export const Route = createFileRoute("/report/$queryId")({
             meta.stock_symbol ?? stockLabel
           }. Live from Stockera.`,
     );
-    const image = SITE_DEFAULT_OG;
+    const image = meta.stock_symbol ? stockOgImageUrl(meta.stock_symbol) : SITE_DEFAULT_OG;
     const ld: Record<string, unknown> = {
       "@context": "https://schema.org",
       "@type": "Article",
