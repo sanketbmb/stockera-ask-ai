@@ -95,7 +95,7 @@ const payloadSchema = z
     }
   });
 
-function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null): Record<string, unknown> {
+function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null, resolvedStockMasterId: string | null): Record<string, unknown> {
   const insert: Record<string, unknown> = {
     answer_type: "video",
     expert_id: data.expertId,
@@ -106,11 +106,7 @@ function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null
     question_addressed_override: data.questionAddressed ?? null,
     custom_thumbnail_url: data.customThumbnailPath ?? null,
   };
-  if (data.stock) {
-    insert.stock_master_id = data.stock.stockMasterId ?? null;
-  } else {
-    insert.stock_master_id = null;
-  }
+  insert.stock_master_id = resolvedStockMasterId;
   if (data.category === "stock_specific") {
     insert.unlock_price_credits = data.priceCredits ?? null;
   } else {
@@ -120,7 +116,7 @@ function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null
     insert.source_kind = data.source.kind;
     insert.paid_video_storage_path = data.source.storagePath;
     insert.video_thumbnail = data.source.thumbnailStoragePath ?? null;
-    insert.video_duration_sec = data.source.durationSec ?? null;
+    insert.video_duration_sec = data.source.durationSec ?? undefined;
     insert.external_url = null;
     insert.external_provider = null;
     insert.youtube_video_id = null;
@@ -139,6 +135,27 @@ function buildInsert(data: z.infer<typeof payloadSchema>, queryId: string | null
     }
   }
   return insert;
+}
+
+// Resolve `symbol → stock_master.id` server-side. SymbolPicker only sends
+// { symbol, name } from the client, so we look up the canonical master row
+// (NSE preferred over BSE, matching resolveStockBySymbol semantics).
+async function resolveStockMasterId(
+  admin: Awaited<ReturnType<typeof getAdmin>>,
+  data: z.infer<typeof payloadSchema>,
+): Promise<string | null> {
+  if (!data.stock) return null;
+  if (data.stock.stockMasterId) return data.stock.stockMasterId;
+  const sym = data.stock.symbol.trim().toUpperCase();
+  const { data: rows } = await admin
+    .from("stock_master")
+    .select("id, exchange")
+    .ilike("symbol", sym)
+    .in("exchange", ["NSE", "BSE"])
+    .limit(4);
+  if (!rows || rows.length === 0) return null;
+  const nse = rows.find((r) => r.exchange === "NSE");
+  return ((nse ?? rows[0]).id as string) ?? null;
 }
 
 export const saveVideoComposerDraft = createServerFn({ method: "POST" })
@@ -170,7 +187,8 @@ export const saveVideoComposerDraft = createServerFn({ method: "POST" })
       queryId = q.id;
     }
 
-    const base = buildInsert(data, queryId);
+    const resolvedStockMasterId = await resolveStockMasterId(admin, data);
+    const base = buildInsert(data, queryId, resolvedStockMasterId);
     let answerId: string;
     if (data.answerId) {
       const { data: existing, error: readErr } = await admin
@@ -267,6 +285,43 @@ export const publishComposerVideoAnswer = createServerFn({ method: "POST" })
       .update({ is_published: true })
       .eq("id", data.answerId);
     if (upErr) throw new Error(upErr.message);
+
+    // Publish to library_items so MasterSearch (fn_library_search) can find
+    // this video by title / symbol. Idempotent by (source_table, source_id).
+    let libSymbol: string | null = null;
+    let libExchange: string | null = null;
+    if (row.stock_master_id) {
+      const { data: sm } = await admin
+        .from("stock_master")
+        .select("symbol, exchange")
+        .eq("id", row.stock_master_id)
+        .maybeSingle();
+      if (sm) {
+        libSymbol = (sm.symbol as string | null) ?? null;
+        libExchange = (sm.exchange as string | null) ?? null;
+      }
+    }
+    await admin
+      .from("library_items")
+      .delete()
+      .eq("source_table", "answers")
+      .eq("source_id", data.answerId);
+    await admin.from("library_items").insert({
+      kind: "video",
+      source_id: data.answerId,
+      source_table: "answers",
+      answer_id: data.answerId,
+      symbol: libSymbol,
+      symbol_exchange: libExchange,
+      title: row.video_title ?? "Analyst video",
+      verdict: null,
+      analyst_id: row.expert_id ?? null,
+      body_excerpt: (row.video_description ?? "").slice(0, 300),
+      is_public: true,
+      is_tombstoned: false,
+      published_at: new Date().toISOString(),
+    } as never);
+
 
     await admin.from("audit_events").insert({
       event_type: "video_composer.published",

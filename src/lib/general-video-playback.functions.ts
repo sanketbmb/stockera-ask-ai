@@ -41,7 +41,7 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
     const { data: row, error } = await admin
       .from("answers")
       .select(
-        "id, expert_id, category, is_published, answer_type, source_kind, external_provider, external_url, youtube_video_id, video_title, video_description, question_addressed_override, custom_thumbnail_url, video_duration_sec, created_at, analyst_profiles:expert_id(display_name, sebi_reg_number)",
+        "id, expert_id, category, is_published, answer_type, source_kind, external_provider, external_url, youtube_video_id, video_title, video_description, question_addressed_override, custom_thumbnail_url, video_duration_sec, created_at",
       )
       .eq("id", data.answerId)
       .maybeSingle();
@@ -49,8 +49,22 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
     if (!row || row.answer_type !== "video" || row.category !== "general" || !row.is_published) {
       return { status: "not_found" as const };
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ap = (row as any).analyst_profiles ?? null;
+    // Manual join — no FK exists between answers.expert_id and
+    // analyst_profiles.id, so a PostgREST embed fails. Fetch separately.
+    let analyst: { display_name: string | null; sebi_reg_number: string | null } | null = null;
+    if (row.expert_id) {
+      const { data: ap } = await admin
+        .from("analyst_profiles")
+        .select("display_name, sebi_reg_number")
+        .eq("id", row.expert_id)
+        .maybeSingle();
+      if (ap) {
+        analyst = {
+          display_name: (ap.display_name as string | null) ?? null,
+          sebi_reg_number: (ap.sebi_reg_number as string | null) ?? null,
+        };
+      }
+    }
     return {
       status: "ok" as const,
       answer_id: row.id,
@@ -65,12 +79,7 @@ export const getPublicGeneralVideoAnswer = createServerFn({ method: "POST" })
       thumbnail_url: row.custom_thumbnail_url,
       video_duration_sec: row.video_duration_sec,
       published_at: row.created_at,
-      analyst: ap
-        ? {
-            display_name: ap.display_name as string | null,
-            sebi_reg_number: ap.sebi_reg_number as string | null,
-          }
-        : null,
+      analyst,
     };
   });
 
@@ -126,15 +135,16 @@ export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => symbolInput.parse(input))
   .handler(async ({ data }) => {
     const sb = publicClient();
-    // Resolve symbol → stock_master_id via publishable client + narrow policy.
+    // Resolve ALL stock_master rows matching the symbol (NSE + BSE + dupes)
+    // via publishable client + narrow policy, then match answers by any id.
     const admin = await loadAdmin();
-    const { data: sm } = await admin
+    const { data: sms } = await admin
       .from("stock_master")
       .select("id")
       .ilike("symbol", data.symbol)
-      .limit(1)
-      .maybeSingle();
-    if (!sm?.id) return [];
+      .in("exchange", ["NSE", "BSE"]);
+    const ids = (sms ?? []).map((s) => s.id as string);
+    if (ids.length === 0) return [];
     const { data: rows, error } = await sb
       .from("answers")
       .select(
@@ -143,7 +153,7 @@ export const listGeneralVideosForSymbol = createServerFn({ method: "POST" })
       .eq("category", "general")
       .eq("is_published", true)
       .eq("answer_type", "video")
-      .eq("stock_master_id", sm.id)
+      .in("stock_master_id", ids)
       .order("created_at", { ascending: false })
       .limit(30);
     if (error) return [];
