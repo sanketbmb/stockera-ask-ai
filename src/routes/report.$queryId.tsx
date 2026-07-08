@@ -38,6 +38,7 @@ import { YouAlsoAskedSection } from "@/components/report/YouAlsoAskedSection";
 import type { SecondaryAnswer } from "@/lib/secondary-composer";
 import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
+import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate } from "@/lib/seo-head";
 
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
