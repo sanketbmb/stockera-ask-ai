@@ -398,7 +398,10 @@ export function MasterSearch({
                                         active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
                                       )}
                                     >
-                                      <span className="font-mono font-medium">{s.symbol}</span>
+                                      <span className="flex items-center gap-2">
+                                        <StockLogo symbol={s.symbol} size={24} />
+                                        <span className="font-mono font-medium">{s.symbol}</span>
+                                      </span>
                                       <span className="text-xs text-muted-foreground">{s.exchange ?? "NSE"}</span>
                                     </li>
                                   );
