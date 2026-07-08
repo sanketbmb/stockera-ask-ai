@@ -1,4 +1,5 @@
 import { AuthGatedReportLink } from "@/components/common/AuthGatedReportLink";
+import { StockLogo } from "@/components/common/StockLogo";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 
@@ -57,9 +58,12 @@ export function MasterLibraryCard({ item }: Props) {
     <div className="flex h-full flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {item.symbol && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary">
-            {item.symbol}
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <StockLogo symbol={item.symbol} size={32} />
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary">
+              {item.symbol}
+            </span>
+          </div>
         )}
         {verdict && (
           <span

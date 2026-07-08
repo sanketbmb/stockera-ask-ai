@@ -225,6 +225,14 @@ function UnifiedVideoTile({ row }: { row: UnifiedVideoRow }) {
           </span>
         </div>
         <div className="p-3">
+          {row.symbol && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <StockLogo symbol={row.symbol} size={28} />
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-primary">
+                {row.symbol}
+              </span>
+            </div>
+          )}
           <p className="text-sm font-medium line-clamp-2 group-hover:text-primary">
             {row.video_title?.trim() || "Analyst video"}
           </p>

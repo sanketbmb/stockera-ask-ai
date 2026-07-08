@@ -28,6 +28,7 @@ import type {
 import { AnimatedNumber, useCountUp } from "@/hooks/useCountUp";
 import { omissionCopy } from "@/lib/trade-plan-copy";
 import { verdictUILabel, verdictRawLabel } from "@/lib/verdict-labels";
+import { StockLogo } from "@/components/common/StockLogo";
 import { SHOW_PLACEHOLDER_MODULES } from "@/lib/feature-flags";
 
 import { METRIC_COPY, type MetricCopy } from "@/lib/metric-copy";
@@ -946,15 +947,20 @@ export function StockAnalysisReport({
         {/* ═══ 1. HEADER STRIP ═══ */}
         <motion.header variants={sectionFadeUp} className="rounded-2xl border border-border bg-card px-6 py-5 shadow-card">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">{stock.exchange}: {stock.symbol}</Badge>
-                {stock.sector && <Badge variant="secondary" className="text-[10px]">{stock.sector}</Badge>}
-                {stock.industry && stock.industry !== stock.sector && (
-                  <span className="text-[11px] text-muted-foreground">· {stock.industry}</span>
-                )}
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-border bg-white p-2 shadow-sm">
+                <StockLogo symbol={stock.symbol} size={56} rounded={true} />
               </div>
-              <h1 className="mt-2 font-display text-3xl text-foreground md:text-4xl truncate">{stock.company_name || stock.symbol}</h1>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">{stock.exchange}: {stock.symbol}</Badge>
+                  {stock.sector && <Badge variant="secondary" className="text-[10px]">{stock.sector}</Badge>}
+                  {stock.industry && stock.industry !== stock.sector && (
+                    <span className="text-[11px] text-muted-foreground">· {stock.industry}</span>
+                  )}
+                </div>
+                <h1 className="mt-2 font-display text-3xl text-foreground md:text-4xl truncate">{stock.company_name || stock.symbol}</h1>
+              </div>
             </div>
             <div className="text-right">
               <div className="font-display text-3xl tabular-nums text-foreground">{fmtPrice(price_context.current_price)}</div>

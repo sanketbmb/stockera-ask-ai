@@ -453,21 +453,21 @@ export function MasterSearch({
                                         />
                                       ) : (
                                         <div className="flex items-start justify-between gap-3">
-                                          <div className="min-w-0 flex-1">
-                                            <div className="truncate font-medium">{it.title}</div>
+                                          <div className="min-w-0 flex-1 overflow-hidden">
+                                            <div className="line-clamp-2 break-words font-medium">{it.title}</div>
                                             {it.body_excerpt && (
-                                              <div className="truncate text-xs text-muted-foreground">
+                                              <div className="line-clamp-2 break-words text-xs text-muted-foreground">
                                                 {it.body_excerpt}
                                               </div>
                                             )}
                                           </div>
-                                          <div className="shrink-0 text-right text-xs text-muted-foreground">
+                                          <div className="shrink-0 max-w-[120px] text-right text-xs text-muted-foreground">
                                             {isAnalyst ? (
                                               <span className="italic">Coming soon</span>
                                             ) : (
                                               <>
-                                                {it.symbol && <div className="font-mono">{it.symbol}</div>}
-                                                {it.analyst_name && <div>{it.analyst_name}</div>}
+                                                {it.symbol && <div className="font-mono truncate">{it.symbol}</div>}
+                                                {it.analyst_name && <div className="truncate">{it.analyst_name}</div>}
                                               </>
                                             )}
                                           </div>
