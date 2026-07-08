@@ -278,6 +278,7 @@ export function StockAutocomplete({
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-3">
+                        <StockLogo symbol={s.symbol} size={20} />
                         <span className="font-mono text-sm font-semibold text-foreground">
                           {s.symbol}
                         </span>
