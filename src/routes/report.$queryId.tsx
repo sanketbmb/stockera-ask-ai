@@ -863,6 +863,9 @@ export const Route = createFileRoute("/report/$queryId")({
         },
       },
     };
+    if (meta.stock_symbol) {
+      ld.image = [stockLogoAbsoluteUrl(meta.stock_symbol)];
+    }
     if (meta.stock_name || meta.stock_symbol) {
       ld.about = {
         "@type": "Corporation",
