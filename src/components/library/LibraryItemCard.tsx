@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StockLogo } from "@/components/common/StockLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { STALE_VERDICT_DAYS } from "@/lib/firm-details";
 import { LockedVideoCard, type LockedVideoCardItem } from "@/components/video-answers/LockedVideoCard";
