@@ -349,20 +349,54 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Step 4 — apply sector/index filters
-    const filtered = auditRows.filter((r) => {
+    // Step 4 — visible-cohort preference + sector/index filters.
+    // Unfiltered default view prefers the low-churn is_top_pick cohort so
+    // day-over-day membership is stable. Any filter engages the broad
+    // include pool so breadth is preserved. Falls back to broad pool if
+    // the top-pick cohort is empty (bootstrap or missing hysteresis run).
+    const unfiltered = (sector === ALL_SECTORS) && (indexName === ALL_INDICES);
+    const topRows = unfiltered
+      ? auditRows.filter((r) => (r as { is_top_pick?: boolean }).is_top_pick === true)
+      : [];
+    const pool = (unfiltered && topRows.length > 0) ? topRows : auditRows;
+
+    // Task 2: query-time UI-label -> GICS-label mapping. stock_master.sector_canonical
+    // already carries GICS-style labels ("Financial Services", "Healthcare", ...);
+    // no schema/backfill needed. Match sector_canonical first, fall back to sector.
+    const UI_TO_GICS: Record<string, string[]> = {
+      "Banking & Finance": ["Financial Services"],
+      "Pharma":            ["Healthcare"],
+      "Auto":              ["Consumer Discretionary", "Consumer Durables"],
+      "FMCG":              ["Consumer Staples"],
+      "IT":                ["IT", "Information Technology"],
+      "Metals":            ["Materials"],
+      "Infra":             ["Industrials"],
+      "Energy":            ["Energy"],
+      "Utilities":         ["Utilities"],
+      "Telecom":           ["Communication Services"],
+      "Defence":           ["Industrials"],
+    };
+    const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+    const allowedSectorsNorm = sector !== ALL_SECTORS
+      ? (UI_TO_GICS[sector] ?? [sector]).map(norm)
+      : null;
+
+    const filtered = pool.filter((r) => {
       const sym = r.symbol as string;
       const exch = r.exchange as string;
-      const masterSector = masterBySymbol.get(sym)?.sector ?? null;
 
-      if (sector !== ALL_SECTORS) {
-        if (masterSector !== sector) return false;
+      if (allowedSectorsNorm) {
+        const agg = masterBySymbol.get(sym);
+        const effectiveSector = agg?.sector_canonical ?? agg?.sector ?? null;
+        if (!effectiveSector) return false;
+        if (!allowedSectorsNorm.includes(norm(effectiveSector))) return false;
       }
       if (indexMemberSet) {
         if (!indexMemberSet.has(`${sym}|${exch}`)) return false;
       }
       return true;
     });
+
 
     if (filtered.length === 0) {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
