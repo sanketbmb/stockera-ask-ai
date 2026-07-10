@@ -249,9 +249,10 @@ Deno.serve(async (req) => {
     // Step 2 — include rows for that batch
     const { data: auditRows, error: auditErr } = await supabase
       .from("stock_picker_pick_audit")
-      .select("symbol, exchange, verdict, composite_score, generated_at, batch_id")
+      .select("symbol, exchange, verdict, composite_score, generated_at, batch_id, is_top_pick")
       .eq("batch_id", batchId)
       .eq("verdict", "include");
+
 
     if (auditErr) {
       return json({ ok: false, error: auditErr.message }, 500);
@@ -266,9 +267,10 @@ Deno.serve(async (req) => {
     const { data: masterRows, error: masterErr } = await supabase
       .from("stock_master")
       .select(
-        "symbol, company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
+        "symbol, company_name, sector, sector_canonical, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
       )
       .in("symbol", symbols);
+
 
     if (masterErr) {
       return json({ ok: false, error: masterErr.message }, 500);
@@ -277,6 +279,7 @@ Deno.serve(async (req) => {
     interface MasterAgg {
       company_name: string | null;
       sector: string | null;
+      sector_canonical: string | null;
       industry: string | null;
       market_cap_rs: number | null;
       cap_band: string | null;
@@ -298,6 +301,7 @@ Deno.serve(async (req) => {
       const cur: MasterAgg = masterBySymbol.get(sym) ?? {
         company_name: null,
         sector: null,
+        sector_canonical: null,
         industry: null,
         market_cap_rs: null,
         cap_band: null,
@@ -311,6 +315,7 @@ Deno.serve(async (req) => {
       };
       cur.company_name = preferNonNull(cur.company_name, m.company_name as string | null);
       cur.sector = preferNonNull(cur.sector, m.sector as string | null);
+      cur.sector_canonical = preferNonNull(cur.sector_canonical, (m as { sector_canonical?: string | null }).sector_canonical ?? null);
       cur.industry = preferNonNull(cur.industry, m.industry as string | null);
       cur.market_cap_rs = preferNonNull(cur.market_cap_rs, m.market_cap_rs as number | null);
       cur.cap_band = preferNonNull(cur.cap_band, m.cap_band as string | null);
@@ -323,6 +328,7 @@ Deno.serve(async (req) => {
       cur.pledged_pct = preferNonNull(cur.pledged_pct, m.pledged_pct as number | null);
       masterBySymbol.set(sym, cur);
     }
+
 
     // Index membership set (latest as_of_date per symbol+exchange for index)
     let indexMemberSet: Set<string> | null = null;
@@ -343,20 +349,54 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Step 4 — apply sector/index filters
-    const filtered = auditRows.filter((r) => {
+    // Step 4 — visible-cohort preference + sector/index filters.
+    // Unfiltered default view prefers the low-churn is_top_pick cohort so
+    // day-over-day membership is stable. Any filter engages the broad
+    // include pool so breadth is preserved. Falls back to broad pool if
+    // the top-pick cohort is empty (bootstrap or missing hysteresis run).
+    const unfiltered = (sector === ALL_SECTORS) && (indexName === ALL_INDICES);
+    const topRows = unfiltered
+      ? auditRows.filter((r) => (r as { is_top_pick?: boolean }).is_top_pick === true)
+      : [];
+    const pool = (unfiltered && topRows.length > 0) ? topRows : auditRows;
+
+    // Task 2: query-time UI-label -> GICS-label mapping. stock_master.sector_canonical
+    // already carries GICS-style labels ("Financial Services", "Healthcare", ...);
+    // no schema/backfill needed. Match sector_canonical first, fall back to sector.
+    const UI_TO_GICS: Record<string, string[]> = {
+      "Banking & Finance": ["Financial Services"],
+      "Pharma":            ["Healthcare"],
+      "Auto":              ["Consumer Discretionary", "Consumer Durables"],
+      "FMCG":              ["Consumer Staples"],
+      "IT":                ["IT", "Information Technology"],
+      "Metals":            ["Materials"],
+      "Infra":             ["Industrials"],
+      "Energy":            ["Energy"],
+      "Utilities":         ["Utilities"],
+      "Telecom":           ["Communication Services"],
+      "Defence":           ["Industrials"],
+    };
+    const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+    const allowedSectorsNorm = sector !== ALL_SECTORS
+      ? (UI_TO_GICS[sector] ?? [sector]).map(norm)
+      : null;
+
+    const filtered = pool.filter((r) => {
       const sym = r.symbol as string;
       const exch = r.exchange as string;
-      const masterSector = masterBySymbol.get(sym)?.sector ?? null;
 
-      if (sector !== ALL_SECTORS) {
-        if (masterSector !== sector) return false;
+      if (allowedSectorsNorm) {
+        const agg = masterBySymbol.get(sym);
+        const effectiveSector = agg?.sector_canonical ?? agg?.sector ?? null;
+        if (!effectiveSector) return false;
+        if (!allowedSectorsNorm.includes(norm(effectiveSector))) return false;
       }
       if (indexMemberSet) {
         if (!indexMemberSet.has(`${sym}|${exch}`)) return false;
       }
       return true;
     });
+
 
     if (filtered.length === 0) {
       return json({ ...baseResponse, stocks: [], note: "no_survivors_match_filter" });
@@ -1274,18 +1314,19 @@ Deno.serve(async (req) => {
     // Step 6b — Phase 2V.1 per-profile composite_score read-path gate.
     // Read all 4 per-profile persistence flags fresh per request (no cache).
     // Missing or non-strict-true => false (safe default).
-    const persistKey = `composite_score_persist_${risk_profile}`;
+    const persistKey = `composite_score_visible_${risk_profile}`;
     let persistEnabled = false;
     {
       const { data: flagRows, error: flagErr } = await supabase
         .from("stock_picker_runtime_config")
         .select("config_key, config_value")
         .in("config_key", [
-          "composite_score_persist_conservative",
-          "composite_score_persist_moderate",
-          "composite_score_persist_aggressive",
-          "composite_score_persist_ultra",
+          "composite_score_visible_conservative",
+          "composite_score_visible_moderate",
+          "composite_score_visible_aggressive",
+          "composite_score_visible_ultra",
         ]);
+
       if (flagErr) {
         return json({ ok: false, error: `score_gate_flags_unavailable: ${flagErr.message}` }, 500);
       }

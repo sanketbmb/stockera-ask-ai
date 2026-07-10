@@ -232,7 +232,11 @@ async function runWritePickAudit(
     p_regulatory_status_at_generation: params.p_regulatory_status_at_generation,
     p_reg_no: params.p_reg_no,
     p_legal_name: params.p_legal_name,
+    p_was_incumbent: params.p_was_incumbent ?? false,
+    p_is_top_pick: params.p_is_top_pick ?? false,
+    p_persistence_reason: params.p_persistence_reason ?? null,
   });
+
 
   if (error) {
     if (isUniqueViolationOnConstraint(error as PgErrorLike, UQ_PICK_AUDIT)) {

@@ -282,7 +282,14 @@ export interface WriteAuditRowParams {
 
   p_legal_name: string;
 
+  p_was_incumbent?: boolean;
+
+  p_is_top_pick?: boolean;
+
+  p_persistence_reason?: string | null;
+
 }
+
 
 export interface WriteBatchRejectionParams {
 

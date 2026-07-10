@@ -1398,8 +1398,124 @@ serve(async (req: Request) => {
       return Math.round(clampR(blended, 0, 100) * 10) / 10;
     }
 
+    // ---- Hysteresis: choose today's visible top-pick cohort of size DISPLAY_N ----
+    // Bookkeeping-only: sets is_top_pick / was_incumbent / persistence_reason on
+    // include-verdict audit rows. NEVER enters the replay-hash payload bundle.
+    const hDisplayN     = Number(config.get('hysteresis_display_n')           ?? 10);
+    const hBandPts      = Number(config.get('hysteresis_band_pts')            ?? 2.0);
+    const hMinTenure    = Number(config.get('hysteresis_min_tenure_days')     ?? 1);
+    const hChurnCapPct  = Number(config.get('hysteresis_daily_churn_cap_pct') ?? 30);
+    const churnCap      = Math.ceil((hChurnCapPct / 100) * hDisplayN);
+
+    // 1. Yesterday's is_top_pick set (single most recent prior LIVE batch)
+    const { data: yRows } = await supabase
+      .from('stock_picker_pick_audit')
+      .select('symbol, exchange, generated_at, batch_id')
+      .eq('batch_type', 'live').eq('verdict', 'include').eq('is_top_pick', true)
+      .neq('batch_id', batchId)
+      .order('generated_at', { ascending: false })
+      .limit(500);
+    const yBatchId = yRows?.[0]?.batch_id ?? null;
+    const yesterdayIncumbents = new Set<string>(
+      (yRows ?? []).filter((r) => r.batch_id === yBatchId).map((r) => `${r.symbol}|${r.exchange}`)
+    );
+
+    // 2. Score all survivors (memoize for later use in pickAuditOps)
+    const scoreByKey = new Map<string, number | null>();
+    for (const s of includedSurvivors) {
+      scoreByKey.set(`${s.symbol}|${s.exchange}`, computeCompositeScore(s.symbol, s.exchange));
+    }
+
+    // 3. Rank survivors -> rawTop + cutoff
+    const survivorsSorted = [...includedSurvivors].sort((a, b) => {
+      const sa = scoreByKey.get(`${a.symbol}|${a.exchange}`);
+      const sb = scoreByKey.get(`${b.symbol}|${b.exchange}`);
+      if (sa == null && sb == null) return 0;
+      if (sa == null) return 1;
+      if (sb == null) return -1;
+      return sb - sa;
+    });
+    const rawTop = survivorsSorted.slice(0, hDisplayN);
+    const cutoff = rawTop.length === hDisplayN
+      ? (scoreByKey.get(`${rawTop[hDisplayN - 1].symbol}|${rawTop[hDisplayN - 1].exchange}`) ?? -Infinity)
+      : -Infinity;
+
+    // 4. Seed cohort with rawTop
+    type Surv = typeof includedSurvivors[number];
+    const cohort = new Map<string, { survivor: Surv; reason: string | null }>();
+    for (const s of rawTop) {
+      const k = `${s.symbol}|${s.exchange}`;
+      cohort.set(k, { survivor: s, reason: yesterdayIncumbents.has(k) ? null : 'new_entry' });
+    }
+
+    // 5. Evaluate dropped incumbents for reinstatement
+    const droppedIncumbents = [...yesterdayIncumbents].filter((k) => !cohort.has(k));
+    type Candidate = { key: string; surv: Surv | null; score: number; margin: number; hardExcluded: boolean; tenure: number };
+    const evalCand: Candidate[] = [];
+    for (const k of droppedIncumbents) {
+      const [sym, exch] = k.split('|');
+      const surv = includedSurvivors.find((s) => s.symbol === sym && s.exchange === exch) ?? null;
+      const hardExcluded = !surv;
+      const sc = surv ? (scoreByKey.get(k) ?? -Infinity) : -Infinity;
+      let tenure = 0;
+      if (!hardExcluded) {
+        try {
+          const { data: tenureVal } = await supabase.rpc('sp_pick_tenure_days', {
+            p_symbol: sym, p_exchange: exch, p_before_batch: batchId, p_max_lookback: 20,
+          });
+          tenure = Number(tenureVal ?? 0);
+        } catch { tenure = 0; }
+      }
+      evalCand.push({ key: k, surv, score: sc, margin: sc - cutoff, hardExcluded, tenure });
+    }
+
+    // 5a. Band reinstates
+    for (const c of evalCand) {
+      if (c.hardExcluded || !c.surv) continue;
+      if (c.score >= cutoff - hBandPts) {
+        cohort.set(c.key, { survivor: c.surv, reason: 'incumbent_within_band' });
+      }
+    }
+    // 5b. Tenure-hold reinstates
+    for (const c of evalCand) {
+      if (c.hardExcluded || !c.surv || cohort.has(c.key)) continue;
+      if (c.tenure < hMinTenure) {
+        cohort.set(c.key, { survivor: c.surv, reason: 'incumbent_tenure_hold' });
+      }
+    }
+
+    // 6. Churn cap — reinstate best remaining if daily drops exceed cap
+    const stillDropped = evalCand
+      .filter((c) => !c.hardExcluded && c.surv && !cohort.has(c.key))
+      .sort((a, b) => b.margin - a.margin);
+    if (stillDropped.length > churnCap) {
+      const reinstateCount = stillDropped.length - churnCap;
+      for (const c of stillDropped.slice(0, reinstateCount)) {
+        if (c.surv) cohort.set(c.key, { survivor: c.surv, reason: 'evicted_churn_cap' });
+      }
+    }
+
+    // 7. Trim overflow — bias retention toward incumbents (drop lowest-scoring new/natural entries)
+    if (cohort.size > hDisplayN) {
+      const trim = cohort.size - hDisplayN;
+      const trimmable = [...cohort.entries()]
+        .filter(([, v]) => v.reason === null || v.reason === 'new_entry')
+        .sort(([, a], [, b]) => {
+          const sa = scoreByKey.get(`${a.survivor.symbol}|${a.survivor.exchange}`) ?? -Infinity;
+          const sb = scoreByKey.get(`${b.survivor.symbol}|${b.survivor.exchange}`) ?? -Infinity;
+          return sa - sb;
+        })
+        .slice(0, trim);
+      for (const [k] of trimmable) cohort.delete(k);
+    }
+    const cohortKeys = new Set(cohort.keys());
+
     const pickAuditOps = includedSurvivors.map((survivor) => {
-      const composite = computeCompositeScore(survivor.symbol, survivor.exchange);
+      const k = `${survivor.symbol}|${survivor.exchange}`;
+      const composite = scoreByKey.get(k) ?? null;
+      const isTop = cohortKeys.has(k);
+      const wasInc = yesterdayIncumbents.has(k);
+      const reason = isTop ? (cohort.get(k)!.reason) : null;
       const params: WriteAuditRowParams = {
         p_batch_id: batchId,
         p_batch_type: batchType,
@@ -1417,12 +1533,16 @@ serve(async (req: Request) => {
         p_regulatory_status_at_generation: stamp.regulatory_status_at_generation,
         p_reg_no: stamp.sebi_reg_no,
         p_legal_name: stamp.firm_legal_name,
+        p_was_incumbent: wasInc,
+        p_is_top_pick: isTop,
+        p_persistence_reason: reason,
       };
       // Phase 2R: risk_profile_guard is at OP level (sibling of params).
       // It MUST NOT enter the replay-hash payload bundle. It is consumed
       // only by write-audit to choose persistence (null vs real score).
       return { op: 'write_pick_audit' as const, params, risk_profile_guard: riskProfile };
     });
+
 
     // SP-1.6 Step 5: forward internal invocation secret to write-audit when set.
     const internalSecret = Deno.env.get('SP1_INTERNAL_INVOCATION_SECRET') ?? '';
