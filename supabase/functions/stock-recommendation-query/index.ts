@@ -279,6 +279,7 @@ Deno.serve(async (req) => {
     interface MasterAgg {
       company_name: string | null;
       sector: string | null;
+      sector_canonical: string | null;
       industry: string | null;
       market_cap_rs: number | null;
       cap_band: string | null;
@@ -300,6 +301,7 @@ Deno.serve(async (req) => {
       const cur: MasterAgg = masterBySymbol.get(sym) ?? {
         company_name: null,
         sector: null,
+        sector_canonical: null,
         industry: null,
         market_cap_rs: null,
         cap_band: null,
@@ -313,6 +315,7 @@ Deno.serve(async (req) => {
       };
       cur.company_name = preferNonNull(cur.company_name, m.company_name as string | null);
       cur.sector = preferNonNull(cur.sector, m.sector as string | null);
+      cur.sector_canonical = preferNonNull(cur.sector_canonical, (m as { sector_canonical?: string | null }).sector_canonical ?? null);
       cur.industry = preferNonNull(cur.industry, m.industry as string | null);
       cur.market_cap_rs = preferNonNull(cur.market_cap_rs, m.market_cap_rs as number | null);
       cur.cap_band = preferNonNull(cur.cap_band, m.cap_band as string | null);
@@ -325,6 +328,7 @@ Deno.serve(async (req) => {
       cur.pledged_pct = preferNonNull(cur.pledged_pct, m.pledged_pct as number | null);
       masterBySymbol.set(sym, cur);
     }
+
 
     // Index membership set (latest as_of_date per symbol+exchange for index)
     let indexMemberSet: Set<string> | null = null;
