@@ -249,9 +249,10 @@ Deno.serve(async (req) => {
     // Step 2 — include rows for that batch
     const { data: auditRows, error: auditErr } = await supabase
       .from("stock_picker_pick_audit")
-      .select("symbol, exchange, verdict, composite_score, generated_at, batch_id")
+      .select("symbol, exchange, verdict, composite_score, generated_at, batch_id, is_top_pick")
       .eq("batch_id", batchId)
       .eq("verdict", "include");
+
 
     if (auditErr) {
       return json({ ok: false, error: auditErr.message }, 500);
