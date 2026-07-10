@@ -364,17 +364,28 @@ Deno.serve(async (req) => {
     // already carries GICS-style labels ("Financial Services", "Healthcare", ...);
     // no schema/backfill needed. Match sector_canonical first, fall back to sector.
     const UI_TO_GICS: Record<string, string[]> = {
-      "Banking & Finance": ["Financial Services"],
-      "Pharma":            ["Healthcare"],
-      "Auto":              ["Consumer Discretionary", "Consumer Durables"],
-      "FMCG":              ["Consumer Staples"],
-      "IT":                ["IT", "Information Technology"],
-      "Metals":            ["Materials"],
-      "Infra":             ["Industrials"],
-      "Energy":            ["Energy"],
-      "Utilities":         ["Utilities"],
-      "Telecom":           ["Communication Services"],
-      "Defence":           ["Industrials"],
+      // Long-form UI labels (current StockPickerFlow)
+      "Banking & Finance":      ["Financial Services"],
+      "Information Technology": ["IT", "Information Technology"],
+      "Pharmaceuticals":        ["Healthcare"],
+      "Automobile":             ["Consumer Discretionary", "Consumer Durables"],
+      "FMCG":                   ["Consumer Staples"],
+      "Energy & Power":         ["Energy", "Utilities"],
+      "Infrastructure":         ["Industrials"],
+      "Metals & Mining":        ["Materials"],
+      "Real Estate":            ["Real Estate"],
+      "Telecom":                ["Communication Services"],
+      "Chemicals":              ["Chemicals"],
+      "Defence":                ["Industrials"],
+      "Consumer Durables":      ["Consumer Durables", "Consumer Discretionary"],
+      // Short-form aliases (back-compat)
+      "IT":        ["IT", "Information Technology"],
+      "Pharma":    ["Healthcare"],
+      "Auto":      ["Consumer Discretionary", "Consumer Durables"],
+      "Metals":    ["Materials"],
+      "Infra":     ["Industrials"],
+      "Energy":    ["Energy"],
+      "Utilities": ["Utilities"],
     };
     const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
     const allowedSectorsNorm = sector !== ALL_SECTORS
