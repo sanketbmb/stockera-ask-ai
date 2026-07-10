@@ -1314,18 +1314,19 @@ Deno.serve(async (req) => {
     // Step 6b — Phase 2V.1 per-profile composite_score read-path gate.
     // Read all 4 per-profile persistence flags fresh per request (no cache).
     // Missing or non-strict-true => false (safe default).
-    const persistKey = `composite_score_persist_${risk_profile}`;
+    const persistKey = `composite_score_visible_${risk_profile}`;
     let persistEnabled = false;
     {
       const { data: flagRows, error: flagErr } = await supabase
         .from("stock_picker_runtime_config")
         .select("config_key, config_value")
         .in("config_key", [
-          "composite_score_persist_conservative",
-          "composite_score_persist_moderate",
-          "composite_score_persist_aggressive",
-          "composite_score_persist_ultra",
+          "composite_score_visible_conservative",
+          "composite_score_visible_moderate",
+          "composite_score_visible_aggressive",
+          "composite_score_visible_ultra",
         ]);
+
       if (flagErr) {
         return json({ ok: false, error: `score_gate_flags_unavailable: ${flagErr.message}` }, 500);
       }
