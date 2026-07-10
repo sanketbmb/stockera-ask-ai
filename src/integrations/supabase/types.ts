@@ -2226,7 +2226,9 @@ export type Database = {
           exchange: string
           generated_at: string
           id: number
+          is_top_pick: boolean
           legal_name: string
+          persistence_reason: string | null
           pillar_scores: Json | null
           reg_no: string
           regulatory_status_at_generation: string
@@ -2235,6 +2237,7 @@ export type Database = {
           symbol: string
           universe_snapshot_id: string
           verdict: string
+          was_incumbent: boolean
         }
         Insert: {
           batch_id: string
@@ -2246,7 +2249,9 @@ export type Database = {
           exchange: string
           generated_at: string
           id?: number
+          is_top_pick?: boolean
           legal_name: string
+          persistence_reason?: string | null
           pillar_scores?: Json | null
           reg_no: string
           regulatory_status_at_generation: string
@@ -2255,6 +2260,7 @@ export type Database = {
           symbol: string
           universe_snapshot_id: string
           verdict: string
+          was_incumbent?: boolean
         }
         Update: {
           batch_id?: string
@@ -2266,7 +2272,9 @@ export type Database = {
           exchange?: string
           generated_at?: string
           id?: number
+          is_top_pick?: boolean
           legal_name?: string
+          persistence_reason?: string | null
           pillar_scores?: Json | null
           reg_no?: string
           regulatory_status_at_generation?: string
@@ -2275,6 +2283,7 @@ export type Database = {
           symbol?: string
           universe_snapshot_id?: string
           verdict?: string
+          was_incumbent?: boolean
         }
         Relationships: []
       }
@@ -3021,27 +3030,61 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
-      stock_picker_write_audit_row: {
+      sp_pick_tenure_days: {
         Args: {
-          p_batch_id: string
-          p_batch_type: string
-          p_code_commit_sha: string
-          p_composite_score: number
-          p_data_gaps_at_generation: string
+          p_before_batch: string
           p_exchange: string
-          p_generated_at: string
-          p_legal_name: string
-          p_pillar_scores: string
-          p_reg_no: string
-          p_regulatory_status_at_generation: string
-          p_replay_payload_hash: string
-          p_replay_payload_hash_version: string
+          p_max_lookback?: number
           p_symbol: string
-          p_universe_snapshot_id: string
-          p_verdict: string
         }
-        Returns: string
+        Returns: number
       }
+      stock_picker_write_audit_row:
+        | {
+            Args: {
+              p_batch_id: string
+              p_batch_type: string
+              p_code_commit_sha: string
+              p_composite_score: number
+              p_data_gaps_at_generation: string
+              p_exchange: string
+              p_generated_at: string
+              p_legal_name: string
+              p_pillar_scores: string
+              p_reg_no: string
+              p_regulatory_status_at_generation: string
+              p_replay_payload_hash: string
+              p_replay_payload_hash_version: string
+              p_symbol: string
+              p_universe_snapshot_id: string
+              p_verdict: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_batch_id: string
+              p_batch_type: string
+              p_code_commit_sha: string
+              p_composite_score: number
+              p_data_gaps_at_generation: string
+              p_exchange: string
+              p_generated_at: string
+              p_is_top_pick?: boolean
+              p_legal_name: string
+              p_persistence_reason?: string
+              p_pillar_scores: string
+              p_reg_no: string
+              p_regulatory_status_at_generation: string
+              p_replay_payload_hash: string
+              p_replay_payload_hash_version: string
+              p_symbol: string
+              p_universe_snapshot_id: string
+              p_verdict: string
+              p_was_incumbent?: boolean
+            }
+            Returns: string
+          }
       stock_picker_write_batch_rejection_row: {
         Args: {
           p_batch_id: string
