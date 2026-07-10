@@ -267,9 +267,10 @@ Deno.serve(async (req) => {
     const { data: masterRows, error: masterErr } = await supabase
       .from("stock_master")
       .select(
-        "symbol, company_name, sector, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
+        "symbol, company_name, sector, sector_canonical, industry, market_cap_rs, cap_band, lot_size, tick_size, is_asm, is_gsm, is_t2t, is_suspended, pledged_pct",
       )
       .in("symbol", symbols);
+
 
     if (masterErr) {
       return json({ ok: false, error: masterErr.message }, 500);
