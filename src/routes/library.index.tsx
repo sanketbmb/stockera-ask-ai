@@ -70,19 +70,6 @@ export const Route = createFileRoute("/library/")({
   component: LibraryIndexPage,
 });
 
-async function fetchLibraryGrid(): Promise<MasterLibraryRow[]> {
-  const { data, error } = await supabase
-    .from("library_items")
-    .select(
-      "id, kind, source_table, source_id, symbol, symbol_exchange, title, verdict, sector, analyst_id, body_excerpt, published_at, is_public, is_tombstoned",
-    )
-    .eq("is_public", true)
-    .eq("is_tombstoned", false)
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(200);
-  if (error) throw error;
-  return (data ?? []) as MasterLibraryRow[];
-}
 
 function canonVerdict(v: string | null | undefined): string {
   if (!v) return "";
