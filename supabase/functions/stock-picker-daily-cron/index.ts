@@ -1586,21 +1586,82 @@ serve(async (req: Request) => {
       writeAuditHeaders['x-sp1-internal-secret'] = internalSecret;
     }
 
-    const writeResults = await invokeFunction<WriteAuditResponse>(
+    // SP-1 hotfix: chunk the write-audit fan-out to stay inside the child
+    // function's wall-clock.
+    //
+    // ORDER MATTERS: pick_audit chunks are sent FIRST (sequentially, 100 ops
+    // per call). The single write_batch_rejection call is sent LAST, and only
+    // after every pick chunk has succeeded. stock-recommendation-query uses
+    // stock_picker_batch_rejection to discover the latest completed live
+    // batch; writing the rejection first would risk exposing a batch_id with
+    // zero or partial pick rows if a later pick chunk failed. Writing picks
+    // first + rejection last ensures the batch only becomes visible after
+    // all pick rows are safely persisted.
+    //
+    // All calls share the same batchId (baked into rejectionParams.p_batch_id
+    // and each pickAuditOps[i].params.p_batch_id) and the same
+    // x-sp1-internal-secret header. write-audit treats 23505 unique_violation
+    // as ok+deduped, so any chunk retry is idempotent.
+    const WRITE_AUDIT_CHUNK_SIZE = 100;
+    const aggregatedResults: NonNullable<WriteAuditResponse['results']> = [];
+
+    // Calls 1..N — pick audit ops in fixed-size chunks, sequential.
+    const totalPickChunks = Math.ceil(pickAuditOps.length / WRITE_AUDIT_CHUNK_SIZE);
+    for (let ci = 0; ci < totalPickChunks; ci++) {
+      const start = ci * WRITE_AUDIT_CHUNK_SIZE;
+      const slice = pickAuditOps.slice(start, start + WRITE_AUDIT_CHUNK_SIZE);
+      const chunkResp = await invokeFunction<WriteAuditResponse>(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY,
+        'stock-picker-write-audit',
+        {
+          invoked_by: body.invoked_by,
+          operations: slice,
+        },
+        writeAuditHeaders
+      );
+      if (!chunkResp || chunkResp.ok !== true) {
+        const errMsg = chunkResp?.error ?? 'no response (undefined)';
+        throw new Error(
+          `cron: write-audit pick chunk ${ci + 1}/${totalPickChunks} failed ` +
+            `(ops ${start + 1}..${start + slice.length} of ${pickAuditOps.length}, batch_id=${batchId}): ${errMsg}`
+        );
+      }
+      if (Array.isArray(chunkResp.results)) aggregatedResults.push(...chunkResp.results);
+    }
+
+    // Final call — write_batch_rejection (header row). Only runs if every
+    // pick chunk above succeeded.
+    const rejectionResp = await invokeFunction<WriteAuditResponse>(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
       'stock-picker-write-audit',
       {
         invoked_by: body.invoked_by,
-        operations: [
-          { op: 'write_batch_rejection', params: rejectionParams },
-          ...pickAuditOps,
-        ],
+        operations: [{ op: 'write_batch_rejection', params: rejectionParams }],
       },
       writeAuditHeaders
     );
-    if (!writeResults.ok) {
-      throw new Error(`cron: write-audit failed: ${writeResults.error}`);
+    if (!rejectionResp || rejectionResp.ok !== true) {
+      const errMsg = rejectionResp?.error ?? 'no response (undefined)';
+      throw new Error(
+        `cron: write-audit rejection (final) failed after ${totalPickChunks} pick chunks (batch_id=${batchId}): ${errMsg}`
+      );
+    }
+    if (Array.isArray(rejectionResp.results)) aggregatedResults.push(...rejectionResp.results);
+
+    // Aggregate into a single WriteAuditResponse-shaped object so downstream
+    // consumers (if-check + cron_run_log.write_results) see the pre-fix shape.
+    // Full per-op fields (op, ok, id?, deduped?, error?) are preserved.
+    const writeResults: WriteAuditResponse = {
+      ok: true,
+      results: aggregatedResults,
+    };
+    // Defensive — if any future refactor lets writeResults become undefined,
+    // fail with a descriptive message instead of a bare TypeError.
+    if (!writeResults || writeResults.ok !== true) {
+      const errMsg = (writeResults && writeResults.error) ? writeResults.error : 'writeResults undefined or not ok after chunk aggregation';
+      throw new Error(`cron: write-audit failed: ${errMsg}`);
     }
     markPhase('phase_write_ms', tWrite);
 
