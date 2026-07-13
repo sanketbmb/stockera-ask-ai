@@ -40,7 +40,7 @@ import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate, stockLogoAbsoluteUrl, stockOgImageUrl } from "@/lib/seo-head";
 import { StockLogo } from "@/components/common/StockLogo";
-import { getPublicReportRow } from "@/lib/public-report-row.functions";
+import { getPublicReportRow, getReportRowForAuthedUser } from "@/lib/public-report-row.functions";
 import { getPublicGeneralVideoAnswer } from "@/lib/general-video-playback.functions";
 
 // SP-DEMO-HOTFIX — canonical SBIN demo + verified free M&M sample video.
