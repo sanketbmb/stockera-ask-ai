@@ -249,6 +249,24 @@ async function invokeFunction<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Small concurrency helper — run async tasks in fixed-size waves.
+// Preserves input order in the returned array.
+// ---------------------------------------------------------------------------
+async function runInChunks<TIn, TOut>(
+  items: TIn[],
+  chunkSize: number,
+  worker: (item: TIn, index: number) => Promise<TOut>,
+): Promise<TOut[]> {
+  const out: TOut[] = new Array(items.length);
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const slice = items.slice(i, i + chunkSize);
+    const results = await Promise.all(slice.map((it, j) => worker(it, i + j)));
+    for (let j = 0; j < results.length; j++) out[i + j] = results[j];
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Dhan liquidity fetch — single-security, throttled
 // ---------------------------------------------------------------------------
 interface DhanHistoricalRow {
