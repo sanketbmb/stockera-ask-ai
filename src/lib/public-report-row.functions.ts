@@ -4,6 +4,7 @@
 // IS NOT NULL. Matches the guarantee the anon RLS policy would give if it
 // existed. Safe to call unauthenticated — no PII, no unlock, no wallet.
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 export const getPublicReportRow = createServerFn({ method: "POST" })
