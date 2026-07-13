@@ -16,6 +16,9 @@ import { GradientText } from "@/lib/motion";
 
 // Canonical demo report — real SBI averaging report used across the site.
 const DEMO_REPORT_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
+// Sample M&M video shown as the Step 2 preview thumbnail.
+const DEMO_VIDEO_YT_ID = "daj-U65js2E";
+const YT_THUMB = (id: string, q: "maxres" | "hq") => `https://i.ytimg.com/vi/${id}/${q}default.jpg`;
 const SBI_QUESTION =
   "I bought SBI Bank at 1227 now at 1029. Should I average, hold, or sell?";
 
