@@ -1,12 +1,14 @@
 import { useEffect, useId } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { motion, useReducedMotion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 import { StockLogo } from "@/components/common/StockLogo";
+import { listRecentAnswered } from "@/lib/recent-answered.functions";
 
 
 type RecentRow = {
@@ -44,38 +46,7 @@ function relativeDate(iso: string | null): string {
   return `${yr}y ago`;
 }
 
-// Source of truth = public.queries. library_items is a downstream projection
-// that lags realtime; the homepage explore list must surface new AI reports
-// the moment the parent queries row is inserted/updated with is_public_library
-// = true and ai_report ready. All filters, ordering and limit are server-side.
-async function fetchRecent(): Promise<RecentRow[]> {
-  const { data, error } = await supabase
-    .from("queries")
-    .select("id, stock_symbol, stock_name, query_text, ai_report, frozen_at, created_at")
-    .eq("is_public_library", true)
-    .is("library_tombstoned_at", null)
-    .not("ai_report", "is", null)
-    .order("frozen_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false, nullsFirst: false })
-    .limit(5);
-  if (error) throw error;
-  const rows = (data ?? []).map((r): RecentRow => {
-    const symbol = (r.stock_symbol ?? r.stock_name ?? null) as string | null;
-    const report = (r.ai_report ?? null) as { final_verdict?: { action?: string } } | null;
-    const verdict = report?.final_verdict?.action ?? null;
-    const title = (r.query_text ?? r.stock_name ?? "").trim();
-    return {
-      id: r.id as string,
-      symbol,
-      verdict,
-      title,
-      published_at: (r.frozen_at ?? r.created_at) as string | null,
-    };
-  });
-  // eslint-disable-next-line no-console
-  console.debug("[recent-feed] count=", rows.length, "first=", rows[0]);
-  return rows;
-}
+
 
 export function MasterSearchRecentTab({ onClose }: Props) {
   const navigate = useNavigate();
