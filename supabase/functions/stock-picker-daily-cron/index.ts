@@ -1478,23 +1478,31 @@ serve(async (req: Request) => {
     // 5. Evaluate dropped incumbents for reinstatement
     const droppedIncumbents = [...yesterdayIncumbents].filter((k) => !cohort.has(k));
     type Candidate = { key: string; surv: Surv | null; score: number; margin: number; hardExcluded: boolean; tenure: number };
-    const evalCand: Candidate[] = [];
-    for (const k of droppedIncumbents) {
+    // Short-circuit: when the tenure gate is disabled (hMinTenure <= 0) the
+    // `c.tenure < hMinTenure` predicate below cannot be satisfied by any
+    // non-negative tenure, so we skip the RPC hop entirely and treat tenure
+    // as effectively infinite. Band / churn / trim semantics unchanged.
+    const tenureGateActive = hMinTenure > 0;
+    const evalCand: Candidate[] = await runInChunks(droppedIncumbents, 10, async (k) => {
       const [sym, exch] = k.split('|');
       const surv = includedSurvivors.find((s) => s.symbol === sym && s.exchange === exch) ?? null;
       const hardExcluded = !surv;
       const sc = surv ? (scoreByKey.get(k) ?? -Infinity) : -Infinity;
       let tenure = 0;
-      if (!hardExcluded) {
+      if (!hardExcluded && tenureGateActive) {
         try {
           const { data: tenureVal } = await supabase.rpc('sp_pick_tenure_days', {
             p_symbol: sym, p_exchange: exch, p_before_batch: batchId, p_max_lookback: 20,
           });
           tenure = Number(tenureVal ?? 0);
         } catch { tenure = 0; }
+      } else if (!hardExcluded && !tenureGateActive) {
+        // Gate disabled — force `tenure < hMinTenure` to be false so the
+        // tenure-hold reinstate branch is never taken.
+        tenure = Number.POSITIVE_INFINITY;
       }
-      evalCand.push({ key: k, surv, score: sc, margin: sc - cutoff, hardExcluded, tenure });
-    }
+      return { key: k, surv, score: sc, margin: sc - cutoff, hardExcluded, tenure };
+    });
 
     // 5a. Band reinstates
     for (const c of evalCand) {
