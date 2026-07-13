@@ -4,8 +4,10 @@ import { MasterLibraryPagination } from "@/components/library/MasterLibraryPagin
 
 const PAGE_SIZE = 24;
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   MasterLibraryCard,
   type MasterLibraryRow,
@@ -20,7 +22,8 @@ import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
-import { AllAiReportsSection } from "@/components/library/AllAiReportsSection";
+import { listLibraryGridForAuthed } from "@/lib/library-grid-all.functions";
+
 
 
 const SITE_ORIGIN = "https://asktheexpert.in";
@@ -44,11 +47,8 @@ export const Route = createFileRoute("/library/")({
       typeof search.page === "string" || typeof search.page === "number"
         ? Math.max(1, Math.floor(Number(search.page)) || 1)
         : 1,
-    allPage:
-      typeof search.allPage === "string" || typeof search.allPage === "number"
-        ? Math.max(1, Math.floor(Number(search.allPage)) || 1)
-        : 1,
   }),
+
   head: () => ({
     meta: [
       { title: TITLE },
@@ -89,29 +89,23 @@ function canonVerdict(v: string | null | undefined): string {
 }
 
 function LibraryIndexPage() {
-  const { page: urlPage, allPage } = Route.useSearch();
+  const { page: urlPage } = Route.useSearch();
   const navigate = Route.useNavigate();
-
-  const handleAllPageChange = (n: number) => {
-    navigate({
-      search: ((prev: { page?: number; allPage?: number }) => ({
-        ...prev,
-        allPage: n === 1 ? undefined : n,
-      })) as never,
-      replace: false,
-    });
-    if (typeof document !== "undefined") {
-      document
-        .getElementById("all-ai-reports-heading")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const fetchAuthedGrid = useServerFn(listLibraryGridForAuthed);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["library", "grid"],
-    queryFn: fetchLibraryGrid,
+    queryKey: ["library", "grid", user ? "authed" : "anon", user?.id ?? null],
+    // Logged-in: sitewide via authed server fn (bypasses public_consent RLS filter,
+    // safe projection only). Logged-out: seeded/curated public rows via RLS.
+    queryFn: user
+      ? () => fetchAuthedGrid().then((rows) => rows as unknown as MasterLibraryRow[])
+      : fetchLibraryGrid,
+    enabled: !isAuthLoading,
     staleTime: 5 * 60 * 1000,
   });
+
+
 
   const [search, setSearch] = useState("");
   const [verdict, setVerdict] = useState<VerdictFilter | null>(null);
@@ -225,8 +219,8 @@ function LibraryIndexPage() {
           </TabsList>
           <TabsContent value="reports">
             <MyAiReportsSection />
-            <AllAiReportsSection page={allPage} onPageChange={handleAllPageChange} />
             <MasterLibraryToolbar
+
               search={search}
               onSearchChange={setSearch}
               verdict={verdict}
