@@ -666,33 +666,62 @@ function ReportContent() {
     queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
     enabled: isValidUuid && !authLoading,
     queryFn: async () => {
-      // SEO Stage 1 hotfix — anon users cannot read `queries` via RLS. Fall back
-      // to an admin-gated server fn that only returns public-library rows.
+      // SP-DEMO-HOTFIX FIX 1 — public-first read. Try the admin-gated public
+      // fetcher first for any user (incl. authed with expired token). Only
+      // fall back to the authed supabase.from("queries") path when the row
+      // is NOT public-library-eligible OR public fetch failed.
+      const publicFirst = async () => {
+        try {
+          const res = await fetchPublicRow({ data: { queryId } });
+          return res.found ? (res.row as Record<string, unknown>) : null;
+        } catch { return null; }
+      };
+      const isPublicUsable = (r: Record<string, unknown> | null) =>
+        !!r
+        && (r as { is_public_library?: boolean }).is_public_library === true
+        && (r as { library_tombstoned_at?: string | null }).library_tombstoned_at == null
+        && (r as { ai_report?: unknown }).ai_report != null;
+
       if (!user) {
-        const res = await fetchPublicRow({ data: { queryId } });
-        if (!res.found) {
+        const pub = await publicFirst();
+        if (!pub) {
           const err = new Error("Results contain 0 rows") as Error & { code?: string };
           err.code = "PGRST116";
           throw err;
         }
-        return res.row;
+        return pub;
       }
-      const { data, error } = await supabase
-        .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
-        .eq("id", queryId)
-        .single();
-      if (error) throw error;
-      let analyst: { display_name: string; sebi_reg_number: string; avatar_url: string | null } | null = null;
-      if (data.assigned_analyst_id) {
-        const { data: a } = await supabase
-          .from("analyst_profiles")
-          .select("display_name, sebi_reg_number, avatar_url")
-          .eq("id", data.assigned_analyst_id)
-          .maybeSingle();
-        analyst = a;
+
+      // Authed — try public row first (fast path for demo / library rows).
+      const pubEarly = await publicFirst();
+      if (isPublicUsable(pubEarly)) return pubEarly!;
+
+      try {
+        const { data, error } = await supabase
+          .from("queries")
+          .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
+          .eq("id", queryId)
+          .single();
+        if (error) throw error;
+        let analyst: { display_name: string; sebi_reg_number: string; avatar_url: string | null } | null = null;
+        if (data.assigned_analyst_id) {
+          const { data: a } = await supabase
+            .from("analyst_profiles")
+            .select("display_name, sebi_reg_number, avatar_url")
+            .eq("id", data.assigned_analyst_id)
+            .maybeSingle();
+          analyst = a;
+        }
+        return { ...data, analyst };
+      } catch (err) {
+        // Expired / invalid token — degrade to public row if the row is public.
+        const msg = String((err as { message?: string })?.message ?? "");
+        if (/unauthorized|invalid or expired token|jwt/i.test(msg)) {
+          const retryPub = await publicFirst();
+          if (isPublicUsable(retryPub)) return retryPub!;
+        }
+        throw err;
       }
-      return { ...data, analyst };
     },
     // For v1 records, the row is created instantly with status="ai_answered" — no need to poll.
     // For "other" / routed rows, no AI report will ever land — don't poll.
