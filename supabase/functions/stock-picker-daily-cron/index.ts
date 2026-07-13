@@ -449,6 +449,10 @@ async function fetchLiquidityForSymbol(args: {
   return { symbol: args.symbol, exchange: args.exchange, status: 'error', rows: [] };
 }
 
+// Cap concurrent in-flight dhan-fetch calls during liquidity fan-out to avoid
+// tripping the upstream rate limit (root cause of missed batches since 2026-07-06).
+const LIQUIDITY_CONCURRENCY = 4;
+
 async function fetchLiquidityForUniverse(args: {
   members: Array<{ symbol: string; exchange: Exchange; dhan_security_id: string | null }>;
   fromDateIso: string;
@@ -456,25 +460,26 @@ async function fetchLiquidityForUniverse(args: {
   dhanFetchUrl: string;
   serviceKey: string;
 }): Promise<LiquidityFetchOutcome[]> {
-  const out: LiquidityFetchOutcome[] = [];
-  const CHUNK_SIZE = 20;
-  const INTRA_CALL_DELAY_MS = 200;
-  for (let i = 0; i < args.members.length; i += CHUNK_SIZE) {
-    const chunk = args.members.slice(i, i + CHUNK_SIZE);
-    for (const m of chunk) {
-      const outcome = await fetchLiquidityForSymbol({
-        symbol: m.symbol,
-        exchange: m.exchange,
-        dhanSecurityId: m.dhan_security_id,
-        fromDateIso: args.fromDateIso,
-        toDateIso: args.toDateIso,
-        dhanFetchUrl: args.dhanFetchUrl,
-        serviceKey: args.serviceKey,
-        maxRetries: 5,
-      });
-      out.push(outcome);
-      await sleep(INTRA_CALL_DELAY_MS);
-    }
+  const INTER_CHUNK_DELAY_MS = 200;
+  const out: LiquidityFetchOutcome[] = new Array(args.members.length);
+  for (let i = 0; i < args.members.length; i += LIQUIDITY_CONCURRENCY) {
+    const slice = args.members.slice(i, i + LIQUIDITY_CONCURRENCY);
+    const results = await Promise.all(
+      slice.map((m) =>
+        fetchLiquidityForSymbol({
+          symbol: m.symbol,
+          exchange: m.exchange,
+          dhanSecurityId: m.dhan_security_id,
+          fromDateIso: args.fromDateIso,
+          toDateIso: args.toDateIso,
+          dhanFetchUrl: args.dhanFetchUrl,
+          serviceKey: args.serviceKey,
+          maxRetries: 5,
+        })
+      )
+    );
+    for (let j = 0; j < results.length; j++) out[i + j] = results[j];
+    if (i + LIQUIDITY_CONCURRENCY < args.members.length) await sleep(INTER_CHUNK_DELAY_MS);
   }
   return out;
 }
