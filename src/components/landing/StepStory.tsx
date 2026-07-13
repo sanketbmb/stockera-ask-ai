@@ -16,6 +16,9 @@ import { GradientText } from "@/lib/motion";
 
 // Canonical demo report — real SBI averaging report used across the site.
 const DEMO_REPORT_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
+// Sample M&M video shown as the Step 2 preview thumbnail.
+const DEMO_VIDEO_YT_ID = "daj-U65js2E";
+const YT_THUMB = (id: string, q: "maxres" | "hq") => `https://i.ytimg.com/vi/${id}/${q}default.jpg`;
 const SBI_QUESTION =
   "I bought SBI Bank at 1227 now at 1029. Should I average, hold, or sell?";
 
@@ -54,6 +57,7 @@ export function StepStory() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"textual" | "video">("textual");
   const { user } = useAuth();
+  const [thumbState, setThumbState] = useState<"maxres" | "hq" | "fallback">("maxres");
 
   const p1Ref = useRef(null);
   const p1InViewRaw = useInView(p1Ref, {
@@ -199,13 +203,47 @@ export function StepStory() {
                 <div className="absolute -top-3 right-4 bg-primary text-primary-foreground text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-md">
                   <Clock className="w-3 h-3" /> Within 24 Hours
                 </div>
-                <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-accent/5 to-primary/5 rounded-xl border border-border/50 min-h-[180px]">
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-accent/10 mx-auto flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                      <Play className="w-7 h-7 text-accent ml-1" />
+                <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br from-accent/5 to-primary/5">
+                  {thumbState !== "fallback" ? (
+                    <>
+                      {/* Background: blurred + scaled + darkened side-fill */}
+                      <img
+                        src={YT_THUMB(DEMO_VIDEO_YT_ID, thumbState)}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-70"
+                        onError={() =>
+                          setThumbState((s) => (s === "maxres" ? "hq" : "fallback"))
+                        }
+                      />
+                      <div className="absolute inset-0 bg-black/30" />
+                      {/* Foreground: full subject, no crop */}
+                      <img
+                        src={YT_THUMB(DEMO_VIDEO_YT_ID, thumbState)}
+                        alt="Sample video analysis by SEBI-registered RA"
+                        loading="lazy"
+                        className="relative z-10 h-full w-full object-contain"
+                        onError={() =>
+                          setThumbState((s) => (s === "maxres" ? "hq" : "fallback"))
+                        }
+                      />
+                      {/* Centered play affordance */}
+                      <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                        <div className="w-14 h-14 rounded-full bg-white/95 shadow-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Play className="w-6 h-6 text-primary ml-0.5" fill="currentColor" />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-16 h-16 rounded-full bg-accent/10 mx-auto flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <Play className="w-7 h-7 text-accent ml-1" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Self-recorded video by RA</p>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">Self-recorded video by RA</p>
-                  </div>
+                  )}
                 </div>
                 <div className="mt-4">
                   <div className="flex items-center gap-2 mb-1">
