@@ -1,124 +1,214 @@
-## Revised Plan — Step 2 Video Card thumbnail (2-layer treatment)
+## Root cause (unchanged)
 
-**Scope:** `src/components/landing/StepStory.tsx` only. No other files. No click-behavior changes. `useAuth` stays as-is (still referenced via `void user` on line 74).
+Single fat `stock-picker-write-audit` POST (1 rejection + ~490 picks) exceeds child edge wall-clock → EarlyDrop → `writeResults` undefined → cron 500 at `if (!writeResults.ok)`. No live batch since 2026-07-06.
 
-**Approach:** Replace the placeholder gradient block (lines 202-209) with a 16:9 preview box containing:
+## File changed (only)
 
-- Blurred, scaled, darkened background layer (same YT thumbnail, `object-cover`, full bleed)
-- Sharp foreground layer (same YT thumbnail, `object-contain`, centered — no subject cropping)
-- Centered play button overlay
-- Fallback chain: `maxresdefault.jpg` → `hqdefault.jpg` → original placeholder UI (icon + caption)
-- Bottom caption row (lines 210-216) kept unchanged
+`supabase/functions/stock-picker-daily-cron/index.ts` — nothing else.
 
----
+## Line ranges changed
 
-### Unified diff (only file: `src/components/landing/StepStory.tsx`)
+1. Widen `WriteAuditResponse.results` element type at L567–L571 so the aggregated array preserves the full per-op shape (`op, ok, id?, deduped?, error?`).
+2. Insert `runInChunks` helper after L249.
+3. Replace serial tenure loop at L1454–L1470 with 10-wide parallel + tenure short-circuit when `hMinTenure <= 0`.
+4. Replace single write-audit POST at L1554–L1569 with **pick chunks first (100 ops each), rejection last**, aggregating full per-op results.
+
+No other lines touched.
+
+## Full unified diff — `supabase/functions/stock-picker-daily-cron/index.ts`
 
 ```diff
-@@ -15,6 +15,9 @@
+@@ -565,10 +565,17 @@
+ }
  
+ interface WriteAuditResponse {
+   ok: boolean;
+-  results?: Array<{ op: string; id: string }>;
++  // Per-op results from stock-picker-write-audit. Kept structurally identical
++  // to what the child function returns (op, ok, id?, deduped?, error?) so the
++  // aggregated shape after chunked fan-out matches the pre-hotfix response.
++  results?: Array<{
++    op: string;
++    ok: boolean;
++    id?: string;
++    deduped?: boolean;
++    error?: string;
++  }>;
+   error?: string;
+ }
+@@ -247,6 +254,22 @@ async function invokeFunction<T>(
+   }
+   return parsed as T;
+ }
++
++// ---------------------------------------------------------------------------
++// Small concurrency helper — run async tasks in fixed-size waves.
++// Preserves input order in the returned array.
++// ---------------------------------------------------------------------------
++async function runInChunks<TIn, TOut>(
++  items: TIn[],
++  chunkSize: number,
++  worker: (item: TIn, index: number) => Promise<TOut>,
++): Promise<TOut[]> {
++  const out: TOut[] = new Array(items.length);
++  for (let i = 0; i < items.length; i += chunkSize) {
++    const slice = items.slice(i, i + chunkSize);
++    const results = await Promise.all(slice.map((it, j) => worker(it, i + j)));
++    for (let j = 0; j < results.length; j++) out[i + j] = results[j];
++  }
++  return out;
++}
+@@ -1451,21 +1474,37 @@
+     // 5. Evaluate dropped incumbents for reinstatement
+     const droppedIncumbents = [...yesterdayIncumbents].filter((k) => !cohort.has(k));
+     type Candidate = { key: string; surv: Surv | null; score: number; margin: number; hardExcluded: boolean; tenure: number };
+-    const evalCand: Candidate[] = [];
+-    for (const k of droppedIncumbents) {
+-      const [sym, exch] = k.split('|');
+-      const surv = includedSurvivors.find((s) => s.symbol === sym && s.exchange === exch) ?? null;
+-      const hardExcluded = !surv;
+-      const sc = surv ? (scoreByKey.get(k) ?? -Infinity) : -Infinity;
+-      let tenure = 0;
+-      if (!hardExcluded) {
+-        try {
+-          const { data: tenureVal } = await supabase.rpc('sp_pick_tenure_days', {
+-            p_symbol: sym, p_exchange: exch, p_before_batch: batchId, p_max_lookback: 20,
+-          });
+-          tenure = Number(tenureVal ?? 0);
+-        } catch { tenure = 0; }
+-      }
+-      evalCand.push({ key: k, surv, score: sc, margin: sc - cutoff, hardExcluded, tenure });
+-    }
++    // Short-circuit: when the tenure gate is disabled (hMinTenure <= 0) the
++    // `c.tenure < hMinTenure` predicate below cannot be satisfied by any
++    // non-negative tenure, so we skip the RPC hop entirely and treat tenure
++    // as effectively infinite. Band / churn / trim semantics unchanged.
++    const tenureGateActive = hMinTenure > 0;
++    const evalCand: Candidate[] = await runInChunks(droppedIncumbents, 10, async (k) => {
++      const [sym, exch] = k.split('|');
++      const surv = includedSurvivors.find((s) => s.symbol === sym && s.exchange === exch) ?? null;
++      const hardExcluded = !surv;
++      const sc = surv ? (scoreByKey.get(k) ?? -Infinity) : -Infinity;
++      let tenure = 0;
++      if (!hardExcluded && tenureGateActive) {
++        try {
++          const { data: tenureVal } = await supabase.rpc('sp_pick_tenure_days', {
++            p_symbol: sym, p_exchange: exch, p_before_batch: batchId, p_max_lookback: 20,
++          });
++          tenure = Number(tenureVal ?? 0);
++        } catch { tenure = 0; }
++      } else if (!hardExcluded && !tenureGateActive) {
++        // Gate disabled — force `tenure < hMinTenure` to be false so the
++        // tenure-hold reinstate branch is never taken.
++        tenure = Number.POSITIVE_INFINITY;
++      }
++      return { key: k, surv, score: sc, margin: sc - cutoff, hardExcluded, tenure };
++    });
+@@ -1551,19 +1590,80 @@
+       writeAuditHeaders['x-sp1-internal-secret'] = internalSecret;
+     }
  
- // Canonical demo report — real SBI averaging report used across the site.
- const DEMO_REPORT_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
-+// Sample M&M video shown as the Step 2 preview thumbnail.
-+const DEMO_VIDEO_YT_ID = "daj-U65js2E";
-+const YT_THUMB = (id: string, q: "maxres" | "hq") => `https://i.ytimg.com/vi/${id}/${q}default.jpg`;
- const SBI_QUESTION =
-   "I bought SBI Bank at 1227 now at 1029. Should I average, hold, or sell?";
- 
-@@ -53,6 +56,7 @@
- export function StepStory() {
-   const navigate = useNavigate();
-   const [tab, setTab] = useState<"textual" | "video">("textual");
-   const { user } = useAuth();
-+  const [thumbState, setThumbState] = useState<"maxres" | "hq" | "fallback">("maxres");
- 
-   const p1Ref = useRef(null);
-@@ -199,15 +203,45 @@
-                 <div className="absolute -top-3 right-4 bg-primary text-primary-foreground text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-md">
-                   <Clock className="w-3 h-3" /> Within 24 Hours
-                 </div>
--                <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-accent/5 to-primary/5 rounded-xl border border-border/50 min-h-[180px]">
--                  <div className="text-center">
--                    <div className="w-16 h-16 rounded-full bg-accent/10 mx-auto flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
--                      <Play className="w-7 h-7 text-accent ml-1" />
-+                <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br from-accent/5 to-primary/5">
-+                  {thumbState !== "fallback" ? (
-+                    <>
-+                      {/* Background: blurred + scaled + darkened side-fill */}
-+                      <img
-+                        src={YT_THUMB(DEMO_VIDEO_YT_ID, thumbState)}
-+                        alt=""
-+                        aria-hidden="true"
-+                        className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-70"
-+                        onError={() =>
-+                          setThumbState((s) => (s === "maxres" ? "hq" : "fallback"))
-+                        }
-+                      />
-+                      <div className="absolute inset-0 bg-black/30" />
-+                      {/* Foreground: full subject, no crop */}
-+                      <img
-+                        src={YT_THUMB(DEMO_VIDEO_YT_ID, thumbState)}
-+                        alt="Sample video analysis by SEBI-registered RA"
-+                        loading="lazy"
-+                        className="relative z-10 h-full w-full object-contain"
-+                        onError={() =>
-+                          setThumbState((s) => (s === "maxres" ? "hq" : "fallback"))
-+                        }
-+                      />
-+                      {/* Centered play affordance */}
-+                      <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-+                        <div className="w-14 h-14 rounded-full bg-white/95 shadow-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-+                          <Play className="w-6 h-6 text-primary ml-0.5" fill="currentColor" />
-+                        </div>
-+                      </div>
-+                    </>
-+                  ) : (
-+                    <div className="absolute inset-0 flex items-center justify-center">
-+                      <div className="text-center">
-+                        <div className="w-16 h-16 rounded-full bg-accent/10 mx-auto flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-+                          <Play className="w-7 h-7 text-accent ml-1" />
-+                        </div>
-+                        <p className="text-xs text-muted-foreground">Self-recorded video by RA</p>
-+                      </div>
-                     </div>
--                    <p className="text-xs text-muted-foreground">Self-recorded video by RA</p>
--                  </div>
-+                  )}
-                 </div>
-                 <div className="mt-4">
-                   <div className="flex items-center gap-2 mb-1">
+-    const writeResults = await invokeFunction<WriteAuditResponse>(
+-      SUPABASE_URL,
+-      SUPABASE_SERVICE_ROLE_KEY,
+-      'stock-picker-write-audit',
+-      {
+-        invoked_by: body.invoked_by,
+-        operations: [
+-          { op: 'write_batch_rejection', params: rejectionParams },
+-          ...pickAuditOps,
+-        ],
+-      },
+-      writeAuditHeaders
+-    );
+-    if (!writeResults.ok) {
+-      throw new Error(`cron: write-audit failed: ${writeResults.error}`);
++    // SP-1 hotfix: chunk the write-audit fan-out to stay inside the child
++    // function's wall-clock.
++    //
++    // ORDER MATTERS: pick_audit chunks are sent FIRST (sequentially, 100 ops
++    // per call). The single write_batch_rejection call is sent LAST, and only
++    // after every pick chunk has succeeded. stock-recommendation-query uses
++    // stock_picker_batch_rejection to discover the latest completed live
++    // batch; writing the rejection first would risk exposing a batch_id with
++    // zero or partial pick rows if a later pick chunk failed. Writing picks
++    // first + rejection last ensures the batch only becomes visible after
++    // all pick rows are safely persisted.
++    //
++    // All calls share the same batchId (baked into rejectionParams.p_batch_id
++    // and each pickAuditOps[i].params.p_batch_id) and the same
++    // x-sp1-internal-secret header. write-audit treats 23505 unique_violation
++    // as ok+deduped, so any chunk retry is idempotent.
++    const WRITE_AUDIT_CHUNK_SIZE = 100;
++    const aggregatedResults: NonNullable<WriteAuditResponse['results']> = [];
++
++    // Calls 1..N — pick audit ops in fixed-size chunks, sequential.
++    const totalPickChunks = Math.ceil(pickAuditOps.length / WRITE_AUDIT_CHUNK_SIZE);
++    for (let ci = 0; ci < totalPickChunks; ci++) {
++      const start = ci * WRITE_AUDIT_CHUNK_SIZE;
++      const slice = pickAuditOps.slice(start, start + WRITE_AUDIT_CHUNK_SIZE);
++      const chunkResp = await invokeFunction<WriteAuditResponse>(
++        SUPABASE_URL,
++        SUPABASE_SERVICE_ROLE_KEY,
++        'stock-picker-write-audit',
++        {
++          invoked_by: body.invoked_by,
++          operations: slice,
++        },
++        writeAuditHeaders
++      );
++      if (!chunkResp || chunkResp.ok !== true) {
++        const errMsg = chunkResp?.error ?? 'no response (undefined)';
++        throw new Error(
++          `cron: write-audit pick chunk ${ci + 1}/${totalPickChunks} failed ` +
++            `(ops ${start + 1}..${start + slice.length} of ${pickAuditOps.length}, batch_id=${batchId}): ${errMsg}`
++        );
++      }
++      if (Array.isArray(chunkResp.results)) aggregatedResults.push(...chunkResp.results);
++    }
++
++    // Final call — write_batch_rejection (header row). Only runs if every
++    // pick chunk above succeeded.
++    const rejectionResp = await invokeFunction<WriteAuditResponse>(
++      SUPABASE_URL,
++      SUPABASE_SERVICE_ROLE_KEY,
++      'stock-picker-write-audit',
++      {
++        invoked_by: body.invoked_by,
++        operations: [{ op: 'write_batch_rejection', params: rejectionParams }],
++      },
++      writeAuditHeaders
++    );
++    if (!rejectionResp || rejectionResp.ok !== true) {
++      const errMsg = rejectionResp?.error ?? 'no response (undefined)';
++      throw new Error(
++        `cron: write-audit rejection (final) failed after ${totalPickChunks} pick chunks (batch_id=${batchId}): ${errMsg}`
++      );
++    }
++    if (Array.isArray(rejectionResp.results)) aggregatedResults.push(...rejectionResp.results);
++
++    // Aggregate into a single WriteAuditResponse-shaped object so downstream
++    // consumers (if-check + cron_run_log.write_results) see the pre-fix shape.
++    // Full per-op fields (op, ok, id?, deduped?, error?) are preserved.
++    const writeResults: WriteAuditResponse = {
++      ok: true,
++      results: aggregatedResults,
++    };
++    // Defensive — if any future refactor lets writeResults become undefined,
++    // fail with a descriptive message instead of a bare TypeError.
++    if (!writeResults || writeResults.ok !== true) {
++      const errMsg = (writeResults && writeResults.error) ? writeResults.error : 'writeResults undefined or not ok after chunk aggregation';
++      throw new Error(`cron: write-audit failed: ${errMsg}`);
+     }
+     markPhase('phase_write_ms', tWrite);
 ```
 
----
+## Invariants (explicit)
 
-### Confirmation
+- **`stock-picker-write-audit` UNCHANGED.** No edits to its source; behavior (idempotent 23505 handling, schema-version gate, internal-secret gate, matrix enforcement, per-profile composite gate) is preserved.
+- **Replay-hash, Task 1 hysteresis math, Task 2 sector filter UNCHANGED.** `computedReplayHash` composition, `is_top_pick` / `was_incumbent` / `persistence_reason` derivations, and `stock-recommendation-query` sector mapping not touched. Tenure short-circuit only substitutes `+Infinity` for an RPC call whose value would otherwise be gated out by `hMinTenure <= 0`.
+- **`writeResults` shape preserved AND widened to full fidelity.** Aggregated object is `{ ok: true, results: Array<{ op, ok, id?, deduped?, error? }> }` — identical field set to what `stock-picker-write-audit` returns in a single call. Consumers at `if (!writeResults.ok)` and `write_results: writeResults` (cron_run_log) see the same shape as before.
+- **Chunk count for ~490 pick ops:** `ceil(490 / 100) = 5` pick chunks + 1 final rejection call = **6 total HTTP POSTs**, in order: pick chunk 1 → 2 → 3 → 4 → 5 → rejection. All 6 reuse the same `batchId` and the same `x-sp1-internal-secret` header.
+- **Failure semantics:** If any pick chunk fails, the rejection call is NEVER sent, so `stock_picker_batch_rejection` has no row for this `batchId` and `stock-recommendation-query` will not treat the failed batch as the latest completed live batch. This is the visibility guarantee requested.
 
-- Only `src/components/landing/StepStory.tsx` changes.
-- No changes to imports of `useAuth` (still used at L56/L74).
-- No changes to `goReport` / `onClick` — click behavior identical.
-- No backend, route, or SEO changes.
-
-**STOP — awaiting `APPROVED — APPLY`.**  
-  
-APPROVED — APPLY.
-
-Apply exactly this one-file Step 2 video thumbnail polish in src/components/landing/StepStory.tsx only.
-
-Do not change any other file.
-
-After applying, verify visually that:
-
-1. the Step 2 VIDEO ANALYSIS card shows the real thumbnail
-
-2. the preview is 16:9
-
-3. the subject is not awkwardly cropped
-
-4. the play overlay looks centered and clean
-
-5. click behavior is unchanged
-
-Then STOP and report completion.
-
-&nbsp;
+## STOP — awaiting `APPROVED — DEPLOY`.
