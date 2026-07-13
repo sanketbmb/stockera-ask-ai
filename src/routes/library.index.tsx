@@ -94,14 +94,16 @@ function LibraryIndexPage() {
   const navigate = Route.useNavigate();
   const { user, isLoading: isAuthLoading } = useAuth();
   const fetchAuthedGrid = useServerFn(listLibraryGridForAuthed);
+  const fetchSeedGrid = useServerFn(listLibraryGridForSeed);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid", user ? "authed" : "anon", user?.id ?? null],
-    // Logged-in: sitewide via authed server fn (bypasses public_consent RLS filter,
-    // safe projection only). Logged-out: seeded/curated public rows via RLS.
+    // Logged-in: sitewide via authed server fn (safe projection only, bypasses
+    // public_consent_anonymized RLS filter). Logged-out: seed-owner rows only
+    // (Rishi: 23987140-2740-4628-af1b-6d9a8816e2f5) via a public server fn.
     queryFn: user
       ? () => fetchAuthedGrid().then((rows) => rows as unknown as MasterLibraryRow[])
-      : fetchLibraryGrid,
+      : () => fetchSeedGrid().then((rows) => rows as unknown as MasterLibraryRow[]),
     enabled: !isAuthLoading,
     staleTime: 5 * 60 * 1000,
   });
