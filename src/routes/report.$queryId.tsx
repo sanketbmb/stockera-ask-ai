@@ -662,6 +662,7 @@ function ReportContent() {
 
 
   const fetchPublicRow = useServerFn(getPublicReportRow);
+  const fetchAuthedRow = useServerFn(getReportRowForAuthedUser);
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
     enabled: isValidUuid && !authLoading,
