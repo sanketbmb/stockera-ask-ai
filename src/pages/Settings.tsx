@@ -3,6 +3,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -135,7 +136,7 @@ export default function SettingsPage() {
             <div>
               <h3 className="font-display text-lg">Change password</h3>
               <div className="mt-3 flex gap-2">
-                <Input type="password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <PasswordInput placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
                 <Button onClick={changePassword} disabled={pwSaving}>{pwSaving ? "Saving…" : "Update"}</Button>
               </div>
             </div>

@@ -6,6 +6,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2, Upload, ShieldCheck } from "
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -225,10 +226,10 @@ export default function AnalystApplicationPage() {
               </Row>
               <div className="grid grid-cols-2 gap-3">
                 <Row label="Password" id="password" error={errors.password}>
-                  <Input id="password" type="password" value={data.password} onChange={(e) => setField("password", e.target.value)} placeholder="••••••••" />
+                  <PasswordInput id="password" value={data.password} onChange={(e) => setField("password", e.target.value)} placeholder="••••••••" />
                 </Row>
                 <Row label="Confirm Password" id="confirm" error={errors.confirm}>
-                  <Input id="confirm" type="password" value={data.confirm} onChange={(e) => setField("confirm", e.target.value)} placeholder="••••••••" />
+                  <PasswordInput id="confirm" value={data.confirm} onChange={(e) => setField("confirm", e.target.value)} placeholder="••••••••" />
                 </Row>
               </div>
 

@@ -2,7 +2,10 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode, MouseEvent } from "react";
 
-const PUBLIC_DEMO_REPORT_IDS = new Set<string>([]);
+const PUBLIC_DEMO_REPORT_IDS = new Set<string>([
+  // Canonical SBIN averaging demo report — public, no login gate.
+  "4f71e760-ded3-42c5-a1b4-6dbe005345b1",
+]);
 
 interface Props {
   queryId: string;

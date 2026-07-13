@@ -23,25 +23,25 @@ const SBI_QUESTION =
 type TextCard = { icon: string; title: string; desc: string; anchor: string };
 const TEXT_CARDS: TextCard[] = [
   { icon: "🔥", title: "Quick Verdict", desc: "BUY / HOLD / SELL — instant clarity", anchor: "quick-verdict" },
-  { icon: "📉", title: "Technical Map", desc: "Support, resistance & trend direction", anchor: "trade-levels" },
-  { icon: "📊", title: "Fundamental View", desc: "Industry, debt, growth drivers", anchor: "risk-reward" },
+  { icon: "📉", title: "Technical Map", desc: "Support, resistance & trend direction", anchor: "technical-map" },
+  { icon: "📊", title: "Fundamental View", desc: "Industry, debt, growth drivers", anchor: "fundamental-view" },
   { icon: "🎯", title: "Action Strategy", desc: "Entry zone, stoploss & target levels", anchor: "action-strategy" },
   { icon: "⚖️", title: "Risk–Reward Score", desc: "Risk score, reward & confidence level", anchor: "risk-reward" },
   { icon: "⚠️", title: "What Can Go Wrong?", desc: "Key risks & downside scenarios", anchor: "what-can-go-wrong" },
   { icon: "🧠", title: "Expert Insight", desc: "Strategic summary with behavioral note", anchor: "expert-insight" },
-  { icon: "🕒", title: "Delivered in 60 min", desc: "Quick turnaround text-based answer", anchor: "quick-verdict" },
+  { icon: "🕒", title: "Delivered in 60 min", desc: "Quick turnaround text-based answer", anchor: "delivered-in-60" },
 ];
 
-type VideoCard = { icon: string; title: string; desc: string };
+type VideoCard = { icon: string; title: string; desc: string; anchor: string };
 const VIDEO_CARDS: VideoCard[] = [
-  { icon: "🔥", title: "Quick Verdict", desc: "Video walkthrough of BUY/HOLD/SELL" },
-  { icon: "👤", title: "Investor Profile", desc: "Your entry, CMP, P&L on screen" },
-  { icon: "📊", title: "Fundamental + Technical", desc: "Charts & fundamentals explained" },
-  { icon: "🎯", title: "Action Strategy", desc: "Visual entry/exit zones on chart" },
-  { icon: "⚖️", title: "Risk–Reward Score", desc: "Risk analysis with confidence meter" },
-  { icon: "⚠️", title: "What Can Go Wrong?", desc: "Visual risk scenarios & sector impact" },
-  { icon: "🧠", title: "Expert Closing Insight", desc: "Personal advice from your RA" },
-  { icon: "🎬", title: "Delivered in 24 hrs", desc: "Self-recorded video by SEBI-registered RA" },
+  { icon: "🔥", title: "Quick Verdict", desc: "Video walkthrough of BUY/HOLD/SELL", anchor: "quick-verdict" },
+  { icon: "👤", title: "Investor Profile", desc: "Your entry, CMP, P&L on screen", anchor: "action-strategy" },
+  { icon: "📊", title: "Fundamental + Technical", desc: "Charts & fundamentals explained", anchor: "fundamental-view" },
+  { icon: "🎯", title: "Action Strategy", desc: "Visual entry/exit zones on chart", anchor: "action-strategy" },
+  { icon: "⚖️", title: "Risk–Reward Score", desc: "Risk analysis with confidence meter", anchor: "risk-reward" },
+  { icon: "⚠️", title: "What Can Go Wrong?", desc: "Visual risk scenarios & sector impact", anchor: "what-can-go-wrong" },
+  { icon: "🧠", title: "Expert Closing Insight", desc: "Personal advice from your RA", anchor: "expert-insight" },
+  { icon: "🎬", title: "Delivered in 24 hrs", desc: "Self-recorded video by SEBI-registered RA", anchor: "delivered-in-60" },
 ];
 
 const stagger = { hidden: {}, visible: { transition: { staggerChildren: 0.15 } } };
@@ -68,16 +68,11 @@ export function StepStory() {
   const p1InView = p1InViewRaw || p1Started;
   const typed = useTypewriter(SBI_QUESTION, { start: p1InView, speed: 40 });
 
+  // DEMO report is public — never gate on auth. Anon + authed users go
+  // straight to /report/$queryId. Non-demo report flows still enforce auth
+  // via AuthGatedReportLink / RequireAuth elsewhere.
+  void user;
   const goReport = (view?: "text" | "video", hash?: string) => {
-    if (!user) {
-      const params = new URLSearchParams();
-      if (view) params.set("view", view);
-      const qs = params.toString();
-      const hashPart = hash ? `#${hash}` : "";
-      const redirect = `/report/${DEMO_REPORT_ID}${qs ? `?${qs}` : ""}${hashPart}`;
-      navigate({ to: "/login", search: { redirect } as never });
-      return;
-    }
     navigate({
       to: "/report/$queryId",
       params: { queryId: DEMO_REPORT_ID },

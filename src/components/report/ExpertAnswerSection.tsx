@@ -75,6 +75,7 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
     const remaining = Math.max(0, 24 - hoursSince);
     return (
       <section id="expert-analysis" className="mx-auto max-w-4xl mt-6 print:hidden">
+        <div id="delivered-in-60" style={{ scrollMarginTop: 96 }} />
         <Card className="p-6 border-l-4 border-l-accent bg-accent/5 animate-pulse">
           <div className="flex items-center gap-3 mb-3">
             <Avatar className="h-10 w-10">
@@ -104,6 +105,7 @@ export function ExpertAnswerSection({ queryId, assignedAnalystId, queryCreatedAt
 
   return (
     <section id="expert-analysis" className="mx-auto max-w-4xl mt-6 space-y-4 print:break-before-page">
+      <div id="delivered-in-60" style={{ scrollMarginTop: 96 }} />
       <h2 className="font-display text-2xl">Expert Analysis</h2>
 
       {textAns && (
