@@ -8,6 +8,7 @@ import { Mail, Lock, Loader2, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/common/Logo";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,9 +101,8 @@ export default function AdminLoginPage() {
               <Label htmlFor="password" className="text-white/80">Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="••••••••"
                   className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[hsl(var(--accent))]"
                   {...register("password")}

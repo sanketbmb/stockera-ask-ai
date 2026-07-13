@@ -8,6 +8,7 @@ import { Mail, Lock, User as UserIcon, Phone, Gift, Loader2 } from "lucide-react
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Logo } from "@/components/common/Logo";
@@ -108,10 +109,10 @@ export default function SignupPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <Field icon={<Lock className="h-4 w-4" />} label="Password" id="password" error={errors.password?.message}>
-                  <Input id="password" type="password" placeholder="••••••••" className="pl-9" {...register("password")} />
+                  <PasswordInput id="password" placeholder="••••••••" className="pl-9" {...register("password")} />
                 </Field>
                 <Field icon={<Lock className="h-4 w-4" />} label="Confirm" id="confirm" error={errors.confirm?.message}>
-                  <Input id="confirm" type="password" placeholder="••••••••" className="pl-9" {...register("confirm")} />
+                  <PasswordInput id="confirm" placeholder="••••••••" className="pl-9" {...register("confirm")} />
                 </Field>
               </div>
 

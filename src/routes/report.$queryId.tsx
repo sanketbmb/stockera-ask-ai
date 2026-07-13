@@ -41,6 +41,11 @@ import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate, stockLogoAbsoluteUrl, stockOgImageUrl } from "@/lib/seo-head";
 import { StockLogo } from "@/components/common/StockLogo";
 import { getPublicReportRow } from "@/lib/public-report-row.functions";
+import { getPublicGeneralVideoAnswer } from "@/lib/general-video-playback.functions";
+
+// SP-DEMO-HOTFIX — canonical SBIN demo + verified free M&M sample video.
+const DEMO_QUERY_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
+const DEMO_VIDEO_ANSWER_ID = "90683d05-715c-4f4e-8acb-ce4f0aae102e";
 
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
@@ -162,6 +167,51 @@ function ViewModeTopBlock({
         </p>
       </div>
     </motion.div>
+  );
+}
+
+// ──────────────── Demo video-first block (SBIN demo only) ────────────────
+// For the public SBIN demo report + ?view=video, render a free M&M sample
+// video on top. Never touches wallet / unlock / entitlement — uses the same
+// public general-video fetcher as /general/$answerId.
+function DemoVideoTopBlock({ answerId }: { answerId: string }) {
+  const fetchVideo = useServerFn(getPublicGeneralVideoAnswer);
+  const { data } = useQuery({
+    queryKey: ["demo-general-video", answerId],
+    queryFn: () => fetchVideo({ data: { answerId } }),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  if (!data || data.status !== "ok" || !data.youtube_video_id) return null;
+  const analystLabel = data.analyst?.display_name
+    ? `${data.analyst.display_name}${data.analyst.sebi_reg_number ? ` · SEBI ${data.analyst.sebi_reg_number}` : ""}`
+    : "SEBI-registered analyst";
+  return (
+    <section className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
+      <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-card">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/30">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+            Sample analyst video
+          </span>
+          <span className="text-[11px] text-muted-foreground truncate">· {analystLabel}</span>
+        </div>
+        <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+          <iframe
+            src={`https://www.youtube.com/embed/${data.youtube_video_id}?rel=0`}
+            title={data.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            loading="lazy"
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+        {data.title && (
+          <div className="px-4 py-3">
+            <p className="text-sm font-medium text-foreground">{data.title}</p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -320,6 +370,9 @@ function TierShapedReportContent({
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
       <Navbar />
+      {queryId === DEMO_QUERY_ID && viewMode === "video" && (
+        <DemoVideoTopBlock answerId={DEMO_VIDEO_ANSWER_ID} />
+      )}
       {viewMode && <ViewModeTopBlock mode={viewMode} queryId={queryId} ctaContext={ctaContext} />}
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -613,33 +666,62 @@ function ReportContent() {
     queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
     enabled: isValidUuid && !authLoading,
     queryFn: async () => {
-      // SEO Stage 1 hotfix — anon users cannot read `queries` via RLS. Fall back
-      // to an admin-gated server fn that only returns public-library rows.
+      // SP-DEMO-HOTFIX FIX 1 — public-first read. Try the admin-gated public
+      // fetcher first for any user (incl. authed with expired token). Only
+      // fall back to the authed supabase.from("queries") path when the row
+      // is NOT public-library-eligible OR public fetch failed.
+      const publicFirst = async () => {
+        try {
+          const res = await fetchPublicRow({ data: { queryId } });
+          return res.found ? (res.row as Record<string, unknown>) : null;
+        } catch { return null; }
+      };
+      const isPublicUsable = (r: Record<string, unknown> | null) =>
+        !!r
+        && (r as { is_public_library?: boolean }).is_public_library === true
+        && (r as { library_tombstoned_at?: string | null }).library_tombstoned_at == null
+        && (r as { ai_report?: unknown }).ai_report != null;
+
       if (!user) {
-        const res = await fetchPublicRow({ data: { queryId } });
-        if (!res.found) {
+        const pub = await publicFirst();
+        if (!pub) {
           const err = new Error("Results contain 0 rows") as Error & { code?: string };
           err.code = "PGRST116";
           throw err;
         }
-        return res.row;
+        return pub;
       }
-      const { data, error } = await supabase
-        .from("queries")
-        .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
-        .eq("id", queryId)
-        .single();
-      if (error) throw error;
-      let analyst: { display_name: string; sebi_reg_number: string; avatar_url: string | null } | null = null;
-      if (data.assigned_analyst_id) {
-        const { data: a } = await supabase
-          .from("analyst_profiles")
-          .select("display_name, sebi_reg_number, avatar_url")
-          .eq("id", data.assigned_analyst_id)
-          .maybeSingle();
-        analyst = a;
+
+      // Authed — try public row first (fast path for demo / library rows).
+      const pubEarly = await publicFirst();
+      if (isPublicUsable(pubEarly)) return pubEarly!;
+
+      try {
+        const { data, error } = await supabase
+          .from("queries")
+          .select("id, stock_name, stock_symbol, buy_price, current_price, ai_report, created_at, status, assigned_analyst_id, engine_version, engine_source, horizon, custom_question, query_text, query_type, entry_price, qty, router_meta, is_public_library, library_tombstoned_at")
+          .eq("id", queryId)
+          .single();
+        if (error) throw error;
+        let analyst: { display_name: string; sebi_reg_number: string; avatar_url: string | null } | null = null;
+        if (data.assigned_analyst_id) {
+          const { data: a } = await supabase
+            .from("analyst_profiles")
+            .select("display_name, sebi_reg_number, avatar_url")
+            .eq("id", data.assigned_analyst_id)
+            .maybeSingle();
+          analyst = a;
+        }
+        return { ...data, analyst };
+      } catch (err) {
+        // Expired / invalid token — degrade to public row if the row is public.
+        const msg = String((err as { message?: string })?.message ?? "");
+        if (/unauthorized|invalid or expired token|jwt/i.test(msg)) {
+          const retryPub = await publicFirst();
+          if (isPublicUsable(retryPub)) return retryPub!;
+        }
+        throw err;
       }
-      return { ...data, analyst };
     },
     // For v1 records, the row is created instantly with status="ai_answered" — no need to poll.
     // For "other" / routed rows, no AI report will ever land — don't poll.

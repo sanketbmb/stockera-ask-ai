@@ -28,10 +28,7 @@ export function AnimatedVideoIcon({ reduced, size = "md" }: { reduced: boolean |
       className={`hac-video-pulse relative inline-flex ${dim} items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/20 motion-reduce:animate-none`}
     >
       <Video className={`${iconSize} text-primary relative z-10`} />
-      {/* Lens glint sparkle */}
-      <span
-        className="hac-video-glint pointer-events-none absolute top-[12px] right-[14px] h-1.5 w-1.5 rounded-full bg-white motion-reduce:animate-none"
-      />
+
     </div>
   );
 }

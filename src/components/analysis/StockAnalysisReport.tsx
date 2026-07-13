@@ -1062,7 +1062,7 @@ export function StockAnalysisReport({
 
         {/* ═══ 3. CONFIDENCE / RISK / REWARD TRIAD ═══ */}
         {!isInsufficient && (
-        <motion.section variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <motion.section id="fundamental-view" style={{ scrollMarginTop: 96 }} variants={gridContainer} className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <TriadCard
             icon={Gauge}
             eyebrow="Confidence"
@@ -2076,7 +2076,7 @@ function IntradayGrid({ data }: { data: StockAnalysisPayload }) {
   const freshness = m?.data_freshness ?? "stale";
 
   return (
-    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+    <motion.section id="technical-map" style={{ scrollMarginTop: 96 }} variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       {/* Card 1 — Trend & Levels */}
       <TierCard
         eyebrow="Intraday · Card 1"
@@ -2186,7 +2186,7 @@ function MediumTermGrid({ data, tierLabel = "Medium" }: { data: StockAnalysisPay
   } = data;
 
   return (
-    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+    <motion.section id="technical-map" style={{ scrollMarginTop: 96 }} variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       <TierCard
         eyebrow={`${tierLabel} · Card 1`}
         title="Trend & Structure"
@@ -2303,7 +2303,7 @@ function LongTermGrid({ data }: { data: StockAnalysisPayload }) {
   const dcfDegenerate = f.dcf_upside_pct == null || f.dcf_upside_pct <= -95;
 
   return (
-    <motion.section variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
+    <motion.section id="technical-map" style={{ scrollMarginTop: 96 }} variants={gridContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }} className="grid gap-4 md:grid-cols-2">
       {/* Card 1 — Business Quality */}
       {(() => {
         // Wave 5e Fix 4a — banking honest empty-state. The composite-banking
