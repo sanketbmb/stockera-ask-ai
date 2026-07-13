@@ -94,7 +94,10 @@ function LibraryIndexPage() {
 
   const handleAllPageChange = (n: number) => {
     navigate({
-      search: (prev) => ({ ...prev, allPage: n === 1 ? undefined : n }) as { page?: number; allPage?: number },
+      search: ((prev: { page?: number; allPage?: number }) => ({
+        ...prev,
+        allPage: n === 1 ? undefined : n,
+      })) as never,
       replace: false,
     });
     if (typeof document !== "undefined") {
