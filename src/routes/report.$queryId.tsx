@@ -41,6 +41,11 @@ import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate, stockLogoAbsoluteUrl, stockOgImageUrl } from "@/lib/seo-head";
 import { StockLogo } from "@/components/common/StockLogo";
 import { getPublicReportRow } from "@/lib/public-report-row.functions";
+import { getPublicGeneralVideoAnswer } from "@/lib/general-video-playback.functions";
+
+// SP-DEMO-HOTFIX — canonical SBIN demo + verified free M&M sample video.
+const DEMO_QUERY_ID = "4f71e760-ded3-42c5-a1b4-6dbe005345b1";
+const DEMO_VIDEO_ANSWER_ID = "90683d05-715c-4f4e-8acb-ce4f0aae102e";
 
 
 // FIX-REPORT-404 — strict UUID v1-v5 check; refuse malformed param up front.
@@ -162,6 +167,51 @@ function ViewModeTopBlock({
         </p>
       </div>
     </motion.div>
+  );
+}
+
+// ──────────────── Demo video-first block (SBIN demo only) ────────────────
+// For the public SBIN demo report + ?view=video, render a free M&M sample
+// video on top. Never touches wallet / unlock / entitlement — uses the same
+// public general-video fetcher as /general/$answerId.
+function DemoVideoTopBlock({ answerId }: { answerId: string }) {
+  const fetchVideo = useServerFn(getPublicGeneralVideoAnswer);
+  const { data } = useQuery({
+    queryKey: ["demo-general-video", answerId],
+    queryFn: () => fetchVideo({ data: { answerId } }),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  if (!data || data.status !== "ok" || !data.youtube_video_id) return null;
+  const analystLabel = data.analyst?.display_name
+    ? `${data.analyst.display_name}${data.analyst.sebi_reg_number ? ` · SEBI ${data.analyst.sebi_reg_number}` : ""}`
+    : "SEBI-registered analyst";
+  return (
+    <section className="mx-auto w-full max-w-5xl px-4 md:px-6 pt-6">
+      <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-card">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/30">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+            Sample analyst video
+          </span>
+          <span className="text-[11px] text-muted-foreground truncate">· {analystLabel}</span>
+        </div>
+        <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+          <iframe
+            src={`https://www.youtube.com/embed/${data.youtube_video_id}?rel=0`}
+            title={data.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            loading="lazy"
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+        {data.title && (
+          <div className="px-4 py-3">
+            <p className="text-sm font-medium text-foreground">{data.title}</p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
