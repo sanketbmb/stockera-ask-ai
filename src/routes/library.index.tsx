@@ -6,7 +6,7 @@ const PAGE_SIZE = 24;
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { PublicShell } from "@/components/layout/PublicShell";
-import { supabase } from "@/integrations/supabase/client";
+
 import { useAuth } from "@/contexts/AuthContext";
 import {
   MasterLibraryCard,
@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
 import { listLibraryGridForAuthed } from "@/lib/library-grid-all.functions";
+import { listLibraryGridForSeed } from "@/lib/library-grid-seed.functions";
 
 
 
@@ -69,19 +70,6 @@ export const Route = createFileRoute("/library/")({
   component: LibraryIndexPage,
 });
 
-async function fetchLibraryGrid(): Promise<MasterLibraryRow[]> {
-  const { data, error } = await supabase
-    .from("library_items")
-    .select(
-      "id, kind, source_table, source_id, symbol, symbol_exchange, title, verdict, sector, analyst_id, body_excerpt, published_at, is_public, is_tombstoned",
-    )
-    .eq("is_public", true)
-    .eq("is_tombstoned", false)
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(200);
-  if (error) throw error;
-  return (data ?? []) as MasterLibraryRow[];
-}
 
 function canonVerdict(v: string | null | undefined): string {
   if (!v) return "";
@@ -93,14 +81,16 @@ function LibraryIndexPage() {
   const navigate = Route.useNavigate();
   const { user, isLoading: isAuthLoading } = useAuth();
   const fetchAuthedGrid = useServerFn(listLibraryGridForAuthed);
+  const fetchSeedGrid = useServerFn(listLibraryGridForSeed);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid", user ? "authed" : "anon", user?.id ?? null],
-    // Logged-in: sitewide via authed server fn (bypasses public_consent RLS filter,
-    // safe projection only). Logged-out: seeded/curated public rows via RLS.
+    // Logged-in: sitewide via authed server fn (safe projection only, bypasses
+    // public_consent_anonymized RLS filter). Logged-out: seed-owner rows only
+    // (Rishi: 23987140-2740-4628-af1b-6d9a8816e2f5) via a public server fn.
     queryFn: user
       ? () => fetchAuthedGrid().then((rows) => rows as unknown as MasterLibraryRow[])
-      : fetchLibraryGrid,
+      : () => fetchSeedGrid().then((rows) => rows as unknown as MasterLibraryRow[]),
     enabled: !isAuthLoading,
     staleTime: 5 * 60 * 1000,
   });
