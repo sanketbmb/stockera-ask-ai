@@ -20,6 +20,7 @@ import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
+import { AllAiReportsSection } from "@/components/library/AllAiReportsSection";
 
 
 const SITE_ORIGIN = "https://asktheexpert.in";
