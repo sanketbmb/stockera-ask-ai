@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
 import { listLibraryGridForAuthed } from "@/lib/library-grid-all.functions";
+import { listLibraryGridForSeed } from "@/lib/library-grid-seed.functions";
 
 
 
