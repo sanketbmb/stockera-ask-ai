@@ -57,6 +57,7 @@ export function StepStory() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"textual" | "video">("textual");
   const { user } = useAuth();
+  const [thumbState, setThumbState] = useState<"maxres" | "hq" | "fallback">("maxres");
 
   const p1Ref = useRef(null);
   const p1InViewRaw = useInView(p1Ref, {
