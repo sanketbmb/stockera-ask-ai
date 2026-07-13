@@ -54,13 +54,15 @@ export function MasterSearchRecentTab({ onClose }: Props) {
   const reduced = useReducedMotion();
   const { user } = useAuth();
   const channelId = useId();
-  const { data, isLoading, isError } = useQuery({
+  const fetchRecent = useServerFn(listRecentAnswered);
+  const { data, isLoading, isError } = useQuery<RecentRow[]>({
     queryKey: ["master-search-recent"],
-    queryFn: fetchRecent,
+    queryFn: () => fetchRecent(),
     staleTime: 60 * 1000,
     throwOnError: false,
     retry: false,
   });
+
 
   // Realtime: subscribe to public.queries (NOT library_items). INSERT covers
   // brand-new questions; UPDATE covers the publish flip (is_public_library
