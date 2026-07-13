@@ -219,8 +219,8 @@ function LibraryIndexPage() {
           </TabsList>
           <TabsContent value="reports">
             <MyAiReportsSection />
-            <AllAiReportsSection page={allPage} onPageChange={handleAllPageChange} />
             <MasterLibraryToolbar
+
               search={search}
               onSearchChange={setSearch}
               verdict={verdict}
