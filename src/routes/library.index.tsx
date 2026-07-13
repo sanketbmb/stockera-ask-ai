@@ -89,8 +89,20 @@ function canonVerdict(v: string | null | undefined): string {
 }
 
 function LibraryIndexPage() {
-  const { page: urlPage } = Route.useSearch();
+  const { page: urlPage, allPage } = Route.useSearch();
   const navigate = Route.useNavigate();
+
+  const handleAllPageChange = (n: number) => {
+    navigate({
+      search: (prev) => ({ ...prev, allPage: n === 1 ? undefined : n }) as { page?: number; allPage?: number },
+      replace: false,
+    });
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("all-ai-reports-heading")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid"],
