@@ -370,6 +370,9 @@ function TierShapedReportContent({
   return (
     <div className={`min-h-screen bg-mesh ${isStale ? "frozen-stale" : ""}`}>
       <Navbar />
+      {queryId === DEMO_QUERY_ID && viewMode === "video" && (
+        <DemoVideoTopBlock answerId={DEMO_VIDEO_ANSWER_ID} />
+      )}
       {viewMode && <ViewModeTopBlock mode={viewMode} queryId={queryId} ctaContext={ctaContext} />}
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 pt-6 md:px-6">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
