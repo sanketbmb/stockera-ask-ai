@@ -44,6 +44,10 @@ export const Route = createFileRoute("/library/")({
       typeof search.page === "string" || typeof search.page === "number"
         ? Math.max(1, Math.floor(Number(search.page)) || 1)
         : 1,
+    allPage:
+      typeof search.allPage === "string" || typeof search.allPage === "number"
+        ? Math.max(1, Math.floor(Number(search.allPage)) || 1)
+        : 1,
   }),
   head: () => ({
     meta: [
