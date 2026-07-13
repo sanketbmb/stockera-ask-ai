@@ -566,7 +566,16 @@ interface ExclusionResponse {
 
 interface WriteAuditResponse {
   ok: boolean;
-  results?: Array<{ op: string; id: string }>;
+  // Per-op results from stock-picker-write-audit. Kept structurally identical
+  // to what the child function returns (op, ok, id?, deduped?, error?) so the
+  // aggregated shape after chunked fan-out matches the pre-hotfix response.
+  results?: Array<{
+    op: string;
+    ok: boolean;
+    id?: string;
+    deduped?: boolean;
+    error?: string;
+  }>;
   error?: string;
 }
 
