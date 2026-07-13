@@ -4,8 +4,10 @@ import { MasterLibraryPagination } from "@/components/library/MasterLibraryPagin
 
 const PAGE_SIZE = 24;
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { PublicShell } from "@/components/layout/PublicShell";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   MasterLibraryCard,
   type MasterLibraryRow,
@@ -20,7 +22,8 @@ import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
-import { AllAiReportsSection } from "@/components/library/AllAiReportsSection";
+import { listLibraryGridForAuthed } from "@/lib/library-grid-all.functions";
+
 
 
 const SITE_ORIGIN = "https://asktheexpert.in";
