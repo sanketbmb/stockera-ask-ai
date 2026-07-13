@@ -40,7 +40,7 @@ import { AskClaudeFollowup } from "@/components/report/AskClaudeFollowup";
 import { ReportCtaStrip } from "@/components/report/ReportCtaStrip";
 import { getPublicReportMeta, SITE_ORIGIN, SITE_DEFAULT_OG, truncate, stockLogoAbsoluteUrl, stockOgImageUrl } from "@/lib/seo-head";
 import { StockLogo } from "@/components/common/StockLogo";
-import { getPublicReportRow } from "@/lib/public-report-row.functions";
+import { getPublicReportRow, getReportRowForAuthedUser } from "@/lib/public-report-row.functions";
 import { getPublicGeneralVideoAnswer } from "@/lib/general-video-playback.functions";
 
 // SP-DEMO-HOTFIX — canonical SBIN demo + verified free M&M sample video.
@@ -662,6 +662,7 @@ function ReportContent() {
 
 
   const fetchPublicRow = useServerFn(getPublicReportRow);
+  const fetchAuthedRow = useServerFn(getReportRowForAuthedUser);
   const { data, isLoading, error } = useQuery({
     queryKey: ["query-report", queryId, user ? `u:${user.id}` : "anon"],
     enabled: isValidUuid && !authLoading,
@@ -716,9 +717,20 @@ function ReportContent() {
       } catch (err) {
         // Expired / invalid token — degrade to public row if the row is public.
         const msg = String((err as { message?: string })?.message ?? "");
+        const code = (err as { code?: string })?.code ?? "";
         if (/unauthorized|invalid or expired token|jwt/i.test(msg)) {
           const retryPub = await publicFirst();
           if (isPublicUsable(retryPub)) return retryPub!;
+        }
+        // LIBRARY AUTH-VIEW SPLIT — authed-any-user fallback. RLS on queries
+        // is owner-only, so signed-in users clicking cards in the sitewide
+        // "All AI Reports" feed for reports they do not own would otherwise
+        // 404. Use the authed server fn (admin client behind requireSupabaseAuth).
+        if (user && (code === "PGRST116" || /0 rows|not found/i.test(msg))) {
+          try {
+            const res = await fetchAuthedRow({ data: { queryId } });
+            if (res.found) return res.row as Record<string, unknown>;
+          } catch { /* fall through */ }
         }
         throw err;
       }

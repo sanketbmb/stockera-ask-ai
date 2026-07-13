@@ -20,6 +20,7 @@ import { Stagger, StaggerItem, Reveal } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideosBlogsTab } from "@/components/library/VideosBlogsTab";
 import { MyAiReportsSection } from "@/components/library/MyAiReportsSection";
+import { AllAiReportsSection } from "@/components/library/AllAiReportsSection";
 
 
 const SITE_ORIGIN = "https://asktheexpert.in";
@@ -42,6 +43,10 @@ export const Route = createFileRoute("/library/")({
     page:
       typeof search.page === "string" || typeof search.page === "number"
         ? Math.max(1, Math.floor(Number(search.page)) || 1)
+        : 1,
+    allPage:
+      typeof search.allPage === "string" || typeof search.allPage === "number"
+        ? Math.max(1, Math.floor(Number(search.allPage)) || 1)
         : 1,
   }),
   head: () => ({
@@ -84,8 +89,23 @@ function canonVerdict(v: string | null | undefined): string {
 }
 
 function LibraryIndexPage() {
-  const { page: urlPage } = Route.useSearch();
+  const { page: urlPage, allPage } = Route.useSearch();
   const navigate = Route.useNavigate();
+
+  const handleAllPageChange = (n: number) => {
+    navigate({
+      search: ((prev: { page?: number; allPage?: number }) => ({
+        ...prev,
+        allPage: n === 1 ? undefined : n,
+      })) as never,
+      replace: false,
+    });
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("all-ai-reports-heading")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["library", "grid"],
@@ -205,6 +225,7 @@ function LibraryIndexPage() {
           </TabsList>
           <TabsContent value="reports">
             <MyAiReportsSection />
+            <AllAiReportsSection page={allPage} onPageChange={handleAllPageChange} />
             <MasterLibraryToolbar
               search={search}
               onSearchChange={setSearch}
