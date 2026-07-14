@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { startGoogleOAuth, sanitizeNext } from "@/lib/google-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -27,12 +28,14 @@ type FormValues = z.infer<typeof schema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const search = useSearch({ strict: false }) as { redirect?: string };
+  const nextPath = sanitizeNext(search.redirect);
   const [submitting, setSubmitting] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
-    if (user) navigate({ to: "/dashboard" });
-  }, [user, navigate]);
+    if (user) navigate({ to: nextPath } as never);
+  }, [user, navigate, nextPath]);
 
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -51,7 +54,7 @@ export default function LoginPage() {
       return;
     }
     toast.success("Welcome back");
-    navigate({ to: "/dashboard" });
+    navigate({ to: nextPath } as never);
   };
 
   const handleForgot = async () => {
@@ -70,11 +73,8 @@ export default function LoginPage() {
   };
 
   const handleGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
-    });
-    if (error) toast.error(error.message);
+    const { error } = await startGoogleOAuth(nextPath);
+    if (error) toast.error(error.message || "Could not start Google sign-in");
   };
 
   return (
