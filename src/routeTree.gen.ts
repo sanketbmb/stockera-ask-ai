@@ -47,6 +47,7 @@ import { Route as PrintEducationalQueryIdRouteImport } from './routes/print-educ
 import { Route as LibrarySymbolRouteImport } from './routes/library.$symbol'
 import { Route as GeneralAnswerIdRouteImport } from './routes/general.$answerId'
 import { Route as CuratedItemIdRouteImport } from './routes/curated.$itemId'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AnalystAnalystIdRouteImport } from './routes/analyst.$analystId'
 import { Route as AnalysisSymbolRouteImport } from './routes/analysis.$symbol'
 import { Route as AdminVideosRouteImport } from './routes/admin.videos'
@@ -259,6 +260,11 @@ const CuratedItemIdRoute = CuratedItemIdRouteImport.update({
   path: '/curated/$itemId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalystAnalystIdRoute = AnalystAnalystIdRouteImport.update({
   id: '/analyst/$analystId',
   path: '/analyst/$analystId',
@@ -407,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -468,6 +475,7 @@ export interface FileRoutesByTo {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -530,6 +538,7 @@ export interface FileRoutesById {
   '/admin/videos': typeof AdminVideosRouteWithChildren
   '/analysis/$symbol': typeof AnalysisSymbolRoute
   '/analyst/$analystId': typeof AnalystAnalystIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/curated/$itemId': typeof CuratedItemIdRoute
   '/general/$answerId': typeof GeneralAnswerIdRoute
   '/library/$symbol': typeof LibrarySymbolRoute
@@ -593,6 +602,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/auth/callback'
     | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
@@ -654,6 +664,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/auth/callback'
     | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
@@ -715,6 +726,7 @@ export interface FileRouteTypes {
     | '/admin/videos'
     | '/analysis/$symbol'
     | '/analyst/$analystId'
+    | '/auth/callback'
     | '/curated/$itemId'
     | '/general/$answerId'
     | '/library/$symbol'
@@ -777,6 +789,7 @@ export interface RootRouteChildren {
   AdminVideosRoute: typeof AdminVideosRouteWithChildren
   AnalysisSymbolRoute: typeof AnalysisSymbolRoute
   AnalystAnalystIdRoute: typeof AnalystAnalystIdRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   CuratedItemIdRoute: typeof CuratedItemIdRoute
   GeneralAnswerIdRoute: typeof GeneralAnswerIdRoute
   LibrarySymbolRoute: typeof LibrarySymbolRoute
@@ -1063,6 +1076,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CuratedItemIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analyst/$analystId': {
       id: '/analyst/$analystId'
       path: '/analyst/$analystId'
@@ -1282,6 +1302,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminVideosRoute: AdminVideosRouteWithChildren,
   AnalysisSymbolRoute: AnalysisSymbolRoute,
   AnalystAnalystIdRoute: AnalystAnalystIdRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   CuratedItemIdRoute: CuratedItemIdRoute,
   GeneralAnswerIdRoute: GeneralAnswerIdRoute,
   LibrarySymbolRoute: LibrarySymbolRoute,
