@@ -468,6 +468,14 @@ async function fetchLiquidityForSymbol(args: {
         rows: parsedRows,
       };
     } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      const hintMs = parseRetryAfterMs(errMsg, null);
+      if (hintMs !== null && !rateLimitRetryUsed) {
+        rateLimitRetryUsed = true;
+        console.log(`cron diagnostic: liquidity_symbol_rate_limit_hint_wait label=${label} wait_ms=${hintMs} exception_hint`);
+        await sleep(hintMs);
+        continue;
+      }
       attempt++;
       if (attempt > args.maxRetries) {
         console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error exception elapsed_ms=${Date.now() - symbolStartedAt}`);
@@ -476,10 +484,10 @@ async function fetchLiquidityForSymbol(args: {
           exchange: args.exchange,
           status: 'error',
           rows: [],
-          error: e instanceof Error ? e.message : String(e),
+          error: errMsg,
         };
       }
-      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${e instanceof Error ? e.message : String(e)}`);
+      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${errMsg}`);
       await sleep(delayMs);
       delayMs = Math.min(delayMs * 2, 5000);
     }
