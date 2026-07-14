@@ -489,7 +489,7 @@ async function fetchLiquidityForSymbol(args: {
 
 // Cap concurrent in-flight dhan-fetch calls during liquidity fan-out to avoid
 // tripping the upstream rate limit (root cause of missed batches since 2026-07-06).
-const LIQUIDITY_CONCURRENCY = 4;
+const LIQUIDITY_CONCURRENCY = 1;
 
 async function fetchLiquidityForUniverse(args: {
   members: Array<{ symbol: string; exchange: Exchange; dhan_security_id: string | null }>;
