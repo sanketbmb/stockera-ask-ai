@@ -288,6 +288,27 @@ async function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// Parse an upstream "retry after Xms" / "retry after Xs" hint from a
+// response body and/or the Retry-After header. Caps at 30000ms.
+// Returns null when no hint is discernible.
+function parseRetryAfterMs(bodyText: string | null | undefined, headerVal: string | null): number | null {
+  if (headerVal) {
+    const n = Number(headerVal);
+    if (Number.isFinite(n) && n > 0) return Math.min(Math.round(n * 1000), 30000);
+  }
+  if (bodyText) {
+    const m = bodyText.match(/retry\s+after\s+~?\s*(\d+(?:\.\d+)?)\s*(ms|s)\b/i);
+    if (m) {
+      const val = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      const ms = unit === 's' ? val * 1000 : val;
+      if (Number.isFinite(ms) && ms > 0) return Math.min(Math.round(ms), 30000);
+    }
+    if (/rate\s*limit/i.test(bodyText)) return 24000;
+  }
+  return null;
+}
+
 async function fetchLiquidityForSymbol(args: {
   symbol: string;
   exchange: Exchange;
