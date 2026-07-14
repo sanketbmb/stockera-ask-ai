@@ -288,6 +288,27 @@ async function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// Parse an upstream "retry after Xms" / "retry after Xs" hint from a
+// response body and/or the Retry-After header. Caps at 30000ms.
+// Returns null when no hint is discernible.
+function parseRetryAfterMs(bodyText: string | null | undefined, headerVal: string | null): number | null {
+  if (headerVal) {
+    const n = Number(headerVal);
+    if (Number.isFinite(n) && n > 0) return Math.min(Math.round(n * 1000), 30000);
+  }
+  if (bodyText) {
+    const m = bodyText.match(/retry\s+after\s+~?\s*(\d+(?:\.\d+)?)\s*(ms|s)\b/i);
+    if (m) {
+      const val = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      const ms = unit === 's' ? val * 1000 : val;
+      if (Number.isFinite(ms) && ms > 0) return Math.min(Math.round(ms), 30000);
+    }
+    if (/rate\s*limit/i.test(bodyText)) return 24000;
+  }
+  return null;
+}
+
 async function fetchLiquidityForSymbol(args: {
   symbol: string;
   exchange: Exchange;
@@ -303,6 +324,7 @@ async function fetchLiquidityForSymbol(args: {
   console.log(`cron diagnostic: liquidity_symbol_start label=${label} security_id=${args.dhanSecurityId ?? 'null'}`);
   let attempt = 0;
   let delayMs = 200;
+  let rateLimitRetryUsed = false;
   while (attempt <= args.maxRetries) {
     try {
       const attemptStartedAt = Date.now();
@@ -328,19 +350,27 @@ async function fetchLiquidityForSymbol(args: {
         `cron diagnostic: liquidity_symbol_attempt_response label=${label} attempt=${attempt + 1} status=${res.status} elapsed_ms=${Date.now() - attemptStartedAt}`
       );
       if (res.status === 429) {
-        const retryAfter = Number(res.headers.get('Retry-After') ?? '0');
-        const waitMs = Math.max(retryAfter * 1000, delayMs * 2);
-        attempt++;
-        if (attempt > args.maxRetries) {
-          console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=rate_limited elapsed_ms=${Date.now() - symbolStartedAt}`);
+        const bodyText = await res.text().catch(() => '');
+        const hintMs = parseRetryAfterMs(bodyText, res.headers.get('Retry-After'));
+        if (rateLimitRetryUsed) {
+          console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=rate_limited after_hint_retry elapsed_ms=${Date.now() - symbolStartedAt}`);
           return { symbol: args.symbol, exchange: args.exchange, status: 'rate_limited', rows: [] };
         }
-        console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${waitMs}`);
+        rateLimitRetryUsed = true;
+        const waitMs = Math.min(hintMs ?? 24000, 30000);
+        console.log(`cron diagnostic: liquidity_symbol_rate_limit_hint_wait label=${label} wait_ms=${waitMs} hint_ms=${hintMs ?? 'null'}`);
         await sleep(waitMs);
-        delayMs = Math.min(delayMs * 2, 5000);
         continue;
       }
       if (!res.ok) {
+        const bodyText = await res.text().catch(() => '');
+        const hintMs = parseRetryAfterMs(bodyText, res.headers.get('Retry-After'));
+        if (hintMs !== null && !rateLimitRetryUsed) {
+          rateLimitRetryUsed = true;
+          console.log(`cron diagnostic: liquidity_symbol_rate_limit_hint_wait label=${label} wait_ms=${hintMs} http_status=${res.status}`);
+          await sleep(hintMs);
+          continue;
+        }
         console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error http_status=${res.status} elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
@@ -352,6 +382,14 @@ async function fetchLiquidityForSymbol(args: {
       }
       const json = await res.json();
       if (json?.success !== true) {
+        const combined = `${json?.error ?? ''} ${json?.message ?? ''}`;
+        const hintMs = parseRetryAfterMs(combined, null);
+        if (hintMs !== null && !rateLimitRetryUsed) {
+          rateLimitRetryUsed = true;
+          console.log(`cron diagnostic: liquidity_symbol_rate_limit_hint_wait label=${label} wait_ms=${hintMs} upstream_unsuccessful`);
+          await sleep(hintMs);
+          continue;
+        }
         console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error upstream_unsuccessful elapsed_ms=${Date.now() - symbolStartedAt}`);
         return {
           symbol: args.symbol,
@@ -430,6 +468,14 @@ async function fetchLiquidityForSymbol(args: {
         rows: parsedRows,
       };
     } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      const hintMs = parseRetryAfterMs(errMsg, null);
+      if (hintMs !== null && !rateLimitRetryUsed) {
+        rateLimitRetryUsed = true;
+        console.log(`cron diagnostic: liquidity_symbol_rate_limit_hint_wait label=${label} wait_ms=${hintMs} exception_hint`);
+        await sleep(hintMs);
+        continue;
+      }
       attempt++;
       if (attempt > args.maxRetries) {
         console.log(`cron diagnostic: liquidity_symbol_done label=${label} status=error exception elapsed_ms=${Date.now() - symbolStartedAt}`);
@@ -438,10 +484,10 @@ async function fetchLiquidityForSymbol(args: {
           exchange: args.exchange,
           status: 'error',
           rows: [],
-          error: e instanceof Error ? e.message : String(e),
+          error: errMsg,
         };
       }
-      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${e instanceof Error ? e.message : String(e)}`);
+      console.log(`cron diagnostic: liquidity_symbol_retry_wait label=${label} attempt=${attempt} wait_ms=${delayMs} error=${errMsg}`);
       await sleep(delayMs);
       delayMs = Math.min(delayMs * 2, 5000);
     }
@@ -451,7 +497,7 @@ async function fetchLiquidityForSymbol(args: {
 
 // Cap concurrent in-flight dhan-fetch calls during liquidity fan-out to avoid
 // tripping the upstream rate limit (root cause of missed batches since 2026-07-06).
-const LIQUIDITY_CONCURRENCY = 4;
+const LIQUIDITY_CONCURRENCY = 1;
 
 async function fetchLiquidityForUniverse(args: {
   members: Array<{ symbol: string; exchange: Exchange; dhan_security_id: string | null }>;
