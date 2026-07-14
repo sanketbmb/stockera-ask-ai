@@ -324,6 +324,7 @@ async function fetchLiquidityForSymbol(args: {
   console.log(`cron diagnostic: liquidity_symbol_start label=${label} security_id=${args.dhanSecurityId ?? 'null'}`);
   let attempt = 0;
   let delayMs = 200;
+  let rateLimitRetryUsed = false;
   while (attempt <= args.maxRetries) {
     try {
       const attemptStartedAt = Date.now();
