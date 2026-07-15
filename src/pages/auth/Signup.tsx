@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,7 @@ import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { startGoogleOAuth, sanitizeNext } from "@/lib/google-auth";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
 
 const schema = z
   .object({
@@ -43,6 +44,8 @@ export default function SignupPage() {
   const search = useSearch({ strict: false }) as { ref?: string; redirect?: string };
   const nextPath = sanitizeNext(search.redirect);
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
 
   useEffect(() => {
     if (user) navigate({ to: nextPath } as never);
@@ -58,11 +61,16 @@ export default function SignupPage() {
   }, [search.ref, setValue]);
 
   const onSubmit = async (values: FormValues) => {
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setSubmitting(true);
     const { error } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
       options: {
+        captchaToken,
         emailRedirectTo: `${window.location.origin}/dashboard`,
         data: {
           full_name: values.full_name,
@@ -74,6 +82,8 @@ export default function SignupPage() {
     setSubmitting(false);
     if (error) {
       toast.error(error.message);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
       return;
     }
     toast.success("Welcome to Stockera! ₹100 credits added.", { duration: 4000 });
@@ -136,9 +146,18 @@ export default function SignupPage() {
               </label>
               {errors.accept && <p className="text-xs text-destructive">{errors.accept.message}</p>}
 
+              <div className="flex justify-center">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              </div>
+
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !captchaToken}
                 className="w-full h-11 bg-gradient-brand hover:opacity-95 text-white shadow-glow-teal"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account & Get ₹100 Free"}

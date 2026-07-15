@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { startGoogleOAuth, sanitizeNext } from "@/lib/google-auth";
 import { useForm } from "react-hook-form";
@@ -13,6 +13,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Logo } from "@/components/common/Logo";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
 import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +33,8 @@ export default function LoginPage() {
   const nextPath = sanitizeNext(search.redirect);
   const [submitting, setSubmitting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
 
   useEffect(() => {
     if (user) navigate({ to: nextPath } as never);
@@ -43,14 +46,21 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setSubmitting(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: values.email,
       password: values.password,
+      options: { captchaToken },
     });
     setSubmitting(false);
     if (error) {
       toast.error(error.message);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
       return;
     }
     toast.success("Welcome back");
@@ -63,13 +73,25 @@ export default function LoginPage() {
       toast.error("Enter your email above first");
       return;
     }
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setResetting(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
+      captchaToken,
     });
     setResetting(false);
-    if (error) toast.error(error.message);
-    else toast.success("Password reset link sent");
+    if (error) {
+      toast.error(error.message);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
+    } else {
+      toast.success("Password reset link sent");
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
+    }
   };
 
   const handleGoogle = async () => {
@@ -141,9 +163,18 @@ export default function LoginPage() {
                 </button>
               </div>
 
+              <div className="flex justify-center">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              </div>
+
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !captchaToken}
                 className="w-full h-11 bg-gradient-brand hover:opacity-95 text-white shadow-glow-teal"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In"}

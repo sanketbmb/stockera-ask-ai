@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/common/Logo";
 import { supabase } from "@/integrations/supabase/client";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
 
 const SPECIALIZATIONS = [
   "Technical Analysis", "Fundamental Analysis", "Swing Trading",
@@ -63,6 +64,8 @@ export default function AnalystApplicationPage() {
   const [submitting, setSubmitting] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
 
   const setField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData((d) => ({ ...d, [key]: value }));
@@ -131,18 +134,25 @@ export default function AnalystApplicationPage() {
       toast.error("Please acknowledge the SEBI compliance");
       return;
     }
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setSubmitting(true);
 
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
+        captchaToken,
         emailRedirectTo: `${window.location.origin}/admin/dashboard`,
         data: { full_name: data.full_name, phone: data.phone },
       },
     });
     if (signUpError || !signUpData.user) {
       setSubmitting(false);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
       toast.error(signUpError?.message ?? "Sign up failed");
       return;
     }
@@ -377,6 +387,15 @@ export default function AnalystApplicationPage() {
                   I confirm that all information is accurate, my SEBI registration is active, and I will follow SEBI's research analyst regulations on all answers and reports published through this platform.
                 </span>
               </label>
+
+              <div className="flex justify-center pt-2">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              </div>
             </div>
           )}
 
@@ -402,7 +421,7 @@ export default function AnalystApplicationPage() {
               <Button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || !acknowledge}
+                disabled={submitting || !acknowledge || !captchaToken}
                 className="bg-gradient-gold text-[hsl(var(--gold-foreground))] font-semibold shadow-glow-gold"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Application"}

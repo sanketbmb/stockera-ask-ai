@@ -4,7 +4,7 @@ import { Home, ListChecks, Plus, Wallet, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
-  { to: "/dashboard", label: "Home", Icon: Home },
+  { to: "/", label: "Home", Icon: Home, ariaLabel: "Go to homepage" },
   { to: "/my-queries", label: "Queries", Icon: ListChecks },
   { to: "/wallet", label: "Wallet", Icon: Wallet },
   { to: "/settings", label: "Profile", Icon: User },
