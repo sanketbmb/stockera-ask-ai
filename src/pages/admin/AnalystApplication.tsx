@@ -387,6 +387,15 @@ export default function AnalystApplicationPage() {
                   I confirm that all information is accurate, my SEBI registration is active, and I will follow SEBI's research analyst regulations on all answers and reports published through this platform.
                 </span>
               </label>
+
+              <div className="flex justify-center pt-2">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              </div>
             </div>
           )}
 
@@ -412,7 +421,7 @@ export default function AnalystApplicationPage() {
               <Button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || !acknowledge}
+                disabled={submitting || !acknowledge || !captchaToken}
                 className="bg-gradient-gold text-[hsl(var(--gold-foreground))] font-semibold shadow-glow-gold"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Application"}
