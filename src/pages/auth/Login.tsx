@@ -163,9 +163,18 @@ export default function LoginPage() {
                 </button>
               </div>
 
+              <div className="flex justify-center">
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              </div>
+
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !captchaToken}
                 className="w-full h-11 bg-gradient-brand hover:opacity-95 text-white shadow-glow-teal"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In"}
