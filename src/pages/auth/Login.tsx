@@ -73,13 +73,25 @@ export default function LoginPage() {
       toast.error("Enter your email above first");
       return;
     }
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setResetting(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
+      captchaToken,
     });
     setResetting(false);
-    if (error) toast.error(error.message);
-    else toast.success("Password reset link sent");
+    if (error) {
+      toast.error(error.message);
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
+    } else {
+      toast.success("Password reset link sent");
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
+    }
   };
 
   const handleGoogle = async () => {
