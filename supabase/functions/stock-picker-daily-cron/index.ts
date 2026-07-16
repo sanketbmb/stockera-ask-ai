@@ -1207,7 +1207,7 @@ serve(async (req: Request) => {
       cacheByKey.set(key, arr);
     }
     const cachedOutcomes: LiquidityFetchOutcome[] = [];
-    const missMembers: typeof canonicalMembers = [];
+    let missMembers: typeof canonicalMembers = [];
     for (const m of canonicalMembers) {
       const key = `${m.symbol}|${m.exchange}`;
       const rows = cacheByKey.get(key);
