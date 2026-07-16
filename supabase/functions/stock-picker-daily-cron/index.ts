@@ -81,6 +81,7 @@ interface DailyCronRequest {
 
 // --- CHUNKED BOOTSTRAP HELPERS ---
 const BOOTSTRAP_CHUNK_SIZE = 100;
+const LIVE_CHUNK_SIZE = 50;
 
 // REPAIR 3: direct SELECT against the _latest view; no RPC dependency.
 async function getBootstrapFreshness(
@@ -497,7 +498,7 @@ async function fetchLiquidityForSymbol(args: {
 
 // Cap concurrent in-flight dhan-fetch calls during liquidity fan-out to avoid
 // tripping the upstream rate limit (root cause of missed batches since 2026-07-06).
-const LIQUIDITY_CONCURRENCY = 1;
+const LIQUIDITY_CONCURRENCY = 4;
 
 async function fetchLiquidityForUniverse(args: {
   members: Array<{ symbol: string; exchange: Exchange; dhan_security_id: string | null }>;
@@ -1206,7 +1207,7 @@ serve(async (req: Request) => {
       cacheByKey.set(key, arr);
     }
     const cachedOutcomes: LiquidityFetchOutcome[] = [];
-    const missMembers: typeof canonicalMembers = [];
+    let missMembers: typeof canonicalMembers = [];
     for (const m of canonicalMembers) {
       const key = `${m.symbol}|${m.exchange}`;
       const rows = cacheByKey.get(key);
@@ -1224,23 +1225,90 @@ serve(async (req: Request) => {
       `elapsed_ms=${cacheElapsedMs}`
     );
 
-    const liveOutcomes: LiquidityFetchOutcome[] = missMembers.length > 0
+    // --- Phase 2S.4: chunked-resume for live liquidity misses ---
+    // Sort deterministically so resume_from cursor advances monotonically.
+    missMembers.sort((a, b) =>
+      `${a.symbol}|${a.exchange}`.localeCompare(`${b.symbol}|${b.exchange}`)
+    );
+    if (body.resume_from) {
+      missMembers = missMembers.filter((m) => m.symbol > body.resume_from!);
+    }
+    const chunkMisses = missMembers.slice(0, LIVE_CHUNK_SIZE);
+    const isFinalChunk = chunkMisses.length === missMembers.length;
+
+    const liveOutcomes: LiquidityFetchOutcome[] = chunkMisses.length > 0
       ? await fetchLiquidityForUniverse({
-          members: missMembers.map((m) => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
+          members: chunkMisses.map((m) => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
           fromDateIso,
           toDateIso,
           dhanFetchUrl,
           serviceKey: SUPABASE_SERVICE_ROLE_KEY,
         })
       : [];
+    // Only append live-fetched rows; cached rows already exist in DB.
+    if (liveOutcomes.length > 0) await appendLiquidity(supabase, liveOutcomes);
+
+    if (!isFinalChunk) {
+      const next_resume_symbol = chunkMisses[chunkMisses.length - 1].symbol;
+      await logCronRun(supabase, {
+        batch_id: batchId,
+        mode: body.mode,
+        status: 'chunk_finished',
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        metrics: {
+          phase: 'live_liquidity_chunk',
+          live_chunk_size: LIVE_CHUNK_SIZE,
+          chunk_misses_processed: chunkMisses.length,
+          cache_hits: cachedOutcomes.length,
+          live_ok_this_chunk: liveOutcomes.filter((o) => o.status === 'ok').length,
+          next_resume_symbol,
+          universe_size: canonicalMembers.length,
+        },
+      });
+
+      // Self-continue via pg_net (survives parent worker teardown).
+      const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3aWN3bW51dHlhaHNjYnJlcXZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MzE0NjcsImV4cCI6MjA5NDUwNzQ2N30.aUu2WKdHWnlvFbnBxynFJaGLYq_tlpptkPf5CiwSQZA';
+      const continueBody: DailyCronRequest = {
+        mode:         body.mode,
+        invoked_by:   body.invoked_by,
+        seed_version: body.seed_version,
+        run_date_ist: runDateIst,
+        resume_from:  next_resume_symbol,
+        risk_profile: body.risk_profile,
+      };
+      await supabase
+        // deno-lint-ignore no-explicit-any
+        .schema('net' as any)
+        .rpc('http_post', {
+          url:                  `${SUPABASE_URL}/functions/v1/stock-picker-daily-cron`,
+          body:                 continueBody as unknown as Record<string, unknown>,
+          params:               {},
+          headers:              {
+            'Content-Type':  'application/json',
+            'apikey':        ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          timeout_milliseconds: 180000,
+        });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        batch_id:               batchId,
+        mode:                   body.mode,
+        status:                 'chunk_finished',
+        next_resume_symbol,
+        chunk_misses_processed: chunkMisses.length,
+        cache_hits:             cachedOutcomes.length,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
     const fetchOutcomes: LiquidityFetchOutcome[] = [...cachedOutcomes, ...liveOutcomes];
     logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, {
       outcomes: fetchOutcomes.length,
       cache_hits: cachedOutcomes.length,
       live_fetches: liveOutcomes.length,
     });
-    // Only append live-fetched rows; cached rows already exist in DB.
-    if (liveOutcomes.length > 0) await appendLiquidity(supabase, liveOutcomes);
     markPhase('phase_liquidity_ms', tLiquidity);
     logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, {
       outcomes: fetchOutcomes.length,
