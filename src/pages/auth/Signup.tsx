@@ -113,23 +113,23 @@ export default function SignupPage() {
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
               <Field icon={<UserIcon className="h-4 w-4" />} label="Full Name" id="full_name" error={errors.full_name?.message}>
-                <Input id="full_name" placeholder="Aarav Sharma" className="pl-9" {...register("full_name")} />
+                <Input id="full_name" autoComplete="name" placeholder="Aarav Sharma" className="pl-9" {...register("full_name")} />
               </Field>
 
               <Field icon={<Mail className="h-4 w-4" />} label="Email" id="email" error={errors.email?.message}>
-                <Input id="email" type="email" placeholder="you@example.com" className="pl-9" {...register("email")} />
+                <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" className="pl-9" {...register("email")} />
               </Field>
 
               <Field icon={<Phone className="h-4 w-4" />} label="Mobile (+91)" id="phone" error={errors.phone?.message}>
-                <Input id="phone" inputMode="numeric" placeholder="9876543210" maxLength={10} className="pl-9" {...register("phone")} />
+                <Input id="phone" inputMode="numeric" autoComplete="tel-national" placeholder="9876543210" maxLength={10} className="pl-9" {...register("phone")} />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field icon={<Lock className="h-4 w-4" />} label="Password" id="password" error={errors.password?.message}>
-                  <PasswordInput id="password" placeholder="••••••••" className="pl-9" {...register("password")} />
+                  <PasswordInput id="password" autoComplete="new-password" placeholder="••••••••" className="pl-9" {...register("password")} />
                 </Field>
                 <Field icon={<Lock className="h-4 w-4" />} label="Confirm" id="confirm" error={errors.confirm?.message}>
-                  <PasswordInput id="confirm" placeholder="••••••••" className="pl-9" {...register("confirm")} />
+                  <PasswordInput id="confirm" autoComplete="new-password" placeholder="••••••••" className="pl-9" {...register("confirm")} />
                 </Field>
               </div>
 
