@@ -67,7 +67,7 @@ export function HeroDemoCard() {
     if (reduced || phase !== "typing") return;
     const id = setInterval(() => setCaret((v) => !v), 500);
     return () => clearInterval(id);
-  }, [reduced]);
+  }, [reduced, phase]);
 
   const openQuery = (prefill?: string) => {
     if (prefill) navigate({ to: "/post-query", search: { prefill_query: prefill } as never });
