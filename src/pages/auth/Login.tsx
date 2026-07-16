@@ -126,6 +126,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
+                    autoComplete="email"
                     placeholder="you@example.com"
                     className="pl-9"
                     {...register("email")}
