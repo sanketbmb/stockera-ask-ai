@@ -19,6 +19,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SebiComplianceRouteImport } from './routes/sebi-compliance'
 import { Route as RiskDisclosureRouteImport } from './routes/risk-disclosure'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ReferralRouteImport } from './routes/referral'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -118,6 +119,11 @@ const SebiComplianceRoute = SebiComplianceRouteImport.update({
 const RiskDisclosureRoute = RiskDisclosureRouteImport.update({
   id: '/risk-disclosure',
   path: '/risk-disclosure',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReferralRoute = ReferralRouteImport.update({
@@ -391,6 +397,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
@@ -453,6 +460,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
@@ -516,6 +524,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/referral': typeof ReferralRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/risk-disclosure': typeof RiskDisclosureRoute
   '/sebi-compliance': typeof SebiComplianceRoute
   '/settings': typeof SettingsRoute
@@ -580,6 +589,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/reset-password'
     | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
@@ -642,6 +652,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/reset-password'
     | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
@@ -704,6 +715,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/privacy'
     | '/referral'
+    | '/reset-password'
     | '/risk-disclosure'
     | '/sebi-compliance'
     | '/settings'
@@ -767,6 +779,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   ReferralRoute: typeof ReferralRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   RiskDisclosureRoute: typeof RiskDisclosureRoute
   SebiComplianceRoute: typeof SebiComplianceRoute
   SettingsRoute: typeof SettingsRoute
@@ -878,6 +891,13 @@ declare module '@tanstack/react-router' {
       path: '/risk-disclosure'
       fullPath: '/risk-disclosure'
       preLoaderRoute: typeof RiskDisclosureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/referral': {
@@ -1280,6 +1300,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   ReferralRoute: ReferralRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   RiskDisclosureRoute: RiskDisclosureRoute,
   SebiComplianceRoute: SebiComplianceRoute,
   SettingsRoute: SettingsRoute,

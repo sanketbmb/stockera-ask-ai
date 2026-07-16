@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/common/Logo";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
 import { supabase } from "@/integrations/supabase/client";
 
 const schema = z.object({
@@ -22,20 +23,29 @@ type FormValues = z.infer<typeof schema>;
 export default function AdminLoginPage() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle | null>(null);
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (values: FormValues) => {
+    if (!captchaToken) {
+      toast.error("Please complete the security check");
+      return;
+    }
     setSubmitting(true);
     const { data: signInData, error } = await supabase.auth.signInWithPassword({
       email: values.email,
       password: values.password,
+      options: { captchaToken: captchaToken ?? undefined },
     });
     if (error || !signInData.user) {
       setSubmitting(false);
       toast.error(error?.message ?? "Login failed");
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
       return;
     }
 
@@ -89,6 +99,7 @@ export default function AdminLoginPage() {
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   placeholder="expert@firm.com"
                   className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[hsl(var(--accent))]"
                   {...register("email")}
@@ -103,6 +114,7 @@ export default function AdminLoginPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
                 <PasswordInput
                   id="password"
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[hsl(var(--accent))]"
                   {...register("password")}
@@ -111,9 +123,18 @@ export default function AdminLoginPage() {
               {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
 
+            <div className="flex justify-center">
+              <TurnstileWidget
+                ref={turnstileRef}
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+                onError={() => setCaptchaToken(null)}
+              />
+            </div>
+
             <Button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !captchaToken}
               className="w-full h-11 bg-gradient-gold hover:opacity-95 text-[#142a52] font-semibold shadow-glow-gold"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Login as Admin / SEBI Expert"}
