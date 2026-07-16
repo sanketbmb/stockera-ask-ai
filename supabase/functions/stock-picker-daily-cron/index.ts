@@ -81,6 +81,7 @@ interface DailyCronRequest {
 
 // --- CHUNKED BOOTSTRAP HELPERS ---
 const BOOTSTRAP_CHUNK_SIZE = 100;
+const LIVE_CHUNK_SIZE = 50;
 
 // REPAIR 3: direct SELECT against the _latest view; no RPC dependency.
 async function getBootstrapFreshness(
