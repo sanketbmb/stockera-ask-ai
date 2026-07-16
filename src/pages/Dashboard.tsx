@@ -87,12 +87,14 @@ export default function DashboardPage() {
     if (!user || !profile) return;
     const completed = (profile as unknown as { onboarding_completed?: boolean }).onboarding_completed;
     if (completed) return;
-    seedDemoQueryIfEmpty(user.id).then((seeded) => {
-      if (seeded) {
-        qc.invalidateQueries({ queryKey: ["dashboard-stats", user.id] });
-        qc.invalidateQueries({ queryKey: ["dashboard-recent", user.id] });
-      }
-    });
+    seedDemoQueryIfEmpty(user.id)
+      .then((seeded) => {
+        if (seeded) {
+          qc.invalidateQueries({ queryKey: ["dashboard-stats", user.id] });
+          qc.invalidateQueries({ queryKey: ["dashboard-recent", user.id] });
+        }
+      })
+      .catch((e) => console.warn("[seedDemoQuery] skipped:", (e as Error)?.message));
   }, [user, profile, qc]);
 
   return (
