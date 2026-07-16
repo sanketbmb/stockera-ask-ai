@@ -59,16 +59,12 @@ export function HeroDemoCard() {
     return () => clearTimeout(t);
   }, [phase]);
 
-  // Loop
-  useEffect(() => {
-    if (reduced || phase !== "report") return;
-    const t = setTimeout(() => setCycle((c) => c + 1), 7000);
-    return () => clearTimeout(t);
-  }, [phase, reduced]);
+  // Loop disabled — card renders once then stays in final report state to avoid layout bounce.
+  void cycle;
 
-  // Caret blink
+  // Caret blink (only during typing phase)
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || phase !== "typing") return;
     const id = setInterval(() => setCaret((v) => !v), 500);
     return () => clearInterval(id);
   }, [reduced]);
