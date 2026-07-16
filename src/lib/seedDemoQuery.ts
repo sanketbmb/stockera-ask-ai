@@ -19,28 +19,33 @@ const DEMO_REPORT = {
 };
 
 export async function seedDemoQueryIfEmpty(userId: string): Promise<boolean> {
-  const { count } = await supabase
-    .from("queries")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
-  if ((count ?? 0) > 0) return false;
+  try {
+    const { count } = await supabase
+      .from("queries")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if ((count ?? 0) > 0) return false;
 
-  const { error } = await supabase.from("queries").insert({
-    user_id: userId,
-    stock_name: "RELIANCE",
-    stock_symbol: "RELIANCE",
-    query_type: "buy_sell",
-    query_text:
-      "👋 Sample demo query — Bought RELIANCE at ₹1,250, now at ₹1,280. Should I hold, add or book profit?",
-    status: "ai_answered",
-    ai_report: DEMO_REPORT as never,
-    buy_price: 1250,
-    current_price: 1280,
-    is_public_library: true,
-  });
-  if (error) {
-    console.warn("seedDemoQuery failed:", error.message);
+    const { error } = await supabase.from("queries").insert({
+      user_id: userId,
+      stock_name: "RELIANCE",
+      stock_symbol: "RELIANCE",
+      query_type: "buy_sell",
+      query_text:
+        "👋 Sample demo query — Bought RELIANCE at ₹1,250, now at ₹1,280. Should I hold, add or book profit?",
+      status: "ai_answered",
+      ai_report: DEMO_REPORT as never,
+      buy_price: 1250,
+      current_price: 1280,
+      is_public_library: true,
+    });
+    if (error) {
+      console.warn("[seedDemoQuery] skipped:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[seedDemoQuery] skipped:", (e as Error)?.message);
     return false;
   }
-  return true;
 }
