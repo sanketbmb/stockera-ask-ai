@@ -141,6 +141,7 @@ export default function LoginPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <PasswordInput
                     id="password"
+                    autoComplete="current-password"
                     placeholder="••••••••"
                     className="pl-9"
                     {...register("password")}
