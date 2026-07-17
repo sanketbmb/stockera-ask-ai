@@ -66,7 +66,8 @@ export default function LoginPage() {
     }
     markHasAccount();
     toast.success("Welcome back");
-    navigate({ to: nextPath } as never);
+    const intended = consumeIntendedDestination();
+    navigate({ to: intended ?? nextPath } as never);
   };
 
   const handleForgot = async () => {
