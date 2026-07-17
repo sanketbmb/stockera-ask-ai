@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { markHasAccount } from "@/lib/auth/redirectHelper";
 
 export type AppRole = "user" | "analyst" | "admin";
 
@@ -74,10 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isRefreshError = (msg: string | undefined) =>
       !!msg && /refresh.?token/i.test(msg);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
+        if (event === "SIGNED_IN") markHasAccount();
         setTimeout(() => {
           fetchProfileAndRoles(newSession.user.id);
         }, 0);
