@@ -112,6 +112,7 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
           </div>
         </header>
         <main className="flex-1 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 max-w-6xl w-full">
+          <EmailVerifyBanner />
           {title && <h1 className="font-display text-3xl md:text-4xl mb-6">{title}</h1>}
           {children}
         </main>
