@@ -147,7 +147,7 @@ function PublicReportPage() {
                   <div className="mt-5 flex flex-wrap gap-3">
                     <Button asChild size="lg" className="bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-card-hover">
                       <Link to="/signup" search={search.ref ? { ref: search.ref } as never : undefined}>
-                        Sign up free · ₹100 credit <ArrowRight className="h-4 w-4 ml-1.5" />
+                        Sign up free · ₹250 credit <ArrowRight className="h-4 w-4 ml-1.5" />
                       </Link>
                     </Button>
                     <Button asChild size="lg" variant="outline">
