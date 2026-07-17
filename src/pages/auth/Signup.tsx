@@ -177,7 +177,7 @@ export default function SignupPage() {
                 disabled={submitting || !captchaToken}
                 className="w-full h-11 bg-gradient-brand hover:opacity-95 text-white shadow-glow-teal"
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account & Get ₹100 Free"}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account & Get ₹250 Free"}
               </Button>
             </form>
 
