@@ -2767,6 +2767,27 @@ export type Database = {
           },
         ]
       }
+      welcome_emails_sent: {
+        Row: {
+          id: string
+          resend_message_id: string | null
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          resend_message_id?: string | null
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          resend_message_id?: string | null
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       analyst_complaints_summary: {
