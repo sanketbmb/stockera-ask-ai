@@ -106,7 +106,8 @@ export default function SignupPage() {
     setSubmitting(false);
     markHasAccount();
     toast.success("Welcome to Stockera! ₹250 credits added 🎉", { duration: 4000 });
-    navigate({ to: "/dashboard" } as never);
+    const intended = consumeIntendedDestination();
+    navigate({ to: intended ?? "/dashboard" } as never);
   };
 
   const handleGoogle = async () => {
