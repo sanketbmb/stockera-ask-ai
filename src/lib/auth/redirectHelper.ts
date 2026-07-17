@@ -28,8 +28,11 @@ function isSafeInternalPath(path: unknown): path is string {
   );
 }
 
+const EXCLUDED_INTENT_PREFIXES = ["/login", "/signup", "/auth/callback", "/reset-password", "/admin/login", "/logout"];
+
 export function saveIntendedDestination(path: string): void {
   if (!isSafeInternalPath(path)) return;
+  if (EXCLUDED_INTENT_PREFIXES.some((p) => path === p || path.startsWith(p + "?") || path.startsWith(p + "/"))) return;
   try { sessionStorage.setItem(INTENDED_DEST_KEY, path); } catch { /* noop */ }
 }
 
