@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { startGoogleOAuth, sanitizeNext } from "@/lib/google-auth";
 import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
-import { markHasAccount } from "@/lib/auth/redirectHelper";
+import { markHasAccount, consumeIntendedDestination } from "@/lib/auth/redirectHelper";
 
 const schema = z
   .object({
