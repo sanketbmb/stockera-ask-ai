@@ -125,7 +125,7 @@ export default function SignupPage() {
           <div className="bg-card rounded-2xl shadow-card-lg border border-border p-8">
             <h1 className="font-display text-3xl text-foreground">Create your account</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Free to join. Get ₹100 credits — enough for 2 AI reports.
+              Free to join. Get ₹250 credits — enough for ~5 AI reports.
             </p>
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
