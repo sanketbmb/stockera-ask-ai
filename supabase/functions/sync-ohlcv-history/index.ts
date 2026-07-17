@@ -15,6 +15,34 @@ const DHAN_URL = 'https://api.dhan.co/v2/charts/historical';
 const TD_URL = 'https://api.twelvedata.com/time_series';
 const MIN_USABLE_ROWS = 100;
 
+// Returns the latest completed IST trading day (YYYY-MM-DD) per
+// stock_picker_trading_calendar. Falls back to today-in-IST on any
+// error or empty result — never throws, never blocks the job.
+async function latestCompletedTradingDayIst(
+  supabase: ReturnType<typeof createClient>,
+): Promise<string> {
+  const nowIst = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000);
+  const y = nowIst.getUTCFullYear();
+  const m = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(nowIst.getUTCDate()).padStart(2, '0');
+  const todayIst = `${y}-${m}-${d}`;
+  try {
+    const { data, error } = await supabase
+      .from('stock_picker_trading_calendar')
+      .select('calendar_date')
+      .eq('is_trading_day', true)
+      .lte('calendar_date', todayIst)
+      .order('calendar_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.calendar_date) return todayIst;
+    return data.calendar_date as string;
+  } catch {
+    return todayIst;
+  }
+}
+
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -500,12 +528,13 @@ Deno.serve(async (req) => {
       // `force_refresh: true` in the request body bypasses the coverage set entirely.
       const forceRefresh = jbool((body as Record<string, unknown>)?.force_refresh);
       const freshnessDays = Math.max(
-        1,
-        Math.floor(jnum(cfg.get('ohlcv_coverage_freshness_days'), 3)),
+        0,
+        Math.floor(jnum(cfg.get('ohlcv_coverage_freshness_days'), 1)),
       );
-      const freshCutoff = new Date();
-      freshCutoff.setUTCDate(freshCutoff.getUTCDate() - freshnessDays);
-      const freshCutoffIso = isoDate(freshCutoff);
+      const latestTradingDayIso = await latestCompletedTradingDayIst(supabase);
+      const cutoffDate = new Date(latestTradingDayIso + 'T00:00:00Z');
+      cutoffDate.setUTCDate(cutoffDate.getUTCDate() - freshnessDays);
+      const freshCutoffIso = isoDate(cutoffDate);
 
       const coveredSet = new Set<string>();
       const coveredByCountOnly = new Set<string>(); // old-rule shadow, telemetry only
@@ -583,8 +612,8 @@ Deno.serve(async (req) => {
       const nextIdx = startIdx + attempted;
       const cumulative = skippedAlready + newlyCovered;
       const exhausted = nextIdx >= pending.length;
-      const stopReached = cumulative >= 500 || exhausted;
-      const stopReason = stopReached ? (cumulative >= 500 ? 'coverage_500' : 'target_exhausted') : null;
+      const stopReached = exhausted;
+      const stopReason = stopReached ? 'target_exhausted' : null;
 
       await supabase.from('stock_picker_runtime_config').upsert({
         config_key: 'ohlcv_n500_cursor',
@@ -598,10 +627,12 @@ Deno.serve(async (req) => {
           cumulative_symbols_20plus: cumulative,
           stop_reached: stopReached,
           stop_reason: stopReason,
-          coverage_rule: 'rows_ge_20_and_fresh_within_days',
+          coverage_rule: 'rows_ge_20_and_fresh_within_days_ist',
           coverage_freshness_days: freshnessDays,
           force_refresh: forceRefresh,
           stale_symbols_now_pending: staleNowPending.length,
+          latest_trading_day_ist: latestTradingDayIso,
+          fresh_cutoff_iso: freshCutoffIso,
         },
         description: 'Phase 2S.3-FIX-OHLCV-EXPANSION Nifty500 backfill cursor',
         updated_at: new Date().toISOString(),
@@ -624,7 +655,7 @@ Deno.serve(async (req) => {
         stop_reached: stopReached,
         stop_reason: stopReason,
         elapsed_ms: Date.now() - t0n,
-        coverage_rule: 'rows_ge_20_and_fresh_within_days',
+        coverage_rule: 'rows_ge_20_and_fresh_within_days_ist',
         coverage_freshness_days: freshnessDays,
         force_refresh: forceRefresh,
         symbols_covered_by_count_only: coveredByCountOnly.size,
