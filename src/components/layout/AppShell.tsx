@@ -11,6 +11,7 @@ import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { cn } from "@/lib/utils";
 import { useWalletBalance, useWalletRealtime } from "@/lib/points";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmailVerifyBanner } from "@/components/common/EmailVerifyBanner";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", Icon: Home },
