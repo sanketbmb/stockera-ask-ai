@@ -14,6 +14,7 @@ import type {
   LibraryStock,
   SearchResponse,
 } from "@/types/library-search";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 type CuratedHit = {
   id: string;
@@ -229,7 +230,7 @@ export function MasterSearch({
     onClose?.();
     if (!user) {
       navigate({
-        to: "/login",
+        to: getAuthRedirectPath() as never,
         search: { redirect: `/report/${it.related_query_id}` } as never,
       });
       return;
@@ -244,7 +245,7 @@ export function MasterSearch({
     onClose?.();
     if (!user) {
       navigate({
-        to: "/login",
+        to: getAuthRedirectPath() as never,
         search: { redirect: `/v/${it.source_id}` } as never,
       });
     }

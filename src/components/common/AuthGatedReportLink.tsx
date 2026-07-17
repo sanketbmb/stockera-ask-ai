@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import type { ReactNode, MouseEvent } from "react";
 
 const PUBLIC_DEMO_REPORT_IDS = new Set<string>([
@@ -32,7 +33,7 @@ export function AuthGatedReportLink({
   const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (!user && !PUBLIC_DEMO_REPORT_IDS.has(queryId)) {
       e.preventDefault();
-      navigate({ to: "/login", search: { redirect: `/report/${queryId}` } as never });
+      navigate({ to: getAuthRedirectPath() as never, search: { redirect: `/report/${queryId}` } as never });
     }
   };
 

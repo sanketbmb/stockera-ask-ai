@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import { Check, Sparkles, Crown } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/card";
@@ -340,7 +341,7 @@ export default function PricingPage() {
                           </Button>
                         ) : (
                           <Button asChild className="w-full">
-                            <Link to="/login" onClick={() => handlePlanSelect(plan, true)}>
+                            <Link to={getAuthRedirectPath() as never} onClick={() => handlePlanSelect(plan, true)}>
                               Sign up free
                             </Link>
                           </Button>

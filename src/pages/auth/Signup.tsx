@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { startGoogleOAuth, sanitizeNext } from "@/lib/google-auth";
 import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/TurnstileWidget";
+import { markHasAccount } from "@/lib/auth/redirectHelper";
 
 const schema = z
   .object({
@@ -103,6 +104,7 @@ export default function SignupPage() {
       }
     }
     setSubmitting(false);
+    markHasAccount();
     toast.success("Welcome to Stockera! ₹250 credits added 🎉", { duration: 4000 });
     navigate({ to: "/dashboard" } as never);
   };

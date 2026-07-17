@@ -28,6 +28,7 @@ import { ProfitReviewAddendum } from "@/components/report/ProfitReviewAddendum";
 import { LossReviewAddendum } from "@/components/report/LossReviewAddendum";
 import { AveragingDisciplineAddendum } from "@/components/report/AveragingDisciplineAddendum";
 import { AnalystCtaCard } from "@/components/report/AnalystCtaCard";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import { MfPortfolioRejectionPanel } from "@/components/report/MfPortfolioRejectionPanel";
 import { RoutedPendingPanel } from "@/components/report/RoutedPendingPanel";
 import { SectorViewReport } from "@/components/report/SectorViewReport";
@@ -587,7 +588,7 @@ function AnonReportCta() {
           Sign in to post your own query and get an AI-backed, SEBI-safe report.
         </p>
         <Button asChild className="mt-4 bg-primary text-primary-foreground">
-          <Link to="/login">Sign in to post your query</Link>
+          <Link to={getAuthRedirectPath() as never}>Sign in to post your query</Link>
         </Button>
       </div>
     </section>
@@ -778,7 +779,7 @@ function ReportContent() {
 
   if (authLoading) return <LoadingScreen />;
   if (!user && !isPublicLibraryRow) {
-    return <Navigate to="/login" search={{ redirect: `/report/${queryId}` } as never} />;
+    return <Navigate to={getAuthRedirectPath() as never} search={{ redirect: `/report/${queryId}` } as never} replace />;
   }
 
   // SEO: set robots meta dynamically based on public-library status.

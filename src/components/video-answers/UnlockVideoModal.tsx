@@ -11,6 +11,7 @@
 // This modal is the ONLY UI that invokes the unlock mutation.
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import {
   Dialog,
   DialogContent,
@@ -82,7 +83,7 @@ export function UnlockVideoModal({
       if (res.status === "unauthenticated") {
         onOpenChange(false);
         navigate({
-          to: "/login",
+          to: getAuthRedirectPath() as never,
           search: { redirect: `/v/${answerId}` } as never,
         });
         return;
@@ -94,7 +95,7 @@ export function UnlockVideoModal({
       if (/unauthorized/i.test(msg)) {
         onOpenChange(false);
         navigate({
-          to: "/login",
+          to: getAuthRedirectPath() as never,
           search: { redirect: `/v/${answerId}` } as never,
         });
         return;

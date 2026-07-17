@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import { Logo } from "@/components/common/Logo";
 
 function FullPageLoader() {
@@ -17,7 +18,7 @@ function FullPageLoader() {
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <FullPageLoader />;
-  if (!user) return <Navigate to="/login" />;
+  if (!user) return <Navigate to={getAuthRedirectPath() as never} replace />;
   return <>{children}</>;
 }
 

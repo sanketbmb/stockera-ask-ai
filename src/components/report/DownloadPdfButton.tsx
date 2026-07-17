@@ -18,6 +18,7 @@ import {
   generateEducationalPdf,
 } from "@/lib/pdf.functions";
 import type { QueryType } from "@/types/stock-analysis";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 type Props =
   // Direct /analysis live stock (no queryId yet) — slower path.
@@ -42,7 +43,7 @@ export function DownloadPdfButton(props: Props) {
       <Button
         size="sm"
         variant="outline"
-        onClick={() => navigate({ to: "/login" })}
+        onClick={() => navigate({ to: getAuthRedirectPath() as never })}
         className="gap-1.5"
       >
         <LogIn className="h-3.5 w-3.5" />
@@ -56,7 +57,7 @@ export function DownloadPdfButton(props: Props) {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
       toast.error("Your session expired. Please sign in again.");
-      navigate({ to: "/login" });
+      navigate({ to: getAuthRedirectPath() as never });
       return;
     }
     setBusy(true);

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { StockOverview } from "./types";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 interface Props {
   data: StockOverview;
@@ -169,7 +170,7 @@ export function AiReportsTab({ data, loggedIn }: Props) {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="rounded-full">
-                  <Link to="/login" search={{ redirect: `/stock/${data.symbol}` } as never}>Log in</Link>
+                  <Link to={getAuthRedirectPath() as never} search={{ redirect: `/stock/${data.symbol}` } as never}>Log in</Link>
                 </Button>
               </div>
             </Card>

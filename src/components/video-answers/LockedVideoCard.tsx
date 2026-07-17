@@ -13,6 +13,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 import { VideoPosterThumb } from "./VideoPosterThumb";
 import { InlinePriceChip } from "./InlinePriceChip";
 import { UnlockVideoModal } from "./UnlockVideoModal";
@@ -74,7 +75,7 @@ export function LockedVideoCard({ item, variant = "card", onUnlockClick }: Props
 
   const onAnonClick = () => {
     navigate({
-      to: "/login",
+      to: getAuthRedirectPath() as never,
       search: { redirect: `/v/${item.answerId}` } as never,
     });
   };

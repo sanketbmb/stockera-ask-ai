@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 interface Props {
   open: boolean;
@@ -92,7 +93,7 @@ export function BookSessionModal({ open, onOpenChange, analystId, analystName, d
   const handleConfirm = async () => {
     if (!user) {
       toast.error("Please sign in to book a session");
-      navigate({ to: "/login" });
+      navigate({ to: getAuthRedirectPath() as never });
       return;
     }
     if (!tier || slotIdx === null) return;
