@@ -17,6 +17,7 @@ import { NotificationBell } from "@/components/common/NotificationBell";
 import { MasterSearchTrigger } from "@/components/library/MasterSearchTrigger";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 const navLinks = [
   { label: "Home", href: "/" },
@@ -84,7 +85,7 @@ export function Navbar() {
             </>
           ) : (
             <>
-              <Button asChild variant="ghost" size="sm"><Link to="/login">Login</Link></Button>
+              <Button asChild variant="ghost" size="sm"><Link to={getAuthRedirectPath() as never}>Login</Link></Button>
               <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90"><Link to="/signup">Get Started Free</Link></Button>
             </>
           )}
@@ -111,7 +112,7 @@ export function Navbar() {
                   </>
                 ) : (
                   <>
-                    <Button asChild variant="outline"><Link to="/login">Login</Link></Button>
+                    <Button asChild variant="outline"><Link to={getAuthRedirectPath() as never}>Login</Link></Button>
                     <Button asChild><Link to="/signup">Get Started Free</Link></Button>
                   </>
                 )}

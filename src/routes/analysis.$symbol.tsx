@@ -16,6 +16,7 @@ import { generateAnalysisPdf } from "@/lib/pdf.functions";
 import { useAuth } from "@/contexts/AuthContext";
 import { UnsupportedSymbolPanel } from "@/components/report/UnsupportedSymbolPanel";
 import { isSymbolAmbiguousError, synthesizeAmbiguousPayload } from "@/lib/symbol-ambiguous-normalize";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 const searchSchema = z.object({
   horizon: z.enum(["intraday", "medium-term", "long-term"]).optional(),
@@ -151,7 +152,7 @@ function DownloadPdfButton({
         variant="outline"
         onClick={() => {
           toast.info("Sign in to download the PDF report");
-          navigate({ to: "/login" });
+          navigate({ to: getAuthRedirectPath() as never });
         }}
         className="gap-1.5"
       >
@@ -167,7 +168,7 @@ function DownloadPdfButton({
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
       toast.error("Your session expired. Please sign in again.");
-      navigate({ to: "/login" });
+      navigate({ to: getAuthRedirectPath() as never });
       return;
     }
     setBusy(true);

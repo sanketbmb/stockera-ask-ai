@@ -11,6 +11,7 @@ import {
   removeFromPortfolio,
 } from "@/lib/portfolio.functions";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 function parsePrice(raw: string | null | undefined): number | null {
   if (!raw) return null;
@@ -100,7 +101,7 @@ export function ReportCtaStrip({
   const handleWatchlistClick = () => {
     if (!user) {
       toast.info("Sign in to save to your Watchlist");
-      navigate({ to: "/login" });
+      navigate({ to: getAuthRedirectPath() as never });
       return;
     }
     if (inWatchlist) removeMut.mutate();

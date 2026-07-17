@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { VERDICT_TONE_FILLED } from "@/lib/verdictTone";
 import { StockLogo } from "@/components/common/StockLogo";
 import { listRecentAnswered } from "@/lib/recent-answered.functions";
+import { getAuthRedirectPath } from "@/lib/auth/redirectHelper";
 
 
 type RecentRow = {
@@ -137,7 +138,7 @@ export function MasterSearchRecentTab({ onClose }: Props) {
                 onClose?.();
                 if (!user) {
                   navigate({
-                    to: "/login",
+                    to: getAuthRedirectPath() as never,
                     search: { redirect: `/report/${r.id}` } as never,
                   });
                   return;
