@@ -139,7 +139,7 @@ function PublicReportPage() {
                   </p>
 
                   <div className="mt-5 grid sm:grid-cols-3 gap-2 text-[11px]">
-                    <Perk icon={<Sparkles className="h-3.5 w-3.5" />} text="₹100 wallet credit on signup" />
+                    <Perk icon={<Sparkles className="h-3.5 w-3.5" />} text="₹250 wallet credit on signup" />
                     <Perk icon={<Star className="h-3.5 w-3.5" />} text="2 free AI reports" />
                     <Perk icon={<TrendingUp className="h-3.5 w-3.5" />} text="Refer a friend → ₹50 each" />
                   </div>
