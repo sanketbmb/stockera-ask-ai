@@ -214,7 +214,7 @@ export default function LoginPage() {
               </Link>
             </p>
             <p className="mt-1 text-xs text-center text-muted-foreground">
-              Get <span className="font-semibold text-[hsl(var(--gold-foreground))]">₹100 free credits</span> on signup
+              Get <span className="font-semibold text-[hsl(var(--gold-foreground))]">₹250 free credits</span> on signup
             </p>
           </div>
 

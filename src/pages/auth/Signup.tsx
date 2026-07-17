@@ -66,7 +66,7 @@ export default function SignupPage() {
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
       options: {
@@ -79,15 +79,32 @@ export default function SignupPage() {
         },
       },
     });
-    setSubmitting(false);
     if (error) {
+      setSubmitting(false);
       toast.error(error.message);
       setCaptchaToken(null);
       turnstileRef.current?.reset();
       return;
     }
-    toast.success("Welcome to Stockera! ₹100 credits added.", { duration: 4000 });
-    navigate({ to: nextPath } as never);
+
+    // If "Confirm Email" is OFF in Supabase, signUp already returns a session.
+    // If it's ON, session is null — try an explicit sign-in so the user lands
+    // straight on /dashboard. Confirmation email still sends in the background.
+    if (!data.session) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+      if (signInError) {
+        setSubmitting(false);
+        toast.error("Account created. Please log in to continue.");
+        navigate({ to: "/login" } as never);
+        return;
+      }
+    }
+    setSubmitting(false);
+    toast.success("Welcome to Stockera! ₹250 credits added 🎉", { duration: 4000 });
+    navigate({ to: "/dashboard" } as never);
   };
 
   const handleGoogle = async () => {
@@ -108,7 +125,7 @@ export default function SignupPage() {
           <div className="bg-card rounded-2xl shadow-card-lg border border-border p-8">
             <h1 className="font-display text-3xl text-foreground">Create your account</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Free to join. Get ₹100 credits — enough for 2 AI reports.
+              Free to join. Get ₹250 credits — enough for ~5 AI reports.
             </p>
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
@@ -160,7 +177,7 @@ export default function SignupPage() {
                 disabled={submitting || !captchaToken}
                 className="w-full h-11 bg-gradient-brand hover:opacity-95 text-white shadow-glow-teal"
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account & Get ₹100 Free"}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account & Get ₹250 Free"}
               </Button>
             </form>
 

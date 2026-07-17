@@ -139,7 +139,7 @@ function PublicReportPage() {
                   </p>
 
                   <div className="mt-5 grid sm:grid-cols-3 gap-2 text-[11px]">
-                    <Perk icon={<Sparkles className="h-3.5 w-3.5" />} text="₹100 wallet credit on signup" />
+                    <Perk icon={<Sparkles className="h-3.5 w-3.5" />} text="₹250 wallet credit on signup" />
                     <Perk icon={<Star className="h-3.5 w-3.5" />} text="2 free AI reports" />
                     <Perk icon={<TrendingUp className="h-3.5 w-3.5" />} text="Refer a friend → ₹50 each" />
                   </div>
@@ -147,7 +147,7 @@ function PublicReportPage() {
                   <div className="mt-5 flex flex-wrap gap-3">
                     <Button asChild size="lg" className="bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-card-hover">
                       <Link to="/signup" search={search.ref ? { ref: search.ref } as never : undefined}>
-                        Sign up free · ₹100 credit <ArrowRight className="h-4 w-4 ml-1.5" />
+                        Sign up free · ₹250 credit <ArrowRight className="h-4 w-4 ml-1.5" />
                       </Link>
                     </Button>
                     <Button asChild size="lg" variant="outline">
