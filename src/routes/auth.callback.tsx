@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeNext } from "@/lib/google-auth";
+import { markHasAccount, consumeIntendedDestination } from "@/lib/auth/redirectHelper";
 import { Logo } from "@/components/common/Logo";
 
 export const Route = createFileRoute("/auth/callback")({
