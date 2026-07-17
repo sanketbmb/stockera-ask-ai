@@ -17,7 +17,7 @@ import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/Tur
 import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { markHasAccount } from "@/lib/auth/redirectHelper";
+import { markHasAccount, consumeIntendedDestination } from "@/lib/auth/redirectHelper";
 
 const schema = z.object({
   email: z.string().trim().email("Enter a valid email"),
@@ -66,7 +66,8 @@ export default function LoginPage() {
     }
     markHasAccount();
     toast.success("Welcome back");
-    navigate({ to: nextPath } as never);
+    const intended = consumeIntendedDestination();
+    navigate({ to: intended ?? nextPath } as never);
   };
 
   const handleForgot = async () => {
