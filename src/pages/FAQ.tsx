@@ -15,7 +15,7 @@ export const FAQ_SECTIONS = [
       },
       {
         q: "Is it really free to start?",
-        a: "Yes. New users receive ₹100 wallet credit on signup which covers up to 2 AI reports. No credit card is required.",
+        a: "Yes. New users receive ₹250 wallet credit on signup which covers up to 5 AI reports. No credit card is required.",
       },
       {
         q: "Do I need to share my Demat account details?",
