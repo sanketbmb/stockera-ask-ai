@@ -34,11 +34,13 @@ function AuthCallback() {
     // Wait for the Supabase client to hydrate the session from the OAuth
     // redirect (URL hash/PKCE code). detectSessionInUrl runs on client init.
     const start = Date.now();
+    const resolveDest = () => consumeIntendedDestination() ?? dest;
     const check = async () => {
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       if (data.session) {
-        navigate({ to: dest, replace: true } as never);
+        markHasAccount();
+        navigate({ to: resolveDest(), replace: true } as never);
         return;
       }
       if (Date.now() - start > 8000) {
@@ -53,7 +55,8 @@ function AuthCallback() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
-        navigate({ to: dest, replace: true } as never);
+        markHasAccount();
+        navigate({ to: resolveDest(), replace: true } as never);
       }
     });
 
