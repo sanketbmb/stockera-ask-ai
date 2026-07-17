@@ -66,7 +66,7 @@ export default function SignupPage() {
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
       options: {
@@ -79,15 +79,32 @@ export default function SignupPage() {
         },
       },
     });
-    setSubmitting(false);
     if (error) {
+      setSubmitting(false);
       toast.error(error.message);
       setCaptchaToken(null);
       turnstileRef.current?.reset();
       return;
     }
-    toast.success("Welcome to Stockera! ₹100 credits added.", { duration: 4000 });
-    navigate({ to: nextPath } as never);
+
+    // If "Confirm Email" is OFF in Supabase, signUp already returns a session.
+    // If it's ON, session is null — try an explicit sign-in so the user lands
+    // straight on /dashboard. Confirmation email still sends in the background.
+    if (!data.session) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+      if (signInError) {
+        setSubmitting(false);
+        toast.error("Account created. Please log in to continue.");
+        navigate({ to: "/login" } as never);
+        return;
+      }
+    }
+    setSubmitting(false);
+    toast.success("Welcome to Stockera! ₹250 credits added 🎉", { duration: 4000 });
+    navigate({ to: "/dashboard" } as never);
   };
 
   const handleGoogle = async () => {
