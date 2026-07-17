@@ -16,9 +16,9 @@ export function PromoToast() {
 
     fired.current = true;
     const t = window.setTimeout(() => {
-      toast("🎁 Get ₹100 Free", {
+      toast("🎁 Get ₹250 Free", {
         description:
-          "Sign up and get your first 2 AI reports FREE — no credit card needed.",
+          "Sign up and get ₹250 wallet credits — enough for ~5 AI reports. No credit card needed.",
         duration: 12000,
         action: {
           label: "Get Started",
