@@ -10,6 +10,12 @@ export function hasAccountLocally(): boolean {
 }
 
 export function getAuthRedirectPath(): "/login" | "/signup" {
+  if (typeof window !== "undefined") {
+    try {
+      const path = window.location.pathname + window.location.search;
+      saveIntendedDestination(path);
+    } catch { /* noop */ }
+  }
   return hasAccountLocally() ? "/login" : "/signup";
 }
 
