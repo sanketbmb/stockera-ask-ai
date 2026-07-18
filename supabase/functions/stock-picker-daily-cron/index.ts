@@ -790,6 +790,15 @@ serve(async (req: Request) => {
   const phaseMs: Record<string, number> = {};
   const markPhase = (name: string, start: number) => { phaseMs[name] = Date.now() - start; };
 
+  // OBSERVABILITY.RUN.TRACE — every run leaves a trace even if the HTTP
+  // connection drops. Insert 'running' immediately; UPDATE terminally later.
+  const runLogId = await insertRunningRow(supabase, {
+    batch_id: batchId,
+    mode: body.mode,
+    started_at: startedAt,
+    metrics: { mode: body.mode, invoked_by: body.invoked_by },
+  });
+
   try {
     // ---- Phase 1: config + kill-switch + calendar gates ----
     const tConfig = Date.now();
