@@ -506,10 +506,34 @@ async function fetchLiquidityForUniverse(args: {
   toDateIso: string;
   dhanFetchUrl: string;
   serviceKey: string;
-}): Promise<LiquidityFetchOutcome[]> {
+  // OBSERVABILITY.FETCH.BUDGET — optional wall-clock deadline (epoch ms).
+  // When the deadline trips mid fan-out, we stop launching new work and
+  // fill remaining slots with a synthetic 'error' outcome tagged
+  // 'fetch_budget_exceeded'. Downstream then proceeds with whatever
+  // liquidity cache data is already available instead of hanging until
+  // the gateway kills the connection.
+  deadlineMs?: number;
+}): Promise<{ outcomes: LiquidityFetchOutcome[]; skippedByBudget: number; budgetTripped: boolean }> {
   const INTER_CHUNK_DELAY_MS = 200;
   const out: LiquidityFetchOutcome[] = new Array(args.members.length);
+  let skippedByBudget = 0;
+  let budgetTripped = false;
   for (let i = 0; i < args.members.length; i += LIQUIDITY_CONCURRENCY) {
+    if (args.deadlineMs !== undefined && Date.now() >= args.deadlineMs) {
+      budgetTripped = true;
+      for (let k = i; k < args.members.length; k++) {
+        const m = args.members[k];
+        out[k] = {
+          symbol: m.symbol,
+          exchange: m.exchange,
+          status: 'error',
+          rows: [],
+          error: 'fetch_budget_exceeded',
+        };
+        skippedByBudget++;
+      }
+      break;
+    }
     const slice = args.members.slice(i, i + LIQUIDITY_CONCURRENCY);
     const results = await Promise.all(
       slice.map((m) =>
@@ -528,7 +552,7 @@ async function fetchLiquidityForUniverse(args: {
     for (let j = 0; j < results.length; j++) out[i + j] = results[j];
     if (i + LIQUIDITY_CONCURRENCY < args.members.length) await sleep(INTER_CHUNK_DELAY_MS);
   }
-  return out;
+  return { outcomes: out, skippedByBudget, budgetTripped };
 }
 
 async function appendLiquidity(
