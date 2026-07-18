@@ -682,6 +682,122 @@ async function updateRunRow(
 }
 
 // ---------------------------------------------------------------------------
+// OBSERVABILITY.RUN.STATE — durable per-batch progress row that survives a
+// dropped self-continuation. The watchdog cron reads this table and resumes
+// stalled chains. All ops are best-effort: a run_state failure never breaks
+// the pipeline (the run still executes; observability just degrades).
+// ---------------------------------------------------------------------------
+interface RunStateResumeInfo {
+  batch_id: string;
+  attempt_count: number;
+  chunks_completed: number;
+  resume_from: string | null;
+  isNew: boolean;
+}
+
+async function ensureRunState(
+  supabase: SupabaseClient,
+  args: {
+    body: DailyCronRequest;
+    runDateIst: string;
+    startedAt: string;
+  }
+): Promise<RunStateResumeInfo> {
+  // Case A: caller (watchdog / self-continuation) supplied a batch_id.
+  if (args.body.batch_id) {
+    const { data, error } = await supabase
+      .from('stock_picker_run_state')
+      .select('batch_id, attempt_count, chunks_completed, resume_from')
+      .eq('batch_id', args.body.batch_id)
+      .maybeSingle();
+    if (!error && data) {
+      // Mark this attempt as in-flight; watchdog will only re-fire once
+      // next_attempt_at elapses again.
+      await supabase
+        .from('stock_picker_run_state')
+        .update({
+          status: 'in_progress',
+          attempt_count: (data.attempt_count as number) + 1,
+          last_heartbeat_at: args.startedAt,
+          // Push next_attempt_at out so watchdog does not double-fire while
+          // this handler is still running. Non-final chunks reset this again
+          // after they return.
+          next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+        })
+        .eq('batch_id', args.body.batch_id);
+      return {
+        batch_id: args.body.batch_id,
+        attempt_count: (data.attempt_count as number) + 1,
+        chunks_completed: data.chunks_completed as number,
+        resume_from: (data.resume_from as string | null) ?? null,
+        isNew: false,
+      };
+    }
+    // No existing row (schema missing, dedup race, or watchdog handed a stale
+    // batch_id). Fall through to Case B and create a fresh row.
+  }
+  // Case B: fresh run — create a new batch_id + run_state row.
+  const newBatchId = crypto.randomUUID();
+  const { error } = await supabase
+    .from('stock_picker_run_state')
+    .insert({
+      batch_id: newBatchId,
+      mode: args.body.mode,
+      invoked_by: args.body.invoked_by,
+      run_date_ist: args.runDateIst,
+      risk_profile: args.body.risk_profile ?? null,
+      seed_version: args.body.seed_version ?? null,
+      status: 'in_progress',
+      attempt_count: 1,
+      last_heartbeat_at: args.startedAt,
+      next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+    });
+  if (error) {
+    console.error(`cron: run_state insert failed: ${error.message}`);
+  }
+  return {
+    batch_id: newBatchId,
+    attempt_count: 1,
+    chunks_completed: 0,
+    resume_from: null,
+    isNew: true,
+  };
+}
+
+async function markRunState(
+  supabase: SupabaseClient,
+  batchId: string,
+  patch: {
+    status?: string;
+    resume_from?: string | null;
+    chunks_completed?: number;
+    universe_size?: number;
+    last_error?: string | null;
+    next_attempt_at_ms_from_now?: number;
+  }
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    last_heartbeat_at: new Date().toISOString(),
+  };
+  if (patch.status !== undefined) update.status = patch.status;
+  if (patch.resume_from !== undefined) update.resume_from = patch.resume_from;
+  if (patch.chunks_completed !== undefined) update.chunks_completed = patch.chunks_completed;
+  if (patch.universe_size !== undefined) update.universe_size = patch.universe_size;
+  if (patch.last_error !== undefined) update.last_error = patch.last_error;
+  if (patch.next_attempt_at_ms_from_now !== undefined) {
+    update.next_attempt_at = new Date(Date.now() + patch.next_attempt_at_ms_from_now).toISOString();
+  }
+  const { error } = await supabase
+    .from('stock_picker_run_state')
+    .update(update)
+    .eq('batch_id', batchId);
+  if (error) {
+    console.error(`cron: run_state update failed (batch=${batchId}): ${error.message}`);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // cron_run_log helper
 // Depends on Migration 0009 (cron_run_log table). If table is missing,
 // insert errors are logged to console but do NOT crash the cron run.
