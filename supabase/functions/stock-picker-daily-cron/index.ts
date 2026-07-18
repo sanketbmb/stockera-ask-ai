@@ -2173,6 +2173,15 @@ serve(async (req: Request) => {
           ...phaseMs,
         },
       });
+      // OBSERVABILITY.RUN.STATE — mark error; watchdog will retry after 60s
+      // until attempt_count exceeds watchdog_max_attempts.
+      if (resume) {
+        await markRunState(supabase, batchId, {
+          status: 'error',
+          last_error: msg,
+          next_attempt_at_ms_from_now: 60_000,
+        });
+      }
     } catch { /* swallow */ }
     return new Response(JSON.stringify({ ok: false, error: msg ?? 'unknown_error' }), {
       status: 500,
