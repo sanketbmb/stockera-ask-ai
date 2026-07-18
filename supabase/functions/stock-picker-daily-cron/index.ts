@@ -842,12 +842,13 @@ serve(async (req: Request) => {
     if (body.mode === 'live') {
       if (!await isTradingDay(supabase, runDateIst)) {
         const finishedAt = new Date().toISOString();
-        await logCronRun(supabase, {
+        await updateRunRow(supabase, runLogId, {
           batch_id: batchId,
           mode: body.mode,
           status: 'skipped_non_trading_day',
           started_at: startedAt,
           finished_at: finishedAt,
+          metrics: { mode: body.mode, invoked_by: body.invoked_by, reason: 'non_trading_day', run_date_ist: runDateIst },
         });
         return new Response(
           JSON.stringify({ ok: true, batch_id: batchId, status: 'skipped_non_trading_day' }),
