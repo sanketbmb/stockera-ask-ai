@@ -1927,6 +1927,42 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_picker_alerts: {
+        Row: {
+          alert_kind: string
+          batch_id: string | null
+          context: Json
+          created_at: string
+          id: string
+          message: string
+          resolved_at: string | null
+          run_date_ist: string | null
+          severity: string
+        }
+        Insert: {
+          alert_kind: string
+          batch_id?: string | null
+          context?: Json
+          created_at?: string
+          id?: string
+          message: string
+          resolved_at?: string | null
+          run_date_ist?: string | null
+          severity?: string
+        }
+        Update: {
+          alert_kind?: string
+          batch_id?: string | null
+          context?: Json
+          created_at?: string
+          id?: string
+          message?: string
+          resolved_at?: string | null
+          run_date_ist?: string | null
+          severity?: string
+        }
+        Relationships: []
+      }
       stock_picker_backtest_run: {
         Row: {
           avg_return_pct: number | null
@@ -2299,6 +2335,63 @@ export type Database = {
           universe_snapshot_id?: string
           verdict?: string
           was_incumbent?: boolean
+        }
+        Relationships: []
+      }
+      stock_picker_run_state: {
+        Row: {
+          attempt_count: number
+          batch_id: string
+          chunks_completed: number
+          created_at: string
+          invoked_by: string | null
+          last_error: string | null
+          last_heartbeat_at: string
+          mode: string
+          next_attempt_at: string | null
+          resume_from: string | null
+          risk_profile: string | null
+          run_date_ist: string
+          seed_version: string | null
+          status: string
+          universe_size: number | null
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          batch_id: string
+          chunks_completed?: number
+          created_at?: string
+          invoked_by?: string | null
+          last_error?: string | null
+          last_heartbeat_at?: string
+          mode: string
+          next_attempt_at?: string | null
+          resume_from?: string | null
+          risk_profile?: string | null
+          run_date_ist: string
+          seed_version?: string | null
+          status?: string
+          universe_size?: number | null
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          batch_id?: string
+          chunks_completed?: number
+          created_at?: string
+          invoked_by?: string | null
+          last_error?: string | null
+          last_heartbeat_at?: string
+          mode?: string
+          next_attempt_at?: string | null
+          resume_from?: string | null
+          risk_profile?: string | null
+          run_date_ist?: string
+          seed_version?: string | null
+          status?: string
+          universe_size?: number | null
+          updated_at?: string
         }
         Relationships: []
       }
