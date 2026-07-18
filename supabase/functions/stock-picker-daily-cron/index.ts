@@ -866,6 +866,19 @@ serve(async (req: Request) => {
       config.get(CFG.ABORT_INSUF_DATA_PCT) ?? 25,
       CFG.ABORT_INSUF_DATA_PCT
     );
+    // OBSERVABILITY.FETCH.BUDGET — wall-clock cap on the liquidity/LTP fetch
+    // stage. When tripped we stop calling Dhan and proceed using whatever
+    // liquidity cache data is already available (bounded by MIN_OK_ROWS
+    // and freshness lookback in the cache-first block). Rollback: set to a
+    // very large number (e.g. 900000) to effectively disable the gate.
+    let fetchBudgetMs = 90000;
+    const fetchBudgetRaw = config.get('picker_fetch_budget_ms');
+    if (fetchBudgetRaw !== undefined && fetchBudgetRaw !== null) {
+      try {
+        const parsed = jsonbNumber(fetchBudgetRaw, 'picker_fetch_budget_ms');
+        if (Number.isFinite(parsed) && parsed >= 1000) fetchBudgetMs = Math.floor(parsed);
+      } catch { /* keep default */ }
+    }
     markPhase('phase_config_ms', tConfig);
     logDiagnosticPhase(batchId, 'phase_config', 'done', tConfig, { run_date_ist: runDateIst, seed_version: seedVersion });
 
