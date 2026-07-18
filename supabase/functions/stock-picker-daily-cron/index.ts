@@ -607,6 +607,76 @@ async function appendLiquidity(
   }
 }
 
+// OBSERVABILITY.RUN.TRACE — insert a status='running' row at the very start
+// of every run and return its id. The row is UPDATED later (updateRunRow)
+// with terminal status, finished_at, and metrics. finished_at is NOT NULL
+// in the schema, so we seed it to started_at and overwrite on completion.
+// Best-effort: if insertion fails, we return null and terminal logging
+// falls back to legacy insert-only via logCronRun.
+async function insertRunningRow(
+  supabase: SupabaseClient,
+  args: {
+    batch_id: string;
+    mode: string;
+    started_at: string;
+    metrics?: Record<string, unknown>;
+  }
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('cron_run_log')
+    .insert({
+      function_name: 'stock-picker-daily-cron',
+      batch_id: args.batch_id,
+      mode: args.mode,
+      status: 'running',
+      started_at: args.started_at,
+      finished_at: args.started_at,
+      metrics: args.metrics ?? null,
+    })
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error(`cron: cron_run_log running-insert failed: ${error.message}`);
+    return null;
+  }
+  return (data?.id as number | undefined) ?? null;
+}
+
+// UPDATE the running row's terminal fields. Falls back to an INSERT if we
+// never captured a row id (best-effort — the run must always leave a trace).
+async function updateRunRow(
+  supabase: SupabaseClient,
+  id: number | null,
+  args: {
+    batch_id: string;
+    mode: string;
+    status: string;
+    started_at: string;
+    finished_at: string;
+    error?: string;
+    metrics?: Record<string, unknown>;
+  }
+): Promise<void> {
+  if (id === null) {
+    await logCronRun(supabase, args);
+    return;
+  }
+  const { error } = await supabase
+    .from('cron_run_log')
+    .update({
+      status: args.status,
+      finished_at: args.finished_at,
+      error_message: args.error ?? null,
+      metrics: args.metrics ?? null,
+    })
+    .eq('id', id);
+  if (error) {
+    console.error(`cron: cron_run_log update failed (id=${id}): ${error.message}`);
+    // Fallback so the terminal state is not lost.
+    await logCronRun(supabase, args);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // cron_run_log helper
 // Depends on Migration 0009 (cron_run_log table). If table is missing,
