@@ -506,10 +506,34 @@ async function fetchLiquidityForUniverse(args: {
   toDateIso: string;
   dhanFetchUrl: string;
   serviceKey: string;
-}): Promise<LiquidityFetchOutcome[]> {
+  // OBSERVABILITY.FETCH.BUDGET — optional wall-clock deadline (epoch ms).
+  // When the deadline trips mid fan-out, we stop launching new work and
+  // fill remaining slots with a synthetic 'error' outcome tagged
+  // 'fetch_budget_exceeded'. Downstream then proceeds with whatever
+  // liquidity cache data is already available instead of hanging until
+  // the gateway kills the connection.
+  deadlineMs?: number;
+}): Promise<{ outcomes: LiquidityFetchOutcome[]; skippedByBudget: number; budgetTripped: boolean }> {
   const INTER_CHUNK_DELAY_MS = 200;
   const out: LiquidityFetchOutcome[] = new Array(args.members.length);
+  let skippedByBudget = 0;
+  let budgetTripped = false;
   for (let i = 0; i < args.members.length; i += LIQUIDITY_CONCURRENCY) {
+    if (args.deadlineMs !== undefined && Date.now() >= args.deadlineMs) {
+      budgetTripped = true;
+      for (let k = i; k < args.members.length; k++) {
+        const m = args.members[k];
+        out[k] = {
+          symbol: m.symbol,
+          exchange: m.exchange,
+          status: 'error',
+          rows: [],
+          error: 'fetch_budget_exceeded',
+        };
+        skippedByBudget++;
+      }
+      break;
+    }
     const slice = args.members.slice(i, i + LIQUIDITY_CONCURRENCY);
     const results = await Promise.all(
       slice.map((m) =>
@@ -528,7 +552,7 @@ async function fetchLiquidityForUniverse(args: {
     for (let j = 0; j < results.length; j++) out[i + j] = results[j];
     if (i + LIQUIDITY_CONCURRENCY < args.members.length) await sleep(INTER_CHUNK_DELAY_MS);
   }
-  return out;
+  return { outcomes: out, skippedByBudget, budgetTripped };
 }
 
 async function appendLiquidity(
@@ -580,6 +604,76 @@ async function appendLiquidity(
         ignoreDuplicates: true,
       });
     if (error) throw new Error(`cron: liquidity append failed: ${error.message}`);
+  }
+}
+
+// OBSERVABILITY.RUN.TRACE — insert a status='running' row at the very start
+// of every run and return its id. The row is UPDATED later (updateRunRow)
+// with terminal status, finished_at, and metrics. finished_at is NOT NULL
+// in the schema, so we seed it to started_at and overwrite on completion.
+// Best-effort: if insertion fails, we return null and terminal logging
+// falls back to legacy insert-only via logCronRun.
+async function insertRunningRow(
+  supabase: SupabaseClient,
+  args: {
+    batch_id: string;
+    mode: string;
+    started_at: string;
+    metrics?: Record<string, unknown>;
+  }
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('cron_run_log')
+    .insert({
+      function_name: 'stock-picker-daily-cron',
+      batch_id: args.batch_id,
+      mode: args.mode,
+      status: 'running',
+      started_at: args.started_at,
+      finished_at: args.started_at,
+      metrics: args.metrics ?? null,
+    })
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error(`cron: cron_run_log running-insert failed: ${error.message}`);
+    return null;
+  }
+  return (data?.id as number | undefined) ?? null;
+}
+
+// UPDATE the running row's terminal fields. Falls back to an INSERT if we
+// never captured a row id (best-effort — the run must always leave a trace).
+async function updateRunRow(
+  supabase: SupabaseClient,
+  id: number | null,
+  args: {
+    batch_id: string;
+    mode: string;
+    status: string;
+    started_at: string;
+    finished_at: string;
+    error?: string;
+    metrics?: Record<string, unknown>;
+  }
+): Promise<void> {
+  if (id === null) {
+    await logCronRun(supabase, args);
+    return;
+  }
+  const { error } = await supabase
+    .from('cron_run_log')
+    .update({
+      status: args.status,
+      finished_at: args.finished_at,
+      error_message: args.error ?? null,
+      metrics: args.metrics ?? null,
+    })
+    .eq('id', id);
+  if (error) {
+    console.error(`cron: cron_run_log update failed (id=${id}): ${error.message}`);
+    // Fallback so the terminal state is not lost.
+    await logCronRun(supabase, args);
   }
 }
 
@@ -696,6 +790,15 @@ serve(async (req: Request) => {
   const phaseMs: Record<string, number> = {};
   const markPhase = (name: string, start: number) => { phaseMs[name] = Date.now() - start; };
 
+  // OBSERVABILITY.RUN.TRACE — every run leaves a trace even if the HTTP
+  // connection drops. Insert 'running' immediately; UPDATE terminally later.
+  const runLogId = await insertRunningRow(supabase, {
+    batch_id: batchId,
+    mode: body.mode,
+    started_at: startedAt,
+    metrics: { mode: body.mode, invoked_by: body.invoked_by },
+  });
+
   try {
     // ---- Phase 1: config + kill-switch + calendar gates ----
     const tConfig = Date.now();
@@ -705,12 +808,13 @@ serve(async (req: Request) => {
     const cronEnabled = jsonbBool(config.get(CFG.CRON_ENABLED), CFG.CRON_ENABLED);
     if (!cronEnabled && body.mode === 'live') {
       const finishedAt = new Date().toISOString();
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: body.mode,
         status: 'skipped_kill_switch',
         started_at: startedAt,
         finished_at: finishedAt,
+        metrics: { mode: body.mode, invoked_by: body.invoked_by, reason: 'kill_switch' },
       });
       return new Response(
         JSON.stringify({ ok: true, batch_id: batchId, status: 'skipped_kill_switch' }),
@@ -738,12 +842,13 @@ serve(async (req: Request) => {
     if (body.mode === 'live') {
       if (!await isTradingDay(supabase, runDateIst)) {
         const finishedAt = new Date().toISOString();
-        await logCronRun(supabase, {
+        await updateRunRow(supabase, runLogId, {
           batch_id: batchId,
           mode: body.mode,
           status: 'skipped_non_trading_day',
           started_at: startedAt,
           finished_at: finishedAt,
+          metrics: { mode: body.mode, invoked_by: body.invoked_by, reason: 'non_trading_day', run_date_ist: runDateIst },
         });
         return new Response(
           JSON.stringify({ ok: true, batch_id: batchId, status: 'skipped_non_trading_day' }),
@@ -761,6 +866,19 @@ serve(async (req: Request) => {
       config.get(CFG.ABORT_INSUF_DATA_PCT) ?? 25,
       CFG.ABORT_INSUF_DATA_PCT
     );
+    // OBSERVABILITY.FETCH.BUDGET — wall-clock cap on the liquidity/LTP fetch
+    // stage. When tripped we stop calling Dhan and proceed using whatever
+    // liquidity cache data is already available (bounded by MIN_OK_ROWS
+    // and freshness lookback in the cache-first block). Rollback: set to a
+    // very large number (e.g. 900000) to effectively disable the gate.
+    let fetchBudgetMs = 90000;
+    const fetchBudgetRaw = config.get('picker_fetch_budget_ms');
+    if (fetchBudgetRaw !== undefined && fetchBudgetRaw !== null) {
+      try {
+        const parsed = jsonbNumber(fetchBudgetRaw, 'picker_fetch_budget_ms');
+        if (Number.isFinite(parsed) && parsed >= 1000) fetchBudgetMs = Math.floor(parsed);
+      } catch { /* keep default */ }
+    }
     markPhase('phase_config_ms', tConfig);
     logDiagnosticPhase(batchId, 'phase_config', 'done', tConfig, { run_date_ist: runDateIst, seed_version: seedVersion });
 
@@ -1083,14 +1201,20 @@ serve(async (req: Request) => {
       const chunk = sortedUniverse.slice(startIndex, startIndex + BOOTSTRAP_CHUNK_SIZE);
       const isFinalChunk = (startIndex + chunk.length) >= sortedUniverse.length;
 
-      const outcomes = await fetchLiquidityForUniverse({
+      const fetchResBoot = await fetchLiquidityForUniverse({
         members: chunk.map(m => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
         fromDateIso,
         toDateIso,
         dhanFetchUrl,
         serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+        deadlineMs: tLiquidity + fetchBudgetMs,
       });
-      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: outcomes.length });
+      const outcomes = fetchResBoot.outcomes;
+      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, {
+        outcomes: outcomes.length,
+        skipped_by_budget: fetchResBoot.skippedByBudget,
+        budget_tripped: fetchResBoot.budgetTripped,
+      });
       await appendLiquidity(supabase, outcomes);
       markPhase('phase_liquidity_ms', tLiquidity);
       logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: outcomes.length });
@@ -1107,17 +1231,23 @@ serve(async (req: Request) => {
       // NOTE: bootstrap_completed is NOT flipped here. Operator must flip
       // it manually via SQL Editor after verifying warehouse depth.
       const finishedAt = new Date().toISOString();
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: 'bootstrap',
         status: isFinalChunk ? 'completed' : 'chunk_finished',
         started_at: startedAt,
         finished_at: finishedAt,
         metrics: {
+          mode: 'bootstrap',
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
           chunk_start_index: startIndex,
           chunk_size: chunk.length,
           is_final: isFinalChunk,
           next_resume_symbol: nextSymbol,
+          fetch_budget_ms: fetchBudgetMs,
+          fetch_budget_tripped: fetchResBoot.budgetTripped,
+          fetch_skipped_by_budget: fetchResBoot.skippedByBudget,
           ...phaseMs,
           ...(freshness ? { final_freshness: freshness } : {}),
         },
@@ -1236,32 +1366,43 @@ serve(async (req: Request) => {
     const chunkMisses = missMembers.slice(0, LIVE_CHUNK_SIZE);
     const isFinalChunk = chunkMisses.length === missMembers.length;
 
-    const liveOutcomes: LiquidityFetchOutcome[] = chunkMisses.length > 0
+    const liveFetchRes = chunkMisses.length > 0
       ? await fetchLiquidityForUniverse({
           members: chunkMisses.map((m) => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
           fromDateIso,
           toDateIso,
           dhanFetchUrl,
           serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+          deadlineMs: tLiquidity + fetchBudgetMs,
         })
-      : [];
-    // Only append live-fetched rows; cached rows already exist in DB.
-    if (liveOutcomes.length > 0) await appendLiquidity(supabase, liveOutcomes);
+      : { outcomes: [] as LiquidityFetchOutcome[], skippedByBudget: 0, budgetTripped: false };
+    const liveOutcomes: LiquidityFetchOutcome[] = liveFetchRes.outcomes;
+    // Only append rows for outcomes we actually attempted (skip synthetic
+    // budget-tripped placeholders — they have no rows and no meaningful
+    // fetch_status to persist).
+    const liveAppendables = liveOutcomes.filter((o) => o.error !== 'fetch_budget_exceeded');
+    if (liveAppendables.length > 0) await appendLiquidity(supabase, liveAppendables);
 
     if (!isFinalChunk) {
       const next_resume_symbol = chunkMisses[chunkMisses.length - 1].symbol;
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: body.mode,
         status: 'chunk_finished',
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         metrics: {
+          mode: body.mode,
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
           phase: 'live_liquidity_chunk',
           live_chunk_size: LIVE_CHUNK_SIZE,
           chunk_misses_processed: chunkMisses.length,
           cache_hits: cachedOutcomes.length,
           live_ok_this_chunk: liveOutcomes.filter((o) => o.status === 'ok').length,
+          fetch_budget_ms: fetchBudgetMs,
+          fetch_budget_tripped: liveFetchRes.budgetTripped,
+          fetch_skipped_by_budget: liveFetchRes.skippedByBudget,
           next_resume_symbol,
           universe_size: canonicalMembers.length,
         },
@@ -1787,13 +1928,16 @@ serve(async (req: Request) => {
     // ---- Phase 8: cron_run_log ----
     const finishedAt = new Date().toISOString();
     const topStatus = abortDueToData ? 'aborted' : 'ok';
-    await logCronRun(supabase, {
+    await updateRunRow(supabase, runLogId, {
       batch_id: batchId,
       mode: body.mode,
       status: topStatus,
       started_at: startedAt,
       finished_at: finishedAt,
       metrics: {
+        mode: body.mode,
+        invoked_by: body.invoked_by,
+        batch_id: batchId,
         status: topStatus,
         errors_count: 0,
         universe_size: totalUniverse,
@@ -1807,6 +1951,7 @@ serve(async (req: Request) => {
         replay_hash_version: replayHashVersion,
         batch_type: batchType,
         batch_state: batchState,
+        fetch_budget_ms: fetchBudgetMs,
         ...phaseMs,
         cleanliness_n_in,
         cleanliness_n_out,
@@ -1842,13 +1987,24 @@ serve(async (req: Request) => {
     console.error('cron fatal:', msg, e);
     try {
       const nowIso = new Date().toISOString();
-      await supabase.from('cron_run_log').insert({
-        function_name: 'stock-picker-daily-cron',
+      // OBSERVABILITY.RUN.TRACE — prefer UPDATE on the running row so every
+      // run leaves exactly one trace even when the HTTP connection drops.
+      await updateRunRow(supabase, runLogId, {
+        batch_id: batchId,
+        mode: body.mode,
         status: 'error',
-        started_at: nowIso,
+        started_at: startedAt,
         finished_at: nowIso,
-        error_message: msg,
-        metrics: { status: 'error', errors_count: 1, error_message: msg },
+        error: msg,
+        metrics: {
+          mode: body.mode,
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
+          status: 'error',
+          errors_count: 1,
+          error_message: msg,
+          ...phaseMs,
+        },
       });
     } catch { /* swallow */ }
     return new Response(JSON.stringify({ ok: false, error: msg ?? 'unknown_error' }), {
