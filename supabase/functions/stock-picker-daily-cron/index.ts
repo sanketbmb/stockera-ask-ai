@@ -808,12 +808,13 @@ serve(async (req: Request) => {
     const cronEnabled = jsonbBool(config.get(CFG.CRON_ENABLED), CFG.CRON_ENABLED);
     if (!cronEnabled && body.mode === 'live') {
       const finishedAt = new Date().toISOString();
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: body.mode,
         status: 'skipped_kill_switch',
         started_at: startedAt,
         finished_at: finishedAt,
+        metrics: { mode: body.mode, invoked_by: body.invoked_by, reason: 'kill_switch' },
       });
       return new Response(
         JSON.stringify({ ok: true, batch_id: batchId, status: 'skipped_kill_switch' }),
