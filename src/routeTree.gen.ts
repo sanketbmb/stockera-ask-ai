@@ -67,6 +67,7 @@ import { Route as ApiLogoSymbolRouteImport } from './routes/api.logo.$symbol'
 import { Route as AdminVideosNewRouteImport } from './routes/admin.videos.new'
 import { Route as AdminUploadAnswerQueryIdRouteImport } from './routes/admin.upload-answer.$queryId'
 import { Route as AdminCuratedNewRouteImport } from './routes/admin.curated.new'
+import { Route as ApiPublicHooksStockPickerRunAlertRouteImport } from './routes/api/public/hooks/stock-picker-run-alert'
 import { Route as ApiPublicHooksStockPickerChunkWatchdogRouteImport } from './routes/api/public/hooks/stock-picker-chunk-watchdog'
 import { Route as AdminVideosAnswerIdPreviewRouteImport } from './routes/admin.videos.$answerId.preview'
 import { Route as AdminVideosAnswerIdEditRouteImport } from './routes/admin.videos.$answerId.edit'
@@ -364,6 +365,12 @@ const AdminCuratedNewRoute = AdminCuratedNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AdminCuratedRoute,
 } as any)
+const ApiPublicHooksStockPickerRunAlertRoute =
+  ApiPublicHooksStockPickerRunAlertRouteImport.update({
+    id: '/api/public/hooks/stock-picker-run-alert',
+    path: '/api/public/hooks/stock-picker-run-alert',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksStockPickerChunkWatchdogRoute =
   ApiPublicHooksStockPickerChunkWatchdogRouteImport.update({
     id: '/api/public/hooks/stock-picker-chunk-watchdog',
@@ -450,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
   '/api/public/hooks/stock-picker-chunk-watchdog': typeof ApiPublicHooksStockPickerChunkWatchdogRoute
+  '/api/public/hooks/stock-picker-run-alert': typeof ApiPublicHooksStockPickerRunAlertRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -514,6 +522,7 @@ export interface FileRoutesByTo {
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
   '/api/public/hooks/stock-picker-chunk-watchdog': typeof ApiPublicHooksStockPickerChunkWatchdogRoute
+  '/api/public/hooks/stock-picker-run-alert': typeof ApiPublicHooksStockPickerRunAlertRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -579,6 +588,7 @@ export interface FileRoutesById {
   '/admin/videos/$answerId/edit': typeof AdminVideosAnswerIdEditRoute
   '/admin/videos/$answerId/preview': typeof AdminVideosAnswerIdPreviewRoute
   '/api/public/hooks/stock-picker-chunk-watchdog': typeof ApiPublicHooksStockPickerChunkWatchdogRoute
+  '/api/public/hooks/stock-picker-run-alert': typeof ApiPublicHooksStockPickerRunAlertRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -645,6 +655,7 @@ export interface FileRouteTypes {
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
     | '/api/public/hooks/stock-picker-chunk-watchdog'
+    | '/api/public/hooks/stock-picker-run-alert'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -709,6 +720,7 @@ export interface FileRouteTypes {
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
     | '/api/public/hooks/stock-picker-chunk-watchdog'
+    | '/api/public/hooks/stock-picker-run-alert'
   id:
     | '__root__'
     | '/'
@@ -773,6 +785,7 @@ export interface FileRouteTypes {
     | '/admin/videos/$answerId/edit'
     | '/admin/videos/$answerId/preview'
     | '/api/public/hooks/stock-picker-chunk-watchdog'
+    | '/api/public/hooks/stock-picker-run-alert'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -833,6 +846,7 @@ export interface RootRouteChildren {
   DocsAccuracyRoadmapPrintRoute: typeof DocsAccuracyRoadmapPrintRoute
   DocsArchitecturePrintRoute: typeof DocsArchitecturePrintRoute
   ApiPublicHooksStockPickerChunkWatchdogRoute: typeof ApiPublicHooksStockPickerChunkWatchdogRoute
+  ApiPublicHooksStockPickerRunAlertRoute: typeof ApiPublicHooksStockPickerRunAlertRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1243,6 +1257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCuratedNewRouteImport
       parentRoute: typeof AdminCuratedRoute
     }
+    '/api/public/hooks/stock-picker-run-alert': {
+      id: '/api/public/hooks/stock-picker-run-alert'
+      path: '/api/public/hooks/stock-picker-run-alert'
+      fullPath: '/api/public/hooks/stock-picker-run-alert'
+      preLoaderRoute: typeof ApiPublicHooksStockPickerRunAlertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/stock-picker-chunk-watchdog': {
       id: '/api/public/hooks/stock-picker-chunk-watchdog'
       path: '/api/public/hooks/stock-picker-chunk-watchdog'
@@ -1363,6 +1384,8 @@ const rootRouteChildren: RootRouteChildren = {
   DocsArchitecturePrintRoute: DocsArchitecturePrintRoute,
   ApiPublicHooksStockPickerChunkWatchdogRoute:
     ApiPublicHooksStockPickerChunkWatchdogRoute,
+  ApiPublicHooksStockPickerRunAlertRoute:
+    ApiPublicHooksStockPickerRunAlertRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
