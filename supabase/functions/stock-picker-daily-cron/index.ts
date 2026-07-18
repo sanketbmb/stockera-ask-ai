@@ -1928,13 +1928,16 @@ serve(async (req: Request) => {
     // ---- Phase 8: cron_run_log ----
     const finishedAt = new Date().toISOString();
     const topStatus = abortDueToData ? 'aborted' : 'ok';
-    await logCronRun(supabase, {
+    await updateRunRow(supabase, runLogId, {
       batch_id: batchId,
       mode: body.mode,
       status: topStatus,
       started_at: startedAt,
       finished_at: finishedAt,
       metrics: {
+        mode: body.mode,
+        invoked_by: body.invoked_by,
+        batch_id: batchId,
         status: topStatus,
         errors_count: 0,
         universe_size: totalUniverse,
@@ -1948,6 +1951,7 @@ serve(async (req: Request) => {
         replay_hash_version: replayHashVersion,
         batch_type: batchType,
         batch_state: batchState,
+        fetch_budget_ms: fetchBudgetMs,
         ...phaseMs,
         cleanliness_n_in,
         cleanliness_n_out,
