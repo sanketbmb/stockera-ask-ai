@@ -1560,7 +1560,24 @@ serve(async (req: Request) => {
         run_date_ist: runDateIst,
         resume_from:  next_resume_symbol,
         risk_profile: body.risk_profile,
+        // OBSERVABILITY.RUN.STATE — continuity token so watchdog + next chunk
+        // adopt the same stock_picker_run_state row.
+        batch_id:     batchId,
       };
+      // OBSERVABILITY.RUN.STATE — persist cursor BEFORE firing pg_net so
+      // watchdog can resume even if the http_post never lands.
+      if (resume) {
+        await markRunState(supabase, batchId, {
+          status: 'awaiting_next_chunk',
+          resume_from: next_resume_symbol,
+          chunks_completed: (resume.chunks_completed ?? 0) + 1,
+          universe_size: canonicalMembers.length,
+          // Watchdog retries after this window if next chunk never arrives.
+          next_attempt_at_ms_from_now: 120_000,
+        });
+        resume.chunks_completed = (resume.chunks_completed ?? 0) + 1;
+        resume.resume_from = next_resume_symbol;
+      }
       await supabase
         // deno-lint-ignore no-explicit-any
         .schema('net' as any)
