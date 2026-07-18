@@ -73,6 +73,10 @@ interface DailyCronRequest {
   seed_version?: string;
   run_date_ist?: string;
   resume_from?: string;
+  // OBSERVABILITY.RUN.STATE — continuity token. Present on watchdog and
+  // self-continuation invocations so every chunk of the same nightly run
+  // shares one batch_id + one stock_picker_run_state row.
+  batch_id?: string;
   // Phase 2R: per-profile gate. Optional thin pass-through; default 'moderate'.
   // Used by the batch-level persistence gate in write-audit. Never enters
   // replay-hash payload, never persisted to stock_picker_pick_audit.
