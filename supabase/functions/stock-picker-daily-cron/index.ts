@@ -1201,14 +1201,20 @@ serve(async (req: Request) => {
       const chunk = sortedUniverse.slice(startIndex, startIndex + BOOTSTRAP_CHUNK_SIZE);
       const isFinalChunk = (startIndex + chunk.length) >= sortedUniverse.length;
 
-      const outcomes = await fetchLiquidityForUniverse({
+      const fetchResBoot = await fetchLiquidityForUniverse({
         members: chunk.map(m => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
         fromDateIso,
         toDateIso,
         dhanFetchUrl,
         serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+        deadlineMs: tLiquidity + fetchBudgetMs,
       });
-      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, { outcomes: outcomes.length });
+      const outcomes = fetchResBoot.outcomes;
+      logDiagnosticPhase(batchId, 'phase_liquidity_fetch', 'done', tLiquidity, {
+        outcomes: outcomes.length,
+        skipped_by_budget: fetchResBoot.skippedByBudget,
+        budget_tripped: fetchResBoot.budgetTripped,
+      });
       await appendLiquidity(supabase, outcomes);
       markPhase('phase_liquidity_ms', tLiquidity);
       logDiagnosticPhase(batchId, 'phase_liquidity', 'done', tLiquidity, { outcomes: outcomes.length });
@@ -1225,17 +1231,23 @@ serve(async (req: Request) => {
       // NOTE: bootstrap_completed is NOT flipped here. Operator must flip
       // it manually via SQL Editor after verifying warehouse depth.
       const finishedAt = new Date().toISOString();
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: 'bootstrap',
         status: isFinalChunk ? 'completed' : 'chunk_finished',
         started_at: startedAt,
         finished_at: finishedAt,
         metrics: {
+          mode: 'bootstrap',
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
           chunk_start_index: startIndex,
           chunk_size: chunk.length,
           is_final: isFinalChunk,
           next_resume_symbol: nextSymbol,
+          fetch_budget_ms: fetchBudgetMs,
+          fetch_budget_tripped: fetchResBoot.budgetTripped,
+          fetch_skipped_by_budget: fetchResBoot.skippedByBudget,
           ...phaseMs,
           ...(freshness ? { final_freshness: freshness } : {}),
         },
