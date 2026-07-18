@@ -1215,6 +1215,21 @@ export type Database = {
         }
         Relationships: []
       }
+      nse_trading_holidays: {
+        Row: {
+          description: string | null
+          holiday_date: string
+        }
+        Insert: {
+          description?: string | null
+          holiday_date: string
+        }
+        Update: {
+          description?: string | null
+          holiday_date?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount_paise: number
