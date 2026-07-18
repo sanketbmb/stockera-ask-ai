@@ -2088,6 +2088,13 @@ serve(async (req: Request) => {
     // ---- Phase 8: cron_run_log ----
     const finishedAt = new Date().toISOString();
     const topStatus = abortDueToData ? 'aborted' : 'ok';
+    // OBSERVABILITY.RUN.STATE — mark terminal.
+    if (resume) {
+      await markRunState(supabase, batchId, {
+        status: abortDueToData ? 'aborted' : 'completed',
+        last_error: null,
+      });
+    }
     await updateRunRow(supabase, runLogId, {
       batch_id: batchId,
       mode: body.mode,
