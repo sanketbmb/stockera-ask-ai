@@ -1987,13 +1987,24 @@ serve(async (req: Request) => {
     console.error('cron fatal:', msg, e);
     try {
       const nowIso = new Date().toISOString();
-      await supabase.from('cron_run_log').insert({
-        function_name: 'stock-picker-daily-cron',
+      // OBSERVABILITY.RUN.TRACE — prefer UPDATE on the running row so every
+      // run leaves exactly one trace even when the HTTP connection drops.
+      await updateRunRow(supabase, runLogId, {
+        batch_id: batchId,
+        mode: body.mode,
         status: 'error',
-        started_at: nowIso,
+        started_at: startedAt,
         finished_at: nowIso,
-        error_message: msg,
-        metrics: { status: 'error', errors_count: 1, error_message: msg },
+        error: msg,
+        metrics: {
+          mode: body.mode,
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
+          status: 'error',
+          errors_count: 1,
+          error_message: msg,
+          ...phaseMs,
+        },
       });
     } catch { /* swallow */ }
     return new Response(JSON.stringify({ ok: false, error: msg ?? 'unknown_error' }), {
