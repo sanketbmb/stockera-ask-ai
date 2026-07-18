@@ -906,9 +906,27 @@ serve(async (req: Request) => {
   });
 
   const startedAt = new Date().toISOString();
-  const batchId = crypto.randomUUID();
   const phaseMs: Record<string, number> = {};
   const markPhase = (name: string, start: number) => { phaseMs[name] = Date.now() - start; };
+
+  // OBSERVABILITY.RUN.STATE — provisional run-date computed early so we can
+  // adopt/create a stock_picker_run_state row before any expensive work.
+  // Live mode is the only mode watchdog needs to resume; other modes get a
+  // fresh transient batchId (legacy behavior).
+  const provisionalRunDateIst = body.run_date_ist ?? todayIst();
+  let resume: RunStateResumeInfo | null = null;
+  if (body.mode === 'live') {
+    resume = await ensureRunState(supabase, {
+      body,
+      runDateIst: provisionalRunDateIst,
+      startedAt,
+    });
+    // Inherit the persisted resume cursor when the caller (watchdog) omitted it.
+    if (!body.resume_from && resume.resume_from) {
+      body.resume_from = resume.resume_from;
+    }
+  }
+  const batchId = resume?.batch_id ?? crypto.randomUUID();
 
   // OBSERVABILITY.RUN.TRACE — every run leaves a trace even if the HTTP
   // connection drops. Insert 'running' immediately; UPDATE terminally later.
@@ -916,7 +934,12 @@ serve(async (req: Request) => {
     batch_id: batchId,
     mode: body.mode,
     started_at: startedAt,
-    metrics: { mode: body.mode, invoked_by: body.invoked_by },
+    metrics: {
+      mode: body.mode,
+      invoked_by: body.invoked_by,
+      run_state_attempt: resume?.attempt_count ?? null,
+      run_state_reused: resume ? !resume.isNew : null,
+    },
   });
 
   try {
