@@ -1366,32 +1366,43 @@ serve(async (req: Request) => {
     const chunkMisses = missMembers.slice(0, LIVE_CHUNK_SIZE);
     const isFinalChunk = chunkMisses.length === missMembers.length;
 
-    const liveOutcomes: LiquidityFetchOutcome[] = chunkMisses.length > 0
+    const liveFetchRes = chunkMisses.length > 0
       ? await fetchLiquidityForUniverse({
           members: chunkMisses.map((m) => ({ symbol: m.symbol, exchange: m.exchange, dhan_security_id: m.dhan_security_id })),
           fromDateIso,
           toDateIso,
           dhanFetchUrl,
           serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+          deadlineMs: tLiquidity + fetchBudgetMs,
         })
-      : [];
-    // Only append live-fetched rows; cached rows already exist in DB.
-    if (liveOutcomes.length > 0) await appendLiquidity(supabase, liveOutcomes);
+      : { outcomes: [] as LiquidityFetchOutcome[], skippedByBudget: 0, budgetTripped: false };
+    const liveOutcomes: LiquidityFetchOutcome[] = liveFetchRes.outcomes;
+    // Only append rows for outcomes we actually attempted (skip synthetic
+    // budget-tripped placeholders — they have no rows and no meaningful
+    // fetch_status to persist).
+    const liveAppendables = liveOutcomes.filter((o) => o.error !== 'fetch_budget_exceeded');
+    if (liveAppendables.length > 0) await appendLiquidity(supabase, liveAppendables);
 
     if (!isFinalChunk) {
       const next_resume_symbol = chunkMisses[chunkMisses.length - 1].symbol;
-      await logCronRun(supabase, {
+      await updateRunRow(supabase, runLogId, {
         batch_id: batchId,
         mode: body.mode,
         status: 'chunk_finished',
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         metrics: {
+          mode: body.mode,
+          invoked_by: body.invoked_by,
+          batch_id: batchId,
           phase: 'live_liquidity_chunk',
           live_chunk_size: LIVE_CHUNK_SIZE,
           chunk_misses_processed: chunkMisses.length,
           cache_hits: cachedOutcomes.length,
           live_ok_this_chunk: liveOutcomes.filter((o) => o.status === 'ok').length,
+          fetch_budget_ms: fetchBudgetMs,
+          fetch_budget_tripped: liveFetchRes.budgetTripped,
+          fetch_skipped_by_budget: liveFetchRes.skippedByBudget,
           next_resume_symbol,
           universe_size: canonicalMembers.length,
         },
